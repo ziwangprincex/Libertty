@@ -1,0 +1,30 @@
+#!/bin/sh
+# Stands in for ssh in Libertty's remote-host tests (LIBERTTY_SSH points here):
+# takes ssh's options, then runs the remote command on this Mac, with the
+# "remote" side's own home, liberttyd socket and terminfo directory (FAKE_SSH_*),
+# so nothing touches the user's own. While $FAKE_SSH_DOWN exists, the
+# "network" is down.
+check=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -O) [ "$2" = check ] && check=1; shift 2 ;;
+    -o|-F|-S|-p|-l|-i|-J|-L|-R|-D|-E|-b|-c|-e|-m|-Q|-W|-w) shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+host=$1
+shift
+if [ -n "$FAKE_SSH_DOWN" ] && [ -e "$FAKE_SSH_DOWN" ]; then
+  echo "ssh: connect to host $host port 22: Network is unreachable" >&2
+  exit 255
+fi
+[ $check = 1 ] && exit 0
+if [ "$host" = unreachable ]; then
+  echo "ssh: Could not resolve hostname unreachable: nodename nor servname provided, or not known" >&2
+  exit 255
+fi
+export LIBERTTY_HOME="$FAKE_SSH_HOME" LIBERTTY_DAEMON_SOCKET="$FAKE_SSH_SOCKET" LIBERTTY_DAEMON_LOG="$FAKE_SSH_LOG" \
+  LIBERTTY_TERMINFO_DIR="$FAKE_SSH_TERMINFO"
+unset LIBERTTY_ASKPASS SSH_ASKPASS SSH_ASKPASS_REQUIRE LIBERTTY_STATE_FILE FAKE_SSH_DOWN
+exec /bin/sh -c "$*"

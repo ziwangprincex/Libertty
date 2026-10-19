@@ -1,0 +1,126 @@
+# The Git block, driven through its own page (tests/run.sh makes the
+# repository at @REPO@: two commits, an edited file, a new one).
+size:1280x800
+wait:0.5
+type:cd @REPO@
+key:enter
+wait:0.6
+key:cmd+shift+p
+wait:0.4
+type:git
+wait:0.3
+expect-palette:Git
+key:enter
+wait:1.0
+page-wait:go
+expect-tab:Git — gitblock
+expect-page:Changes
+expect-page:app.swift
+expect-page:notes.txt
+# A file's diff, and one hunk staged on its own.
+page-click:app.swift
+wait:0.6
+expect-page:Stage Hunk
+expect-page:let answer = 42
+page-click:Stage Hunk
+wait:0.8
+expect-page:Staged
+expect-shell:git -C @REPO@ diff --cached --name-only ==> app.swift
+# Commit it with a message of two lines.
+page-type:textarea=Answer the question
+page-click:Commit 1
+wait:1.0
+expect-shell:git -C @REPO@ log -1 --format=%s ==> Answer the question
+expect-page-not:Staged
+# The history shows it, with its diff.
+page-click:History
+wait:0.6
+expect-page:Answer the question
+expect-page:Second
+page-click:Answer the question
+wait:0.6
+expect-page:let answer = 42
+# A new branch from the Branches list.
+page-click:Branches
+wait:0.5
+expect-page:main
+page-click:New Branch…
+wait:0.3
+page-type:.dialog .field=feature-x
+page-click:Create
+wait:1.0
+expect-shell:git -C @REPO@ branch --show-current ==> feature-x
+# Stash what's left, and pop it back.
+page-click:Stashes
+wait:0.4
+page-click:Stash Changes…
+wait:0.3
+page-type:.dialog .field=probe stash
+page-click:Stash
+wait:1.0
+expect-shell:git -C @REPO@ stash list ==> probe stash
+expect-page:probe stash
+page-click:probe stash
+wait:0.5
+page-click:Pop (apply and drop)
+wait:1.0
+expect-shell:git -C @REPO@ stash list | wc -l | tr -d ' ' ==> 0
+expect-shell:git -C @REPO@ status --porcelain ==> notes.txt
+# A command in a terminal shows up: back on main.
+tab:1
+type:git switch -q main
+key:enter
+wait:1.5
+tab:2
+page-click:Changes
+wait:0.6
+expect-page:main
+shot:git-block.png
+# A file named * is that file: discarding it leaves the other new one.
+shell:cd @REPO@ && printf x > '*' && printf y > keep.txt
+page-click:Refresh
+wait:0.8
+page-click:css:.row[title="*"] button[title="Discard Changes"]
+wait:0.4
+expect-page:Discard changes in *?
+page-click:css:.dialog .button.primary
+wait:1.0
+expect-shell:cd @REPO@ && ls ==> keep.txt
+expect-shell:cd @REPO@ && test -e '*' || echo gone ==> gone
+# A name beyond ASCII reads as itself (not "caf\303\251.txt").
+shell:cd @REPO@ && printf 'accent\n' > café.txt
+page-click:Refresh
+wait:0.8
+expect-page:café.txt
+page-click:café.txt
+wait:0.6
+expect-page:accent
+# A staged rename unstages whole: both its paths leave the index.
+shell:cd @REPO@ && git mv app.swift main.swift
+page-click:Refresh
+wait:0.8
+page-click:css:.row[title="app.swift → main.swift"] button[title="Unstage"]
+wait:1.0
+expect-shell:git -C @REPO@ diff --cached --name-only | wc -l | tr -d ' ' ==> 0
+shell:cd @REPO@ && mv main.swift app.swift
+# A conflict: shown as both sides, settled with theirs, and the merge committed.
+shell:cd @REPO@ && git switch -q -c side && printf 'side\n' > c.txt && git add c.txt && git commit -qm side && git switch -q main && printf 'main\n' > c.txt && git add c.txt && git commit -qm main-c && (git merge side > /dev/null 2>&1; true)
+page-click:Refresh
+wait:0.8
+expect-page:Conflicts
+expect-page:Merging
+page-click:c.txt
+wait:0.6
+expect-page:(conflicted)
+expect-page:<<<<<<<
+shot:git-conflict.png
+page-click:Use Theirs
+wait:0.4
+page-click:css:.dialog .button.primary
+wait:1.0
+expect-shell:cat @REPO@/c.txt ==> side
+expect-page-not:Conflicts
+page-type:textarea=Merge side
+page-click:css:.commit-box .button.primary
+wait:1.0
+expect-shell:git -C @REPO@ log -1 --format=%P | wc -w | tr -d ' ' ==> 2

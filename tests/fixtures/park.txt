@@ -1,0 +1,60 @@
+# Park Pane: a pane leaves the split with its program running, and comes
+# back where it stood. Read back as the tab's row and the shells' text.
+type:echo MAIN-PANE
+key:enter
+wait:0.5
+key:cmd+d
+wait:1.0
+type:echo PARKED-PANE; sleep 2; echo STILL-RUNNING
+key:enter
+wait:0.5
+expect-tab:2 panes
+# Park the focused (new) pane from the palette.
+key:cmd+shift+p
+wait:0.4
+type:park pane
+wait:0.3
+expect-palette:Park Pane
+key:enter
+wait:1.0
+expect-tab:1 parked
+expect-not:2 panes
+# Its program ran on while it was away.
+wait:2.5
+expect:STILL-RUNNING
+# Parking the only pane in view is refused: nothing would be left.
+key:cmd+shift+p
+wait:0.4
+type:park pane
+wait:0.3
+key:enter
+wait:0.6
+expect-tab:1 parked
+# Unpark: back in the split, the same shell.
+key:cmd+shift+p
+wait:0.4
+type:unpark pane
+wait:0.3
+expect-palette:Unpark Pane
+key:enter
+wait:1.0
+expect-tab:2 panes
+expect-not:parked
+type:echo BACK-AGAIN
+key:enter
+wait:0.6
+expect:BACK-AGAIN
+shot:park.png
+# Park pressed twice in a row parks the pane once.
+key:cmd+shift+p
+wait:0.4
+type:park pane
+wait:0.3
+key:enter
+key:cmd+shift+p
+wait:0.1
+type:park pane
+key:enter
+wait:1.0
+expect-tab:1 parked
+expect-not:2 parked

@@ -1,0 +1,58 @@
+# The board: the folder's BOARD.md as columns; a card added, moved with
+# the keyboard, checked off; the file changed elsewhere; opened as text;
+# a *.board.md file opens as a board too.
+size:1280x800
+wait:0.5
+type:cd @DIR@
+key:enter
+wait:0.6
+key:cmd+shift+p
+wait:0.4
+type:board
+wait:0.3
+expect-palette:Board
+key:enter
+wait:1.0
+page-wait:go
+expect-tab:Board — board
+expect-page:To Do
+expect-page:Doing
+page-click:css:section.column[data-column="To Do"] .add
+wait:0.3
+page-type:.editor textarea=Write tests #qa
+page-click:Add
+wait:0.3
+page-click:Cancel
+wait:0.8
+expect-shell:cat @DIR@/BOARD.md ==> - [ ] Write tests #qa
+expect-page:#qa
+# ⌥→ moves the selected card to the next column; space checks it off.
+page-js:(() => { document.querySelector('[data-card="Write tests #qa"]').click(); document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true, bubbles: true })); return "moved"; })() ==> moved
+wait:0.3
+page-js:(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true })); return "checked"; })() ==> checked
+wait:0.8
+expect-shell:awk '/^## /{c=$0} /Write tests/{print c}' @DIR@/BOARD.md ==> ## Doing
+expect-shell:grep -c -- '- \[x\] Write tests #qa' @DIR@/BOARD.md ==> 1
+shot:board.png
+# Written elsewhere (nothing unsaved here): the board follows.
+shell:printf -- '- [ ] From the shell\n' >> @DIR@/BOARD.md
+wait:1.5
+expect-page:From the shell
+# A line that isn't a card stays where it was; Use the File's takes the file as it is.
+shell:printf '# BOARD\n\n## To Do\n\n- [ ] One\n\nA note under One.\n\n- [ ] Two\n' > @DIR@/BOARD.md
+wait:1.5
+expect-page:A note under One.
+page-js:(() => { libertty_board.moveCard(0, libertty_board.board.columns[0].entries.find(e => e.card && e.card.text === "Two").card, 0, 0); return "moved"; })() ==> moved
+wait:1.0
+expect-shell:cat @DIR@/BOARD.md | tr '\n' '|' ==> - [ ] Two|- [ ] One||A note under One.|
+# Its Markdown, in the editor.
+page-click:Edit as Text
+wait:1.5
+expect-tab:BOARD.md
+# A *.board.md file opens as a board.
+shell:printf '## Ideas\n\n- [ ] Sprint card\n' > @DIR@/sprint.board.md
+open:@DIR@/sprint.board.md
+wait:1.5
+page-wait:go
+expect-tab:sprint.board.md
+expect-page:Sprint card

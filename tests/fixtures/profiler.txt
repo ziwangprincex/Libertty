@@ -1,0 +1,35 @@
+# The profiler: a busy loop in a terminal recorded for three seconds with
+# sample; the report opens in speedscope and is kept under Recent profiles.
+size:1280x800
+wait:0.5
+type:python3 -I -c 'while True: sum(i * i for i in range(9999))'
+key:enter
+wait:1.0
+key:cmd+shift+p
+wait:0.4
+type:profiler
+wait:0.3
+expect-palette:Profiler
+key:enter
+wait:1.0
+page-wait:go
+expect-tab:Profiler
+wait:3.5
+expect-page:In your terminals
+page-click:css:.row[data-name^="Python"], .row[data-name^="python"]
+wait:0.3
+page-click:3 s
+page-click:Record
+wait:6.0
+expect-tab:sample.txt
+page-wait:go
+page-js:new Promise(r => { const t = setInterval(() => { if (window.libertty_profile) { clearInterval(t); r(window.libertty_profile.name); } }, 50); setTimeout(() => r("never"), 5000); }) ==> .folded
+expect-page:Left Heavy
+shot:profile.png
+tab:2
+wait:3.5
+expect-page:Recent profiles
+page-js:document.querySelectorAll('.list')[1].querySelectorAll('.row').length ==> 1
+tab:1
+key:ctrl+c
+wait:0.5

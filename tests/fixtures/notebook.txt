@@ -1,0 +1,30 @@
+# The notebook block: an .ipynb's cells; Markdown shown without its
+# script; Run All in a kernel of this run's own jupyter; outputs, the
+# error, saved into the file; a new cell run with ⇧↩; Restart; closing
+# the tab stops the server.
+size:1280x800
+wait:0.5
+open:@DIR@/probe.ipynb
+wait:1.5
+page-wait:go
+expect-tab:probe.ipynb
+expect-page:Probe Title
+expect-page-not:owned
+page-click:Run All
+page-js:new Promise(r => { const t = setInterval(() => { const c = libertty_notebook.nb.cells[3]; if (c.outputs && c.outputs.length) { clearInterval(t); r("ran"); } }, 200); setTimeout(() => r("timed out: " + libertty_notebook.kernel.state), 55000); }) ==> ran
+wait:1.0
+expect-page:42
+expect-page:ZeroDivisionError
+expect-page:[2]
+shot:notebook.png
+expect-shell:python3 -I -c "import json,sys; nb=json.load(open(sys.argv[1])); print(''.join(nb['cells'][1]['outputs'][0]['text']).strip(), nb['cells'][2]['outputs'][0]['data']['text/plain'])" @DIR@/probe.ipynb ==> 42 2
+page-click:+ Code
+wait:0.3
+page-js:(() => { const a = [...document.querySelectorAll(".cell textarea")].pop(); a.value = "print('hello from ' + 'probe')"; a.dispatchEvent(new Event("input", { bubbles: true })); a.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true })); return "typed"; })() ==> typed
+page-js:new Promise(r => { const t = setInterval(() => { const c = libertty_notebook.nb.cells[4]; if (c && c.outputs && c.outputs.length) { clearInterval(t); r(c.outputs[0].text); } }, 200); setTimeout(() => r("timed out"), 20000); }) ==> hello from probe
+page-click:Restart
+wait:2.0
+expect-page:Restarted
+key:cmd+w
+wait:3.0
+expect-shell:ps -axo command= | grep -c "[j]upyter-server.*root_dir=@DIR@" ==> 0

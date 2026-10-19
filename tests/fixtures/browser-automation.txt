@@ -1,0 +1,36 @@
+# The browser block with browser-automation = true (this run's own config).
+size:1280x800
+wait:0.5
+browser:open @SITE@/index.html ==> @SITE@
+page-wait:go
+expect-tab:Probe Home
+expect-page:Home page
+browser:url ==> /index.html
+browser:text ==> Home page
+# Typing and clicking in the page.
+browser:type #name | Libertty ==> 
+browser:click #go ==> 
+browser:eval document.getElementById('out').textContent ==> Hello, Libertty
+browser:click #nothing-here ==> !nothing matches
+# Links, history, a new-window link staying here.
+browser:click #next ==> 
+wait:0.8
+expect-tab:Second
+browser:back ==> 
+wait:0.8
+expect-tab:Probe Home
+browser:forward ==> 
+wait:0.8
+expect-tab:Second
+browser:back ==> 
+wait:0.8
+browser:click #popup ==> 
+wait:0.8
+expect-tab:Second
+# The address bar: an address without its scheme, and back home.
+bar:@HOST@/index.html
+wait:0.8
+expect-tab:Probe Home
+browser:screenshot @OUT@/browser-shot.png ==> browser-shot.png
+expect-shell:test -s @OUT@/browser-shot.png && echo yes ==> yes
+shot:browser.png

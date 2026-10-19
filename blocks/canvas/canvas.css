@@ -1,0 +1,21 @@
+/* Excalidraw in the terminal's colors, and monochrome: its purple accent
+   becomes the text color (selections, the active tool). */
+#app { height: 100%; display: flex; flex-direction: column; }
+#app > .excalidraw { flex: 1; min-height: 0; height: auto; }
+.excalidraw {
+  --color-primary: var(--t1);
+  --color-primary-darker: var(--t2);
+  --color-primary-darkest: var(--t2);
+  --color-primary-light: var(--l3);
+  --color-primary-light-darker: var(--l3);
+  --color-primary-hover: var(--t2);
+  --color-surface-primary-container: var(--l3);
+  --color-on-primary-container: var(--t1);
+  --island-bg-color: var(--panel);
+  --default-bg-color: var(--bg);
+  --ui-font: var(--ui, -apple-system, system-ui, sans-serif);
+}
+.excalidraw .welcome-screen-decor-hint, .excalidraw .welcome-screen-center__logo { display: none; }
+/* A file changed elsewhere: a line above the drawing, until one side is chosen. */
+.conflict { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--l2); }
+.conflict span { flex: 1; color: var(--t2); font-size: 12px; }

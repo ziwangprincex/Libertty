@@ -1,0 +1,29 @@
+#app { display: flex; flex-direction: column; height: 100%; }
+.columns { flex: 1; display: flex; min-height: 0; }
+.table-wrap { flex: 1; min-width: 0; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+thead th { position: sticky; top: 0; z-index: 1; background: var(--bg); color: var(--t3); font-weight: 500; font-size: 11.5px;
+  text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--l1); white-space: nowrap; cursor: default; }
+thead th.left { text-align: left; }
+thead th.sorted { color: var(--t1); }
+tbody tr { height: 28px; }
+tbody tr:hover { background: var(--l1); }
+tbody tr.on { background: var(--l2); }
+td { padding: 0 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.left { text-align: left; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+td.num { font-family: var(--mono); font-size: 11.5px; color: var(--t2); }
+td .pane { margin-left: 8px; color: var(--t4); font-size: 11.5px; }
+td.dim, tr.theirs td { color: var(--t4); }
+.bar-cell { position: relative; }
+.meter { display: inline-block; width: 36px; height: 4px; margin-left: 6px; border-radius: 2px; background: var(--l2); vertical-align: 2px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--t3); }
+.detail { width: 340px; flex: none; border-left: 1px solid var(--l1); overflow: auto; padding: 14px 16px; }
+.detail h2 { margin: 0 0 2px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.detail .pid { color: var(--t4); font-family: var(--mono); font-size: 11.5px; }
+.detail dl { margin: 14px 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12.5px; }
+.detail dt { color: var(--t3); }
+.detail dd { margin: 0; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.detail dd.mono { font-family: var(--mono); font-size: 11.5px; }
+.detail .buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.summary { color: var(--t3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.search { width: 220px; }

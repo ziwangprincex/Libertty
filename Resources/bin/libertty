@@ -1,0 +1,10 @@
+#!/bin/sh
+# The `libertty` command: Libertty's command line (`libertty +help`), which is the app
+# binary itself. Shells started by Libertty have this directory on PATH; to use
+# it elsewhere, symlink it onto your PATH, e.g.
+#   ln -s /Applications/Libertty.app/Contents/Resources/bin/libertty ~/.local/bin/libertty
+if [ -n "$LIBERTTY_EXECUTABLE" ] && [ -x "$LIBERTTY_EXECUTABLE" ]; then
+    exec "$LIBERTTY_EXECUTABLE" "$@"
+fi
+self=$(readlink -f "$0" 2>/dev/null || echo "$0")
+exec "$(dirname "$self")/../../MacOS/Libertty" "$@"

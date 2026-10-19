@@ -1,0 +1,77 @@
+# Workspaces: named sets of tabs in one window; the others' programs run on.
+type:echo ONE-HERE; sleep 2; echo ONE-STILL-GOING
+key:enter
+wait:0.4
+expect-workspace:[Default]
+# A second workspace: its own shell, its own tabs.
+workspace:new:Build
+expect-workspace:Default [Build]
+type:echo BUILD-SHELL
+key:enter
+wait:0.6
+expect:BUILD-SHELL
+tab:new
+wait:0.5
+# What ran in the first one while we were away.
+wait:2.0
+expect:ONE-STILL-GOING
+# Back to the first: one tab (the second workspace's two don't show).
+workspace:1
+expect-workspace:[Default] Build
+type:echo BACK-IN-ONE
+key:enter
+wait:0.6
+expect:BACK-IN-ONE
+# The palette lists them; picking one shows it.
+key:cmd+shift+p
+wait:0.4
+type:build
+wait:0.3
+expect-palette:Build
+key:enter
+wait:0.8
+expect-workspace:Default [Build]
+# Saved and built again: the same workspaces, tabs and (parked, floating) panes.
+key:cmd+d
+wait:0.8
+key:cmd+shift+p
+wait:0.4
+type:float pane
+wait:0.3
+key:enter
+wait:0.8
+expect-float:yes
+roundtrip:go
+key:cmd+shift+p
+wait:0.4
+type:float pane
+wait:0.3
+key:enter
+wait:0.8
+# Closing the last tab's pane of a workspace ends it, and the window shows the other.
+workspace:close
+wait:0.6
+expect-workspace:[Default]
+shot:workspaces.png
+# Closing a workspace's last tab closes the workspace; Undo brings it back.
+workspace:new:Temp
+expect-workspace:=Default [Temp]
+key:cmd+w
+wait:0.8
+expect-workspace:=[Default]
+undo:go
+wait:0.8
+expect-workspace:=Default [Temp]
+# A tab closed in one workspace comes back there, Undo pressed from another.
+tab:new
+wait:0.6
+expect-tab-count:2
+key:cmd+w
+wait:0.8
+expect-tab-count:1
+workspace:1
+expect-workspace:=[Default] Temp
+undo:go
+wait:0.8
+expect-workspace:=Default [Temp]
+expect-tab-count:2

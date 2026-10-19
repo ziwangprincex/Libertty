@@ -1,0 +1,6 @@
+# The browser block, against a local server at @SITE@ (tests/run.sh starts it).
+# Reading pages needs browser-automation: off, it's refused.
+browser:open @SITE@/index.html ==> @SITE@
+page-wait:go
+expect-tab:Probe Home
+browser:text ==> !browser-automation

@@ -1,0 +1,29 @@
+# The Inspector's Git panel through its own controls (tests/run.sh puts a
+# scratch repository at @REPO@: Sources/a.swift modified, Sources/new.swift
+# new). The pane sits in a folder *inside* the repository, where git's
+# paths — always from the root — and the pane's own differ.
+type:cd @REPO@/Sources
+key:enter
+wait:1.0
+key:cmd+alt+i
+wait:2.0
+click:Stage a.swift
+wait:1.5
+click:Commit message
+type:from the panel
+key:enter
+wait:2.0
+# The terminal reads back what the panel did (once it has the keyboard
+# back from the message field). The brackets come from git's own format:
+# text typed into the wrong place can't pass for the commit.
+click:400,300
+type:git log --format='[%s]' | cat; git status --porcelain | cat
+key:enter
+wait:1.0
+expect:[from the panel]
+expect:?? Sources/new.swift
+expect-not: M Sources/a.swift
+# A new file's diff is against nothing, not an empty page.
+click:new.swift
+wait:2.0
+shot:git-panel.png

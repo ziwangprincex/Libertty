@@ -1,0 +1,7 @@
+#app { display: flex; flex-direction: column; height: 100%; }
+.page { flex: 1; overflow: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 18px; max-width: 920px; }
+.record-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.record-row .field { width: 120px; }
+.countdown { font-family: var(--mono); color: var(--t2); min-width: 4ch; }
+.hint { color: var(--t3); font-size: 12px; }
+.list .row .meta { font-family: var(--mono); }

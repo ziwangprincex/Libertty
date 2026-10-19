@@ -1,0 +1,48 @@
+# The canvas block: a drawing opened from its .excalidraw file, drawn on,
+# written back by itself; a change on disk taken in; a new canvas.
+size:1280x800
+wait:0.5
+open:@DIR@/sketch.excalidraw
+wait:1.5
+page-wait:go
+expect-tab:sketch.excalidraw
+page-js:new Promise(r => { const t = setInterval(() => { if (window.libertty_canvas) { clearInterval(t); r("ready"); } }, 50); setTimeout(() => r("never"), 4000); }) ==> ready
+page-js:libertty_canvas.api.getSceneElements().length ==> 1
+# Draw a rectangle: the file has it a moment later, without ⌘S.
+page-js:(() => { const a = libertty_canvas.api; const el = { ...a.getSceneElements()[0], id: "probe-rect", x: 300, y: 200, version: 1, versionNonce: 7, seed: 7 }; a.updateScene({ elements: [...a.getSceneElementsIncludingDeleted(), el] }); return a.getSceneElements().length; })() ==> 2
+wait:1.5
+expect-shell:grep -c '"type": "rectangle"' @DIR@/sketch.excalidraw ==> 2
+expect-shell:grep -c probe-rect @DIR@/sketch.excalidraw ==> 1
+shot:canvas.png
+# Changed elsewhere (nothing unsaved here): the drawing follows the file.
+shell:python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['elements']=d['elements'][:1]; json.dump(d, open(p,'w'))" @DIR@/sketch.excalidraw
+wait:1.5
+page-js:libertty_canvas.api.getSceneElements().length ==> 1
+# Unsaved and changed on disk: the save is refused, never overwriting.
+page-js:(() => { const a = libertty_canvas.api; a.updateScene({ elements: [...a.getSceneElementsIncludingDeleted(), { ...a.getSceneElements()[0], id: "second", x: 600, version: 1 }] }); return "ok"; })()
+shell:python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['appState']={'viewBackgroundColor':'#123456'}; json.dump(d, open(p,'w'))" @DIR@/sketch.excalidraw
+wait:1.5
+expect-shell:grep -c second @DIR@/sketch.excalidraw || true ==> 0
+expect-page:changed on disk
+# Keep Mine writes it over the other change, as it said.
+page-click:Keep Mine
+wait:1.0
+expect-shell:grep -c second @DIR@/sketch.excalidraw ==> 1
+# Only the background changed: that's saved too.
+page-js:(() => { libertty_canvas.api.updateScene({ appState: { viewBackgroundColor: "#abcdef" } }); return "painted"; })() ==> painted
+wait:1.0
+expect-shell:grep -c abcdef @DIR@/sketch.excalidraw ==> 1
+# A new canvas: a file of its own in the data folder, saved as drawn.
+key:cmd+shift+p
+wait:0.4
+type:new canvas
+wait:0.3
+expect-palette:New Canvas
+key:enter
+wait:2.0
+page-wait:go
+expect-tab:Canvas
+page-js:new Promise(r => { const t = setInterval(() => { if (window.libertty_canvas) { clearInterval(t); r("ready"); } }, 50); setTimeout(() => r("never"), 4000); }) ==> ready
+page-js:(() => { const a = libertty_canvas.api; a.updateScene({ elements: [{ type: "ellipse", id: "probe-ellipse", x: 10, y: 10, width: 80, height: 50, angle: 0, strokeColor: "#1e1e1e", backgroundColor: "transparent", fillStyle: "solid", strokeWidth: 2, strokeStyle: "solid", roughness: 1, opacity: 100, groupIds: [], frameId: null, roundness: null, seed: 3, version: 1, versionNonce: 3, isDeleted: false, boundElements: null, updated: 1, link: null, locked: false, index: "a0" }] }); return "drawn"; })() ==> drawn
+wait:1.5
+expect-shell:grep -l probe-ellipse "@DATA@"/Canvases/*.excalidraw | wc -l | tr -d ' ' ==> 1

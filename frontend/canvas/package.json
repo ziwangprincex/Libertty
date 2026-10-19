@@ -1,0 +1,11 @@
+{
+  "name": "libertty-canvas",
+  "private": true,
+  "description": "The canvas block's page: Excalidraw (MIT) on React (MIT), bundled by scripts/build-canvas.sh into vendor/excalidraw/.",
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "esbuild": "0.28.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

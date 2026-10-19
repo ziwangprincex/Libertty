@@ -1,0 +1,20 @@
+#app { display: flex; flex-direction: column; height: 100%; }
+.columns { flex: 1; display: flex; min-height: 0; }
+.side { width: 320px; min-width: 240px; overflow: auto; border-right: 1px solid var(--l1); padding: 4px 6px; }
+.detail { flex: 1; min-width: 0; overflow: auto; padding: 16px 20px; }
+.detail h2 { margin: 0; font-size: 16px; }
+.detail .about { color: var(--t3); margin: 4px 0 12px; }
+.detail .buttons { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.state-line { font-size: 12px; color: var(--t3); }
+.state-line.failed { color: var(--del); }
+.log { font-family: var(--mono); font-size: 12px; background: var(--l1); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap;
+  overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; max-height: 50vh; overflow: auto; }
+.log .line.warn { color: var(--warn); }
+.log .line.error { color: var(--del); }
+.log .time { color: var(--t4); margin-right: 8px; }
+.api { font-family: var(--mono); font-size: 12px; color: var(--t2); white-space: pre; background: var(--l1); border-radius: 8px; padding: 10px 12px;
+  -webkit-user-select: text; user-select: text; overflow: auto; }
+.switch { appearance: none; width: 28px; height: 16px; border-radius: 8px; background: var(--l3); position: relative; flex: none; margin: 0; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 6px; background: var(--t3); transition: left .12s; }
+.switch:checked { background: var(--t2); }
+.switch:checked::after { left: 14px; background: var(--bg); }

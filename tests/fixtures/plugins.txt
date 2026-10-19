@@ -1,0 +1,67 @@
+# Plugins: found off; turned on, one runs (a palette command typing into
+# the terminal, a finished command heard, a timer, storage); a broken one
+# says why; saving a plugin's file reloads it.
+size:1280x800
+wait:0.5
+key:cmd+shift+p
+wait:0.4
+type:plugins
+wait:0.3
+expect-palette:Plugins
+key:enter
+wait:1.0
+page-wait:go
+expect-tab:Plugins
+expect-page:Hello
+expect-page:broken
+expect-page:Off
+page-click:css:.row[data-name="hello"] input.switch
+wait:1.0
+expect-page:Running
+expect-page:Say Hello
+expect-page:timer fired
+tab:1
+key:cmd+shift+p
+wait:0.4
+type:say hello
+wait:0.3
+expect-palette:Hello: Say Hello
+key:enter
+wait:1.5
+expect:plugin-said-hi
+wait:0.5
+expect-shell:cat @DATA@/plugin-storage/hello.json ==> "count":"1"
+tab:2
+wait:0.5
+expect-page:finished: echo plugin-said-hi
+page-click:css:.row[data-name="broken"] input.switch
+wait:1.0
+page-click:css:.row[data-name="broken"]
+wait:0.3
+expect-page:Failed:
+shell:printf 'libertty.command("Second", () => {});\n' >> @CONFIG@/libertty/plugins/hello/main.js
+wait:1.5
+page-click:css:.row[data-name="hello"]
+wait:0.3
+expect-page:Second
+shot:plugins.png
+# A plugin stuck in a loop stops only itself: the app and the others go on.
+page-click:css:.row[data-name="stuck"] input.switch
+wait:1.0
+tab:1
+key:cmd+shift+p
+wait:0.4
+type:spin
+wait:0.3
+expect-palette:stuck: Spin
+key:enter
+wait:1.0
+type:echo still-typing
+key:enter
+wait:1.0
+expect:still-typing
+tab:2
+wait:0.5
+page-click:css:.row[data-name="hello"]
+wait:0.3
+expect-page:Second

@@ -1,0 +1,5 @@
+/* speedscope draws the page; block.css only brings the toast and the theme's
+   variables. Its flame graph's WebGL canvas sits behind the page (z-index
+   -1): the page itself mustn't paint over it. */
+html, body { background: transparent; overflow: hidden; }
+.profile-note { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--t3); background: var(--bg); z-index: 5; }

@@ -1,0 +1,34 @@
+#app { display: flex; flex-direction: column; height: 100%; }
+.kernel { display: inline-flex; align-items: center; gap: 6px; color: var(--t3); font-size: 12px; }
+.kernel .dot { width: 7px; height: 7px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--t3); }
+.kernel.busy .dot { background: var(--t2); box-shadow: none; }
+.kernel.idle .dot { background: var(--accent); box-shadow: none; }
+.banner { padding: 8px 14px; color: var(--t2); font-size: 12px; background: var(--panel); border-bottom: 1px solid var(--l1); display: flex; gap: 10px; align-items: center; }
+.banner span { flex: 1; }
+.cells { flex: 1; overflow: auto; padding: 14px 18px 60px; }
+.cell { position: relative; display: grid; grid-template-columns: 64px 1fr; gap: 0 8px; padding: 4px 0; border-radius: 8px; }
+.cell.on { background: var(--l1); }
+.cell.on::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: var(--accent); }
+.prompt { font-family: var(--mono); font-size: 11.5px; color: var(--t4); text-align: right; padding-top: 7px; white-space: nowrap; }
+.cell .body { min-width: 0; }
+.source { width: 100%; box-sizing: border-box; resize: none; overflow: hidden; border: 0; outline: none; border-radius: 6px; padding: 6px 9px;
+  background: var(--panel); color: var(--t1); font: 12.5px/1.5 var(--mono); tab-size: 4; box-shadow: 0 0 0 1px var(--l1); }
+.source:focus { box-shadow: 0 0 0 1px var(--l3); }
+.cell.markdown .source { font-family: var(--mono); }
+.rendered { padding: 2px 10px; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; cursor: default; }
+.rendered:empty::before { content: "Empty Markdown cell — double-click to write"; color: var(--t4); }
+.rendered pre, .rendered code { font-family: var(--mono); font-size: 12px; }
+.rendered pre { background: var(--l1); padding: 8px 10px; border-radius: 6px; overflow: auto; }
+.rendered table, .output table { border-collapse: collapse; font-size: 12px; }
+.rendered th, .rendered td, .output th, .output td { border: 1px solid var(--l2); padding: 3px 8px; text-align: left; }
+.rendered img, .output img { max-width: 100%; }
+.outputs { margin-top: 4px; }
+.output { font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 9px; -webkit-user-select: text; user-select: text;
+  max-height: 480px; overflow: auto; }
+.output.stderr { color: var(--warn); }
+.output.error { color: var(--del); }
+.output.html { white-space: normal; font-family: var(--sans); }
+.cell-tools { position: absolute; top: 2px; right: 4px; display: none; gap: 2px; }
+.cell:hover .cell-tools, .cell.on .cell-tools { display: flex; }
+.add-row { display: flex; gap: 6px; padding: 8px 0 0 72px; }
+.banner[hidden] { display: none; }

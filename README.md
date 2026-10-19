@@ -102,6 +102,7 @@ have no unsaved edits.
   already in the repository.
 
 ```sh
+git submodule update --init vendor/ghostty   # pinned Ghostty checkout
 scripts/build-libghostty-vt.sh   # once, or after updating vendor/ghostty
 scripts/bundle.sh                # build/Libertty.app (debug); `scripts/bundle.sh release` for an optimized build
 open build/Libertty.app

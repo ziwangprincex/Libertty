@@ -1,0 +1,39 @@
+# Float Pane: the focused pane becomes a live card in a corner of its
+# split (in-window picture in picture); the pane itself is parked, its
+# program running. Bringing it back puts it where it stood.
+type:echo BASE-PANE
+key:enter
+wait:0.5
+key:cmd+d
+wait:1.0
+type:echo FLOATER; sleep 2; echo FLOAT-STILL-RUNNING
+key:enter
+wait:0.5
+expect-float:no
+key:cmd+shift+p
+wait:0.4
+type:float pane
+wait:0.3
+expect-palette:Float Pane
+key:enter
+wait:1.0
+expect-float:yes
+expect-tab:1 parked
+expect-not:2 panes
+wait:2.5
+expect:FLOAT-STILL-RUNNING
+shot:float.png
+# The same command brings it back.
+key:cmd+shift+p
+wait:0.4
+type:float pane
+wait:0.3
+key:enter
+wait:1.0
+expect-float:no
+expect-tab:2 panes
+expect-not:parked
+type:echo BACK-FROM-FLOAT
+key:enter
+wait:0.6
+expect:BACK-FROM-FLOAT

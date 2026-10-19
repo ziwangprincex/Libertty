@@ -1,0 +1,18 @@
+# The screen block, limited to Libertty's own windows (own=1: never a
+# display or another app's window): this probe's window listed, shown, its
+# frames arriving; stopped.
+size:1280x800
+wait:0.5
+open:libertty-block://screen?own=1
+wait:1.0
+page-wait:go
+expect-tab:Screen
+expect-page:Windows
+expect-page-not:Displays
+page-click:css:.row[data-kind="window"]
+page-click:Show
+page-js:new Promise(r => { const t = setInterval(() => { const s = window.libertty_screen; if (s && s.frames >= 3) { clearInterval(t); r("frames " + s.width); } }, 100); setTimeout(() => r("no frames"), 10000); }) ==> frames
+shot:screen.png
+page-click:Stop
+wait:0.5
+expect-page-not:fps ·

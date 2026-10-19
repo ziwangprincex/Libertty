@@ -1,0 +1,8 @@
+#app { display: flex; flex-direction: column; height: 100%; }
+.columns { flex: 1; display: flex; min-height: 0; }
+.side { width: 280px; min-width: 200px; overflow: auto; border-right: 1px solid var(--l1); padding: 4px 6px; }
+.stage { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; background: var(--panel); position: relative; }
+.stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.stage.actual img { max-width: none; max-height: none; }
+.stage.actual { overflow: auto; align-items: flex-start; justify-content: flex-start; }
+.stats { position: absolute; right: 10px; bottom: 8px; font: 11px var(--mono); color: var(--t3); background: var(--bg); padding: 2px 6px; border-radius: 4px; }

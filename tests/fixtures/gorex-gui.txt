@@ -1,0 +1,99 @@
+# The GoRex-borrowed GUI, by its own controls (tests/run.sh puts a folder
+# at @DIR@). Nothing here is checked by pixels: the labels, palette rows and
+# screens are read back as text.
+#
+# Tab labels: the program, and where (a short folder).
+type:cd @DIR@/deep/a/b/c/proj && vim
+key:enter
+wait:2.5
+expect-tab:Vim · …/c/proj
+# A split: two panes, then a fresh shell in place of the new one.
+key:cmd+d
+wait:1.0
+type:echo OLD-SHELL
+key:enter
+wait:0.5
+key:cmd+shift+p
+wait:0.4
+type:restart shell
+wait:0.3
+expect-palette:Restart Shell in Pane
+key:enter
+wait:1.5
+expect-not:OLD-SHELL
+type:echo NEW-SHELL
+key:enter
+wait:0.8
+expect:NEW-SHELL
+# Zoom says so in the tab's row.
+key:cmd+shift+enter
+wait:0.4
+expect-tab:2 panes, zoomed
+key:cmd+shift+enter
+wait:0.4
+# ⌘P lists every pane; typing a program finds its pane, Return goes there.
+key:cmd+p
+wait:0.5
+type:vim
+wait:0.3
+expect-palette:Vim · …/c/proj
+key:enter
+wait:0.6
+# The palette says when nothing matches rather than shrinking away.
+key:cmd+shift+p
+wait:0.4
+type:zzqqxx
+wait:0.3
+expect-palette:No matches
+key:escape
+wait:0.3
+# Rename the tab in place; Return keeps it, the keyboard goes back.
+key:cmd+shift+r
+wait:0.4
+type:build box
+key:enter
+wait:0.5
+expect-tab:build box
+# A name being typed survives the other tabs' updates: tab 2's program
+# changes while tab 1 is renamed.
+tab:new
+type:sleep 1.2; vim
+key:enter
+tab:1
+key:cmd+shift+r
+wait:0.4
+type:kept name
+wait:2.5
+key:enter
+wait:0.5
+expect-tab:kept name
+expect-tab:Vim
+# A tab opening meanwhile keeps what was typed.
+key:cmd+shift+r
+wait:0.4
+type:second name
+tab:new
+wait:0.3
+expect-tab:second name
+# ⌘P finds a pane by the name its tab was given.
+key:cmd+p
+wait:0.5
+type:second name
+wait:0.3
+expect-palette:Tab 1
+key:escape
+wait:0.3
+# ⌘T opens in the folder of the pane you were in, not at home. (Reached
+# by a relative cd: only the new tab's pwd can print the whole path.)
+type:cd @DIR@
+key:enter
+wait:0.5
+type:cd elsewhere/here
+key:enter
+wait:0.6
+tab:here
+wait:0.8
+type:pwd
+key:enter
+wait:0.6
+expect:@DIR@/elsewhere/here

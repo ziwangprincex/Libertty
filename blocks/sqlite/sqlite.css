@@ -1,0 +1,31 @@
+#app { display: flex; flex-direction: column; height: 100%; }
+.columns { flex: 1; display: flex; min-height: 0; }
+.side { width: 240px; min-width: 180px; overflow: auto; border-right: 1px solid var(--l1); padding: 4px 6px; }
+.main-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.grid-wrap { flex: 1; overflow: auto; }
+table.grid { border-collapse: separate; border-spacing: 0; font-family: var(--mono); font-size: 12px; }
+table.grid th { position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; font-family: var(--sans); font-weight: 500;
+  color: var(--t2); padding: 6px 10px; border-bottom: 1px solid var(--l2); white-space: nowrap; cursor: default; }
+table.grid th .type { color: var(--t4); font-weight: 400; margin-left: 6px; font-family: var(--mono); font-size: 11px; }
+table.grid th.sortable { cursor: pointer; }
+table.grid td { padding: 4px 10px; border-bottom: 1px solid var(--l1); white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis;
+  -webkit-user-select: text; user-select: text; }
+table.grid td.num { text-align: right; }
+table.grid td.null { color: var(--t4); font-style: italic; }
+table.grid td.blob { color: var(--t3); }
+table.grid td.rownum { color: var(--t4); text-align: right; -webkit-user-select: none; user-select: none; }
+table.grid tr:hover td { background: var(--l1); }
+table.grid td.editing { padding: 0; }
+table.grid td.editing input { width: 100%; min-width: 120px; height: 26px; border: 0; padding: 0 9px; background: var(--l2); color: var(--t1); font: inherit; outline: none; }
+.pager { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--l1); color: var(--t3); font-size: 12px; }
+.pager .spacer { flex: 1; }
+.query-box { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-bottom: 1px solid var(--l1); }
+.query-box textarea { width: 100%; box-sizing: border-box; min-height: 90px; resize: vertical; padding: 8px; border: 0; border-radius: 6px;
+  background: var(--l1); color: var(--t1); font: 12.5px/1.5 var(--mono); outline: none; }
+.query-row { display: flex; align-items: center; gap: 8px; }
+.query-row .spacer { flex: 1; }
+.status { color: var(--t3); font-size: 12px; }
+.structure { padding: 14px 18px; overflow: auto; }
+.structure pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; background: var(--l1); padding: 10px 12px; border-radius: 8px;
+  -webkit-user-select: text; user-select: text; }
+.lock { color: var(--t3); font-size: 12px; }

@@ -1,0 +1,29 @@
+# Tabs along the top (`tab-bar = top`; tests/run.sh gives this run a
+# config of its own). Read back as text: the names the tabs show.
+#
+# A tab at a folder goes by the folder's last part.
+type:cd @DIR@/top-a
+key:enter
+wait:0.8
+expect-strip:top-a
+tab:new
+wait:0.5
+type:cd @DIR@/top-b
+key:enter
+wait:0.8
+expect-strip:top-a
+expect-strip:top-b
+# Renamed in place in its tab: Return keeps it.
+key:cmd+shift+r
+wait:0.4
+type:renamed
+key:enter
+wait:0.5
+expect-strip:renamed
+expect-tab:renamed
+# The keyboard went back to the terminal.
+type:echo STRIP-OK
+key:enter
+wait:0.6
+expect:STRIP-OK
+shot:tab-strip.png

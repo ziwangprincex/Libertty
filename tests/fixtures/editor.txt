@@ -1,0 +1,115 @@
+# The editor block (CodeMirror 6): a source file opens in the editor; what's
+# typed is unsaved until File ▸ Save writes it; another program's change
+# shows up; Markdown opens rendered and its source is the editor.
+# (tests/run.sh puts files at @DIR@.)
+open:@DIR@/hello.py
+editor-wait:go
+expect-editor:print("hello")
+expect-dirty:no
+editor-insert:# from the editor\n
+expect-dirty:yes
+expect-tab:• hello.py
+editor-save:go
+expect-dirty:no
+expect-file:@DIR@/hello.py=# from the editor
+expect-file:@DIR@/hello.py=print("hello")
+# Real keys reach the editor too.
+type:x = 1
+wait:0.5
+expect-editor:x = 1
+expect-dirty:yes
+editor-save:go
+expect-file:@DIR@/hello.py=x = 1
+# Changed on disk with nothing unsaved here: the editor takes it.
+shell:printf 'print("changed elsewhere")\n' > @DIR@/hello.py
+wait:1.0
+expect-editor:changed elsewhere
+expect-dirty:no
+# A file at a line.
+open:@DIR@/lines.txt:3
+editor-wait:go
+expect-editor:third
+# Windows line ends stay as they were.
+open:@DIR@/crlf.txt
+editor-wait:go
+editor-insert:new-
+expect-dirty:yes
+editor-save:go
+expect-dirty:no
+expect-file:@DIR@/crlf.txt=new-one\r\ntwo\r\n
+# Markdown: rendered first; edit opens its source in the editor.
+edit:@DIR@/notes.md
+editor-wait:go
+expect-editor:# Notes
+shot:editor.png
+# Closing with unsaved changes asks: Cancel keeps it, Save writes it first.
+open:@DIR@/hello.py
+editor-wait:go
+editor-insert:unsaved line\n
+expect-tab-count:5
+key:cmd+w
+wait:0.5
+expect-sheet:yes
+sheet:Cancel
+expect-sheet:no
+expect-tab-count:5
+key:cmd+w
+wait:0.5
+sheet:Save
+wait:0.6
+expect-file:@DIR@/hello.py=unsaved line
+expect-tab-count:4
+# As EDITOR (`libertty +open --wait`): a commit message, which has no
+# extension, opens in the editor; closing it tells whoever waits.
+wait-edit:T1:@DIR@/COMMIT_EDITMSG
+editor-wait:go
+editor-insert:Fix the thing\n
+key:cmd+w
+wait:0.5
+sheet:Save
+expect-closed:T1
+expect-file:@DIR@/COMMIT_EDITMSG=Fix the thing
+# Changed on disk while there are unsaved changes here: the editor asks;
+# Keep Mine and save writes what's here.
+open:@DIR@/lines.txt
+editor-wait:go
+editor-insert:mine 
+shell:printf 'theirs\n' > @DIR@/lines.txt
+wait:1.0
+expect-page:The file changed on disk.
+page-click:Keep Mine
+editor-save:go
+expect-file:@DIR@/lines.txt=mine 
+# Deleted, then back (a branch switch): the text stays and counts as unsaved.
+shell:rm @DIR@/lines.txt
+wait:1.0
+expect-page:isn't on disk
+expect-dirty:yes
+editor-save:go
+expect-file:@DIR@/lines.txt=mine 
+# Not UTF-8: read-only, and a save says why rather than mangling it.
+open:@DIR@/latin1.txt
+editor-wait:go
+editor-insert:x
+key:cmd+s
+wait:0.6
+expect-sheet:yes
+sheet:OK
+expect-shell:od -An -tx1 @DIR@/latin1.txt | tr -d ' \n' ==> 636166e90a
+# UTF-16 with its mark stays UTF-16 with its mark.
+open:@DIR@/utf16.txt
+editor-wait:go
+expect-editor:hi
+editor-insert:yo 
+editor-save:go
+expect-shell:od -An -tx1 @DIR@/utf16.txt | tr -d ' \n' ==> fffe79006f0068006900
+# A shell exiting would close the window with unsaved text in it: it asks.
+open:@DIR@/notes.md
+editor-insert:more notes
+tab:1
+type:exit
+key:enter
+wait:1.0
+expect-sheet:yes
+sheet:Cancel
+expect-sheet:no

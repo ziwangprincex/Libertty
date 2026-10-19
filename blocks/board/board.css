@@ -1,0 +1,38 @@
+#app { display: flex; flex-direction: column; height: 100%; }
+.columns { flex: 1; display: flex; gap: 12px; padding: 14px; overflow: auto; align-items: flex-start; }
+.column { flex: none; width: 272px; max-height: 100%; display: flex; flex-direction: column; border-radius: 12px; background: var(--panel);
+  box-shadow: 0 0 0 1px var(--l1); }
+.column.drop { box-shadow: 0 0 0 1px var(--l3); }
+.column-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 6px 12px; font-weight: 600; }
+.column-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+.column-head .count { color: var(--t4); font-family: var(--mono); font-size: 11px; font-weight: 400; }
+.cards { flex: 1; overflow: auto; padding: 2px 8px 6px; display: flex; flex-direction: column; gap: 6px; min-height: 12px; }
+.card { position: relative; padding: 8px 10px; border-radius: 8px; background: var(--bg); box-shadow: 0 0 0 1px var(--l2); cursor: grab; outline: none; }
+.card:hover { box-shadow: 0 0 0 1px var(--l3); }
+.card:focus-visible, .card.on { box-shadow: 0 0 0 1px var(--t3); }
+.card.on::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: var(--accent); }
+.card.dragging { opacity: 0.4; }
+.card .title { display: flex; gap: 8px; align-items: flex-start; }
+.card .title .text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.card.done .title .text { color: var(--t3); text-decoration: line-through; }
+.card .check { flex: none; margin-top: 2px; }
+.card .notes { margin-top: 4px; color: var(--t3); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.card .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.card .tag { font-size: 11px; color: var(--t2); padding: 0 6px; border-radius: 4px; box-shadow: 0 0 0 1px var(--l2); }
+.card .card-actions { position: absolute; top: 4px; right: 4px; display: none; }
+.card:hover .card-actions { display: flex; }
+.drop-line { height: 2px; border-radius: 1px; background: var(--t3); margin: -4px 0; }
+.add { margin: 0 8px 8px; justify-content: flex-start; color: var(--t3); }
+.editor { display: flex; flex-direction: column; gap: 6px; }
+.editor textarea { width: 100%; resize: vertical; min-height: 56px; padding: 6px 8px; border: 0; border-radius: 6px; background: var(--l1);
+  color: var(--t1); font: inherit; outline: none; box-sizing: border-box; }
+.editor .row-buttons { display: flex; gap: 6px; justify-content: flex-end; }
+.new-column { flex: none; width: 200px; }
+.hint { color: var(--t4); font-size: 11.5px; padding: 0 14px 10px; }
+/* A column's own buttons show when it's pointed at (or focused into). */
+.column-head .icon { opacity: 0; }
+.column:hover .column-head .icon, .column:focus-within .column-head .icon { opacity: 1; }
+.conflict { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--l2); }
+.conflict span { flex: 1; color: var(--t2); font-size: 12px; }
+/* Lines between cards that aren't cards: kept, shown as they are. */
+.cards .other { color: var(--t3); font-size: 12px; padding: 2px 4px; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1,0 +1,27 @@
+# The UI regression script (`Libertty --ui-probe`): real AppKit key events
+# at the real window, off screen and never focused.
+#
+# Typed text must reach the program exactly as typed — upper case, spaces
+# and the shifted symbols (@ # %) that Claude Code used to receive as bare
+# digits through the kitty keyboard protocol.
+type:echo UI-PROBE-OK
+key:enter
+wait:1.0
+expect:UI-PROBE-OK
+type:printf "at=@ pct=%% hash=# tilde=~ quote=\" done\n"
+key:enter
+wait:1.0
+expect:at=@ pct=% hash=# tilde=~ quote=" done
+expect-not:never-typed-this
+# ⌃C must interrupt the program, not type a letter: the command after it
+# only runs if the shell came back to its prompt.
+type:sleep 20
+key:enter
+wait:0.6
+key:ctrl+c
+wait:0.5
+type:echo AFTER-CTRL-C
+key:enter
+wait:1.0
+expect:AFTER-CTRL-C
+shot:ui-probe.png

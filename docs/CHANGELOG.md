@@ -1,0 +1,59 @@
+# Changelog
+
+## 0.2.0
+
+- Workspace blocks (after Tern), all beside the terminal or in tabs, all Libertty's own code or MIT/OFL parts: the **editor** (CodeMirror 6; encodings kept, a changed file never overwritten unseen, `+open --wait` for git's commit message), the **Git client** (stage by file or hunk, commit, history with its graph, branches, fetch/pull/push, stashes; conflicts shown with "use ours / theirs"), the **browser** (an address bar or a search, downloads and the history of a page; `+browser` for scripts), the **task manager** (every process, marked by the terminal it runs in, Quit — only your own, never liberttyd), the **canvas** (Excalidraw: `.excalidraw` files, saved as drawn, exported as PNG or SVG), the **profiler** (`sample` on a terminal's process, shown in speedscope), the **board** (a kanban kept as Markdown in BOARD.md), the **SQLite browser** (read-only until allowed, paging, sorting, queries, cell edits), **plugins** (JavaScript in the config folder's `plugins/`, off until turned on, each in its own context and thread), **notebooks** (`.ipynb` cells in your own `jupyter server`, outputs saved back, the kernel stopped when its tab closes) and **screen** (a display or a window through ScreenCaptureKit).
+- A file a block edits opens in it: `.excalidraw`, `BOARD.md` (and `*.board.md`), `.ipynb`, a SQLite database, a profile; ⌘S and closing ask the page for what it hasn't written, and Edit as Text / Edit as JSON opens the file in the editor instead.
+- Park a pane (its program keeps running, off the layout, back with Unpark), Float Pane (a pane as a card in the window's corner, draggable, expanded or put away), and named workspaces per window (⌘⇧1…9, the palette, the sidebar).
+- The palette's commands act on the window they were opened over, even with a document in front.
+- `jupyter =` and `new_canvas` / `open_profiler` / `open_board` / `open_plugins` / `open_screen` keybinds and menu items.
+
+- The window follows Tern's design: one surface (the toolbar, sidebar and gaps share the frame's color, panes are rounded cards with a 6 pt gap, the focused split has an accent line along its top), Geist for the interface text, a slimmer toolbar, a tab filter at the sidebar's foot, and a command palette with scope chips (All / Panes / Commands / Sessions / Themes — Tab cycles them), sections, icon tiles, keycaps, a footer of hints, and the window dimmed behind it.
+- `pane-headers = never | split | always`: a header on each pane with its program (or folder), where it is, its grid size, and — on the focused pane — buttons to float, zoom and close it. A click focuses the pane, a double-click zooms it.
+- `tab-bar = sidebar | top`: with `top` the tabs run along the window's top (a folder shows by its last part), the selected one on a faint card; click, double-click to rename in place, drag to reorder, middle-click or × to close, right-click for the menu. The sidebar then keeps the files.
+- `libertty +wait ID --until exit|prompt|idle=MS --timeout S` (124 on timeout), `+capture --ansi|--html`, and `+events [--filter KIND,…]` — a stream of session-started, prompt, command-started, command-finished, directory and session-ended events as JSON lines (after Tern).
+- Fixed: the full test run replaced the build/Libertty.app you were using; it builds its own copy now, and `scripts/bundle.sh` swaps the app in atomically.
+- Tabs name themselves by what runs in them and where — "Vim  …/c/proj", "SSH  devbox" (GoRex). A title a shell sets at its prompt ("zsh", "~/src", "me@mac: ~/src") gives way to the folder; a program's own title ("main.rs (~/src) - NVIM") is kept.
+- Go to Pane (⌘P): type a program, a folder or a tab's name to jump to any pane of any window — the Quick Terminal's, document tabs and documents beside terminals included (GoRex). The palette says "No matches" instead of shrinking away, and its commands act on the window it was opened over.
+- Rename a tab in place: double-click it in the sidebar, or ⇧⌘R. Return keeps the name, Esc goes back, an empty name returns to the automatic one; other tabs keep updating while you type, and a tab opening or the sidebar folding away keeps what you typed (GoRex; Finder's way). The tab's context menu adds Reset Name, Duplicate, Move Up/Down and Close Other Tabs.
+- Split panes show a name tag on hover: what runs there, and where. Clicks on it reach the pane.
+- Restart Shell in Pane (File menu, palette): a fresh shell in the same place and folder. If it can't start, the old one stays.
+- Split dividers show a grip under the pointer.
+- liberttyd keeps each Mac's window layout too (GoRex: the server holds the layout), so windows come back even if the layout file is lost. Connect to Host brings back the windows that host's sessions were last shown in — from this Mac or another — and any session there that no window shows, as a tab; a session another window shows isn't opened twice, and a Mac's own windows never go to another (not with `window-save-state = never`). Each pane's text size comes back with it.
+- Fixed: ⌘T opened the new tab in your home folder instead of the folder of the pane you were in.
+- Fixed: tabs of a host's windows were all named "Libertty": the folder a host's shell reports is that host's, and it was checked against this Mac's disk. Host panes now know their folder — for their names, for new tabs and splits there, and for Restart.
+- Fixed: a host session closed while its link was still being made could leave its shell running on the host.
+- Rebuilding the app (`scripts/bundle.sh`) swaps the new bundle in whole, in one step: a Libertty running from it never finds its fonts, terminfo or shell integration half there. The test suite builds a bundle of its own and leaves `build/Libertty.app` alone.
+- A pane whose link to this Mac's liberttyd dropped says so while it reconnects.
+- A window that stops reading — a hung app, a link to a host that stalled — no longer holds anything up. liberttyd used to write each window's output in turn and wait on one that didn't read, for up to 10 s per write, stalling the program, every other window and typing; now each window has its own queue and writer (GoRex's), and one that falls more than 8 MB behind skips ahead: liberttyd sends it the session as it is then instead of the backlog (tmux redraws a client that fell behind the same way). Meanwhile liberttyd answers the program's terminal queries for it, so nothing waits on a window that can't see them (`--slow-client-probe`).
+- Fixed: the screen liberttyd repaints after a resize settles (for full-screen programs) was its binary snapshot sent as output, so the window printed it as text; it's VT now, which every window paints.
+- Closing a pane — or a pane's program ending — moves the focus only if that pane had it, and then back to the pane you were in before, not to a neighbor (GoRex).
+- A tab you're not on shows a small accent dot while its program prints, and a ring when something finished or rang the bell there since you last looked; focusing the pane clears it (GoRex's marks, without their colors). The pane's own activity dot no longer lights for the shell echoing what you type.
+- Equalize Splits gives three panes in a row a third each, not 50/25/25; closing a pane behind a zoomed one keeps the zoom.
+- The only tab has no × (it would close the window); the ⌘9 hint marks the last tab, which is what ⌘9 selects.
+- With Reduce Motion on, the sidebar and inspector appear and go without sliding.
+- The Inspector has a Git panel: the branch, staged and unstaged files with stage / unstage / discard, a commit box, the recent commits, and a click on any file for its diff beside the terminal (a new file's against nothing). It works from any folder of the repository, says what git said when it refuses (a commit message stays for another try), and refreshes at each prompt (after ELYTerminal, through the git command line, without taking git's index lock).
+- Each tab shows what its panes are running — a glyph per pane, the focused one in front (Rex's stacked tiles). Behind a runtime or a wrapper the program is found by what it started or runs, so Claude Code shows as itself — tclaude, npx and `node …/claude-code/cli.js` alike — not as Node; a pane sitting at its prompt shows nothing.
+- A pane whose program is printing shows a dot in its corner, which fades once the program has been quiet for a moment (GoRex's).
+- The toolbar carries this Mac's name; clicking it shows the model, chip, memory, system and which liberttyd the window talks to.
+- Fixed: the Inspector never listed a pane's processes or the ports they listen on (unless the shell had four children or more): macOS's child-process call counts pids, and they were read as bytes.
+- Fixed: the file tree lost its Git colors on a path through a symlink (/tmp, a project folder linked from elsewhere) and in any folder below the repository's root.
+- Fixed: resizing a window whose session runs a full-screen program (vim, lazygit, htop) through liberttyd could leave its view misaligned: the program's in-flight output, drawn for the old size, is parsed by the window at the new one and the copies drift, and such programs repaint only what they think changed. Once a resize settles, liberttyd now repaints every window from its own copy (GoRex's fix; shells reflow alike and are left alone).
+- The sidebar's file tree colors changed files by Git's marks (modified orange, new green, deleted red) and refreshes at each prompt, so a command that changed files anywhere shows up right away (after ELYTerminal).
+- Fixed: keys typed with only Shift (@, #, %, capitals…) reached kitty-protocol programs (Claude Code among them) as CSI u escape codes carrying the unshifted key, so tclaude typed "2" for Shift+2. Per the kitty keyboard protocol, shift+key stays plain text outside report-all mode; that's what Libertty sends now (`--kitty-key-probe`).
+- Sessions live in liberttyd: quitting, a crash or an update leaves programs running, and the next launch restores windows, tabs, splits, screens and scrollback. `libertty +list-sessions / +new-session / +send / +capture / +attach / +wait / +focus / +kill-session`.
+- ⌘-click links and `file:line:col` paths; Markdown and source files open in a tab or beside the terminal.
+- Command palette (⌘⇧P), tab overview (⌘⇧\), Quick Terminal, notifications and an inbox, status badges and halos.
+- kitty graphics, OSC 52 clipboard, programming ligatures, VoiceOver, selection autoscroll / extend / rectangle.
+- TERM=xterm-ghostty with its terminfo; ssh falls back to xterm-256color.
+- Scrollback now keeps what `scrollback-limit` says (10 MB by default, compressed when idle).
+- Check for Updates, with signed updates.
+- Undo Close (⌘Z within `undo-timeout`), an overlay scrollbar, cursor blink, `bell-features`, broadcast input, rich-text copy, Export Text As…, Copy Output of Last Command.
+- Remote hosts: File ▸ Connect to Host… (`libertty +connect`), sessions on another machine through your ssh, surviving dropped links and relaunches; `--host` for the session commands.
+- Web Access: this Mac's panes in a browser or on a phone, behind a secret link (`web-access`).
+- Smooth trackpad scrolling, Picture in Picture, kitty Unicode placeholders and images kept across relaunch, Powerline/branch/braille drawn from the grid.
+- Panes for images, PDFs, web pages and diffs (`libertty +diff`).
+
+## 0.1.0
+
+- First build: libghostty-vt, Metal renderer, splits, tabs in a sidebar, Ghostty-style config and keybinds, Markdown documents.

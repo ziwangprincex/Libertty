@@ -1,0 +1,36 @@
+# The Tasks block: a process under a terminal is marked with it, its
+# details read, and Quit ends it (only this probe's own `sleep 307.25`).
+size:1280x800
+wait:0.5
+type:sleep 307.25
+key:enter
+wait:0.6
+key:cmd+shift+p
+wait:0.4
+type:tasks
+wait:0.3
+expect-palette:Tasks
+key:enter
+wait:1.0
+page-wait:go
+expect-tab:Tasks
+wait:1.0
+page-click:In Terminals
+wait:0.3
+page-type:.search=sleep
+wait:0.3
+expect-page:sleep
+expect-page:▸
+page-click:css:tbody tr[data-name="sleep"]
+wait:0.8
+expect-page:Command
+expect-page:sleep 307.25
+expect-page:Show Terminal
+shot:tasks.png
+page-click:Quit
+wait:0.4
+expect-page:Quit sleep?
+page-click:css:.dialog .button.primary
+wait:1.0
+expect-shell:ps -axo command= | grep -qx 'sleep 307.25' && echo alive || echo gone ==> gone
+expect-page:Asked sleep to quit

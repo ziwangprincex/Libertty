@@ -1,0 +1,88 @@
+diff --git a/benchmarks/cursor_motion/benchmark b/benchmarks/cursor_motion/benchmark
+index 0015e2e..a9dfdee 100755
+--- a/benchmarks/cursor_motion/benchmark
++++ b/benchmarks/cursor_motion/benchmark
+@@ -2,7 +2,7 @@
+ 
+ # Move cursor around for every single write.
+ 
+-tty="/dev/$(ps -o tty= -p $$)"
++tty=/dev/tty  # macOS: `ps -o tty=` pads with a space
+ columns=$(tput cols < $tty)
+ lines=$(tput lines < $tty)
+ 
+diff --git a/benchmarks/dense_cells/benchmark b/benchmarks/dense_cells/benchmark
+index fca319e..cc18643 100755
+--- a/benchmarks/dense_cells/benchmark
++++ b/benchmarks/dense_cells/benchmark
+@@ -2,7 +2,7 @@
+ 
+ # Update the entire grid as often as possible with a huge payload in every cell.
+ 
+-tty="/dev/$(ps -o tty= -p $$)"
++tty=/dev/tty  # macOS: `ps -o tty=` pads with a space
+ columns=$(tput cols < $tty)
+ lines=$(tput lines < $tty)
+ 
+diff --git a/benchmarks/light_cells/benchmark b/benchmarks/light_cells/benchmark
+index 7304ddc..8ae615c 100755
+--- a/benchmarks/light_cells/benchmark
++++ b/benchmarks/light_cells/benchmark
+@@ -2,7 +2,7 @@
+ 
+ # Update the entire grid as often as possible without scrolling.
+ 
+-tty="/dev/$(ps -o tty= -p $$)"
++tty=/dev/tty  # macOS: `ps -o tty=` pads with a space
+ columns=$(tput cols < $tty)
+ lines=$(tput lines < $tty)
+ 
+diff --git a/benchmarks/scrolling_bottom_region/setup b/benchmarks/scrolling_bottom_region/setup
+index 13d6e0d..7b1af0c 100755
+--- a/benchmarks/scrolling_bottom_region/setup
++++ b/benchmarks/scrolling_bottom_region/setup
+@@ -1,6 +1,6 @@
+ #!/bin/sh
+ 
+-tty="/dev/$(ps -o tty= -p $$)"
++tty=/dev/tty  # macOS: `ps -o tty=` pads with a space
+ lines=$(tput lines < $tty)
+ 
+ printf "\e[?1049h\e[1;$((lines - 1))r"
+diff --git a/benchmarks/scrolling_bottom_small_region/setup b/benchmarks/scrolling_bottom_small_region/setup
+index 5f8c7b9..e9f0f32 100755
+--- a/benchmarks/scrolling_bottom_small_region/setup
++++ b/benchmarks/scrolling_bottom_small_region/setup
+@@ -1,6 +1,6 @@
+ #!/bin/sh
+ 
+-tty="/dev/$(ps -o tty= -p $$)"
++tty=/dev/tty  # macOS: `ps -o tty=` pads with a space
+ lines=$(tput lines < $tty)
+ 
+ printf "\e[?1049h\e[1;$((lines / 2))r"
+diff --git a/benchmarks/scrolling_fullscreen/benchmark b/benchmarks/scrolling_fullscreen/benchmark
+index c514631..e0a9144 100755
+--- a/benchmarks/scrolling_fullscreen/benchmark
++++ b/benchmarks/scrolling_fullscreen/benchmark
+@@ -2,7 +2,7 @@
+ 
+ # Scroll all lines up with every line completely filled.
+ 
+-tty="/dev/$(ps -o tty= -p $$)"
++tty=/dev/tty  # macOS: `ps -o tty=` pads with a space
+ columns=$(tput cols < $tty)
+ 
+ for char in A B C D E F G H I J K L M N O P Q R S T U V W X Y Z; do
+diff --git a/benchmarks/scrolling_top_small_region/setup b/benchmarks/scrolling_top_small_region/setup
+index 1c62dcf..8b50967 100755
+--- a/benchmarks/scrolling_top_small_region/setup
++++ b/benchmarks/scrolling_top_small_region/setup
+@@ -1,6 +1,6 @@
+ #!/bin/sh
+ 
+-tty="/dev/$(ps -o tty= -p $$)"
++tty=/dev/tty  # macOS: `ps -o tty=` pads with a space
+ lines=$(tput lines < $tty)
+ 
+ printf "\e[?1049h\e[$((lines / 2));${lines}r"

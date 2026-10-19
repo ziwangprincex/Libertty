@@ -1,0 +1,55 @@
+Libertty includes the following third-party software.
+
+== libghostty-vt (Ghostty) ==
+https://github.com/ghostty-org/ghostty
+
+MIT License
+
+Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+== JetBrains Mono, patched with Nerd Fonts symbols (bundled font) ==
+SIL Open Font License 1.1 (see Fonts/OFL.txt)
+
+== Geist (bundled interface font), Copyright 2024 The Geist Project Authors ==
+https://github.com/vercel/geist-font, v1.8.1. SIL Open Font License 1.1 (see Fonts/Geist-OFL.txt)
+
+Ghostty's terminfo (xterm-ghostty, from src/terminfo/ghostty.zig) is included, compiled, under the MIT
+license above.
+
+Ghostty's theme files, when Ghostty.app is installed, are read from its bundle and not redistributed.
+
+== CodeMirror 6 (the editor), Copyright (C) 2018-2021 Marijn Haverbeke and others ==
+https://codemirror.net — @codemirror/* 6.x, @lezer/*, style-mod, w3c-keyname, crelt, and
+@replit/codemirror-vim (Copyright (c) 2022 Replit). MIT License; every bundled package's own
+license is in editor/LICENSES.txt.
+
+== Excalidraw (the canvas block), Copyright (c) 2020 Excalidraw ==
+https://github.com/excalidraw/excalidraw — @excalidraw/excalidraw 0.18 with React and
+ReactDOM (Copyright (c) Meta Platforms, Inc. and affiliates). MIT License. Its fonts
+(Excalifont, Virgil, Xiaolai, Nunito, Lilita One, Cascadia Code, Liberation Sans,
+Assistant) are under the SIL Open Font License 1.1, Comic Shanns under MIT. Every
+bundled package's license is in blocks/canvas/lib/LICENSES.txt.
+
+== speedscope (the profile block), Copyright (c) 2018 Jamie Wong ==
+https://github.com/jlfwong/speedscope — 1.25.0, its release build. MIT License. Its font,
+Source Code Pro (Adobe), is under the SIL Open Font License 1.1; both are in
+blocks/profile/lib/LICENSES.txt.
+
