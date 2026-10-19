@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon/png/libertty-256.png" width="128" alt="Libertty logo"></p>
+
 # Libertty
 
 English | [简体中文](README.zh-CN.md)
