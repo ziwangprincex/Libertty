@@ -1,6 +1,9 @@
 [submodule "vendor/ghostty"]
 	path = vendor/ghostty
 	url = https://github.com/ghostty-org/ghostty.git
+# The checkout carries bench/vtebench.patch (applied by hand, see
+# bench/run-vtebench.sh), so its working tree is always modified.
 [submodule "bench/vtebench"]
 	path = bench/vtebench
 	url = https://github.com/alacritty/vtebench.git
+	ignore = dirty
