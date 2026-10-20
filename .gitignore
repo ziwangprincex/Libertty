@@ -7,13 +7,9 @@
 # Local tool settings
 /.claude/settings.local.json
 
-# Third-party binaries and material derived from them (decompiled code,
-# extracted shaders, analysis databases); kept locally, not redistributed.
-/research/re/bin/
-/research/re/ghidra/
-/research/re/out/
-/research/re/logs/
-/research/evidence/
+# Research notes, including analysis of third-party binaries (decompiled
+# code, extracted shaders, analysis databases); kept locally, not published.
+/research/
 
 # vtebench run scratch
 /bench/results/*.job.sh

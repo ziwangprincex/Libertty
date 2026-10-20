@@ -3,7 +3,7 @@ import QuartzCore
 
 /// Design tokens shared by every animated or styled surface, so motion and
 /// shape stay consistent and Reduce Motion turns everything off in one place.
-/// Values come from research/gui-study.md (Tern's CSS tokens, Otty's settings UI).
+/// Values follow Tern's CSS tokens and Otty's settings UI.
 enum Motion {
     /// Color and opacity changes (Tern `--ease`).
     static let ease = CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.2, 1)

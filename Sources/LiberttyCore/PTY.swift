@@ -61,7 +61,7 @@ extension TerminalBackend {
 /// A child process on a pseudo-terminal.
 ///
 /// Output flows reader thread → `ByteQueue` → `queue`, so reading the pty and
-/// parsing what it produced run in parallel (Tern's design, see research/re/tern.md §1).
+/// parsing what it produced run in parallel (Tern's design).
 /// `onOutput` and `onExit` are called on `queue` once `startReading()` is
 /// called; writes are serialized on a private queue so a large paste never
 /// blocks the caller.
@@ -311,7 +311,7 @@ final class ByteQueue {
     }
 }
 
-/// The reader thread's loop (Tern's, from research/re/tern.md §1):
+/// The reader thread's loop (Tern's):
 /// - macOS hands out ~1 KiB per read(); sleeping in a blocking read for each
 ///   one caps throughput near 190 MB/s. Spinning on EAGAIN a few dozen times
 ///   before poll() keeps up with the writer (~390 MB/s measured).

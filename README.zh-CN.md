@@ -164,7 +164,6 @@ Libertty --session-bench FILE [--mb N] [--persist]
 | `tests/` | 测试套件及测试数据 |
 | `bench/` | 吞吐量与延迟基准；旧的测试数据在 `bench/results-archive/` |
 | `docs/` | `CHANGELOG.md`、`roadmap.md` |
-| `research/` | 设计调研与分析笔记，不参与构建 |
 | `tools/` | `winshot`（按进程 ID 截取单个窗口） |
 
 ## 第三方组件

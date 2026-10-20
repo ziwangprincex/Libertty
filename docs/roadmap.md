@@ -108,7 +108,7 @@
 | Secure Keyboard Entry | ✅ |
 | Quick Terminal（下拉式终端） | ✅ 见 §1 |
 | 基准测试：vtebench 吞吐、输入延迟 | ✅ 吞吐：上一轮 vtebench 12 项都第一，但那轮 Libertty 实际只留了约 500 行 scrollback、网格也比 Tern 小，成绩偏高，修好后还没重跑（`bench/RESULTS.md`）；输入延迟用外部测法（`bench/keylat.swift`）和 kitty、Ghostty、Terminal.app 比过一轮：出厂默认下 Libertty 中位数最低（20 ms，kitty 25、Ghostty 28–34、Terminal 40），但领先不到一帧，设置对齐的比较和更多轮次还没做 |
-| **PTY 读线程改造**（照搬 Tern 的做法，见 `research/re/tern.md` §1）：专用线程 + 非阻塞自旋读；数据不足 1 KiB 立刻交出，否则攒到 64 KiB 或 3 ms；读和解析分开，中间有 1 MiB 背压；从端开启 IUTF8 | ✅ 无窗口实测：200 MB 端到端从 112–128 MB/s 提升到 **303–345 MB/s**，快照渲染回归测试通过。大段粘贴（非阻塞写入遇到 EAGAIN 的分支）已验证：2 MB 粘贴进 raw 模式的程序一个字节不少，直连和经 liberttyd 都是约 0.25 s（`--paste-probe`，在 `tests/run.sh` 里）。⬜ 共享 poller（安静的 pane 让出读线程）还没做 |
+| **PTY 读线程改造**（照搬 Tern 的做法）：专用线程 + 非阻塞自旋读；数据不足 1 KiB 立刻交出，否则攒到 64 KiB 或 3 ms；读和解析分开，中间有 1 MiB 背压；从端开启 IUTF8 | ✅ 无窗口实测：200 MB 端到端从 112–128 MB/s 提升到 **303–345 MB/s**，快照渲染回归测试通过。大段粘贴（非阻塞写入遇到 EAGAIN 的分支）已验证：2 MB 粘贴进 raw 模式的程序一个字节不少，直连和经 liberttyd 都是约 0.25 s（`--paste-probe`，在 `tests/run.sh` 里）。⬜ 共享 poller（安静的 pane 让出读线程）还没做 |
 | 拖分隔条：网格和 drawable 尺寸都没变时不重画；drawable 按 256px 分档。120Hz 下 2 个、4 个 pane 拖分隔条都是 240 帧丢 0 帧（原来分别丢 14、34 帧） | ✅ |
 | NSAccessibility 文本接口，让 VoiceOver 能逐行朗读（Otty 已经做了） | ✅ 终端是只读文本区：按行 / 词 / 字读，光标即插入点，新输出会通知 VoiceOver（每秒最多 4 次） |
 | pane 内容通用化：不只放终端，还能放文本、图片、网页、diff（Otty 和 Tern 都有） | ✅ 文档（Markdown 渲染、源码）既能开成标签，也能开成终端旁边的 pane：侧栏 ⌥ 单击或右键 Open Beside Terminal、⌥⌘ 单击路径、`libertty +open --split FILE[:LINE]`；分屏导航、缩放、⌘W、布局恢复都支持。图片（棋盘格透明底，文件变了自动刷新）、PDF、网页（开发服务器放在它的终端旁边：⌥⌘ 单击网址、Inspector 里点端口、`libertty +open --split http://localhost:3000`；页面标题当标签名，外链交给浏览器）、diff（`libertty +diff`、Inspector ▸ Show Changes：按文件分块、新旧行号、加删着色、代码高亮，再次打开就刷新；.diff/.patch 文件也这样显示）也都能放 |

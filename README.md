@@ -213,7 +213,6 @@ Benchmarks against other terminals are in `bench/` (`bench/RESULTS.md`).
 | `tests/` | Test suite and fixtures |
 | `bench/` | Throughput and latency benchmarks; older runs in `bench/results-archive/` |
 | `docs/` | `CHANGELOG.md`, `roadmap.md` |
-| `research/` | Design research and analysis notes; not used by the build |
 | `tools/` | `winshot` (captures one window by process ID) |
 
 ## Third-party components
