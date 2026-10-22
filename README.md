@@ -16,10 +16,28 @@ an editor, a Git client, a browser, a task manager and others.
 - Version 0.2.0. macOS 14 or later; the build script produces an Apple silicon (arm64) binary.
 - Not notarized by Apple. Updates are verified with an Ed25519 signature instead (see
   [Updates and releases](#updates-and-releases)).
-- Not yet published (no GitHub release or Homebrew cask).
+- Published on [GitHub Releases](https://github.com/ziwangprincex/Libertty/releases)
+  (DMG and zip). No Homebrew cask yet.
 - Known gaps: screen sharing works only on the local Mac (not to a remote host); a
   plugin stuck in an endless loop occupies its own thread until Libertty restarts;
   notebooks do not render interactive widgets (ipywidgets).
+
+## Install
+
+1. Download `Libertty-VERSION.dmg` from the
+   [latest release](https://github.com/ziwangprincex/Libertty/releases/latest), open it
+   and drag Libertty to Applications.
+2. The app is not notarized, so macOS blocks the first launch. Open it once, then choose
+   System Settings ▸ Privacy & Security ▸ Open Anyway; or run
+   `xattr -dr com.apple.quarantine /Applications/Libertty.app` before opening it.
+3. Optional: the `libertty` command is on `PATH` in Libertty's shells. To use it
+   elsewhere, link it:
+   `ln -s /Applications/Libertty.app/Contents/Resources/bin/libertty ~/.local/bin/libertty`.
+
+Xcode and the Command Line Tools are not required. The Git client, the Git panel and
+the file tree's Git marks need a `git`: the one from the Command Line Tools
+(`xcode-select --install`) or another installation such as Homebrew's. Without one,
+they report that git isn't installed and the rest of Libertty works as usual.
 
 ## Features
 
@@ -179,6 +197,7 @@ build/Libertty.app/Contents/MacOS/Libertty --snapshot out.png --cols 90 --rows 1
 Libertty --latency-trace [--count N]             # key-to-screen latency
 Libertty --resize-trace [--divider] [--splits N] # main-thread time per resize step
 Libertty --session-bench FILE [--mb N] [--persist]
+Libertty --git-probe                             # which git Libertty runs in this folder
 ```
 
 Benchmarks against other terminals are in `bench/` (`bench/RESULTS.md`).
@@ -192,8 +211,8 @@ Benchmarks against other terminals are in `bench/` (`bench/RESULTS.md`).
 - `scripts/release.sh VERSION` stages the zip, DMG, `appcast.json` and Homebrew cask in
   `build/release/VERSION` from the matching section of `docs/CHANGELOG.md`;
   `--publish` uploads them to the repository and tap in `scripts/release.conf`. The
-  signing key is read from `~/.config/libertty-release/update.key` and is not part of
-  the repository.
+  signing key is read from `~/.config/libertty-release/update.key` (or
+  `$LIBERTTY_UPDATE_KEY`) and is not part of the repository.
 
 ## Project layout
 
