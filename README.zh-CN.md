@@ -120,6 +120,7 @@ libertty +set theme="Tokyo Night" font-size=14
 libertty +get theme
 libertty +show-config --changes        # 另有 --default、--docs
 libertty +validate-config
+libertty +import-ghostty [--dry-run]    # 导入 Ghostty 的设置：Libertty 认识、而自己还没设的那些
 libertty +list-themes ; libertty +list-fonts ; libertty +list-keybinds ; libertty +list-actions
 ```
 

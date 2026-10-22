@@ -33,6 +33,7 @@ enum CLI {
         case "+list-actions": status = listActions()
         case "+validate-config": status = validate(rest)
         case "+edit-config": status = editConfig()
+        case "+import-ghostty": status = GhosttyImport.run(rest)
         case "+action": status = action(rest)
         case "+new-window", "+new-tab": status = newWindow(rest, tab: command == "+new-tab")
         case "+open": status = openFiles(rest)
@@ -96,6 +97,9 @@ enum CLI {
                 [--default] [--docs] [--changes]
           libertty +validate-config         check the file; exits 1 on problems
           libertty +edit-config             open the file in $EDITOR (or your text editor)
+          libertty +import-ghostty [--from FILE] [--dry-run] [--yes]
+                                         Ghostty's settings into this file: those Libertty knows and doesn't
+                                         set itself; says what it adds and asks first
           libertty +update [--check]        install the newest version (signature-checked); --check only reports
 
           libertty +list-themes [--path]    built-in themes, ~/.config/libertty/themes, and Ghostty's if installed

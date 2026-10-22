@@ -295,6 +295,7 @@ expect layout-store 'layout-store: all passed' $LIBERTTY --layout-store-probe
 # +wait --until prompt|idle, +capture --ansi|--html, +events (Tern's wait / capture / events).
 expect cli-wait 'cli-wait: all passed' zsh $ROOT/tests/cli-wait-test.sh $LIBERTTY
 expect send-key 'send-key: all passed' zsh $ROOT/tests/send-key-test.sh $LIBERTTY
+expect import-ghostty 'import-ghostty: all passed' zsh $ROOT/tests/import-ghostty-test.sh $LIBERTTY
 
 # Big paste: every byte arrives, through a full pty (EAGAIN) and through liberttyd
 expect paste-local 'read 2000000 ' $LIBERTTY --paste-probe

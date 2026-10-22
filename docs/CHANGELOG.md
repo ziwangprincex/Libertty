@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `libertty +import-ghostty [--from FILE] [--dry-run] [--yes]` brings Ghostty's settings over (after Rex's "Migrate from Ghostty"): its config files and what they include, the settings Libertty knows and doesn't set itself (Libertty's own stay), the first font-family. It lists what it adds, what it leaves out and why, asks first and keeps the old config.
 - `libertty +send-key ID KEY...` presses keys in a session — `ctrl+c`, `enter`, `escape`, `up`, `shift+tab`, `alt+f` — encoded by liberttyd for the program's modes (cursor keys, the kitty keyboard protocol), as typing them would (after Rex's `send-key`). `+send` still types text as-is.
 - A program reading a password (sudo, ssh, `read -s`: its terminal takes a line without echoing it) shows as waiting for you — the tab's mark, a notification while you're elsewhere, the Dock badge — as a program reporting it (OSC 7501) would (after Rex's "Waiting for a password"). liberttyd looks a moment after output or typing; `+events` reports `input-mode`.
 - A program that fails at once (non-zero within `abnormal-command-exit-runtime`, 250 ms by default, as in Ghostty) leaves its pane open with what it said and its exit status; a key closes it (after Rex). `wait-after-command = true` (Ghostty's) keeps every pane whose program ends; `libertty +split --keep-open` keeps one.

@@ -886,6 +886,28 @@ final class ConfigStore {
         edit { lines in Self.append("\(key) = \(value)", to: &lines) }
     }
 
+    /// Lines at the end of the file, a blank line before them (`+import-ghostty`).
+    func appendBlock(_ block: [String]) {
+        edit { lines in
+            while lines.last == "" { lines.removeLast() }
+            if !lines.isEmpty { lines.append("") }
+            lines += block
+            lines.append("")
+        }
+    }
+
+    /// The keys the file sets itself, and its lines of repeatable keys.
+    var fileEntries: (keys: Set<String>, lines: Set<String>) {
+        let lines = ((try? String(contentsOf: url, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        var keys = Set<String>(), repeated = Set<String>()
+        for line in lines {
+            guard let key = Self.key(of: line) else { continue }
+            keys.insert(key)
+            if Config.repeatable.contains(key) { repeated.insert("\(key) = \(Self.value(of: line))") }
+        }
+        return (keys, repeated)
+    }
+
     /// Remove lines of `key`; for repeatable keys, only those whose value
     /// matches `where` when given.
     func unset(_ key: String, where match: ((String) -> Bool)? = nil) {

@@ -184,6 +184,7 @@ libertty +set theme="Tokyo Night" font-size=14
 libertty +get theme
 libertty +show-config --changes        # --default, --docs
 libertty +validate-config
+libertty +import-ghostty [--dry-run]    # Ghostty's settings Libertty knows and doesn't set itself
 libertty +list-themes ; libertty +list-fonts ; libertty +list-keybinds ; libertty +list-actions
 ```
 
