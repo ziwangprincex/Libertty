@@ -23,20 +23,29 @@ enum Snapshot {
         var config = args.contains("--use-config") ? ConfigStore.shared.config : Config()
         // Test images don't change with the system's light/dark appearance.
         if !args.contains("--use-config") { config.theme = ThemeSpec(light: Theme.defaultName, dark: Theme.defaultName) }
-        // `--set KEY=VALUE`, as many as wanted: settings of the snapshot's own.
-        for (i, arg) in args.enumerated() where arg == "--set" && i + 1 < args.count {
-            let pair = args[i + 1].split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            if pair.count == 2, let problem = config.set(pair[0], pair[1]) {
-                FileHandle.standardError.write("snapshot: \(args[i + 1]): \(problem)\n".data(using: .utf8)!)
-                exit(2)
-            }
+        // Flags come before `--` and the command.
+        let flags = args.prefix(while: { $0 != "--" })
+        func refuse(_ message: String) -> Never {
+            FileHandle.standardError.write("snapshot: \(message)\n".data(using: .utf8)!)
+            exit(2)
         }
-        // `--pixels X,Y;X,Y`: print those pixels' colors (#rrggbb) after the screen text.
-        pixels = (args.firstIndex(of: "--pixels").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "")
-            .split(separator: ";").compactMap { point in
-                let n = point.split(separator: ",").compactMap { Int($0) }
-                return n.count == 2 ? (n[0], n[1]) : nil
-            }
+        // `--set KEY=VALUE`, as many as wanted: settings of the snapshot's own
+        // (`KEY=` goes back to the default).
+        for (i, arg) in flags.enumerated() where arg == "--set" {
+            guard i + 1 < flags.count else { refuse("--set needs KEY=VALUE") }
+            let pair = flags[i + 1].split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            guard pair.count == 2, !pair[0].isEmpty else { refuse("--set \(flags[i + 1]): expected KEY=VALUE") }
+            if let problem = config.set(pair[0], pair[1]) { refuse("\(flags[i + 1]): \(problem)") }
+        }
+        // `--pixels X,Y;X,Y`: print those pixels' colors (#rrggbb, premultiplied
+        // by the background's opacity) after the screen text.
+        let points = flags.firstIndex(of: "--pixels").flatMap { $0 + 1 < flags.count ? flags[$0 + 1] : nil } ?? ""
+        pixels = points.split(separator: ";").map { point in
+            let n = point.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            guard n.count == 2 else { refuse("--pixels \(points): expected X,Y;X,Y") }
+            return (n[0], n[1])
+        }
         let fontSize = CGFloat(value("--font-size", Int(config.fontSize)))
         let command = args.firstIndex(of: "--").map { args[($0 + 1)...].joined(separator: " ") } ?? "true"
         // `--shell`: the login shell with integration, instead of a command;

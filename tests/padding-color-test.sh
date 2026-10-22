@@ -13,7 +13,9 @@ bad() { echo "FAIL  $1"; (( fails++ )); }
 # in it, right of it, below the grid at the right, in the last row, below it at the left.
 POINTS='2,2;30,29;2,99;30,99;355,99;355,165;100,134;2,165'
 colors() {  # MODE COMMAND → the points' colors, space-separated
-  $L --snapshot $OUT/padding-$1-$3.png --cols 20 --rows 4 --set window-padding-color=$1 --pixels $POINTS -- "$2" \
+  # The font and padding the points were measured with.
+  $L --snapshot $OUT/padding-$1-$3.png --cols 20 --rows 4 --font-size 13 --set window-padding-x=10 \
+    --set window-padding-y=6 --set window-padding-color=$1 --pixels $POINTS -- "$2" \
     | awk '/^pixel/ { printf "%s ", $3 }'
 }
 plain='printf "\033[?25l\033[44m\033[2K\033[0m\nplain\n\033[41m    \033[0m\n\033[42m\033[2K\033[0m"; sleep 0.2'
@@ -38,4 +40,15 @@ c=(${(s: :)$(colors extend-always $mixed b)})
 alt='printf "\033[?1049h\033[?25l\033[H\033[44m    \033[0m"; sleep 0.2'
 c=(${(s: :)$(colors extend $alt c)})
 [[ $c[1] == $c[2] ]] && ok "extend: a full-screen program's top row" || bad "extend, alternate screen: $c"
+# A row in reverse video is the default background swapped: kept, as Ghostty does.
+rev='printf "\033[?25l\033[7m                    \033[0m"; sleep 0.2'
+c=(${(s: :)$(colors extend $rev d)})
+[[ $c[1] != $c[2] ]] && ok "extend: not above a row in reverse video" || bad "extend, reverse video: $c"
+# Half a row into the history (smooth scrolling): above, the row cut at the
+# top; below, the row peeking in at the bottom.
+stripes='i=1; while [ $i -le 30 ]; do printf "\033[4%dm\033[2K%02d\033[0m\n" $((i % 6 + 1)) $i; i=$((i+1)); done'
+c=(${(s: :)$($L --snapshot $OUT/padding-scrolled.png --cols 20 --rows 4 --font-size 13 --set window-padding-x=10 \
+  --set window-padding-y=6 --set window-padding-color=extend --scroll-up 10 --offset 50 --pixels '2,2;300,20;300,148;2,165' -- "$stripes" \
+  | awk '/^pixel/ { printf "%s ", $3 }')})
+[[ $c[1] == $c[2] && $c[3] == $c[4] && $c[1] != $c[4] ]] && ok "extend while scrolled part of a row" || bad "extend, scrolled: $c"
 (( fails == 0 )) && echo "padding-color: all passed"

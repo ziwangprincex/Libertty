@@ -55,6 +55,7 @@ final class TerminalRenderer {
     private final class FrameBuffers {
         var rects: MTLBuffer?
         var glyphs: MTLBuffer?
+        var bands: MTLBuffer?
     }
 
     let device: MTLDevice
@@ -74,6 +75,9 @@ final class TerminalRenderer {
     private let inFlight = DispatchSemaphore(value: 2)
 
     private var scratchRects: [RectInstance] = []
+    /// The padding above and below the grid in its edge rows' colors
+    /// (`window-padding-color`): drawn first, where smooth scrolling doesn't move them.
+    private var bandRects: [RectInstance] = []
     private var scratchGlyphs: [GlyphInstance] = []
     private var codepoints = [UInt32](repeating: 0, count: 32)
 
@@ -257,7 +261,7 @@ final class TerminalRenderer {
 
         let colors = defaultColors()
         background = colors.background
-        if paddingColor == .extend { alternateScreen = session.isAlternateScreen }
+        alternateScreen = session.renderedAlternateScreen
 
         let rebuildAll = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL || rows.count != Int(rowCount) || force
         if rows.count != Int(rowCount) { rows = Array(repeating: Row(), count: Int(rowCount)) }
@@ -496,6 +500,8 @@ final class TerminalRenderer {
             var fg = colors.foreground
             if graphemes > 0 || style.inverse, let color = cells.foreground() { fg = color }
             var bg = cells.background()
+            // Its own background, as Ghostty judges whether a row may be carried.
+            let ownBackground = bg
             if style.inverse {
                 (fg, bg) = (bg ?? colors.background, fg)
             }
@@ -512,9 +518,9 @@ final class TerminalRenderer {
                     } else {
                         row.backgrounds.append((x, x + span, color))
                     }
-                    if bg == colors.background { row.keepsPadding = true }
                 }
-            } else {
+            }
+            if paddingColor != .background, ownBackground == nil || ownBackground == colors.background {
                 row.keepsPadding = true
             }
             if paddingColor != .background, graphemes > 0, Self.isPowerline(cp) { row.keepsPadding = true }
@@ -598,9 +604,10 @@ final class TerminalRenderer {
     private func assembleInstances(colors: Colors, focused: Bool) {
         scratchRects.removeAll(keepingCapacity: true)
         scratchGlyphs.removeAll(keepingCapacity: true)
-        // Above the first row and below the last, its cells' colors — not
-        // while smooth scrolling moves the rows.
-        if paddingColor != .background, drawnOffset == 0, let first = rows.first, let last = rows.last {
+        // Above the first row and below the last (or the one smooth
+        // scrolling shows under it), their cells' colors.
+        bandRects.removeAll(keepingCapacity: true)
+        if paddingColor != .background, let first = rows.first, let last = belowRow ?? rows.last {
             let always = paddingColor == .extendAlways || alternateScreen
             let cw = Float(fonts.cellWidth)
             func carry(_ row: Row, from y: Float, height: Float) {
@@ -608,7 +615,7 @@ final class TerminalRenderer {
                     let left = run.start == 0 ? 0 : origin.x + Float(run.start) * cw
                     let right = run.end >= Int(columnCount) ? origin.x + Float(columnCount) * cw + Self.beyond
                         : origin.x + Float(run.end) * cw
-                    scratchRects.append(RectInstance(rect: SIMD4(left, y, right - left, height), color: run.color))
+                    bandRects.append(RectInstance(rect: SIMD4(left, y, right - left, height), color: run.color))
                 }
             }
             if origin.y > 0, always || !first.keepsPadding { carry(first, from: 0, height: origin.y) }
@@ -777,6 +784,7 @@ final class TerminalRenderer {
 
         let rectBuffer = upload(scratchRects, into: &frame.rects)
         let glyphBuffer = upload(scratchGlyphs, into: &frame.glyphs)
+        let bandBuffer = upload(bandRects, into: &frame.bands)
 
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = target
@@ -794,6 +802,15 @@ final class TerminalRenderer {
             offset: SIMD2(0, -drawnOffset))
 
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
+        if let bandBuffer, !bandRects.isEmpty {
+            // In place, outside the scrolling rows' scissor.
+            var still = uniforms
+            still.offset = .zero
+            encoder.setRenderPipelineState(rectPipeline)
+            encoder.setVertexBuffer(bandBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&still, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: bandRects.count)
+        }
         if drawnOffset > 0, !rows.isEmpty {
             // Moved rows stay inside the grid (not over the padding).
             let top = max(0, Int(origin.y)), height = Int(Float(rows.count) * Float(fonts.cellHeight))

@@ -448,6 +448,9 @@ final class TerminalSession {
         let pending = renderPending.consume()
         lock.withLock {
             _ = ghostty_render_state_update(state, terminal)
+            var screen = GHOSTTY_TERMINAL_SCREEN_PRIMARY
+            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &screen)
+            renderedAlternateScreen = screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE
             // Keep an open search in step with new output and scrolling.
             if search != nil, pending { refreshSearchLocked() }
         }
@@ -681,6 +684,10 @@ final class TerminalSession {
         lock.withLock { _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING, &tracking) }
         return tracking
     }
+
+    /// The alternate screen was in front when the render state was last
+    /// updated (the renderer's frame is of that screen).
+    private(set) var renderedAlternateScreen = false
 
     /// Whether the alternate screen (full-screen programs like less, vim) is active.
     var isAlternateScreen: Bool {
