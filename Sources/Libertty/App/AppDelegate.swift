@@ -99,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { CloseUndo.shared.expireAll() }
+        RecentFolders.shared.flush()
         // A one-off run (`-e`, a measurement) brings nothing back: end its sessions.
         if oneShot {
             for c in controllers { c.endAllSessions() }

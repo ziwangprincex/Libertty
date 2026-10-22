@@ -55,8 +55,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     static func toggle(in controller: TerminalWindowController?, panesOnly: Bool = false, scope: Scope = .all) {
         if let open = current {
             open.close()
-            // ⌘P with the commands open switches to the panes, and back.
-            if open.panesOnly == panesOnly, open.scope == scope { return }
+            // ⌘P with the commands open switches to the panes, and back
+            // (whichever chip was picked since).
+            if open.panesOnly == panesOnly, open.openedScope == scope { return }
         }
         guard let controller, let window = controller.window else { return }
         let palette = CommandPalette(controller: controller, parent: window, panesOnly: panesOnly, scope: scope)
@@ -75,6 +76,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private var shown: [Item] = []
     private var rows: [Row] = []
     private var scope = Scope.all
+    /// The chip it opened on, which its shortcut toggles.
+    private let openedScope: Scope
+    /// The chips this window has: no Folders for a host's (they'd be that machine's).
+    private var scopes: [Scope] {
+        Scope.allCases.filter { $0 != .folders || controller?.host == nil }
+    }
     private var chips: [(scope: Scope, button: ScopeChip)] = []
     private let searchIcon = NSImageView()
     private let topLine = NSView(), footerLine = NSView()
@@ -91,6 +98,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         self.parent = parent
         self.panesOnly = panesOnly
         self.scope = panesOnly ? .all : scope
+        openedScope = scope
+        Self.lastListing = nil
         panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 60),
                            styleMask: [.borderless], backing: .buffered, defer: false)
         super.init()
@@ -219,11 +228,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Go to Pane…", .gotoPane, "rectangle.3.group")
         command("Go to Directory…", .gotoDirectory, "folder")
         // The sidebar's activity filter, and back to every tab.
+        // (Not the one it shows: show_tabs again would undo it.)
         if let shown = controller?.sidebarActivity {
-            command("Sidebar: Working Tabs", .showTabs(.working), "line.3.horizontal.decrease.circle")
-            command("Sidebar: Tabs Waiting for You", .showTabs(.waiting), "line.3.horizontal.decrease.circle")
-            command("Sidebar: Finished or Failed Tabs", .showTabs(.attention), "line.3.horizontal.decrease.circle")
-            if shown != .all { command("Sidebar: All Tabs", .showTabs(.all), "line.3.horizontal.decrease.circle") }
+            for (activity, title) in [(TabActivity.working, "Working Tabs"), (.waiting, "Tabs Waiting for You"),
+                                      (.attention, "Finished or Failed Tabs"), (.all, "All Tabs")] where activity != shown {
+                command("Sidebar: \(title)", .showTabs(activity), "line.3.horizontal.decrease.circle")
+            }
         }
         command("Zoom Split", .toggleSplitZoom, "arrow.up.left.and.arrow.down.right")
         command("Equalize Splits", .equalizeSplits, "square.split.2x2")
@@ -307,9 +317,6 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         return out
     }
 
-    // MARK: Matching
-
-    /// Fuzzy match: every typed character in order. Consecutive runs and
     // MARK: Folders (Go to Directory, after Rex)
 
     /// The folders a new tab could start in: where this Mac's panes are, then
@@ -322,10 +329,31 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         let here = windows.filter { $0.host == nil }.flatMap(\.workingDirectories)
         for path in here + RecentFolders.shared.paths where seen.insert(path).inserted {
             out.append(folderItem(path, subtitle: here.contains(path) ? "a pane is here" : "recent", in: current))
-            if out.count >= 40 { break }
         }
         return out
     }
+
+    /// A folder's entries, the last one asked for kept (typing a path asks
+    /// again at every key).
+    private static func listing(of folder: String) -> [(name: String, isDirectory: Bool)] {
+        if let last = lastListing, last.folder == folder { return last.entries }
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: URL(fileURLWithPath: folder, isDirectory: true), includingPropertiesForKeys: Array(keys))) ?? []
+        let entries = urls.map { url -> (name: String, isDirectory: Bool) in
+            let values = try? url.resourceValues(forKeys: keys)
+            // A link to a folder is one too.
+            var isDirectory = values?.isDirectory == true
+            if values?.isSymbolicLink == true {
+                var followed: ObjCBool = false
+                isDirectory = FileManager.default.fileExists(atPath: url.path, isDirectory: &followed) && followed.boolValue
+            }
+            return (url.lastPathComponent, isDirectory)
+        }
+        lastListing = (folder, entries)
+        return entries
+    }
+    private static var lastListing: (folder: String, entries: [(name: String, isDirectory: Bool)])?
 
     private static func folderItem(_ path: String, subtitle: String, in controller: TerminalWindowController) -> Item {
         Item(title: (path as NSString).abbreviatingWithTildeInPath, subtitle: subtitle, symbol: "folder", kind: .folder) {
@@ -338,25 +366,30 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private func typedFolders(_ query: String) -> [Item] {
         guard let controller, controller.host == nil, query.hasPrefix("/") || query.hasPrefix("~") else { return [] }
         let expanded = (query as NSString).expandingTildeInPath
-        let fm = FileManager.default
         let (parent, prefix) = expanded.hasSuffix("/")
             ? (expanded, "") : ((expanded as NSString).deletingLastPathComponent, (expanded as NSString).lastPathComponent)
         var out: [Item] = []
+        // The folder typed, first ("~/src/" too, before what's in it).
         var isDirectory: ObjCBool = false
-        if !expanded.hasSuffix("/"), fm.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue {
-            out.append(Self.folderItem(expanded, subtitle: "new tab here", in: controller))
+        let itself = expanded.count > 1 && expanded.hasSuffix("/") ? String(expanded.dropLast()) : expanded
+        if FileManager.default.fileExists(atPath: itself, isDirectory: &isDirectory), isDirectory.boolValue {
+            out.append(Self.folderItem(itself, subtitle: "new tab here", in: controller))
         }
-        let names = ((try? fm.contentsOfDirectory(atPath: parent)) ?? []).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        for name in names where name.lowercased().hasPrefix(prefix.lowercased()) && name != prefix
-            && (prefix.hasPrefix(".") || !name.hasPrefix(".")) {
-            let path = (parent as NSString).appendingPathComponent(name)
-            guard fm.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
-            out.append(Self.folderItem(path, subtitle: "new tab here", in: controller))
-            if out.count >= 30 { break }
+        // Then the folders in its parent that it could go on to. The listing
+        // is the parent's once while typing in it: a folder may hold many.
+        let entries = Self.listing(of: parent)
+        let lower = prefix.lowercased()
+        let names = entries.filter { $0.name.lowercased().hasPrefix(lower) && $0.name.lowercased() != lower
+            && (prefix.hasPrefix(".") || !$0.name.hasPrefix(".")) && $0.isDirectory }.map(\.name)
+        for name in names.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }).prefix(30) {
+            out.append(Self.folderItem((parent as NSString).appendingPathComponent(name), subtitle: "new tab here", in: controller))
         }
         return out
     }
 
+    // MARK: Matching
+
+    /// Fuzzy match: every typed character in order. Consecutive runs and
     /// word starts score higher; nil if it doesn't match.
     static func score(_ query: String, _ text: String) -> Int? {
         guard !query.isEmpty else { return 0 }
@@ -380,10 +413,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             // Themes and folders only when asked for (their chip, or a search): there are many.
             shown = inScope.filter { (scope == .themes || $0.kind != .theme) && (scope == .folders || $0.kind != .folder) }
         } else {
-            // A path being typed lists where it leads first.
-            let typed = scope.admits(.folder) ? typedFolders(q) : []
+            // A path being typed lists where it leads first (not in Go to Pane).
+            let typed = scope.admits(.folder) && !panesOnly ? typedFolders(q) : []
             let typedTitles = Set(typed.map(\.title))
-            shown = typed + inScope.filter { !typedTitles.contains($0.title) }
+            shown = typed + inScope.filter { $0.kind != .folder || !typedTitles.contains($0.title) }
                 .compactMap { item in Self.score(q, item.title + " " + item.subtitle).map { (item, $0) } }
                 .sorted { $0.1 > $1.1 }.prefix(60).map(\.0)
         }
@@ -435,7 +468,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private func cycleScope(_ delta: Int) {
         guard !panesOnly else { return }
-        let all = Scope.allCases
+        let all = scopes
         let i = all.firstIndex(of: scope) ?? 0
         setScope(all[(i + delta + all.count) % all.count])
     }
@@ -482,7 +515,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         }
 
         if !panesOnly {
-            for s in Scope.allCases {
+            for s in scopes {
                 let chip = ScopeChip(s.title)
                 chip.isOn = s == scope
                 chip.onClick = { [weak self] in self?.setScope(s) }

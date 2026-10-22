@@ -1590,7 +1590,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// them again if it does already. The sidebar comes out for it.
     func showTabs(_ activity: TabActivity) {
         guard config.tabBar == .sidebar else { return }
-        sidebar.show(activity: sidebar.activity == activity ? .all : activity)
+        // Again while it shows: every tab. While the sidebar is away: it comes out with them.
+        sidebar.show(activity: sidebar.activity == activity && isSidebarShown ? .all : activity)
         if !isSidebarShown, sidebar.activity != .all { toggleSidebar() }
     }
 
@@ -2494,7 +2495,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         // A tab is renamed in place where it's listed, when that shows.
         if isTab, let i = tabs.firstIndex(where: { $0 === selectedTab }) {
             if config.tabBar == .top, tabStripTitles != nil { return tabStrip.beginRename(at: i) }
-            if config.tabBar == .sidebar, isSidebarShown { return sidebar.beginRename(row: i) }
+            // (Not a tab the sidebar's filters fold away: the alert, then.)
+            if config.tabBar == .sidebar, isSidebarShown, sidebar.shows(row: i) { return sidebar.beginRename(row: i) }
         }
         let tab = selectedTab
         let alert = NSAlert()

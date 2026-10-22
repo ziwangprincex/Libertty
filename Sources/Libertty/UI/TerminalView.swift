@@ -563,7 +563,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private func focusUnderPointer() {
         guard ConfigStore.shared.config.focusFollowsMouse, !isParked, let window,
               window.attachedSheet == nil, NSEvent.pressedMouseButtons == 0,
-              let current = window.firstResponder as? TerminalView, current !== self else { return }
+              let current = window.firstResponder as? TerminalView, current !== self,
+              // Not in the middle of composing (Pinyin…): that would be lost.
+              !current.hasMarkedText() else { return }
         window.makeFirstResponder(self)
     }
 

@@ -20,9 +20,11 @@ final class RecentFolders {
         entries = (try? JSONDecoder().decode([Entry].self, from: Data(contentsOf: file))) ?? []
     }
 
-    /// Newest first, those still there.
+    /// Newest first, those still there. (Those on other volumes aren't
+    /// checked: a network share that's gone could hang the palette.)
     var paths: [String] {
-        entries.sorted { $0.at > $1.at }.map(\.path).filter { FileManager.default.fileExists(atPath: $0) }
+        entries.sorted { $0.at > $1.at }.map(\.path)
+            .filter { $0.hasPrefix("/Volumes/") || FileManager.default.fileExists(atPath: $0) }
     }
 
     func record(_ path: String) {
@@ -32,9 +34,20 @@ final class RecentFolders {
         if entries.count > Self.limit { entries = Array(entries.sorted { $0.at > $1.at }.prefix(Self.limit)) }
         // A shell moving around writes once a moment, not at every cd.
         pendingSave?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.save() }
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingSave = nil
+            self?.save()
+        }
         pendingSave = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+    }
+
+    /// Save now what's waiting to be (quitting).
+    func flush() {
+        guard let work = pendingSave else { return }
+        work.cancel()
+        pendingSave = nil
+        save()
     }
 
     private func save() {

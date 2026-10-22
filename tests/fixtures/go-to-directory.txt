@@ -17,10 +17,12 @@ expect-tab:sub-alpha
 # moved on too (only the recent folders know it then).
 type:cd @DIR@/sub-beta
 key:enter
-wait:1.0
+wait:2.0
+# (Its prompt reported it: recorded before the shell moves on.)
+expect-tab:sub-beta
 type:cd /
 key:enter
-wait:1.0
+wait:2.0
 action:go_to_directory
 wait:0.5
 type:beta
@@ -28,3 +30,12 @@ wait:0.4
 expect-palette:sub-beta
 key:escape
 wait:0.3
+# A path typed with its slash: that folder first, then what's in it.
+action:go_to_directory
+wait:0.5
+type:@DIR@/
+wait:0.4
+expect-palette:folders · new tab here
+key:enter
+wait:1.5
+expect-tab-count:3

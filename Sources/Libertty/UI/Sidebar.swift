@@ -360,6 +360,9 @@ final class SidebarViewController: NSViewController {
     /// The tabs the filters leave showing, by index.
     var shownRows: [Int] { tabs.indices.filter { matches(tabs[$0]) } }
 
+    /// Whether the filters show tab `row`.
+    func shows(row: Int) -> Bool { tabs.indices.contains(row) && matches(tabs[row]) }
+
     func show(activity: TabActivity) {
         guard activity != self.activity else { return }
         self.activity = activity
@@ -564,14 +567,26 @@ final class SidebarViewController: NSViewController {
         if row >= 0 { controller?.renameTab(at: row, to: "") }
     }
 
+    /// The next row up or down that the filters show: Move Up/Down passes
+    /// the tabs folded away, so the tab moves where it can be seen.
+    private func shownRow(from row: Int, by step: Int) -> Int? {
+        guard row >= 0 else { return nil }
+        var i = row + step
+        while tabs.indices.contains(i) {
+            if matches(tabs[i]) { return i }
+            i += step
+        }
+        return nil
+    }
+
     @objc private func moveTabUp(_ sender: Any?) {
         let row = tabsTable.clickedRow
-        if row > 0 { controller?.moveTab(from: row, to: row - 1) }
+        if let to = shownRow(from: row, by: -1) { controller?.moveTab(from: row, to: to) }
     }
 
     @objc private func moveTabDown(_ sender: Any?) {
         let row = tabsTable.clickedRow
-        if row >= 0, row < tabs.count - 1 { controller?.moveTab(from: row, to: row + 1) }
+        if let to = shownRow(from: row, by: 1) { controller?.moveTab(from: row, to: to) }
     }
 
     @objc private func moveTabToNewWindow(_ sender: Any?) {
@@ -682,8 +697,8 @@ extension SidebarViewController: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         let row = tabsTable.clickedRow
         switch item.action {
-        case #selector(moveTabUp(_:)): return row > 0
-        case #selector(moveTabDown(_:)): return row >= 0 && row < tabs.count - 1
+        case #selector(moveTabUp(_:)): return shownRow(from: row, by: -1) != nil
+        case #selector(moveTabDown(_:)): return shownRow(from: row, by: 1) != nil
         case #selector(moveTabToNewWindow(_:)): return controller?.tab(at: row).map { controller?.canMoveTabOut($0) == true } ?? false
         case #selector(resetTabName(_:)): return row >= 0 && !(controller?.tabNameOverride(at: row) ?? "").isEmpty
         default: return true
