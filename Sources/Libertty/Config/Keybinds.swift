@@ -537,6 +537,11 @@ struct Keybinds: Equatable {
         return (trigger, action, g)
     }
 
+    /// The trigger an entry binds (`+import-ghostty` keeps the user's own).
+    static func trigger(of entry: String) -> Trigger? {
+        split(entry.trimmingCharacters(in: .whitespaces)).flatMap { Trigger($0.0) }
+    }
+
     /// `[global:]TRIGGER=ACTION`, split at the first "=" after the trigger
     /// (a trigger may itself end in "=", as in `cmd+=`).
     private static func split(_ entry: String) -> (String, String, Bool)? {

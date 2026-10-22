@@ -296,7 +296,10 @@ public final class DaemonServer {
                 let names = json["keys"] as? [String] ?? []
                 let keys = names.map(KeySpec.init)
                 if let bad = zip(names, keys).first(where: { $0.1 == nil })?.0 { fail("unknown key \(bad)"); continue }
-                s.press(keys.compactMap { $0 })
+                if let silent = s.press(keys.compactMap { $0 }) {
+                    fail("\(names[silent]) sends nothing to this program; no keys sent")
+                    continue
+                }
                 connection.send(.result, json: ["ok": true])
             case .rename:
                 let json = frame.json
@@ -1034,19 +1037,21 @@ final class DaemonSession {
     // MARK: Keys (`libertty +send-key`)
 
     /// Press `keys`, each encoded for the terminal's modes at that moment (a
-    /// program may change them in between: not here, they go at once).
-    func press(_ keys: [KeySpec]) {
+    /// program may change them in between: not here, they go at once). None
+    /// go if one of them sends nothing to this program (`super+x` without the
+    /// kitty keyboard protocol): its index, else nil.
+    func press(_ keys: [KeySpec]) -> Int? {
         var encoder: GhosttyKeyEncoder?, event: GhosttyKeyEvent?
-        guard ghostty_key_encoder_new(nil, &encoder) == GHOSTTY_SUCCESS, let encoder,
-              ghostty_key_event_new(nil, &event) == GHOSTTY_SUCCESS, let event else { return }
-        defer {
-            ghostty_key_event_free(event)
-            ghostty_key_encoder_free(encoder)
-        }
+        guard ghostty_key_encoder_new(nil, &encoder) == GHOSTTY_SUCCESS, let encoder else { return 0 }
+        defer { ghostty_key_encoder_free(encoder) }
+        guard ghostty_key_event_new(nil, &event) == GHOSTTY_SUCCESS, let event else { return 0 }
+        defer { ghostty_key_event_free(event) }
         lock.lock()
-        let bytes = keys.flatMap { $0.encode(for: terminal, with: encoder, event: event) }
+        let encoded = keys.map { $0.encode(for: terminal, with: encoder, event: event) }
         lock.unlock()
-        write(Data(bytes), from: nil)
+        if let silent = encoded.firstIndex(where: \.isEmpty) { return silent }
+        write(Data(encoded.flatMap { $0 }), from: nil)
+        return nil
     }
 
     // MARK: Its input mode

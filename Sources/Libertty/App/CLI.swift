@@ -732,7 +732,7 @@ enum CLI {
         guard args.count >= 2 else { fail("usage: libertty +send-key ID KEY... (e.g. ctrl+c, enter, shift+tab, up)"); return 2 }
         if let bad = args.dropFirst().first(where: { KeySpec($0) == nil }) {
             fail("unknown key \(bad): a character or enter, tab, escape, backspace, delete, space, up, down, left, right, "
-                 + "home, end, page_up, page_down, insert, f1–f12, with ctrl+, alt+, shift+, super+")
+                 + "home, end, page_up, page_down, insert, f1–f12, comma, backslash, grave…, with ctrl+, alt+, shift+, super+")
             return 2
         }
         switch DaemonClient.request(.sendKey, json: ["id": args[0], "keys": Array(args.dropFirst())], needing: "sendKey",

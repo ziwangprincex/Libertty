@@ -1,8 +1,10 @@
 import CGhosttyVt
 
 /// A key as `libertty +send-key` names it, Ghostty's keybind way: `ctrl+c`,
-/// `shift+left`, `enter`, `alt+f`, `f5`, `a`, `?` — modifiers joined to a
-/// key by `+`. The characters are a US keyboard's.
+/// `shift+left`, `enter`, `alt+f`, `f5`, `a`, `?`, `ctrl+backslash` —
+/// modifiers joined to a key by `+`. The characters are a US keyboard's. A
+/// capital letter with ctrl is the letter (`ctrl+C` is ctrl+c, as a
+/// terminal user means it); `ctrl+shift+c` for both.
 public struct KeySpec: Equatable {
     public var key: GhosttyKey
     public var mods: GhosttyMods
@@ -23,6 +25,13 @@ public struct KeySpec: Equatable {
         "f1": GHOSTTY_KEY_F1, "f2": GHOSTTY_KEY_F2, "f3": GHOSTTY_KEY_F3, "f4": GHOSTTY_KEY_F4,
         "f5": GHOSTTY_KEY_F5, "f6": GHOSTTY_KEY_F6, "f7": GHOSTTY_KEY_F7, "f8": GHOSTTY_KEY_F8,
         "f9": GHOSTTY_KEY_F9, "f10": GHOSTTY_KEY_F10, "f11": GHOSTTY_KEY_F11, "f12": GHOSTTY_KEY_F12,
+    ]
+
+    /// The keys that type punctuation, by their W3C names (Ghostty's, as in `ctrl+grave`).
+    private static let punctuation: [String: Character] = [
+        "minus": "-", "equal": "=", "bracket_left": "[", "bracket_right": "]", "backslash": "\\",
+        "semicolon": ";", "quote": "'", "comma": ",", "period": ".", "slash": "/", "backquote": "`", "grave": "`",
+        "plus": "+",
     ]
 
     /// The keys that type a character, unshifted and shifted, on a US keyboard.
@@ -47,10 +56,10 @@ public struct KeySpec: Equatable {
 
     /// Nil for a name it doesn't know.
     public init?(_ spec: String) {
-        // The last part is the key ("ctrl++" is ctrl and +), the rest modifiers.
+        // The last part is the key ("+" and "ctrl++" are +), the rest modifiers.
         var parts = spec.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
-        if spec.hasSuffix("++") { parts.removeLast(2); parts.append("+") }
-        guard let last = parts.popLast(), !last.isEmpty else { return nil }
+        if spec == "+" || spec.hasSuffix("++") { parts.removeLast(2); parts.append("+") }
+        guard var last = parts.popLast(), !last.isEmpty else { return nil }
         var mods = GhosttyMods(0)
         for part in parts {
             switch part.lowercased() {
@@ -62,6 +71,10 @@ public struct KeySpec: Equatable {
             }
         }
         let shift = mods & GhosttyMods(GHOSTTY_MODS_SHIFT) != 0
+        if let ch = Self.punctuation[last.lowercased()] { last = String(ch) }
+        if !shift, mods & GhosttyMods(GHOSTTY_MODS_CTRL) != 0, last.count == 1, let c = last.first, c.isUppercase, c.isASCII {
+            last = last.lowercased()
+        }
         if last.count > 1 || Self.named[last.lowercased()] != nil {
             guard let key = Self.named[last.lowercased()] else { return nil }
             let space = key == GHOSTTY_KEY_SPACE

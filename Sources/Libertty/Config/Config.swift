@@ -416,7 +416,8 @@ struct Config: Equatable {
         var warnings: [String] = []
         var includes: [String] = []
         let prefix = source.map { "\($0): " } ?? ""
-        for (n, raw) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+        // \r\n is one Character: split at every kind of line end.
+        for (n, raw) in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
             guard let eq = line.firstIndex(of: "=") else {
@@ -902,7 +903,9 @@ final class ConfigStore {
     }
 
     /// Lines at the end of the file, a blank line before them (`+import-ghostty`).
-    func appendBlock(_ block: [String]) {
+    /// False if the file couldn't be written.
+    @discardableResult
+    func appendBlock(_ block: [String]) -> Bool {
         edit { lines in
             while lines.last == "" { lines.removeLast() }
             if !lines.isEmpty { lines.append("") }
@@ -913,7 +916,7 @@ final class ConfigStore {
 
     /// The keys the file sets itself, and its lines of repeatable keys.
     var fileEntries: (keys: Set<String>, lines: Set<String>) {
-        let lines = ((try? String(contentsOf: url, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        let lines = ((try? String(contentsOf: url, encoding: .utf8)) ?? "").split(whereSeparator: \.isNewline).map(String.init)
         var keys = Set<String>(), repeated = Set<String>()
         for line in lines {
             guard let key = Self.key(of: line) else { continue }
@@ -956,11 +959,21 @@ final class ConfigStore {
         write(Config.template(path: url.path))
     }
 
-    private func edit(_ change: (inout [String]) -> Void) {
-        var lines = ((try? String(contentsOf: url, encoding: .utf8)) ?? Config.template(path: url.path))
-            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    /// Change the file's lines; a new file starts from the template. One
+    /// that's there but can't be read as text is left alone (false).
+    @discardableResult
+    private func edit(_ change: (inout [String]) -> Void) -> Bool {
+        let text: String
+        if let read = try? String(contentsOf: url, encoding: .utf8) {
+            text = read
+        } else if FileManager.default.fileExists(atPath: url.path) {
+            return false
+        } else {
+            text = Config.template(path: url.path)
+        }
+        var lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
         change(&lines)
-        write(lines.joined(separator: "\n"))
+        return write(lines.joined(separator: "\n"))
     }
 
     private static func append(_ line: String, to lines: inout [String]) {
@@ -981,10 +994,12 @@ final class ConfigStore {
         return t[t.index(after: eq)...].trimmingCharacters(in: .whitespaces)
     }
 
-    private func write(_ text: String) {
+    @discardableResult
+    private func write(_ text: String) -> Bool {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? text.write(to: url, atomically: true, encoding: .utf8)
+        let written = (try? text.write(to: url, atomically: true, encoding: .utf8)) != nil
         reload()
+        return written
     }
 
     // MARK: Watching
