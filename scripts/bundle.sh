@@ -114,6 +114,19 @@ cat > $APP/Contents/Info.plist <<PLIST
 </dict>
 </plist>
 PLIST
+# What a program in a terminal tells macOS it wants the camera, microphone, …
+# for: the texts liberttyd carries (Sources/liberttyd/Info.plist), here too for
+# the shells the app runs itself (session-persistence = false).
+python3 - $ROOT/Sources/liberttyd/Info.plist $APP/Contents/Info.plist <<'PY'
+import plistlib, sys
+source, target = sys.argv[1:]
+usage = {k: v for k, v in plistlib.load(open(source, "rb")).items() if k.endswith("UsageDescription")}
+with open(target, "rb") as f:
+    info = plistlib.load(f)
+info.update(usage)
+with open(target, "wb") as f:
+    plistlib.dump(info, f)
+PY
 
 # Ad-hoc sign so the hardened system lets it run and keeps TCC grants stable.
 codesign --force --sign - $APP/Contents/MacOS/liberttyd >/dev/null

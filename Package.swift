@@ -32,12 +32,18 @@ let package = Package(
             swiftSettings: vtSwift
         ),
         // liberttyd: keeps sessions (pty + terminal state) alive while the app is closed.
+        // Its Info.plist is embedded: macOS reads a program's privacy texts from the
+        // process responsible for it, and liberttyd answers for its programs.
         .executableTarget(
             name: "liberttyd",
             dependencies: ["LiberttyCore"],
             path: "Sources/liberttyd",
+            exclude: ["Info.plist"],
             swiftSettings: vtSwift,
-            linkerSettings: vtLink
+            linkerSettings: vtLink + [
+                .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
+                              "-Xlinker", "\(root)/Sources/liberttyd/Info.plist"], .when(platforms: [.macOS])),
+            ]
         ),
         .executableTarget(
             name: "Libertty",

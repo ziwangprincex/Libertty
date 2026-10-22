@@ -4,6 +4,7 @@
 #include "cpty.h"
 
 #include <dirent.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -169,11 +170,29 @@ pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const 
     return pid;
 }
 #else
+// macOS asks the user about a program's camera, microphone, contacts and so
+// on in the name of the process it holds responsible for it, which a child
+// inherits. liberttyd outlives whoever started it — this app, or a shell of
+// another terminal running `libertty +new-session` — so it answers for itself
+// and its programs. The call is private (libquarantine): looked up, and
+// skipped where it isn't there.
+static void disclaim_responsibility(posix_spawnattr_t *attr) {
+    typedef int (*disclaim_fn)(posix_spawnattr_t *, int);
+    static disclaim_fn disclaim;
+    static int looked_up;
+    if (!looked_up) {
+        disclaim = (disclaim_fn)dlsym(RTLD_DEFAULT, "responsibility_spawnattrs_setdisclaim");
+        looked_up = 1;
+    }
+    if (disclaim) disclaim(attr, 1);
+}
+
 pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path) {
     posix_spawnattr_t attr;
     posix_spawn_file_actions_t actions;
     posix_spawnattr_init(&attr);
     posix_spawn_file_actions_init(&actions);
+    disclaim_responsibility(&attr);
     // Its own session: it outlives the app and gets none of its signals.
     // Close everything else: the daemon must not hold the app's descriptors.
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF

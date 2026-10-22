@@ -105,6 +105,9 @@ if [[ -d $TESTAPP/Contents/Resources/terminfo && ! $APPBIN -ot $LIBERTTY ]]; the
   expect term-ghostty 'T=xterm-ghostty C=256' $APPBIN --shell-probe zsh 'echo "T=$TERM C=$(tput colors)"'
   expect ssh-env-zsh 'ssh is a shell function' $APPBIN --shell-probe zsh 'type ssh'
   expect ssh-env-bash 'ssh is a function' $APPBIN --shell-probe bash 'type ssh'
+  # The app runs shells itself without session persistence: it carries the texts too.
+  expect app-privacy-texts 'A program running in Libertty wants to use the camera' \
+    plutil -extract NSCameraUsageDescription raw $TESTAPP/Contents/Info.plist
 fi
 
 # A remote host: tests/fixtures/fake-ssh stands in for ssh and runs the
@@ -122,6 +125,13 @@ ID=$($LIBERTTY +new-session -e 'printf "persisted\n"; sleep 30')
 sleep 0.5
 expect session-list "$ID" $LIBERTTY +list-sessions
 expect session-capture 'persisted' $LIBERTTY +capture $ID
+# A session's program asks for the camera, microphone, … in liberttyd's name
+# (which carries the texts), not in the name of whoever started liberttyd —
+# here, the terminal running these tests.
+SHELLPID=$($LIBERTTY +list-sessions --json | python3 -I -c "import json, sys; print(next(s['pid'] for s in json.load(sys.stdin) if s['id'] == '$ID'))")
+expect privacy-responsible '^responsible: .*/liberttyd$' $LIBERTTY --responsible-probe ${SHELLPID:-0}
+expect privacy-texts 'A program running in Libertty wants to use the microphone' \
+  launchctl plist __TEXT,__info_plist $BIN/liberttyd
 $LIBERTTY +kill-session $ID > /dev/null
 WAITID=$($LIBERTTY +new-session -e 'sleep 0.3; exit 4')
 $LIBERTTY +wait $WAITID > /dev/null 2>&1

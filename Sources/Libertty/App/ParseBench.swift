@@ -12,6 +12,16 @@ import Foundation
 enum ParseBench {
     static func runIfRequested() {
         let args = CommandLine.arguments
+        // A probe missing its arguments must stop here: run on, it would be
+        // an ordinary launch, a real window that takes the focus.
+        let arguments = ["--session-bench": 1, "--link-probe": 1, "--command-probe": 1, "--responsible-probe": 1,
+                         "--ui-probe": 2, "--document-probe": 2, "--remote-probe": 1, "--output-probe": 1,
+                         "--shell-probe": 2, "--parse-bench": 1]
+        for (flag, count) in arguments {
+            guard let i = args.firstIndex(of: flag), i + count >= args.count else { continue }
+            FileHandle.standardError.write(Data("\(flag) needs \(count == 1 ? "an argument" : "\(count) arguments")\n".utf8))
+            exit(2)
+        }
         // A probe or bench run by hand never reaches your liberttyd: without
         // a socket of its own (tests/run.sh gives one) it gets a private one,
         // so it can't take over, stop or fill the daemon your sessions live in.
@@ -42,6 +52,9 @@ enum ParseBench {
         if args.contains("--clear-probe") { clearProbe() }
         if args.contains("--scrollbar-probe") { scrollbarProbe() }
         if args.contains("--git-probe") { gitProbe() }
+        if let i = args.firstIndex(of: "--responsible-probe"), i + 1 < args.count {
+            responsibleProbe(pid_t(args[i + 1]) ?? -1)
+        }
         if args.contains("--ligature-config-probe") { ligatureConfigProbe() }
         if args.contains("--web-probe") { MainActor.assumeIsolated { webProbe() } }
         if args.contains("--kitty-reattach-probe") { kittyReattachProbe() }
@@ -812,6 +825,25 @@ enum ParseBench {
         case .success: print("diff: ok")
         case .failure(let why): print("diff: \(why.message)")
         }
+        exit(0)
+    }
+
+    /// `Libertty --responsible-probe PID`: the process macOS holds responsible
+    /// for PID — the one its camera, microphone, … requests are asked in the
+    /// name of. For a session's program that should be liberttyd itself.
+    private static func responsibleProbe(_ pid: pid_t) -> Never {
+        typealias Responsible = @convention(c) (pid_t) -> pid_t
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") else {
+            print("responsible: unknown (no responsibility_get_pid_responsible_for_pid)")
+            exit(1)
+        }
+        let responsible = unsafeBitCast(symbol, to: Responsible.self)(pid)
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard responsible > 0, proc_pidpath(responsible, &buffer, UInt32(buffer.count)) > 0 else {
+            print("responsible: pid \(responsible), not running")
+            exit(1)
+        }
+        print("responsible: \(String(cString: buffer))")
         exit(0)
     }
 

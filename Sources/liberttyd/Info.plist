@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Embedded in liberttyd (__TEXT,__info_plist; see Package.swift). liberttyd
+  answers for every program it runs, so when one asks for the camera or the
+  microphone, macOS shows these texts and names "Libertty Sessions".
+  scripts/bundle.sh copies the usage descriptions into the app's Info.plist
+  too: without session persistence the app runs its shells itself.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>dev.libertty.terminal.liberttyd</string>
+    <key>CFBundleName</key><string>Libertty Sessions</string>
+    <key>CFBundleDisplayName</key><string>Libertty Sessions</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>NSAppleEventsUsageDescription</key><string>A program running in Libertty wants to control another app.</string>
+    <key>NSAudioCaptureUsageDescription</key><string>A program running in Libertty wants to record this Mac's audio.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>A program running in Libertty wants to use Bluetooth.</string>
+    <key>NSCalendarsUsageDescription</key><string>A program running in Libertty wants to read your calendars.</string>
+    <key>NSCameraUsageDescription</key><string>A program running in Libertty wants to use the camera.</string>
+    <key>NSContactsUsageDescription</key><string>A program running in Libertty wants to read your contacts.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Programs running in Libertty, and its Web Access, use this to reach devices on your local network.</string>
+    <key>NSLocationUsageDescription</key><string>A program running in Libertty wants to know this Mac's location.</string>
+    <key>NSMicrophoneUsageDescription</key><string>A program running in Libertty wants to use the microphone.</string>
+    <key>NSPhotoLibraryUsageDescription</key><string>A program running in Libertty wants to use your photo library.</string>
+    <key>NSRemindersUsageDescription</key><string>A program running in Libertty wants to read your reminders.</string>
+    <key>NSSpeechRecognitionUsageDescription</key><string>A program running in Libertty wants to use speech recognition.</string>
+    <key>NSSystemAdministrationUsageDescription</key><string>A program running in Libertty wants to change system settings.</string>
+</dict>
+</plist>
