@@ -218,6 +218,13 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Previous Workspace", .previousWorkspace, "chevron.left.2")
         command("Go to Pane…", .gotoPane, "rectangle.3.group")
         command("Go to Directory…", .gotoDirectory, "folder")
+        // The sidebar's activity filter, and back to every tab.
+        if let shown = controller?.sidebarActivity {
+            command("Sidebar: Working Tabs", .showTabs(.working), "line.3.horizontal.decrease.circle")
+            command("Sidebar: Tabs Waiting for You", .showTabs(.waiting), "line.3.horizontal.decrease.circle")
+            command("Sidebar: Finished or Failed Tabs", .showTabs(.attention), "line.3.horizontal.decrease.circle")
+            if shown != .all { command("Sidebar: All Tabs", .showTabs(.all), "line.3.horizontal.decrease.circle") }
+        }
         command("Zoom Split", .toggleSplitZoom, "arrow.up.left.and.arrow.down.right")
         command("Equalize Splits", .equalizeSplits, "square.split.2x2")
         command("Next Pane", .gotoSplit(.next), "arrow.right.square")

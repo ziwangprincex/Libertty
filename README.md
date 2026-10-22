@@ -87,6 +87,8 @@ ad-hoc signed, so macOS may ask again after an update.
   it there (Window menu, command palette, context menus; `move_surface_to_new_tab`,
   `move_surface_to_tab:N`, `move_surface_to_new_window`, `move_tab_to_new_window`).
 - Workspaces: named groups of tabs within one window (⌘⇧1…9).
+- The sidebar lists only the tabs whose programs are working, waiting for you, or
+  finished or failed — the button in its filter field, the palette, `show_tabs:working`.
 - Command palette (⌘⇧P), go to pane (⌘P), go to directory (File ▸ Go to Directory…: a new
   tab where a pane is, where shells have been, or in a path typed with / or ~), tab overview (⌘⇧\\), Quick Terminal,
   Picture in Picture, broadcast input, undo for closing a pane, tab or window

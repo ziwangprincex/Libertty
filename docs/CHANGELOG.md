@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The sidebar filters tabs by activity (after Rex): the button at the end of its filter field, the palette or `show_tabs:working|waiting|attention|all` lists only the tabs whose programs are working, waiting for you, or finished or failed; rows come and go as their states change, the name filter narrows further, and the count says how many show ("1/4").
 - Go to Directory (File menu, the palette, `go_to_directory`): the palette's new Folders lists where panes are and where this Mac's shells have been lately; a path typed with / or ~ lists the folders it leads to; Return opens a new tab there (after Rex).
 - `focus-follows-mouse` (Ghostty's): the pane under the pointer gets the keyboard, from one terminal pane to another, without a click (after Rex).
 - `libertty +import-ghostty [--from FILE] [--dry-run] [--yes]` brings Ghostty's settings over (after Rex's "Migrate from Ghostty"): its config files and what they include, the settings Libertty knows and doesn't set itself (Libertty's own stay), the first font-family. It lists what it adds, what it leaves out and why, asks first and keeps the old config.

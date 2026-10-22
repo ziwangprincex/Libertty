@@ -1585,6 +1585,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     }
 
     var isSidebarShown: Bool { !sidebarItem.isCollapsed }
+
+    /// show_tabs: the sidebar lists the tabs doing `activity`, or all of
+    /// them again if it does already. The sidebar comes out for it.
+    func showTabs(_ activity: TabActivity) {
+        guard config.tabBar == .sidebar else { return }
+        sidebar.show(activity: sidebar.activity == activity ? .all : activity)
+        if !isSidebarShown, sidebar.activity != .all { toggleSidebar() }
+    }
+
+    /// Which tabs the sidebar lists; nil when the tabs are along the top.
+    var sidebarActivity: TabActivity? { config.tabBar == .sidebar ? sidebar.activity : nil }
+
+    /// The sidebar rows its filters leave showing (`--ui-probe`).
+    var shownSidebarRows: [String] {
+        let rows = sidebarRows
+        return sidebar.shownRows.filter(rows.indices.contains).map { rows[$0] }
+    }
     var isInspectorShown: Bool { !inspectorItem.isCollapsed }
     /// A pane of the tab in front fills it (toggle_split_zoom).
     var isZoomed: Bool { selectedTab.container?.zoomed != nil }

@@ -208,7 +208,7 @@ enum Action: Equatable {
     case toggleSidebar, toggleInspector, toggleMarkdownSource, toggleEditor
     case toggleFullscreen, toggleVisibility, toggleWindowFloatOnTop, resetWindowSize, toggleSecureInput
     case toggleCommandPalette, toggleQuickTerminal, toggleTabOverview, connectToHost, togglePictureInPicture
-    case gotoPane, gotoDirectory, restartSurface, parkSurface, unparkSurface, floatSurface
+    case gotoPane, gotoDirectory, showTabs(TabActivity), restartSurface, parkSurface, unparkSurface, floatSurface
     case moveSurfaceToNewTab, moveSurfaceToNewWindow, moveSurfaceToTab(Int), moveTabToNewWindow
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
@@ -272,6 +272,9 @@ enum Action: Equatable {
         case "new_split": guard let d = arg == nil ? .right : direction() else { return nil }; self = .newSplit(d)
         case "goto_tab": guard let n = integer(), n > 0 else { return nil }; self = .gotoTab(n)
         case "goto_workspace": guard let n = integer(), n > 0 else { return nil }; self = .gotoWorkspace(n)
+        case "show_tabs":
+            guard let a = arg?.trimmingCharacters(in: .whitespaces).lowercased(), let activity = TabActivity(rawValue: a) else { return nil }
+            self = .showTabs(activity)
         case "move_surface_to_tab": guard let n = integer(), n > 0 else { return nil }; self = .moveSurfaceToTab(n)
         case "write_scrollback_file", "write_selection_file":
             let then = arg?.trimmingCharacters(in: .whitespaces).lowercased() ?? "open"
@@ -313,6 +316,7 @@ enum Action: Equatable {
         case .newSplit(let d): return "new_split:\(d.rawValue)"
         case .gotoTab(let n): return "goto_tab:\(n)"
         case .gotoWorkspace(let n): return "goto_workspace:\(n)"
+        case .showTabs(let activity): return "show_tabs:\(activity.rawValue)"
         case .moveSurfaceToTab(let n): return "move_surface_to_tab:\(n)"
         case .writeScrollbackFile(let then): return "write_scrollback_file:\(then)"
         case .writeSelectionFile(let then): return "write_selection_file:\(then)"
@@ -374,6 +378,7 @@ enum Action: Equatable {
         ("toggle_command_palette", "Search every command, tab, session and theme by name"),
         ("goto_pane", "Go to any pane of any window, by its program, folder or tab"),
         ("go_to_directory", "A new tab in a folder: where panes are, where shells have been, or a path typed (/ or ~)"),
+        ("show_tabs:working|waiting|attention|all", "List only the tabs whose programs work, wait for you, or finished or failed (again: all)"),
         ("restart_surface", "End the focused pane's program and start a fresh shell in its place"),
         ("park_surface", "Take the focused pane out of the split, its program still running"),
         ("unpark_surface", "Put the latest parked pane back beside the pane it stood by"),

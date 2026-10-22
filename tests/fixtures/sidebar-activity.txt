@@ -1,0 +1,38 @@
+# The sidebar's activity filter (show_tabs, the filter field's button): only
+# the tabs whose programs work, wait for you, or finished or failed; the
+# name filter on top; the same again, or All Tabs, shows every tab. Rows
+# come and go as their programs' states change.
+type:printf '\033]2;WORKER\a\033]7501;state=working:app=probe\a'; read x; printf '\033]7501;state=done:app=probe\a'; sleep 60
+key:enter
+tab:new
+type:printf '\033]2;ASKER\a\033]7501;state=blocked:app=probe\a'; sleep 60
+key:enter
+tab:new
+type:printf '\033]2;BREAKER\a\033]7501;state=error:app=probe\a'; sleep 60
+key:enter
+tab:new
+type:printf '\033]2;IDLER\a'; sleep 60
+key:enter
+wait:1.5
+expect-shown:4
+action:show_tabs:working
+expect-shown:1:WORKER
+action:show_tabs:waiting
+expect-shown:1:ASKER
+action:show_tabs:attention
+expect-shown:1:BREAKER
+# Again: every tab.
+action:show_tabs:attention
+expect-shown:4
+# The worker finishes: it leaves Working for Finished or Failed.
+action:show_tabs:working
+expect-shown:1:WORKER
+tab:1
+key:enter
+tab:4
+wait:1.0
+expect-shown:0
+action:show_tabs:attention
+expect-shown:2:ER
+action:show_tabs:all
+expect-shown:4

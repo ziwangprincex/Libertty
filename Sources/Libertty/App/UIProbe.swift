@@ -29,6 +29,7 @@ import LiberttyCore
 ///   expect-workspace:TEXT the workspaces' names, the one showing in [brackets], contain TEXT
 ///                         (`=TEXT`: are exactly TEXT)
 ///   expect-tab-count:N    the window (its workspace in front) has N tabs
+///   expect-shown:N[:TEXT] the sidebar's filters leave N rows showing (each containing TEXT)
 ///   undo:go               Edit ▸ Undo (a probe has no menu for ⌘Z to reach)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -553,6 +554,14 @@ enum UIProbe {
                 }
                 controller.take(tab, from: other, at: controller.tabs.count)
                 pump(0.4)
+            case .expectShown(let n, let text):
+                let shown = controller.shownSidebarRows
+                if shown.count == n, text.isEmpty || shown.allSatisfy({ $0.contains(text) }) {
+                    print("ok    ui-probe sidebar shows \(n) tabs" + (text.isEmpty ? "" : " with \(text)"))
+                } else {
+                    print("FAIL  ui-probe sidebar shows \(shown), not \(n)" + (text.isEmpty ? "" : " with \(text)"))
+                    failures += 1
+                }
             case .expectTabCount(let n):
                 if controller.tabs.count == n {
                     print("ok    ui-probe \(n) tabs")
@@ -637,7 +646,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), undo
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -711,6 +720,9 @@ enum UIProbe {
             case "roundtrip": steps.append(.roundtrip)
             case "expect-workspace": steps.append(.expectWorkspace(arg))
             case "expect-tab-count": steps.append(.expectTabCount(Int(arg) ?? -1))
+            case "expect-shown":
+                let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
+                steps.append(.expectShown(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
             case "action": steps.append(.action(arg))
             case "expect-subtitle": steps.append(.expectSubtitle(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))

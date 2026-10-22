@@ -20,6 +20,34 @@ struct SidebarTabInfo: Equatable {
     var news: TabNews = .none
 }
 
+/// Which tabs the sidebar lists by what their programs are doing (Rex's
+/// activity filter): every tab, those at work, those waiting for you, or
+/// those with something to see.
+enum TabActivity: String, CaseIterable {
+    case all, working, waiting, attention
+
+    var title: String {
+        switch self {
+        case .all: return "All Tabs"
+        case .working: return "Working"
+        case .waiting: return "Waiting for You"
+        case .attention: return "Finished or Failed"
+        }
+    }
+
+    /// As the filter's placeholder says it: "Filter waiting tabs".
+    var word: String { self == .attention ? "finished" : rawValue }
+
+    func includes(_ tab: SidebarTabInfo) -> Bool {
+        switch self {
+        case .all: return true
+        case .working: return tab.status == .working || tab.progress != nil
+        case .waiting: return tab.status == .blocked
+        case .attention: return tab.status == .done || tab.status == .error || tab.news == .attention
+        }
+    }
+}
+
 /// A background tab's news, shown as a small mark beside its title.
 enum TabNews: Equatable {
     case none
@@ -233,6 +261,7 @@ final class SidebarViewController: NSViewController {
         // Filter the tabs by name (Tern's field at the column's foot).
         filter.onChange = { [weak self] text in self?.filterTabs(text) }
         filter.onSubmit = { [weak self] in self?.selectFirstMatch() }
+        filter.onActivity = { [weak self] activity in self?.show(activity: activity) }
 
         for v in [tabsRow, tabsScroll, divider, filesRow, files, filter] {
             v.translatesAutoresizingMaskIntoConstraints = false
@@ -318,15 +347,33 @@ final class SidebarViewController: NSViewController {
     private let filter = TabFilterField()
     /// What the filter field holds, lowercased; empty shows every tab.
     private var filterText = ""
+    /// Which tabs show by their programs' state (the field's filter menu).
+    private(set) var activity = TabActivity.all
 
     /// Rows stay in the table when filtered out, folded to no height: a row
     /// is still its tab's index, for every action that takes one.
     private func matches(_ tab: SidebarTabInfo) -> Bool {
-        filterText.isEmpty || tab.title.lowercased().contains(filterText) || tab.detail.lowercased().contains(filterText)
+        activity.includes(tab) && (filterText.isEmpty || tab.title.lowercased().contains(filterText)
+            || tab.detail.lowercased().contains(filterText))
+    }
+
+    /// The tabs the filters leave showing, by index.
+    var shownRows: [Int] { tabs.indices.filter { matches(tabs[$0]) } }
+
+    func show(activity: TabActivity) {
+        guard activity != self.activity else { return }
+        self.activity = activity
+        filter.show(activity: activity)
+        refilter()
     }
 
     private func filterTabs(_ text: String) {
         filterText = text.trimmingCharacters(in: .whitespaces).lowercased()
+        refilter()
+    }
+
+    /// The rows again, after a filter changed.
+    private func refilter() {
         tabsTable.noteHeightOfRows(withIndexesChanged: IndexSet(tabs.indices))
         for row in tabs.indices {
             tabsTable.view(atColumn: 0, row: row, makeIfNecessary: false)?.isHidden = !matches(tabs[row])
@@ -347,6 +394,8 @@ final class SidebarViewController: NSViewController {
         let folded = tabs.count - shown
         tabsHeight.constant = CGFloat(shown) * (tabsTable.rowHeight + Self.rowSpacing)
             + CGFloat(folded) * (Self.foldedRowHeight + Self.rowSpacing) + 2
+        // How many, and how many of them show while filtered: "1/4".
+        tabCount.stringValue = folded > 0 ? "\(shown)/\(tabs.count)" : String(tabs.count)
     }
 
     private static let foldedRowHeight: CGFloat = 0.01
@@ -387,7 +436,6 @@ final class SidebarViewController: NSViewController {
             self.tabs = tabs
             tabsTable.reloadData()
             fitTabsHeight()
-            tabCount.stringValue = String(tabs.count)
         }
         if tabsTable.selectedRow != selected {
             tabsTable.selectRowIndexes([selected], byExtendingSelection: false)
@@ -1390,11 +1438,15 @@ enum ShellQuote {
 }
 
 /// "Filter tabs" at the sidebar's foot (Tern's): a magnifier and a field on
-/// a soft fill. Esc clears it; Return goes to the first tab it shows.
+/// a soft fill. Esc clears it; Return goes to the first tab it shows. The
+/// button at its end filters by activity (Rex's), filled while it does.
 final class TabFilterField: NSView, NSTextFieldDelegate {
     var onChange: ((String) -> Void)?
     var onSubmit: (() -> Void)?
+    var onActivity: ((TabActivity) -> Void)?
     private let field = NSTextField()
+    private let activityButton = NSButton()
+    private var activity = TabActivity.all
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1404,9 +1456,6 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
         let icon = NSImageView(image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)!)
         icon.contentTintColor = .tertiaryLabelColor
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        field.placeholderAttributedString = NSAttributedString(string: "Filter tabs", attributes: [
-            .font: Typeface.row, .foregroundColor: NSColor.tertiaryLabelColor,
-        ])
         field.font = Typeface.row
         field.isBordered = false
         field.drawsBackground = false
@@ -1414,7 +1463,11 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
         field.delegate = self
         field.cell?.usesSingleLineMode = true
         field.setAccessibilityLabel("Filter tabs")
-        for v in [icon, field] {
+        activityButton.isBordered = false
+        activityButton.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        activityButton.target = self
+        activityButton.action = #selector(showActivityMenu(_:))
+        for v in [icon, field, activityButton] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -1422,10 +1475,47 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
             icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            field.trailingAnchor.constraint(equalTo: activityButton.leadingAnchor, constant: -4),
             field.centerYAnchor.constraint(equalTo: centerYAnchor),
+            activityButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            activityButton.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        show(activity: .all)
         updateColors()
+    }
+
+    /// The button and the placeholder say which tabs show.
+    func show(activity: TabActivity) {
+        self.activity = activity
+        let filtering = activity != .all
+        let symbol = filtering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+        activityButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Show Tabs")
+        activityButton.contentTintColor = filtering ? .labelColor : .tertiaryLabelColor
+        activityButton.toolTip = filtering ? "Showing: \(activity.title)" : "Show Tabs by Activity"
+        let placeholder = filtering ? "Filter \(activity.word) tabs" : "Filter tabs"
+        field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+            .font: Typeface.row, .foregroundColor: NSColor.tertiaryLabelColor,
+        ])
+    }
+
+    @objc private func showActivityMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for (i, activity) in TabActivity.allCases.enumerated() {
+            if i == 1 { menu.addItem(.separator()) }
+            let item = menu.addItem(withTitle: activity.title, action: #selector(pickActivity(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = activity.rawValue
+            item.state = activity == self.activity ? .on : .off
+        }
+        // As a pop-up button's: the checked one over the button.
+        let checked = menu.items.first { $0.state == .on }
+        menu.popUp(positioning: checked, at: NSPoint(x: 0, y: sender.isFlipped ? 0 : sender.bounds.maxY), in: sender)
+    }
+
+    @objc private func pickActivity(_ item: NSMenuItem) {
+        guard let raw = item.representedObject as? String, let activity = TabActivity(rawValue: raw) else { return }
+        show(activity: activity)
+        onActivity?(activity)
     }
 
     @available(*, unavailable)
