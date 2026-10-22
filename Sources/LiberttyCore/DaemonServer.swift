@@ -114,7 +114,7 @@ public final class DaemonServer {
     /// What this liberttyd does beyond protocol 1's beginnings, in `welcome`:
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
-    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode"]
+    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey"]
 
     private init(path: String) {
         self.path = path
@@ -290,6 +290,14 @@ public final class DaemonServer {
                 let format = (json["format"] as? String).flatMap(Snapshots.TextFormat.init) ?? .plain
                 connection.send(.result, json: ["ok": true, "format": format.rawValue,
                                                 "text": s.capture(scrollback: json["scrollback"] as? Bool ?? false, format: format)])
+            case .sendKey:
+                let json = frame.json
+                guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
+                let names = json["keys"] as? [String] ?? []
+                let keys = names.map(KeySpec.init)
+                if let bad = zip(names, keys).first(where: { $0.1 == nil })?.0 { fail("unknown key \(bad)"); continue }
+                s.press(keys.compactMap { $0 })
+                connection.send(.result, json: ["ok": true])
             case .rename:
                 let json = frame.json
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
@@ -1021,6 +1029,24 @@ final class DaemonSession {
         return SessionInfo(id: id, pid: pty.pid, title: title, workingDirectory: pwd,
                            cols: size.cols, rows: size.rows, clients: clients.count, created: created, command: command,
                            label: name.isEmpty ? nil : name)
+    }
+
+    // MARK: Keys (`libertty +send-key`)
+
+    /// Press `keys`, each encoded for the terminal's modes at that moment (a
+    /// program may change them in between: not here, they go at once).
+    func press(_ keys: [KeySpec]) {
+        var encoder: GhosttyKeyEncoder?, event: GhosttyKeyEvent?
+        guard ghostty_key_encoder_new(nil, &encoder) == GHOSTTY_SUCCESS, let encoder,
+              ghostty_key_event_new(nil, &event) == GHOSTTY_SUCCESS, let event else { return }
+        defer {
+            ghostty_key_event_free(event)
+            ghostty_key_encoder_free(encoder)
+        }
+        lock.lock()
+        let bytes = keys.flatMap { $0.encode(for: terminal, with: encoder, event: event) }
+        lock.unlock()
+        write(Data(bytes), from: nil)
     }
 
     // MARK: Its input mode

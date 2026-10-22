@@ -140,6 +140,7 @@ libertty +list-sessions [--json]
 libertty +new-session --cwd ~/src -e make watch
 libertty +capture ID [--scrollback] [--ansi | --html]
 libertty +send ID 'make test\n'
+libertty +send-key ID ctrl+c          # 按键，按程序要求的方式编码：enter、up、shift+tab…
 libertty +wait ID --until exit|prompt|idle=MS [--timeout S]
 libertty +events [--filter KIND,...]
 libertty +attach ID [--window] ; libertty +kill-session ID

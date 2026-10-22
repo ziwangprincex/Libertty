@@ -57,6 +57,7 @@
 | `ls / new / send / capture / kill / attach` | ✓ | ✅ `libertty +list-sessions / +new-session / +send / +capture / +kill-session / +attach`，`$LIBERTTY_SESSION` |
 | `split / run / focus / wait` | ✓ | ✅ `+action new_split:…`、`+new-session -e`、`+focus ID`、`+wait ID`（退出码原样返回） |
 | 按 pane ID 操作布局（Rex：`rex split -b BLOCK --split=below --ratio 30`、`move`） | — | ✅ `+split [ID] [--down] [--ratio 30] [--cwd] [--no-focus] [-e CMD]`（输出新会话 ID）、`+move-pane [ID] --new-tab / --tab N / --new-window`。App 用回复通知告诉 CLI 结果：成功、找不到、被拒（附原因）或出错；被拒时不抢焦点。⬜ swap、resize |
+| 发送按键（Rex：`rex send-key`） | — | ✅ `+send-key ID ctrl+c enter up …`：liberttyd 用自己那份终端状态按程序当前模式编码（光标键模式、kitty 键盘协议）；`tests/send-key-test.sh` 验证实际字节 |
 | 快速失败时保留 pane（Rex："stays open after a quick failure"、`--keep-open`） | — | ✅ `abnormal-command-exit-runtime`（默认 250 ms，Ghostty 同名）内非 0 退出就保留，显示退出码，按键关闭；`wait-after-command`（Ghostty 同名）、`+split --keep-open`；可以重启 Shell；`libertty -e` 一次性运行不保留 |
 | `wait --until prompt|idle`、`capture --ansi/--html`、`events` | ✓ | ✅ `+wait ID --until exit|prompt|idle=MS --timeout S`（超时退出 124；提示符靠 OSC 133，idle 由 liberttyd 计时，值上限一天）、`+capture --ansi / --html`（带颜色的文本、带样式的网页）、`+events [--filter …]`（JSON 行：session-started / prompt / command-started / command-finished / directory / session-ended，每个监听者自己的队列，慢的监听者不拖累别人）；`tests/cli-wait-test.sh`（17 项） |
 | ssh 到没有这份 terminfo 的主机 | ✓ | ✅ shell 集成给 ssh 包一层，远端用 `TERM=xterm-256color`（Ghostty 的 ssh-env 做法，`ssh-env = false` 关掉）；用户自己定义的 ssh 函数或别名优先 |

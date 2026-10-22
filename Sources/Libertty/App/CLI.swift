@@ -45,6 +45,7 @@ enum CLI {
         case "+new-session": status = newSession(rest)
         case "+capture": status = capture(rest)
         case "+send": status = send(rest)
+        case "+send-key": status = sendKey(rest)
         case "+kill-session": status = killSession(rest)
         case "+attach": status = attach(rest)
         case "+update": status = update(rest)
@@ -123,6 +124,7 @@ enum CLI {
                                          print a session's screen (and history): text, with its colors
                                          as terminal escapes (--ansi), or as a web page (--html)
           libertty +send ID TEXT...         type TEXT into a session (\n for Return)
+          libertty +send-key ID KEY...      press keys in it, encoded as its program wants: ctrl+c, enter, shift+tab, up
           libertty +kill-session ID         end a session's program
           libertty +wait ID [--until exit|prompt|idle=MS] [--timeout SECONDS]
                                          block until its program ends (exits with its status), its shell
@@ -157,7 +159,7 @@ enum CLI {
 
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
-          --host HOST                    with +list-sessions, +new-session, +capture, +send,
+          --host HOST                    with +list-sessions, +new-session, +capture, +send, +send-key,
                                          +kill-session, +wait, +events, +split or +move-pane: that machine's sessions
         """)
         return 0
@@ -717,6 +719,24 @@ enum CLI {
         let text = args.dropFirst().joined(separator: " ")
             .replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\t", with: "\t")
         return result(DaemonClient.request(.send, json: ["id": args[0], "text": text], address: daemon)) ? 0 : 1
+    }
+
+    /// `+send-key ID KEY...`: press keys in a session — `ctrl+c`, `enter`,
+    /// `shift+tab`, `up`, `alt+f` — encoded as its program wants them (cursor
+    /// key mode, the kitty keyboard protocol), as typing them would.
+    private static func sendKey(_ args: [String]) -> Int32 {
+        guard args.count >= 2 else { fail("usage: libertty +send-key ID KEY... (e.g. ctrl+c, enter, shift+tab, up)"); return 2 }
+        if let bad = args.dropFirst().first(where: { KeySpec($0) == nil }) {
+            fail("unknown key \(bad): a character or enter, tab, escape, backspace, delete, space, up, down, left, right, "
+                 + "home, end, page_up, page_down, insert, f1–f12, with ctrl+, alt+, shift+, super+")
+            return 2
+        }
+        switch DaemonClient.request(.sendKey, json: ["id": args[0], "keys": Array(args.dropFirst())], needing: "sendKey",
+                                    address: daemon) {
+        case .unanswered: fail("liberttyd isn't running"); return 1
+        case .unsupported: fail("this liberttyd can't press keys; restart Libertty to update it"); return 1
+        case .answered(let frame): return result(frame) ? 0 : 1
+        }
     }
 
     private static func attach(_ args: [String]) -> Int32 {

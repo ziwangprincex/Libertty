@@ -51,6 +51,7 @@ public enum Wire {
         case loadLayout = 18  // {client, local?} → result: header {client} | that Mac's, else (not local) the latest host layout
         case events = 19      // {kinds?: [String]} → result {ok}, then `event` frames until the connection closes
         case rename = 20      // {id, label}: name a session ("" for none) → result {ok, label}
+        case sendKey = 21     // {id, keys: ["ctrl+c", "enter", …]}: press them, encoded as the program wants → result {ok}
 
         // Daemon → client
         case welcome = 101    // {version, build, pid, features?}

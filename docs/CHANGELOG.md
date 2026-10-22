@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `libertty +send-key ID KEY...` presses keys in a session — `ctrl+c`, `enter`, `escape`, `up`, `shift+tab`, `alt+f` — encoded by liberttyd for the program's modes (cursor keys, the kitty keyboard protocol), as typing them would (after Rex's `send-key`). `+send` still types text as-is.
 - A program reading a password (sudo, ssh, `read -s`: its terminal takes a line without echoing it) shows as waiting for you — the tab's mark, a notification while you're elsewhere, the Dock badge — as a program reporting it (OSC 7501) would (after Rex's "Waiting for a password"). liberttyd looks a moment after output or typing; `+events` reports `input-mode`.
 - A program that fails at once (non-zero within `abnormal-command-exit-runtime`, 250 ms by default, as in Ghostty) leaves its pane open with what it said and its exit status; a key closes it (after Rex). `wait-after-command = true` (Ghostty's) keeps every pane whose program ends; `libertty +split --keep-open` keeps one.
 - `libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [-e COMMAND]`: a pane beside the one showing session ID (this pane's by default), as ⌘D makes it; it prints the new session's ID. `libertty +move-pane [ID] --new-tab | --tab N | --new-window` moves one. Both work with `--host`. The libertty skill tells agents about them (a dev server beside the agent).

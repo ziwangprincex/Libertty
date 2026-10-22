@@ -205,6 +205,7 @@ libertty +list-sessions [--json]
 libertty +new-session --cwd ~/src -e make watch
 libertty +capture ID [--scrollback] [--ansi | --html]
 libertty +send ID 'make test\n'
+libertty +send-key ID ctrl+c          # keys, encoded as the program wants: enter, up, shift+tab…
 libertty +wait ID --until exit|prompt|idle=MS [--timeout S]
 libertty +events [--filter KIND,...]
 libertty +attach ID [--window] ; libertty +kill-session ID

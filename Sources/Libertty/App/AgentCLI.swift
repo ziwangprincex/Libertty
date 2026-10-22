@@ -387,6 +387,8 @@ enum AgentCLI {
         - `libertty +move-pane ID --new-tab | --tab N | --new-window` — move a pane elsewhere.
         - `libertty +capture ID [--scrollback]` — print its screen (with --scrollback, its history too).
         - `libertty +send ID TEXT` — type TEXT into it; `\\n` is Return.
+        - `libertty +send-key ID KEY...` — press keys in it: `ctrl+c` (stop a server you started), `enter`,
+          `escape`, `up`, `shift+tab`… encoded as its program wants them.
         - `libertty +wait ID --until prompt|exit|idle=MS [--timeout S]` — block until its shell shows a prompt
           again, its program ends (the exit status is returned), or its output has been quiet for MS ms;
           exit status 124 when the time runs out.
