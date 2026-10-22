@@ -392,7 +392,7 @@ enum AgentCLI {
           exit status 124 when the time runs out.
         - `libertty +events [--filter KIND,...]` — what happens in sessions, one JSON object a line, until
           interrupted: session-started, session-ended, command-started, command-finished, prompt, title,
-          directory, label, bell.
+          directory, label, input-mode (echo, canonical), bell.
         - `libertty +kill-session ID` — end its program. Only end sessions you started.
 
         ## Showing the user something

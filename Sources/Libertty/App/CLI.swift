@@ -131,7 +131,7 @@ enum CLI {
           libertty +events [--filter KIND,...]
                                          what happens in the sessions, a JSON object a line, until ^C:
                                          session-started, session-ended, command-started,
-                                         command-finished, prompt, title, directory, label, bell
+                                         command-finished, prompt, title, directory, label, input-mode, bell
           libertty +focus ID                bring the pane showing it to the front
           libertty +rename-session [ID] NAME
                                          name a session (this pane's without ID); its tab shows the name

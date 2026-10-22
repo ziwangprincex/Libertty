@@ -292,6 +292,7 @@ final class TerminalSession {
                 guard let self else { return }
                 self.hasExited = true
                 self.programStatus.programFinished()
+                self.programStatus.setReadingSecret(false)
                 self.delegate?.sessionExited(self, status: status)
             }
         }
@@ -311,6 +312,8 @@ final class TerminalSession {
                     self.delegate?.sessionLinkChanged(self)
                 }
             }
+            if let mode = remote.initialInputMode { inputModeChanged(mode) }
+            remote.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
             label = remote.label
             remote.onLabel = { [weak self] label in
                 DispatchQueue.main.async {
@@ -321,6 +324,7 @@ final class TerminalSession {
             }
             remote.startReading()
         } else if let local = backend as? PTY {
+            local.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
             local.startReading()
         }
         pty = backend
@@ -1074,6 +1078,15 @@ final class TerminalSession {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.sessionBell(self)
+        }
+    }
+
+    /// A program reading a password shows as waiting for you (Rex's
+    /// "Waiting for a password"): on its tab, a notification, the Dock.
+    private func inputModeChanged(_ mode: InputMode) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.hasExited else { return }
+            if self.programStatus.setReadingSecret(mode.readsSecret) { self.delegate?.sessionProgramStatusChanged(self) }
         }
     }
 

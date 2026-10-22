@@ -65,6 +65,10 @@ ad-hoc signed, so macOS may ask again after an update.
 - Program states (OSC 7501: working, waiting for you, done, failed): which of them
   show on tabs, notify, count in the Dock badge or play a sound is set per state
   (`program-status-indicator`, `-notify`, `-dock-badge`, `-sound`).
+- A program reading a password (sudo, `ssh` asking here, `read -s`: a line typed without
+  echo) shows as waiting for you, as a program reporting it would. Prompts on another
+  machine are seen in a host window (Connect to Host), not through a plain `ssh` session;
+  prompts drawn by full-screen programs aren't.
 
 ### Windows, tabs and panes
 

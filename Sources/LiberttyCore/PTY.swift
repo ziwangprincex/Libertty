@@ -58,6 +58,23 @@ extension TerminalBackend {
     public func clear(atPrompt: Bool) -> Bool { false }
 }
 
+/// How the terminal hands typing to its program (Rex's `modes`).
+public struct InputMode: Equatable, Sendable {
+    /// Typed characters appear on the screen.
+    public var echo: Bool
+    /// Input reaches the program a line at a time.
+    public var canonical: Bool
+
+    public init(echo: Bool, canonical: Bool) {
+        self.echo = echo
+        self.canonical = canonical
+    }
+
+    /// What reading a password looks like (sudo, ssh, `read -s`): a line, unseen.
+    /// Shells at their prompt and full-screen programs read keys one by one.
+    public var readsSecret: Bool { canonical && !echo }
+}
+
 /// A child process on a pseudo-terminal.
 ///
 /// Output flows reader thread → `ByteQueue` → `queue`, so reading the pty and
@@ -71,6 +88,21 @@ public final class PTY: TerminalBackend {
 
     public var onOutput: ((UnsafeBufferPointer<UInt8>) -> Void)?
     public var onExit: ((Int32) -> Void)?
+    /// The input mode changed (on `queue`): looked at a moment after output
+    /// or typing, which is when a program changes it.
+    public var onInputModeChange: ((InputMode) -> Void)?
+
+    /// The terminal's input mode now (nil once it's gone).
+    public var inputMode: InputMode? {
+        var t = termios()
+        guard tcgetattr(fd.raw, &t) == 0 else { return nil }
+        return InputMode(echo: t.c_lflag & tcflag_t(ECHO) != 0, canonical: t.c_lflag & tcflag_t(ICANON) != 0)
+    }
+    private let modeLock = NSLock()
+    private var lastMode: InputMode?
+    private var modeCheckPending = false
+    /// Counts activity; what it was when the pending check was scheduled.
+    private var activity = 0, activityAtSchedule = 0
 
     private let fd: FileDescriptor
     private let wakeWrite: Int32
@@ -126,6 +158,8 @@ public final class PTY: TerminalBackend {
         let reader = PTYReader(fd: fd, wakeRead: wakeRead, queue: bytes) { [weak self] in
             queue.async { [weak self] in self?.drain(bytes) ?? bytes.discardAll() }
         }
+        // Once now: a session taken over from another liberttyd may be at a password prompt already.
+        noteActivity()
         let thread = Thread { reader.run() }
         thread.name = "libertty.pty.reader"
         thread.qualityOfService = .userInteractive
@@ -151,6 +185,7 @@ public final class PTY: TerminalBackend {
             switch bytes.take() {
             case .bytes(let chunk):
                 chunk.withUnsafeBufferPointer { onOutput?($0) }
+                noteActivity()
             case .closed:
                 if released {
                     releaseDone?.signal()
@@ -180,10 +215,50 @@ public final class PTY: TerminalBackend {
         onExit?(status)
     }
 
+    // MARK: Input mode
+
+    /// Something happened: look at the input mode in a moment (once for a
+    /// burst, and once more after it if it went on while that one waited:
+    /// `printf "Password: "; stty -echo` turns echo off just after output).
+    private func noteActivity() {
+        guard onInputModeChange != nil else { return }
+        let schedule = modeLock.withLock { () -> Bool in
+            activity &+= 1
+            guard !modeCheckPending else { return false }
+            modeCheckPending = true
+            activityAtSchedule = activity
+            return true
+        }
+        if schedule { scheduleModeCheck() }
+    }
+
+    private func scheduleModeCheck() {
+        queue.asyncAfter(deadline: .now() + .milliseconds(150)) { [weak self] in self?.checkInputMode() }
+    }
+
+    private func checkInputMode() {
+        guard !exited, let mode = inputMode else { return modeLock.withLock { modeCheckPending = false } }
+        let changed = modeLock.withLock { () -> Bool in
+            defer { lastMode = mode }
+            return lastMode != mode
+        }
+        if changed { onInputModeChange?(mode) }
+        let again = modeLock.withLock { () -> Bool in
+            guard activity != activityAtSchedule else {
+                modeCheckPending = false
+                return false
+            }
+            activityAtSchedule = activity
+            return true
+        }
+        if again { scheduleModeCheck() }
+    }
+
     // MARK: Input
 
     public func write(_ data: Data) {
         guard !data.isEmpty else { return }
+        noteActivity()
         let fd = self.fd  // keeps the descriptor open until this write finishes
         writeQueue.async {
             data.withUnsafeBytes { raw in

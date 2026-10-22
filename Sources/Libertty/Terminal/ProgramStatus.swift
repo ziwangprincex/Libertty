@@ -108,6 +108,36 @@ final class ProgramStatusStore {
         if records.count != before { onChange?() }
     }
 
+    /// Not a report: Libertty sees the program read a password (its terminal
+    /// takes a line without echoing it). Beside the records, not one of them:
+    /// what programs report, clear or evict leaves it alone, and it lasts as
+    /// long as the terminal reads that way. It shows like a blocked record
+    /// (`headline`), under an id no program can send (`~` isn't allowed in one).
+    private(set) var readingSecret = false
+    private var secretStamp: UInt64 = 0
+    static let secretInputID = "~password"
+
+    /// Whether anything changed.
+    @discardableResult
+    func setReadingSecret(_ reading: Bool) -> Bool {
+        guard reading != readingSecret else { return false }
+        readingSecret = reading
+        if reading {
+            clock += 1
+            secretStamp = clock
+        }
+        onChange?()
+        return true
+    }
+
+    /// The records, with the password one when it stands.
+    private var shown: [Record] {
+        let all = Array(records.values)
+        guard readingSecret else { return all }
+        return all + [Record(id: Self.secretInputID, state: .blocked, kind: .auth, progress: nil,
+                             app: "", title: "", message: "Waiting for a password", stamp: secretStamp)]
+    }
+
     func reset() {
         guard !records.isEmpty else { return }
         records.removeAll()
@@ -116,7 +146,7 @@ final class ProgramStatusStore {
 
     /// A record without an app takes it from its nearest ancestor that has one.
     func effectiveApp(of record: Record) -> String {
-        if !record.app.isEmpty { return record.app }
+        if !record.app.isEmpty || record.id == Self.secretInputID { return record.app }
         var id = record.id
         while !id.isEmpty {
             id = id.contains("/") ? String(id[..<id.lastIndex(of: "/")!]) : ""
@@ -132,7 +162,7 @@ final class ProgramStatusStore {
     /// a tab shows, a notification says or the Dock counts, each following
     /// the states its setting names.
     func headline(among states: Set<State>?) -> Record? {
-        records.values.filter { states?.contains($0.state) ?? true }.max { a, b in
+        shown.filter { states?.contains($0.state) ?? true }.max { a, b in
             a.state != b.state ? a.state < b.state : a.stamp < b.stamp
         }
     }

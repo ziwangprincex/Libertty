@@ -60,6 +60,7 @@ import LiberttyCore
 ///   expect-windows:N     the probe has N windows (Move … to New Window opens them, off screen)
 ///   expect-other:TEXT    a sidebar row of the newest other window contains TEXT, or its panes' text does
 ///   take-tab:N           tab N of the newest other window moves back here, at the end (as dropped on the sidebar)
+///   expect-subtitle:TEXT the window's subtitle (the most urgent program state) contains TEXT
 ///   expect-status:TEXT   program states (OSC 7501) as they show include each word of TEXT: e.g.
 ///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
 ///                        mark, the Dock badge, notifications so far, sounds so far)
@@ -480,6 +481,14 @@ enum UIProbe {
                     failures += 1
                 }
                 pump(0.5)
+            case .expectSubtitle(let text):
+                let subtitle = window.subtitle
+                if subtitle.contains(text) {
+                    print("ok    ui-probe subtitle says \(text)")
+                } else {
+                    print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
+                    failures += 1
+                }
             case .action(let text):
                 let actions = text.split(separator: ",").map { Action(String($0)) }
                 guard !actions.isEmpty, actions.allSatisfy({ $0 != nil }) else {
@@ -603,7 +612,7 @@ enum UIProbe {
     private enum Step {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
-        case action(String), expectWindows(Int), expectOther(String), takeTab(Int)
+        case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
@@ -679,6 +688,7 @@ enum UIProbe {
             case "expect-workspace": steps.append(.expectWorkspace(arg))
             case "expect-tab-count": steps.append(.expectTabCount(Int(arg) ?? -1))
             case "action": steps.append(.action(arg))
+            case "expect-subtitle": steps.append(.expectSubtitle(arg))
             case "expect-windows": steps.append(.expectWindows(Int(arg) ?? -1))
             case "expect-other": steps.append(.expectOther(arg))
             case "take-tab": steps.append(.takeTab(Int(arg) ?? -1))

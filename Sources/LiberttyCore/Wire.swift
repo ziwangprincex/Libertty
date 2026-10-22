@@ -54,7 +54,7 @@ public enum Wire {
 
         // Daemon → client
         case welcome = 101    // {version, build, pid, features?}
-        case attached = 102   // u32 header length | header JSON {id, pid, cols, rows, label?} | snapshot
+        case attached = 102   // u32 header length | header JSON {id, pid, cols, rows, label?, echo?, canonical?} | snapshot
         case output = 103     // program output
         case exited = 104     // {status}
         case result = 105     // {ok, error?, …}
@@ -63,6 +63,7 @@ public enum Wire {
                               // behind to be sent (only to a window that attached with catchUp)
         case event = 108      // what happened in a session (`events`): {event, id, time, …}
         case label = 109      // {label}: the session was named (to the windows showing it)
+        case inputMode = 110  // {echo, canonical}: how the terminal hands typing to the program now
     }
 
     public static let maxFrame = 256 << 20

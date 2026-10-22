@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A program reading a password (sudo, ssh, `read -s`: its terminal takes a line without echoing it) shows as waiting for you — the tab's mark, a notification while you're elsewhere, the Dock badge — as a program reporting it (OSC 7501) would (after Rex's "Waiting for a password"). liberttyd looks a moment after output or typing; `+events` reports `input-mode`.
 - A program that fails at once (non-zero within `abnormal-command-exit-runtime`, 250 ms by default, as in Ghostty) leaves its pane open with what it said and its exit status; a key closes it (after Rex). `wait-after-command = true` (Ghostty's) keeps every pane whose program ends; `libertty +split --keep-open` keeps one.
 - `libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [-e COMMAND]`: a pane beside the one showing session ID (this pane's by default), as ⌘D makes it; it prints the new session's ID. `libertty +move-pane [ID] --new-tab | --tab N | --new-window` moves one. Both work with `--host`. The libertty skill tells agents about them (a dev server beside the agent).
 - Move a pane (after Rex): to a tab of its own, into another tab's split (a pane alone in its tab takes the tab along), or to a window of its own; move a tab to a new window. Drag a tab out of every window for a window of its own, or onto another window's tabs to move it there — a window's only tab too, and its window closes. Programs run on through every move. Window menu, palette, context menus and keybind actions.

@@ -114,7 +114,7 @@ public final class DaemonServer {
     /// What this liberttyd does beyond protocol 1's beginnings, in `welcome`:
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
-    static let features = ["layout", "catchUp", "waitUntil", "events", "label"]
+    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode"]
 
     private init(path: String) {
         self.path = path
@@ -573,6 +573,7 @@ final class DaemonSession {
 
         pty.onOutput = { [weak self] bytes in self?.output(bytes) }
         pty.onExit = { [weak self] status in self?.exited(status) }
+        pty.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
         pty.startReading()
         compressor = IdleCompressor(queue: queue) { [weak self] body in
             guard let self else { return }
@@ -793,6 +794,10 @@ final class DaemonSession {
         let outbox = Outbox(connection, catchUp: catchUp, session: self)
         var header: [String: Any] = ["id": id, "pid": Int(pty.pid), "cols": Int(size.cols), "rows": Int(size.rows)]
         if !name.isEmpty { header["label"] = name }
+        if let mode = inputMode {
+            header["echo"] = mode.echo
+            header["canonical"] = mode.canonical
+        }
         if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
@@ -1016,6 +1021,21 @@ final class DaemonSession {
         return SessionInfo(id: id, pid: pty.pid, title: title, workingDirectory: pwd,
                            cols: size.cols, rows: size.rows, clients: clients.count, created: created, command: command,
                            label: name.isEmpty ? nil : name)
+    }
+
+    // MARK: Its input mode
+
+    /// As last seen (`PTY.onInputModeChange`); under `lock`.
+    private var inputMode: InputMode?
+
+    /// The windows hear (a program reading a password shows on its tab), and so does `+events`.
+    private func inputModeChanged(_ mode: InputMode) {
+        lock.lock()
+        inputMode = mode
+        let frame = (try? JSONSerialization.data(withJSONObject: ["echo": mode.echo, "canonical": mode.canonical])) ?? Data()
+        for c in clients { c.send(.inputMode, frame) }
+        lock.unlock()
+        DaemonEvents.shared.publish("input-mode", session: id, ["echo": mode.echo, "canonical": mode.canonical])
     }
 
     // MARK: Its name

@@ -203,6 +203,11 @@ expect split-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-confi
 # A program that fails at once keeps its pane (a key closes it); --keep-open.
 expect keep-open 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/keep-open.txt)" $OUT --persist
+# A program reading a password shows as waiting for you: through liberttyd and on a pty of the app's own.
+expect password 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT --persist
+expect password-local 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config

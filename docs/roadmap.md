@@ -77,6 +77,7 @@
 | OSC 9 / 777 桌面通知、OSC 9;4 进度 | ✓ | ✓ | ✅ |
 | OSC 52 剪贴板（ssh 里的 vim/tmux 复制） | ✓ | ✓ | ✅ 写默认允许，读默认拒绝（`clipboard-read/-write`） |
 | 按状态分别设置提醒（Rex："Independently configure tab indicators, system notifications, Dock badges, and sounds"） | — | ✓ | ✅ `program-status-indicator / -notify / -dock-badge / -sound`，默认行为不变 |
+| 识别等待输入密码（Rex："Waiting for a password"、`modes` 的 echo/canonical） | — | ✓ | ✅ 关闭回显 + 整行读取 = 读密码；liberttyd 在输出或输入后检查一次，变化时通知窗口（新帧 `inputMode`），App 当作"等你处理（需要登录）"的状态显示；本地 pty 同样检测。`+events` 有 `input-mode` |
 | 隐私权限归属（摄像头、麦克风、文件夹等） | — | ✓ | ✅ liberttyd 自己承担责任进程（`responsibility_spawnattrs_setdisclaim`），内嵌带用途说明的 Info.plist（"Libertty Sessions"）；ssh 远程主机上保持 sshd 的权限。⚠️ 实际弹窗需要在真机上试 |
 
 ## 5. 终端能力（大部分来自 libghostty-vt，不用自己写）

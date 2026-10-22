@@ -33,6 +33,10 @@ public final class RemotePTY: TerminalBackend {
     public var onLinkChange: ((Bool) -> Void)?
     /// The session was named (`+rename-session`), here or meanwhile, on `queue`.
     public var onLabel: ((String) -> Void)?
+    /// Its terminal's input mode changed (liberttyd looks), on `queue`.
+    public var onInputModeChange: ((InputMode) -> Void)?
+    /// What liberttyd said it was when this attached (later changes come through `onInputModeChange`).
+    public private(set) var initialInputMode: InputMode?
     /// Its name as liberttyd last said ("" for none).
     public var label: String {
         stateLock.lock()
@@ -90,9 +94,10 @@ public final class RemotePTY: TerminalBackend {
     public static func attach(id: String, address: DaemonAddress = .local, queue: DispatchQueue) throws -> (RemotePTY, Data) {
         guard let c = address.connect() else { throw DaemonClientError.unavailable }
         c.setBufferSizes(1 << 21)
-        let (pid, snapshot, label) = try attach(c, id: id)
+        let (pid, snapshot, label, mode) = try attach(c, id: id)
         let pty = RemotePTY(id: id, pid: pid, connection: c, address: address, queue: queue)
         pty.currentLabel = label
+        pty.initialInputMode = mode
         return (pty, snapshot)
     }
 
@@ -107,7 +112,13 @@ public final class RemotePTY: TerminalBackend {
         return pty
     }
 
-    private static func attach(_ c: Connection, id: String) throws -> (pid_t, Data, String) {
+    /// `{echo, canonical}`, in a frame or an attach header.
+    private static func inputMode(_ json: [String: Any]?) -> InputMode? {
+        guard let echo = json?["echo"] as? Bool, let canonical = json?["canonical"] as? Bool else { return nil }
+        return InputMode(echo: echo, canonical: canonical)
+    }
+
+    private static func attach(_ c: Connection, id: String) throws -> (pid_t, Data, String, InputMode?) {
         c.setReceiveTimeout(20)
         c.send(.attach, json: ["id": id, "catchUp": true])
         guard let reply = c.receive() else { throw DaemonClientError.unavailable }
@@ -115,7 +126,7 @@ public final class RemotePTY: TerminalBackend {
             throw DaemonClientError.refused(reply.json["error"] as? String ?? "unexpected reply")
         }
         c.setReceiveTimeout(0)
-        return (pid_t(header["pid"] as? Int ?? 0), body, header["label"] as? String ?? "")
+        return (pid_t(header["pid"] as? Int ?? 0), body, header["label"] as? String ?? "", inputMode(header))
     }
 
     /// Begin delivering output; set the handlers first.
@@ -148,6 +159,9 @@ public final class RemotePTY: TerminalBackend {
                     case .label:
                         let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         setLabel(json?["label"] as? String ?? "")
+                    case .inputMode:
+                        let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
+                        if let mode = Self.inputMode(json) { queue.async { [weak self] in self?.onInputModeChange?(mode) } }
                     case .exited:
                         let status = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         stateLock.lock()
@@ -209,10 +223,11 @@ public final class RemotePTY: TerminalBackend {
             c.setBufferSizes(1 << 21)
             let snapshot: Data
             do {
-                let (pid, data, label) = try Self.attach(c, id: id)
+                let (pid, data, label, mode) = try Self.attach(c, id: id)
                 self.pid = pid
                 snapshot = data
                 setLabel(label)
+                if let mode { queue.async { [weak self] in self?.onInputModeChange?(mode) } }
             } catch DaemonClientError.refused {
                 // The session is gone. Restoring: start a fresh one in its place.
                 guard let request = pendingFallback?(), let fresh = address.connect(),
