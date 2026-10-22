@@ -209,6 +209,7 @@ enum Action: Equatable {
     case toggleFullscreen, toggleVisibility, toggleWindowFloatOnTop, resetWindowSize, toggleSecureInput
     case toggleCommandPalette, toggleQuickTerminal, toggleTabOverview, connectToHost, togglePictureInPicture
     case gotoPane, restartSurface, parkSurface, unparkSurface, floatSurface
+    case moveSurfaceToNewTab, moveSurfaceToNewWindow, moveSurfaceToTab(Int), moveTabToNewWindow
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
     case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
@@ -240,6 +241,8 @@ enum Action: Equatable {
         ("toggle_tab_overview", .toggleTabOverview), ("connect_to_host", .connectToHost),
         ("goto_pane", .gotoPane), ("restart_surface", .restartSurface),
         ("park_surface", .parkSurface), ("unpark_surface", .unparkSurface), ("float_surface", .floatSurface),
+        ("move_surface_to_new_tab", .moveSurfaceToNewTab), ("move_surface_to_new_window", .moveSurfaceToNewWindow),
+        ("move_tab_to_new_window", .moveTabToNewWindow),
         ("new_workspace", .newWorkspace), ("rename_workspace", .renameWorkspace), ("close_workspace", .closeWorkspace),
         ("next_workspace", .nextWorkspace), ("previous_workspace", .previousWorkspace),
         ("open_git", .openGit), ("open_browser", .openBrowser), ("focus_address", .focusAddress), ("open_tasks", .openTasks), ("new_canvas", .newCanvas), ("open_profiler", .openProfiler), ("open_board", .openBoard), ("open_plugins", .openPlugins), ("open_screen", .openScreen),
@@ -269,6 +272,7 @@ enum Action: Equatable {
         case "new_split": guard let d = arg == nil ? .right : direction() else { return nil }; self = .newSplit(d)
         case "goto_tab": guard let n = integer(), n > 0 else { return nil }; self = .gotoTab(n)
         case "goto_workspace": guard let n = integer(), n > 0 else { return nil }; self = .gotoWorkspace(n)
+        case "move_surface_to_tab": guard let n = integer(), n > 0 else { return nil }; self = .moveSurfaceToTab(n)
         case "write_scrollback_file", "write_selection_file":
             let then = arg?.trimmingCharacters(in: .whitespaces).lowercased() ?? "open"
             guard ["open", "copy", "paste", "save"].contains(then) else { return nil }
@@ -309,6 +313,7 @@ enum Action: Equatable {
         case .newSplit(let d): return "new_split:\(d.rawValue)"
         case .gotoTab(let n): return "goto_tab:\(n)"
         case .gotoWorkspace(let n): return "goto_workspace:\(n)"
+        case .moveSurfaceToTab(let n): return "move_surface_to_tab:\(n)"
         case .writeScrollbackFile(let then): return "write_scrollback_file:\(then)"
         case .writeSelectionFile(let then): return "write_selection_file:\(then)"
         case .navigateSearch(let next): return "navigate_search:" + (next ? "next" : "previous")
@@ -372,6 +377,10 @@ enum Action: Equatable {
         ("park_surface", "Take the focused pane out of the split, its program still running"),
         ("unpark_surface", "Put the latest parked pane back beside the pane it stood by"),
         ("float_surface", "Show the focused pane live in a corner of the split (picture in picture in the window), or bring it back"),
+        ("move_surface_to_new_tab", "Take the focused pane out of its split into a tab of its own, its program running on"),
+        ("move_surface_to_tab:N", "Move the focused pane into tab N's split, beside its focused pane"),
+        ("move_surface_to_new_window", "Take the focused pane out of its split into a window of its own"),
+        ("move_tab_to_new_window", "Take the tab in front out of this window into a window of its own"),
         ("new_workspace", "A new workspace in this window: a named set of tabs, with a shell of its own"),
         ("rename_workspace", "Rename the workspace in front"),
         ("close_workspace", "End the workspace in front with its tabs and programs"),

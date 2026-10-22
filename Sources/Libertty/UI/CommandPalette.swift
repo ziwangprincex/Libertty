@@ -185,6 +185,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Park Pane", .parkSurface, "tray.and.arrow.down")
         command("Unpark Pane", .unparkSurface, "tray.and.arrow.up")
         command("Float Pane", .floatSurface, "pip.enter")
+        command("Move Pane to New Tab", .moveSurfaceToNewTab, "rectangle.portrait.and.arrow.right")
+        command("Move Pane to New Window", .moveSurfaceToNewWindow, "macwindow.badge.plus")
+        command("Move Tab to New Window", .moveTabToNewWindow, "uiwindow.split.2x1")
+        // Each other tab the focused pane could join.
+        for (i, tab) in (controller?.tabs ?? []).enumerated() where controller?.canMoveFocusedPane(toTab: i + 1) == true {
+            command("Move Pane to Tab \(i + 1): \(controller?.label(of: tab).name ?? "")", .moveSurfaceToTab(i + 1),
+                    "rectangle.portrait.and.arrow.right")
+        }
         command("Git", .openGit, "arrow.triangle.branch")
         command("Browser", .openBrowser, "globe")
         command("Tasks", .openTasks, "gauge.with.dots.needle.33percent")

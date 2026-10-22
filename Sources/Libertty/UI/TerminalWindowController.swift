@@ -330,6 +330,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             try startSession(of: focusedTerminal, command: command, workingDirectory: workingDirectory)
         }
         window?.makeFirstResponder(selectedTab.focusTarget)
+        updateBroadcastBorders()
         updateTitle()
         updateSidebar(force: true)
     }
@@ -356,6 +357,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     private var allPanes: [TerminalView] { everyTab.flatMap(\.everyPane) }
 
     private func adoptAll(_ tab: TerminalTab) {
+        // A card made by another window acts on that one: syncCard makes ours.
+        tab.container?.hideCard()
         tab.everyPane.forEach(adopt)
         tab.document.map(adopt)
         tab.documentPanes.forEach(adopt)
@@ -937,6 +940,194 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         updateBroadcastBorders()
         updateDimming()
         updateSidebar()
+    }
+
+    // MARK: Moving panes and tabs (after Rex)
+
+    /// The focused pane can leave for a tab or a window of its own: a
+    /// terminal in a split, with another terminal staying there.
+    var canMoveFocusedPaneOut: Bool {
+        !isQuick && selectedTab.isTerminal && selectedTab.focusedDocument == nil && selectedTab.panes.count > 1
+            && !isParked(selectedTab.focusedPane)
+    }
+
+    private func isParked(_ pane: TerminalView?) -> Bool {
+        pane.map { pane in selectedTab.parked.contains { $0.pane === pane } } ?? false
+    }
+
+    /// The focused pane can join tab `n` (1-based) of the workspace in front:
+    /// another terminal tab. A pane alone in its tab takes the tab's place
+    /// there; one beside documents stays (they'd be left without a terminal).
+    func canMoveFocusedPane(toTab n: Int) -> Bool {
+        guard !isQuick, selectedTab.isTerminal, selectedTab.focusedDocument == nil, selectedTab.focusedPane != nil,
+              !isParked(selectedTab.focusedPane), tabs.indices.contains(n - 1), let container = selectedTab.container
+        else { return false }
+        let target = tabs[n - 1]
+        guard target !== selectedTab, target.isTerminal, target.container != nil else { return false }
+        return selectedTab.panes.count > 1 || (container.views.count == 1 && selectedTab.parked.isEmpty)
+    }
+
+    /// `tab` can go to another window: a terminal tab of the workspace in
+    /// front, with another terminal tab staying behind.
+    func canMoveTabOut(_ tab: TerminalTab) -> Bool {
+        !isQuick && tab.isTerminal && tabs.contains { $0 === tab } && tabs.contains { $0 !== tab && $0.isTerminal }
+    }
+
+    var canMoveSelectedTabOut: Bool { canMoveTabOut(selectedTab) }
+
+    /// Move Pane to New Tab: the focused pane gets a tab of its own after this one.
+    func moveFocusedPaneToNewTab() {
+        guard canMoveFocusedPaneOut, let pane = selectedTab.focusedPane else { return }
+        let source = selectedTab
+        takeOut(pane, from: source) { [weak self] in
+            guard let self else { return }
+            let tab = TerminalTab(pane: pane)
+            let index = (self.tabs.firstIndex { $0 === source } ?? self.tabs.count - 1) + 1
+            self.tabs.insert(tab, at: index)
+            self.select(tab)
+        }
+    }
+
+    /// Move Pane to Tab: the focused pane joins tab `n`'s split, beside its focused pane.
+    func moveFocusedPane(toTab n: Int) {
+        guard canMoveFocusedPane(toTab: n), let pane = selectedTab.focusedPane else { return }
+        let source = selectedTab, target = tabs[n - 1]
+        let join = { [weak self] in
+            guard let self else { return }
+            // Gone meanwhile (it closed while the pane slid out): a tab of its own then.
+            guard self.tabs.contains(where: { $0 === target }), let container = target.container,
+                  let anchor = target.focusedLeaf ?? container.views.first else {
+                let tab = TerminalTab(pane: pane)
+                self.tabs.append(tab)
+                return self.select(tab)
+            }
+            if let zoomed = container.zoomed { container.toggleZoom(zoomed) }
+            container.split(anchor, with: pane, toward: .right)
+            target.focusedPane = pane
+            target.focusedDocument = nil
+            target.noteFocus(pane)
+            self.select(target)
+            self.window?.makeFirstResponder(pane)
+            self.updateBroadcastBorders()
+        }
+        if source.panes.count > 1 {
+            takeOut(pane, from: source, then: join)
+        } else {
+            // Alone in its tab: the tab goes, the pane lives on in the other.
+            guard source.container?.contains(pane) == true else { return }
+            detach(source)
+            pane.removeFromSuperview()
+            join()
+        }
+    }
+
+    /// Who opens a window for a tab: the app, or (`--ui-probe`) a probe, off screen.
+    static var openWindowForTab: (TerminalTab, TerminalWindowController, NSPoint?) -> TerminalWindowController? = { tab, source, origin in
+        (NSApp.delegate as? AppDelegate)?.openWindow(with: tab, like: source, at: origin)
+    }
+
+    /// What this window knew of `panes`, come from `other`: news unseen
+    /// (the tab's ring), and what was already notified or sounded — so
+    /// the move doesn't announce it again.
+    private func takeNews(of panes: [TerminalView], from other: TerminalWindowController) {
+        for pane in panes {
+            let id = ObjectIdentifier(pane), key = ObjectIdentifier(pane.session)
+            if other.attention.remove(id) != nil { attention.insert(id) }
+            if let n = other.notifiedRecords.removeValue(forKey: key) { notifiedRecords[key] = n }
+            if let s = other.soundedRecords.removeValue(forKey: key) { soundedRecords[key] = s }
+        }
+        updateSidebar()
+    }
+
+    /// Move Pane to New Window: the focused pane in a window of its own.
+    func moveFocusedPaneToNewWindow() {
+        guard canMoveFocusedPaneOut, let pane = selectedTab.focusedPane else { return }
+        takeOut(pane, from: selectedTab) { [weak self] in
+            guard let self else { return }
+            Self.openWindowForTab(TerminalTab(pane: pane), self, nil)?.takeNews(of: [pane], from: self)
+        }
+    }
+
+    /// Move Tab to New Window: the tab in front, or `tab`, in a window of its
+    /// own, with its top left at `origin` (a screen point; nil: cascaded from this one).
+    func moveTabToNewWindow(_ tab: TerminalTab? = nil, at origin: NSPoint? = nil) {
+        let tab = tab ?? selectedTab
+        guard canMoveTabOut(tab) else { return }
+        detach(tab)
+        Self.openWindowForTab(tab, self, origin)?.takeNews(of: tab.everyPane, from: self)
+    }
+
+    /// `other`'s tab may come here: both windows on the same machine. Its
+    /// window's only tab may too; that window closes then (as browsers do).
+    func canTake(_ tab: TerminalTab, from other: TerminalWindowController) -> Bool {
+        other !== self && !isQuick && other.host?.destination == host?.destination
+            && (other.canMoveTabOut(tab) || other.isOnlyTab(tab))
+    }
+
+    /// A tab of `other` moves to this window at `index` (dropped on this sidebar).
+    func take(_ tab: TerminalTab, from other: TerminalWindowController, at index: Int) {
+        guard canTake(tab, from: other) else { return }
+        if other.canMoveTabOut(tab) { other.detach(tab) } else { other.closeGivingAway(tab) }
+        tab.restoredWorkspace = nil
+        adoptAll(tab)
+        takeNews(of: tab.everyPane, from: other)
+        tabs.insert(tab, at: max(0, min(tabs.count, index)))
+        select(tab)
+        updateBroadcastBorders()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// `pane` leaves `tab`'s split, its program running on; the focus goes
+    /// where closing it would send it. `then` once it's out of the split.
+    private func takeOut(_ pane: TerminalView, from tab: TerminalTab, then: @escaping () -> Void) {
+        // Still there: a move asked for twice, or a park just before, already took it
+        // (`contains` lets a removal under way finish first).
+        guard let container = tab.container, container.contains(pane) else { return }
+        let hadFocus = tab.focusedPane === pane && tab.focusedDocument == nil
+        let successor: NSView? = tab.previouslyFocused(besides: pane)
+            ?? container.neighbor(of: pane, .left) ?? container.neighbor(of: pane, .up) ?? container.views.first { $0 !== pane }
+        container.remove(pane) { [weak self] in
+            guard let self else { return }
+            if hadFocus {
+                if let terminal = successor as? TerminalView {
+                    tab.focusedPane = terminal
+                } else if tab.focusedPane === pane {
+                    tab.focusedPane = tab.panes.first
+                }
+                if tab === self.selectedTab, let successor { self.focusLeaf(successor) }
+            }
+            pane.layer?.borderWidth = 0  // a broadcast's border is this split's
+            then()
+            self.updateBroadcastBorders()
+            self.updateDimming()
+            self.updateSidebar()
+        }
+    }
+
+    /// `tab` is all this window has, in every workspace.
+    private func isOnlyTab(_ tab: TerminalTab) -> Bool {
+        !isQuick && everyTab.count == 1 && everyTab.first === tab
+    }
+
+    /// The window's only tab went to another: the window closes, nothing
+    /// in it ending (closing ends only what its tabs still hold: none).
+    private func closeGivingAway(_ tab: TerminalTab) {
+        guard isOnlyTab(tab) else { return }
+        tabs = []
+        tab.content.removeFromSuperview()
+        skipCloseConfirmation = true
+        // Not inside the drag that took it: its sidebar is that drag's source.
+        DispatchQueue.main.async { [weak self] in self?.window?.close() }
+    }
+
+    /// `tab` leaves this window as it is, programs and all: it's going
+    /// elsewhere. Another terminal tab stays (the callers make sure).
+    private func detach(_ tab: TerminalTab) {
+        guard let i = tabs.firstIndex(where: { $0 === tab }), tabs.contains(where: { $0 !== tab && $0.isTerminal }) else { return }
+        tabs.remove(at: i)
+        if tab === terminalTab, let other = tabs.last(where: \.isTerminal) { terminalTab = other }
+        if tab === selectedTab { select(tabs[min(i, tabs.count - 1)]) } else { updateSidebar() }
+        tab.content.removeFromSuperview()
     }
 
     /// Float Pane: park the focused pane and show it live in a corner of the
@@ -1885,13 +2076,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         if !selectedTab.isTerminal { select(terminalTab) }
         let pane = focusedTerminal
         MainActor.assumeIsolated {
-            PictureInPicture.toggle(pane, title: { [weak self, weak pane] in
-                guard let self, let pane else { return "" }
-                return self.title(ofPane: pane)
+            // Whichever window has the pane by then (it may move to another).
+            PictureInPicture.toggle(pane, title: { [weak pane] in
+                pane.map(Self.title(ofPane:)) ?? ""
             }, reveal: { [weak self, weak pane] in
-                guard let self, let pane else { return }
+                guard let pane else { return }
                 Probe.activateApp()
-                _ = self.reveal(paneID: pane.paneID)
+                if let app = NSApp.delegate as? AppDelegate { _ = app.reveal(paneID: pane.paneID) } else { _ = self?.reveal(paneID: pane.paneID) }
             })
         }
     }
@@ -1911,7 +2102,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         }
     }
 
-    private func title(ofPane pane: TerminalView) -> String {
+    private func title(ofPane pane: TerminalView) -> String { Self.title(ofPane: pane) }
+
+    private static func title(ofPane pane: TerminalView) -> String {
         let program = ProgramStatusStore.sanitize(pane.session.title)
         if !program.isEmpty { return program }
         return pane.session.workingDirectory.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "Libertty"

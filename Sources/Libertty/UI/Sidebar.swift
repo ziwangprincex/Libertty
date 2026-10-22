@@ -131,6 +131,8 @@ final class StatusBadge: NSView {
 /// then the files of the focused pane's working directory.
 final class SidebarViewController: NSViewController {
     weak var controller: TerminalWindowController?
+    /// The tab whose row is being dragged.
+    private weak var draggedTab: TerminalTab?
 
     private let tabsTable = NSTableView()
     private let tabsScroll = NSScrollView()
@@ -427,6 +429,7 @@ final class SidebarViewController: NSViewController {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Move Up", action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Move Down", action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Move to New Window", action: #selector(moveTabToNewWindow(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Close Other Tabs", action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
@@ -521,6 +524,12 @@ final class SidebarViewController: NSViewController {
     @objc private func moveTabDown(_ sender: Any?) {
         let row = tabsTable.clickedRow
         if row >= 0, row < tabs.count - 1 { controller?.moveTab(from: row, to: row + 1) }
+    }
+
+    @objc private func moveTabToNewWindow(_ sender: Any?) {
+        let row = tabsTable.clickedRow
+        guard row >= 0, let tab = controller?.tab(at: row) else { return }
+        controller?.moveTabToNewWindow(tab)
     }
 
     @objc private func duplicateTab(_ sender: Any?) {
@@ -627,6 +636,7 @@ extension SidebarViewController: NSMenuItemValidation {
         switch item.action {
         case #selector(moveTabUp(_:)): return row > 0
         case #selector(moveTabDown(_:)): return row >= 0 && row < tabs.count - 1
+        case #selector(moveTabToNewWindow(_:)): return controller?.tab(at: row).map { controller?.canMoveTabOut($0) == true } ?? false
         case #selector(resetTabName(_:)): return row >= 0 && !(controller?.tabNameOverride(at: row) ?? "").isEmpty
         default: return true
         }
@@ -655,24 +665,52 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
         if row >= 0 { controller?.selectTab(at: row) }
     }
 
-    // Drag to reorder.
+    // Drag to reorder; onto another window's tabs to move it there; out of
+    // every window for a window of its own (Rex's tear-off).
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
         let item = NSPasteboardItem()
-        item.setString(String(row), forType: .liberttyTab)
+        item.setString("\(view.window?.windowNumber ?? 0):\(row)", forType: .liberttyTab)
         return item
+    }
+
+    /// A dragged row's window, tab and place there now: the tab itself, as
+    /// its sidebar keeps it (tabs may open or close while it's dragged).
+    private func source(of info: NSDraggingInfo) -> (TerminalWindowController, TerminalTab, Int)? {
+        guard let sidebar = (info.draggingSource as? NSTableView)?.dataSource as? SidebarViewController,
+              let controller = sidebar.controller, let tab = sidebar.draggedTab,
+              let index = controller.tabs.firstIndex(where: { $0 === tab }) else { return nil }
+        return (controller, tab, index)
     }
 
     func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
-        op == .above ? .move : []
+        guard op == .above, let (from, tab, _) = source(of: info), let controller else { return [] }
+        return from === controller || controller.canTake(tab, from: from) ? .move : []
     }
 
     func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
                    dropOperation: NSTableView.DropOperation) -> Bool {
-        guard let text = info.draggingPasteboard.pasteboardItems?.first?.string(forType: .liberttyTab),
-              let from = Int(text) else { return false }
-        controller?.moveTab(from: from, to: from < row ? row - 1 : row)
+        guard let (from, tab, index) = source(of: info), let controller else { return false }
+        if from === controller {
+            controller.moveTab(from: index, to: index < row ? row - 1 : row)
+        } else {
+            controller.take(tab, from: from, at: row)
+        }
         return true
+    }
+
+    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint,
+                   forRowIndexes rowIndexes: IndexSet) {
+        draggedTab = rowIndexes.first.flatMap { controller?.tab(at: $0) }
+    }
+
+    /// Dropped where nothing took it, outside every Libertty window: a window of its own there.
+    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, endedAt screenPoint: NSPoint,
+                   operation: NSDragOperation) {
+        defer { draggedTab = nil }
+        guard operation == [], NSApp.currentEvent?.type == .leftMouseUp, let tab = draggedTab, let controller,
+              !NSApp.windows.contains(where: { $0.isVisible && $0.frame.contains(screenPoint) }) else { return }
+        controller.moveTabToNewWindow(tab, at: screenPoint)
     }
 }
 

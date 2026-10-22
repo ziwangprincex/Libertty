@@ -28,6 +28,7 @@
 | 全局显示 / 隐藏（Tern `global_hotkey`，默认空） | ✓ | — | ✅ 窗口在别的桌面时挪到当前桌面，而不是把你切走 |
 | 关掉最后一个窗口后继续运行；点 Dock 图标重新开窗；Dock 菜单 New Window | ✓ | ✓ | ✅ |
 | 新窗口、新标签、分屏继承当前 pane 的目录（OSC 7） | ✓ | ✓ | ✅ 真机验证过 |
+| 移动 pane / 标签（Rex：Move Pane to Tab / New Tab、Move Tab to New Window、拖出成窗口） | — | ✓ | ✅ `move_surface_to_new_tab`、`move_surface_to_tab:N`、`move_surface_to_new_window`、`move_tab_to_new_window`；窗口菜单、命令面板、右键菜单；侧栏标签拖到别的窗口就移过去（窗口唯一的标签也行，那个窗口随之关闭），拖出所有窗口就成新窗口；顶部标签栏也能拖出成窗口。程序全程不断。⬜ 拖动 pane 本身（目前只能用命令） |
 
 ## 2. 会话持久化与多路复用（Tern 和 Rex 的核心）
 

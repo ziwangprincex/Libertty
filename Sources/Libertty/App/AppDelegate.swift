@@ -2,7 +2,7 @@ import AppKit
 import LiberttyCore
 import UniformTypeIdentifiers
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     private var controllers: [TerminalWindowController] = []
     private var configToken: AnyObject?
     private var menuKeybinds: Keybinds?
@@ -375,6 +375,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return nil
         }
     }
+
+    /// A window for a tab another window gave up (Move Tab to New Window, a
+    /// tab dragged out of its window): the same machine and size as
+    /// `source`, cascaded from it or with its top left at `origin`.
+    @discardableResult
+    func openWindow(with tab: TerminalTab, like source: TerminalWindowController, at origin: NSPoint?) -> TerminalWindowController {
+        let config = ConfigStore.shared.config
+        // One workspace, named as new ones are, whatever the tab was in.
+        tab.restoredWorkspace = nil
+        tab.restoredSelected = false
+        var frame: NSRect?
+        if let from = source.window?.frame, source.window?.styleMask.contains(.fullScreen) != true {
+            frame = origin.map { NSRect(x: $0.x, y: $0.y - from.height, width: from.width, height: from.height) }
+                ?? from.offsetBy(dx: 28, dy: -28)
+        }
+        let controller = TerminalWindowController(restoring: [tab], selected: 0, frame: frame,
+                                                  showSidebar: config.windowSidebar, showInspector: config.windowInspector,
+                                                  config: config)
+        controller.markRestored(unstarted: [])
+        if let host = source.host { controller.bind(to: host) }
+        register(controller)
+        if let window = controller.window, let screen = window.screen ?? source.window?.screen {
+            window.setFrame(window.constrainFrameRect(window.frame, to: screen), display: false)
+        }
+        controller.showWindow(nil)
+        try? controller.start()
+        updateDockBadge()
+        return controller
+    }
+
+    /// Window ▸ Move Pane to Tab: the tabs of the window in front, filled in as it opens.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.title == Self.movePaneMenuTitle else { return }
+        menu.removeAllItems()
+        let controller = frontController
+        for (i, tab) in (controller?.tabs ?? []).enumerated() where tab.isTerminal && tab !== controller?.selectedTab {
+            let name = controller?.label(of: tab).name ?? ""
+            let item = menu.addItem(withTitle: "\(i + 1)  \(name)", action: #selector(menuAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = ActionBox(.moveSurfaceToTab(i + 1))
+        }
+        if menu.items.isEmpty { menu.addItem(withTitle: "No Other Tabs", action: nil, keyEquivalent: "").isEnabled = false }
+    }
+
+    static let movePaneMenuTitle = "Move Pane to Tab"
 
     /// Names for documents about to open (`libertty +diff` shows "git diff").
     private var pendingDisplayNames: [URL: String] = [:]
@@ -753,6 +798,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return controller?.canRestartFocusedPane == true
         case .parkSurface:
             return controller?.canParkFocusedPane == true
+        case .moveSurfaceToNewTab, .moveSurfaceToNewWindow:
+            return controller?.canMoveFocusedPaneOut == true
+        case .moveSurfaceToTab(let n):
+            return controller?.canMoveFocusedPane(toTab: n) == true
+        case .moveTabToNewWindow:
+            return controller?.canMoveSelectedTabOut == true
         case .unparkSurface:
             return controller?.parkedPanes.isEmpty == false
         case .closeWorkspace, .nextWorkspace, .previousWorkspace:
@@ -928,6 +979,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         item("Park Pane", .parkSurface, symbol: "tray.and.arrow.down", in: window)
         item("Unpark Pane", .unparkSurface, symbol: "tray.and.arrow.up", in: window)
         item("Float Pane", .floatSurface, symbol: "pip.enter", in: window)
+        item("Move Pane to New Tab", .moveSurfaceToNewTab, symbol: "rectangle.portrait.and.arrow.right", in: window)
+        let movePane = NSMenu(title: Self.movePaneMenuTitle)
+        movePane.delegate = self
+        window.addItem(withTitle: Self.movePaneMenuTitle, action: nil, keyEquivalent: "").submenu = movePane
+        item("Move Pane to New Window", .moveSurfaceToNewWindow, symbol: "macwindow.badge.plus", in: window)
+        item("Move Tab to New Window", .moveTabToNewWindow, symbol: "uiwindow.split.2x1", in: window)
         window.addItem(.separator())
         item("New Workspace…", .newWorkspace, symbol: "square.stack.3d.up", in: window)
         item("Rename Workspace…", .renameWorkspace, in: window)

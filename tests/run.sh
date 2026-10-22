@@ -193,6 +193,10 @@ check agent-setup sh -c '"$0" +agent-setup --claude-dir "$1" --yes && "$0" +agen
   [ "$(grep -c "agent-hook claude" "$1/settings.json")" = 6 ] && grep -q "say done" "$1/settings.json" && [ -f "$1/skills/libertty/SKILL.md" ] &&
   "$0" +agent-setup --claude-dir "$1" --remove --yes && ! grep -q agent-hook "$1/settings.json" &&
   grep -q "say done" "$1/settings.json" && grep -q opus "$1/settings.json" && [ ! -d "$1/skills/libertty" ]' $LIBERTTY $AGENT
+# Moving panes and tabs: to a new tab, another tab, a new window, and a
+# window's tab to another window (the windows it opens stay off screen).
+expect move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@N@|$RANDOM|g" $ROOT/tests/fixtures/move.txt)" $OUT
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config

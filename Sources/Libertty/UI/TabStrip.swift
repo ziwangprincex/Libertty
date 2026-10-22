@@ -243,6 +243,10 @@ final class TabStrip: NSView {
         menu.addItem(.separator())
         item("Move Left", enabled: i > 0) { [weak self] now in self?.controller?.moveTab(from: now, to: now - 1) }
         item("Move Right", enabled: i < tabs.count - 1) { [weak self] now in self?.controller?.moveTab(from: now, to: now + 1) }
+        item("Move to New Window", enabled: controller?.canMoveTabOut(tab) == true) { [weak self] now in
+            guard let controller = self?.controller, let tab = controller.tab(at: now) else { return }
+            controller.moveTabToNewWindow(tab)
+        }
         menu.addItem(.separator())
         item("Close Tab") { [weak self] now in self?.controller?.closeTab(at: now) }
         item("Close Other Tabs", enabled: tabs.count > 1) { [weak self] now in self?.controller?.closeOtherTabs(keeping: now) }
@@ -295,6 +299,13 @@ final class TabStrip: NSView {
         guard let drag = dragging else { return }
         dragging = nil
         drag.button.layer?.zPosition = 0
+        // Let go outside every Libertty window: a window of its own there (Rex's tear-off).
+        let point = NSEvent.mouseLocation
+        if let tab = drag.tab, let controller, controller.canMoveTabOut(tab),
+           !NSApp.windows.contains(where: { $0.isVisible && $0.frame.contains(point) }) {
+            needsLayout = true
+            return controller.moveTabToNewWindow(tab, at: point)
+        }
         // From where the tab is now, not where it was when the drag began:
         // a tab may have closed meanwhile (and the dragged one with it).
         if let tab = drag.tab, let from = controller?.tabs.firstIndex(where: { $0 === tab }), from != drag.to {

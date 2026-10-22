@@ -73,6 +73,11 @@ ad-hoc signed, so macOS may ask again after an update.
 - Park a pane: remove it from the layout while its program keeps running, and restore
   it later.
 - Float a pane: show it as a card in a corner of the window.
+- Move a pane: out of its split into a tab of its own, into another tab's split, or
+  into a window of its own; move a tab to a new window. Dragging a tab out of every
+  window opens it in a window of its own, and dropping it on another window's tabs moves
+  it there (Window menu, command palette, context menus; `move_surface_to_new_tab`,
+  `move_surface_to_tab:N`, `move_surface_to_new_window`, `move_tab_to_new_window`).
 - Workspaces: named groups of tabs within one window (⌘⇧1…9).
 - Command palette (⌘⇧P), go to pane (⌘P), tab overview (⌘⇧\\), Quick Terminal,
   Picture in Picture, broadcast input, undo for closing a pane, tab or window

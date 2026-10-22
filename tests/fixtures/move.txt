@@ -1,0 +1,58 @@
+# Moving panes and tabs (after Rex): out of a split into a tab of its own,
+# into another tab's split, into a window of their own, and a window's tab
+# into another window. Programs keep running through every move: the sleep
+# keeps going, and what the program prints after a move shows where it went.
+type:echo LEFT-PANE
+key:enter
+wait:0.8
+key:cmd+d
+wait:1.2
+type:echo RIGHT-PANE; sleep 5.@N@; echo LATE-OUTPUT; sleep 299.@N@
+key:enter
+wait:0.8
+expect-tab:2 panes
+# Out of the split into a tab of its own, after this one.
+action:move_surface_to_new_tab
+expect-tab-count:2
+expect-shell:echo n=$(pgrep -f 'sleep 299[.]@N@' | wc -l | tr -d ' ') ==> n=0
+expect-shell:echo n=$(pgrep -f 'sleep 5[.]@N@' | wc -l | tr -d ' ') ==> n=1
+# Back: alone in its tab, it joins tab 1 and its tab goes.
+action:move_surface_to_tab:1
+expect-tab-count:1
+expect-tab:2 panes
+# Into a window of its own; the split here is one pane again. What it
+# prints from now on shows there.
+action:move_surface_to_new_window
+expect-windows:2
+expect-tab-count:1
+expect:LEFT-PANE
+wait:4.0
+expect-other:LATE-OUTPUT
+expect-not:LATE-OUTPUT
+expect-shell:echo n=$(pgrep -f 'sleep 299[.]@N@' | wc -l | tr -d ' ') ==> n=1
+# A window's only tab can't leave it for a new one (there'd be nothing left).
+action:move_tab_to_new_window
+expect-windows:2
+# The other window's only tab comes back here; that window closes, the program runs on.
+take-tab:1
+wait:0.5
+expect-windows:1
+expect-tab-count:2
+expect:LATE-OUTPUT
+expect-shell:echo n=$(pgrep -f 'sleep 299[.]@N@' | wc -l | tr -d ' ') ==> n=1
+# With two tabs, the one in front can go to a window of its own.
+action:move_tab_to_new_window
+expect-windows:2
+expect-tab-count:1
+expect-other:LATE-OUTPUT
+# A move asked for twice in a row moves the pane once; so does a park right before it.
+key:cmd+d
+wait:1.2
+key:cmd+d
+wait:1.2
+action:move_surface_to_new_tab,move_surface_to_new_tab
+expect-tab-count:2
+action:goto_tab:1
+action:park_surface,move_surface_to_new_tab
+expect-tab-count:2
+expect-tab:1 parked

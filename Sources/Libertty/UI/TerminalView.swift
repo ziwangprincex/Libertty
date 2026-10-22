@@ -603,6 +603,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if showsCloseButton {
             add("Float Pane", .floatSurface, symbol: "pip.enter")
             add("Park Pane", .parkSurface, symbol: "tray.and.arrow.down")
+            add("Move to New Tab", .moveSurfaceToNewTab, symbol: "rectangle.portrait.and.arrow.right")
+            add("Move to New Window", .moveSurfaceToNewWindow, symbol: "macwindow.badge.plus")
         }
         menu.addItem(.separator())
         add("Clear Screen", .clearScreen, symbol: "eraser")

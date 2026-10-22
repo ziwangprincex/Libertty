@@ -55,6 +55,11 @@ import LiberttyCore
 ///   roundtrip:            save this window's layout and build a window from it: same workspaces, same parked panes
 ///   expect-float:yes|no  whether the tab in front shows a floating pane card (Float Pane)
 ///   expect-strip:TEXT    a tab along the top (`tab-bar = top`) is named TEXT
+///   action:ACTION        perform a keybind action (`libertty +list-actions`), e.g. move_surface_to_new_tab;
+///                        ACTION,ACTION… performs them one right after the other (a key pressed twice)
+///   expect-windows:N     the probe has N windows (Move … to New Window opens them, off screen)
+///   expect-other:TEXT    a sidebar row of the newest other window contains TEXT, or its panes' text does
+///   take-tab:N           tab N of the newest other window moves back here, at the end (as dropped on the sidebar)
 ///   expect-status:TEXT   program states (OSC 7501) as they show include each word of TEXT: e.g.
 ///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
 ///                        mark, the Dock badge, notifications so far, sounds so far)
@@ -101,6 +106,19 @@ enum UIProbe {
         pump(0.4)
 
         var failures = 0
+        // Windows Move … to New Window opens: off screen too, never in front.
+        var others: [TerminalWindowController] = []
+        TerminalWindowController.openWindowForTab = { tab, source, _ in
+            tab.restoredWorkspace = nil
+            let other = TerminalWindowController(restoring: [tab], selected: 0, frame: nil, showSidebar: true,
+                                                 showInspector: false, config: Config())
+            other.markRestored(unstarted: [])
+            other.window?.setFrameOrigin(NSPoint(x: -20000, y: -21000))
+            other.window?.orderFrontRegardless()
+            try? other.start()
+            others.append(other)
+            return other
+        }
         // `+open --wait`'s side of it: the editors that said they closed.
         var closedEditors: Set<String> = []
         let closedObserver = DistributedNotificationCenter.default().addObserver(forName: EditorWait.closed, object: nil, queue: .main) { note in
@@ -454,6 +472,47 @@ enum UIProbe {
                     failures += 1
                 }
                 pump(0.5)
+            case .action(let text):
+                let actions = text.split(separator: ",").map { Action(String($0)) }
+                guard !actions.isEmpty, actions.allSatisfy({ $0 != nil }) else {
+                    print("FAIL  ui-probe action: unknown \(text)")
+                    failures += 1
+                    break
+                }
+                for action in actions.compactMap({ $0 }) {
+                    ActionDispatcher.perform(action, in: controller.focusedTerminal, controller: controller)
+                }
+                pump(0.6)  // a pane slides out of its split
+            case .expectWindows(let n):
+                let count = 1 + others.filter { $0.window?.isVisible == true }.count
+                if count == n {
+                    print("ok    ui-probe \(n) windows")
+                } else {
+                    print("FAIL  ui-probe windows: \(count), not \(n)")
+                    failures += 1
+                }
+            case .expectOther(let text):
+                guard let other = others.last(where: { $0.window?.isVisible == true }) else {
+                    print("FAIL  ui-probe other window: there's none")
+                    failures += 1
+                    break
+                }
+                let rows = other.sidebarRows
+                if rows.contains(where: { $0.contains(text) }) || screenText(other).contains(text) {
+                    print("ok    ui-probe other window shows \(text)")
+                } else {
+                    print("FAIL  ui-probe other window: no \(text); rows: \(rows)")
+                    failures += 1
+                }
+            case .takeTab(let n):
+                guard let other = others.last(where: { $0.window?.isVisible == true }), let tab = other.tab(at: n - 1),
+                      controller.canTake(tab, from: other) else {
+                    print("FAIL  ui-probe take-tab: no tab \(n) to take")
+                    failures += 1
+                    break
+                }
+                controller.take(tab, from: other, at: controller.tabs.count)
+                pump(0.4)
             case .expectTabCount(let n):
                 if controller.tabs.count == n {
                     print("ok    ui-probe \(n) tabs")
@@ -536,6 +595,7 @@ enum UIProbe {
     private enum Step {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
+        case action(String), expectWindows(Int), expectOther(String), takeTab(Int)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
@@ -610,6 +670,10 @@ enum UIProbe {
             case "roundtrip": steps.append(.roundtrip)
             case "expect-workspace": steps.append(.expectWorkspace(arg))
             case "expect-tab-count": steps.append(.expectTabCount(Int(arg) ?? -1))
+            case "action": steps.append(.action(arg))
+            case "expect-windows": steps.append(.expectWindows(Int(arg) ?? -1))
+            case "expect-other": steps.append(.expectOther(arg))
+            case "take-tab": steps.append(.takeTab(Int(arg) ?? -1))
             case "undo": steps.append(.undo)
             case "open", "edit":
                 var path = arg, line: Int?
