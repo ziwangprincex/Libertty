@@ -23,6 +23,20 @@ enum Snapshot {
         var config = args.contains("--use-config") ? ConfigStore.shared.config : Config()
         // Test images don't change with the system's light/dark appearance.
         if !args.contains("--use-config") { config.theme = ThemeSpec(light: Theme.defaultName, dark: Theme.defaultName) }
+        // `--set KEY=VALUE`, as many as wanted: settings of the snapshot's own.
+        for (i, arg) in args.enumerated() where arg == "--set" && i + 1 < args.count {
+            let pair = args[i + 1].split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            if pair.count == 2, let problem = config.set(pair[0], pair[1]) {
+                FileHandle.standardError.write("snapshot: \(args[i + 1]): \(problem)\n".data(using: .utf8)!)
+                exit(2)
+            }
+        }
+        // `--pixels X,Y;X,Y`: print those pixels' colors (#rrggbb) after the screen text.
+        pixels = (args.firstIndex(of: "--pixels").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "")
+            .split(separator: ";").compactMap { point in
+                let n = point.split(separator: ",").compactMap { Int($0) }
+                return n.count == 2 ? (n[0], n[1]) : nil
+            }
         let fontSize = CGFloat(value("--font-size", Int(config.fontSize)))
         let command = args.firstIndex(of: "--").map { args[($0 + 1)...].joined(separator: " ") } ?? "true"
         // `--shell`: the login shell with integration, instead of a command;
@@ -54,6 +68,7 @@ enum Snapshot {
         }
     }
 
+    nonisolated(unsafe) private static var pixels: [(Int, Int)] = []
     nonisolated(unsafe) private static var scrollUp = 0
     nonisolated(unsafe) private static var offsetPercent = 0
 
@@ -77,6 +92,7 @@ enum Snapshot {
         renderer.selectionColor = config.resolvedTheme.selection
         renderer.ligatures = config.ligatures
         renderer.backgroundOpacity = config.backgroundOpacity
+        renderer.paddingColor = config.windowPaddingColor
         if benchFrames > 0 {
             FileHandle.standardError.write(String(format: "renderer init: %.1f ms\n",
                 Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - initStart) / 1e6).data(using: .utf8)!)
@@ -145,6 +161,10 @@ enum Snapshot {
 
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         texture.getBytes(&pixels, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        for (x, y) in Self.pixels where x >= 0 && y >= 0 && x < width && y < height {
+            let i = (y * width + x) * 4  // BGRA
+            print(String(format: "pixel %d,%d #%02x%02x%02x", x, y, pixels[i + 2], pixels[i + 1], pixels[i]))
+        }
         let image: CGImage? = pixels.withUnsafeMutableBytes { raw in
             CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                       space: CGColorSpace(name: CGColorSpace.sRGB)!,

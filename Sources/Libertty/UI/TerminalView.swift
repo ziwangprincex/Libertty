@@ -130,6 +130,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         renderer.selectionColor = theme.selection
         renderer.ligatures = config.ligatures
         renderer.backgroundOpacity = config.backgroundOpacity
+        renderer.paddingColor = config.windowPaddingColor
         metalLayer.isOpaque = config.backgroundOpacity >= 1
         padding = config.padding
         unfocusedOpacity = config.unfocusedSplitOpacity

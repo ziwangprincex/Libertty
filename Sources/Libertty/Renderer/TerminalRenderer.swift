@@ -34,6 +34,22 @@ final class TerminalRenderer {
         var glyphColumns: [UInt16] = []
         /// Kitty Unicode placeholder cells (an image shows there instead).
         var placeholders: [KittyPlaceholders.Cell] = []
+        /// Its cells' own backgrounds, as runs of one color (columns
+        /// start..<end): what `window-padding-color = extend` carries out.
+        var backgrounds: [(start: Int, end: Int, color: UInt32)] = []
+        /// Not to be carried up or down (`extend`, after Ghostty): a cell in
+        /// the default background (it's the padding's color already), a
+        /// powerline glyph (drawn to fit its cell), or a prompt.
+        var keepsPadding = false
+    }
+
+    /// `window-padding-color`: the padding in the background color, or in
+    /// the colors of the cells at the grid's edges, carried out to the
+    /// pane's edges (`extend`: not above or below a row that wouldn't look
+    /// right so, on the normal screen; `extend-always`: every edge).
+    enum PaddingColor: String, CaseIterable {
+        case background, extend
+        case extendAlways = "extend-always"
     }
 
     private final class FrameBuffers {
@@ -76,6 +92,11 @@ final class TerminalRenderer {
     /// Below 1 the default background is translucent (`background-opacity`);
     /// cells with their own background color stay opaque.
     var backgroundOpacity: Double = 1
+    var paddingColor = PaddingColor.background
+    /// A full-screen program's screen: `extend` carries its edges anyway.
+    private var alternateScreen = false
+    /// Far enough past the grid to reach every drawable's edge (the GPU clips).
+    private static let beyond: Float = 65536
     /// Find-in-scrollback matches in the viewport, drawn under the text.
     var searchHighlights: [SearchResult.Highlight] = []
     /// The cursor's blink phase (the view's timer flips it) and whether the
@@ -236,6 +257,7 @@ final class TerminalRenderer {
 
         let colors = defaultColors()
         background = colors.background
+        if paddingColor == .extend { alternateScreen = session.isAlternateScreen }
 
         let rebuildAll = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL || rows.count != Int(rowCount) || force
         if rows.count != Int(rowCount) { rows = Array(repeating: Row(), count: Int(rowCount)) }
@@ -358,6 +380,15 @@ final class TerminalRenderer {
             var cells = StateRowCells(cells: rowCells)
             rows[y] = buildRow(y: y, colors: colors,
                                selection: selected ? Int(selection.start_x)...Int(selection.end_x) : nil, cells: &cells)
+            // A prompt's row keeps the padding above or below it as it is.
+            if paddingColor == .extend, y == 0 || y == rows.count - 1, !rows[y].keepsPadding {
+                var raw: GhosttyRow = 0
+                var prompt = GHOSTTY_ROW_SEMANTIC_NONE
+                if ghostty_render_state_row_get(rowIterator, GHOSTTY_RENDER_STATE_ROW_DATA_RAW, &raw) == GHOSTTY_SUCCESS {
+                    _ = ghostty_row_get(raw, GHOSTTY_ROW_DATA_SEMANTIC_PROMPT, &prompt)
+                }
+                if prompt != GHOSTTY_ROW_SEMANTIC_NONE { rows[y].keepsPadding = true }
+            }
         }
     }
 
@@ -377,6 +408,15 @@ final class TerminalRenderer {
     /// The cursor's cell as of this frame's rows, and the row being built.
     private var shapingCursor: (row: Int, col: Int)?
     private var buildingRow = -1
+
+    /// Powerline's shapes drawn to fit their cells (Ghostty's list): carried
+    /// into the padding, they'd stretch.
+    private static func isPowerline(_ cp: UInt32) -> Bool {
+        switch cp {
+        case 0xE0B0...0xE0C8, 0xE0CA, 0xE0CC...0xE0D2, 0xE0D4: true
+        default: false
+        }
+    }
 
     /// Characters ligatures are made of; a word needs two in a row to be shaped.
     private static func ligaturePart(_ c: UInt16) -> Bool {
@@ -463,8 +503,21 @@ final class TerminalRenderer {
             let span = graphemes > 0 && cells.isWide ? 2 : 1
 
             if let bg {
-                row.rects.append(RectInstance(rect: SIMD4(left, top, cw * Float(span), ch), color: bg.packed()))
+                let color = bg.packed()
+                row.rects.append(RectInstance(rect: SIMD4(left, top, cw * Float(span), ch), color: color))
+                if paddingColor != .background {
+                    // (A wide character's second cell is inside its run already.)
+                    if let last = row.backgrounds.last, last.end >= x, last.color == color {
+                        row.backgrounds[row.backgrounds.count - 1].end = max(last.end, x + span)
+                    } else {
+                        row.backgrounds.append((x, x + span, color))
+                    }
+                    if bg == colors.background { row.keepsPadding = true }
+                }
+            } else {
+                row.keepsPadding = true
             }
+            if paddingColor != .background, graphemes > 0, Self.isPowerline(cp) { row.keepsPadding = true }
 
             guard graphemes > 0, !style.invisible else { continue }
             let fgColor = fg.packed(alpha: style.faint ? 128 : 255)
@@ -502,6 +555,16 @@ final class TerminalRenderer {
 
         flushAscii(into: &row)
 
+        // The edge cells' colors out to the pane's sides.
+        if paddingColor != .background {
+            if let first = row.backgrounds.first, first.start == 0, origin.x > 0 {
+                row.rects.append(RectInstance(rect: SIMD4(0, top, origin.x, ch), color: first.color))
+            }
+            if let last = row.backgrounds.last, last.end >= x {
+                row.rects.append(RectInstance(rect: SIMD4(origin.x + Float(x) * cw, top, Self.beyond, ch), color: last.color))
+            }
+        }
+
         // Selection sits over cell backgrounds and under the text.
         if let selection {
             row.rects.append(RectInstance(
@@ -535,6 +598,24 @@ final class TerminalRenderer {
     private func assembleInstances(colors: Colors, focused: Bool) {
         scratchRects.removeAll(keepingCapacity: true)
         scratchGlyphs.removeAll(keepingCapacity: true)
+        // Above the first row and below the last, its cells' colors — not
+        // while smooth scrolling moves the rows.
+        if paddingColor != .background, drawnOffset == 0, let first = rows.first, let last = rows.last {
+            let always = paddingColor == .extendAlways || alternateScreen
+            let cw = Float(fonts.cellWidth)
+            func carry(_ row: Row, from y: Float, height: Float) {
+                for run in row.backgrounds {
+                    let left = run.start == 0 ? 0 : origin.x + Float(run.start) * cw
+                    let right = run.end >= Int(columnCount) ? origin.x + Float(columnCount) * cw + Self.beyond
+                        : origin.x + Float(run.end) * cw
+                    scratchRects.append(RectInstance(rect: SIMD4(left, y, right - left, height), color: run.color))
+                }
+            }
+            if origin.y > 0, always || !first.keepsPadding { carry(first, from: 0, height: origin.y) }
+            if always || !last.keepsPadding {
+                carry(last, from: origin.y + Float(rows.count) * Float(fonts.cellHeight), height: Self.beyond)
+            }
+        }
         for row in rows {
             scratchRects.append(contentsOf: row.rects)
         }

@@ -49,6 +49,8 @@ struct Config: Equatable {
     var backgroundBlur = true
     var windowPaddingX: Double = 10
     var windowPaddingY: Double = 6
+    /// Ghostty's `window-padding-color`: background, extend or extend-always.
+    var windowPaddingColor = TerminalRenderer.PaddingColor.background
     var windowColumns = 100
     var windowRows = 30
     var unfocusedSplitOpacity: Double = 0.65
@@ -213,6 +215,7 @@ struct Config: Equatable {
         ("background-blur", "Blur what shows through a translucent window."),
         ("window-padding-x", "Points between the window's sides and the text."),
         ("window-padding-y", "Points above and below the text."),
+        ("window-padding-color", "The padding's color: background, or extend (the edge cells' colors carried out to the pane's edges; not above or below a prompt, a row with default-colored cells or powerline glyphs, except in full-screen programs), or extend-always."),
         ("window-columns", "Width of new windows, in cells."),
         ("window-rows", "Height of new windows, in cells."),
         ("unfocused-split-opacity", "Opacity of the panes you're not typing in, 0.3–1."),
@@ -294,6 +297,7 @@ struct Config: Equatable {
         case "background-blur": return [String(backgroundBlur)]
         case "window-padding-x": return [num(windowPaddingX)]
         case "window-padding-y": return [num(windowPaddingY)]
+        case "window-padding-color": return [windowPaddingColor.rawValue]
         case "window-columns": return [String(windowColumns)]
         case "window-rows": return [String(windowRows)]
         case "unfocused-split-opacity": return [num(unfocusedSplitOpacity)]
@@ -674,6 +678,10 @@ struct Config: Equatable {
                 features = Set(v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
             }
             bellFeatures = features
+        case "window-padding-color":
+            if reset { windowPaddingColor = defaults.windowPaddingColor; return nil }
+            guard let color = TerminalRenderer.PaddingColor(rawValue: v) else { return "background, extend or extend-always" }
+            windowPaddingColor = color
         case "scrollbar":
             if reset { scrollbar = defaults.scrollbar; return nil }
             guard ["system", "never"].contains(v) else { return "system or never" }; scrollbar = v

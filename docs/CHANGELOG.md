@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `window-padding-color` (Ghostty's): `extend` carries the colors of the cells at the grid's edges out to the pane's edges, so a program's background fills its card (after Rex's "Match program backgrounds"); not above or below a prompt, a row with cells in the default background or powerline glyphs, except in full-screen programs. `extend-always` carries every edge; `background`, the default, keeps the padding as it was. Snapshots take `--set KEY=VALUE` and `--pixels X,Y;…`.
 - The sidebar filters tabs by activity (after Rex): the button at the end of its filter field, the palette or `show_tabs:working|waiting|attention|all` lists only the tabs whose programs are working, waiting for you, or finished or failed; rows come and go as their states change, the name filter narrows further, and the count says how many show ("1/4").
 - Go to Directory (File menu, the palette, `go_to_directory`): the palette's new Folders lists where panes are and where this Mac's shells have been lately; a path typed with / or ~ lists the folders it leads to; Return opens a new tab there (after Rex).
 - `focus-follows-mouse` (Ghostty's): the pane under the pointer gets the keyboard, from one terminal pane to another, without a click (after Rex).

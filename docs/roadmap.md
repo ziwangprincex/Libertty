@@ -165,6 +165,7 @@
 | 字体（任意等宽字体，Nerd 图标自动回退到内置字体）、字号、光标样式 | ✅ |
 | 背景透明度 + 毛玻璃，标题栏一起透明 | ✅ |
 | 内边距、新窗口尺寸、未聚焦分屏变暗程度 | ✅ |
+| 内边距颜色（Ghostty `window-padding-color`、Rex "Match program backgrounds"） | ✅ `extend`：边缘单元格的颜色延伸到 pane 边缘（左右每行都延伸；上下照 Ghostty 的规则，提示符行、有默认背景格或 Powerline 字形的行不延伸，全屏程序除外；平滑滚动途中上下不延伸）；`extend-always` 全部延伸；默认 `background`。`tests/padding-color-test.sh` 按像素检查 |
 | Option 当 Alt（左、右或两边）、选中即复制、scrollback 行数、启动命令、起始目录 | ✅ |
 | `libertty +validate-config` 检查配置，逐行报告问题 | ✅ |
 | 自定义键位（keybind），Ghostty 语法和 action 名，`global:` 全局键位 | ✅ |

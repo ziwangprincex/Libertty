@@ -53,6 +53,8 @@ ad-hoc signed, so macOS may ask again after an update.
 - Rendering through Metal with a glyph atlas. Box drawing, Powerline and braille
   characters are drawn from the cell grid. Kitty graphics protocol, including tmux's
   Unicode placeholders. Programming ligatures (`font-feature = -calt` disables them).
+  `window-padding-color = extend` carries the colors of the cells at the grid's edges
+  out to the pane's edges, so a program's background fills its card.
 - `TERM=xterm-ghostty` with the bundled terminfo. `ssh` from Libertty's shells sends
   `TERM=xterm-256color` unless `ssh-env = false`.
 - Shell integration for zsh and bash (prompt marks, working directory, command

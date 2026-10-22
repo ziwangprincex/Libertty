@@ -31,7 +31,7 @@ Libertty 是一个 macOS 终端模拟器。VT 解析和终端状态由
 
 ### 终端
 
-- 通过 Metal 和字形图集渲染。制表符、Powerline 和盲文字符按单元格网格绘制。支持 kitty 图像协议，包括 tmux 的 Unicode 占位符。默认启用编程连字（`font-feature = -calt` 可关闭）。
+- 通过 Metal 和字形图集渲染。制表符、Powerline 和盲文字符按单元格网格绘制。支持 kitty 图像协议，包括 tmux 的 Unicode 占位符。默认启用编程连字（`font-feature = -calt` 可关闭）。`window-padding-color = extend` 把网格边缘单元格的颜色延伸到 pane 的边缘，程序的背景色铺满整张卡片。
 - `TERM=xterm-ghostty`，附带对应的 terminfo。从 Libertty 的 shell 里执行 `ssh` 时发送 `TERM=xterm-256color`，`ssh-env = false` 可关闭此行为。
 - zsh 和 bash 的 shell 集成（提示符标记、工作目录、命令耗时与退出码）。
 - 支持 OSC 8 超链接、OSC 9 / OSC 777 通知、OSC 9;4 进度、OSC 52 剪贴板（默认禁止读取）和 OSC 7501 程序状态。
