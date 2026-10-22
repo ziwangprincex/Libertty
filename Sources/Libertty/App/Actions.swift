@@ -73,6 +73,7 @@ enum ActionDispatcher {
         case .toggleSecureInput: SecureInput.shared.requested.toggle()
         case .toggleCommandPalette: CommandPalette.toggle(in: controller)
         case .gotoPane: CommandPalette.toggle(in: controller, panesOnly: true)
+        case .gotoDirectory: CommandPalette.toggle(in: controller, scope: .folders)
         case .restartSurface: controller?.restartFocusedPane()
         case .parkSurface: controller?.parkFocusedPane()
         case .unparkSurface: controller?.unparkLatest()

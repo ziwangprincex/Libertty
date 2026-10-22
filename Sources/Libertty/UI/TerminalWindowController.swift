@@ -364,6 +364,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         tab.documentPanes.forEach(adopt)
     }
 
+    /// Where this window's terminals are (Go to Directory).
+    var workingDirectories: [String] { allPanes.compactMap(\.session.workingDirectory) }
+
     /// The liberttyd sessions this window shows.
     var persistentSessionIDs: [String] { allPanes.compactMap(\.session.persistentID) }
 
@@ -2273,6 +2276,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     }
 
     func sessionWorkingDirectoryChanged(_ session: TerminalSession) {
+        // This Mac's folders, for Go to Directory (a host's are that machine's).
+        if session.host == nil, let directory = session.workingDirectory { RecentFolders.shared.record(directory) }
         updateTitle()
         if session === focusedTerminal.session { updateSidebar() } else { updateSidebar(force: false) }
     }

@@ -1,0 +1,30 @@
+# Go to Directory: the palette's Folders — a path typed lists where it leads
+# (Return: a new tab there), and where shells have been is listed after.
+type:mkdir -p @DIR@/sub-alpha @DIR@/sub-beta
+key:enter
+wait:0.8
+action:go_to_directory
+wait:0.5
+expect-scope:[Folders]
+type:@DIR@/sub-al
+wait:0.4
+expect-palette:sub-alpha
+key:enter
+wait:1.5
+expect-tab-count:2
+expect-tab:sub-alpha
+# Where a shell has been (OSC 7) is listed after, without typing it — once it has
+# moved on too (only the recent folders know it then).
+type:cd @DIR@/sub-beta
+key:enter
+wait:1.0
+type:cd /
+key:enter
+wait:1.0
+action:go_to_directory
+wait:0.5
+type:beta
+wait:0.4
+expect-palette:sub-beta
+key:escape
+wait:0.3

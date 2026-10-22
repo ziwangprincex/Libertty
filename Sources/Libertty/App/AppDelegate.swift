@@ -887,6 +887,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let file = submenu("File", in: main)
         item("New Window", .newWindow, symbol: "macwindow.badge.plus", in: file)
         item("New Tab", .newTab, symbol: "macwindow", in: file)
+        item("Go to Directory…", .gotoDirectory, symbol: "folder", in: file)
         item("Connect to Host…", .connectToHost, symbol: "network", in: file)
         file.addItem(.separator())
         item("Split Right", .newSplit(.right), symbol: "rectangle.righthalf.inset.filled", in: file)

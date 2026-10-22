@@ -30,6 +30,7 @@
 | 新窗口、新标签、分屏继承当前 pane 的目录（OSC 7） | ✓ | ✓ | ✅ 真机验证过 |
 | 移动 pane / 标签（Rex：Move Pane to Tab / New Tab、Move Tab to New Window、拖出成窗口） | — | ✓ | ✅ `move_surface_to_new_tab`、`move_surface_to_tab:N`、`move_surface_to_new_window`、`move_tab_to_new_window`；窗口菜单、命令面板、右键菜单；侧栏标签拖到别的窗口就移过去（窗口唯一的标签也行，那个窗口随之关闭），拖出所有窗口就成新窗口；顶部标签栏也能拖出成窗口。程序全程不断。⬜ 拖动 pane 本身（目前只能用命令） |
 | 鼠标悬停即聚焦（Rex "Focus follows mouse"、Ghostty `focus-follows-mouse`） | — | ✓ | ✅ 只在终端 pane 之间切换，不抢查找框、改名框、文档和编辑器的焦点；拖动时不切 |
+| 跳转目录（Rex：Go to Directory 面板页） | — | ✓ | ✅ 命令面板的 Folders：pane 所在目录、shell 最近去过的目录（存在数据目录）、输入 / 或 ~ 开头的路径时列出子目录；回车在那里开新标签；`go_to_directory`、文件菜单。⬜ 在当前 pane 里 cd |
 
 ## 2. 会话持久化与多路复用（Tern 和 Rex 的核心）
 

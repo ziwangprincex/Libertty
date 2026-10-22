@@ -49,7 +49,7 @@ Libertty 是一个 macOS 终端模拟器。VT 解析和终端状态由
 - `focus-follows-mouse = true`：鼠标移到哪个 pane，键盘输入就到哪个，不用点击。
 - 移动 pane：从分屏移到新标签、移进另一个标签的分屏，或者移到新窗口；把标签移到新窗口。把标签拖出所有窗口会开成一个新窗口，拖到另一个窗口的标签列表上就移过去（窗口菜单、命令面板、右键菜单；`move_surface_to_new_tab`、`move_surface_to_tab:N`、`move_surface_to_new_window`、`move_tab_to_new_window`）。
 - 工作区（Workspaces）：同一窗口内的多组命名标签页（⌘⇧1…9）。
-- 命令面板（⌘⇧P）、跳转到面板（⌘P）、标签页总览（⌘⇧\\）、Quick Terminal、画中画、广播输入；关闭面板、标签页或窗口可撤销（`undo-timeout`）。
+- 命令面板（⌘⇧P）、跳转到面板（⌘P）、跳转目录（文件 ▸ Go to Directory…：在某个 pane 所在的目录、shell 最近去过的目录，或者输入的路径（以 / 或 ~ 开头）里开新标签）、标签页总览（⌘⇧\\）、Quick Terminal、画中画、广播输入；关闭面板、标签页或窗口可撤销（`undo-timeout`）。
 
 ### 会话（liberttyd）
 

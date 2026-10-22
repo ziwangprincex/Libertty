@@ -6,7 +6,7 @@ import LiberttyCore
 /// runs it. ⌘P opens it on the panes alone (Go to Pane, after GoRex).
 final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
     /// What an item is: the scope chips and the section headings follow it.
-    enum Kind: Equatable { case pane, workspace, session, command, theme }
+    enum Kind: Equatable { case pane, folder, workspace, session, command, theme }
 
     struct Item {
         var title: String
@@ -19,11 +19,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     /// The chips under the field (Tern's All / Commands / Files / Sessions…).
     enum Scope: CaseIterable {
-        case all, panes, commands, workspaces, sessions, themes
+        case all, panes, folders, commands, workspaces, sessions, themes
         var title: String {
             switch self {
             case .all: "All"
             case .panes: "Panes"
+            case .folders: "Folders"
             case .commands: "Commands"
             case .workspaces: "Workspaces"
             case .sessions: "Sessions"
@@ -34,6 +35,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             switch self {
             case .all: true
             case .panes: kind == .pane
+            case .folders: kind == .folder
             case .commands: kind == .command
             case .workspaces: kind == .workspace
             case .sessions: kind == .session
@@ -49,14 +51,15 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private static var current: CommandPalette?
 
-    static func toggle(in controller: TerminalWindowController?, panesOnly: Bool = false) {
+    /// `scope`: the chip it opens on (Go to Directory: Folders).
+    static func toggle(in controller: TerminalWindowController?, panesOnly: Bool = false, scope: Scope = .all) {
         if let open = current {
             open.close()
             // ⌘P with the commands open switches to the panes, and back.
-            if open.panesOnly == panesOnly { return }
+            if open.panesOnly == panesOnly, open.scope == scope { return }
         }
         guard let controller, let window = controller.window else { return }
-        let palette = CommandPalette(controller: controller, parent: window, panesOnly: panesOnly)
+        let palette = CommandPalette(controller: controller, parent: window, panesOnly: panesOnly, scope: scope)
         current = palette
         palette.show()
     }
@@ -83,14 +86,16 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private static let topHeight: CGFloat = 54, chipsHeight: CGFloat = 34, footerHeight: CGFloat = 38
     private static let maxListHeight: CGFloat = 400
 
-    private init(controller: TerminalWindowController, parent: NSWindow, panesOnly: Bool) {
+    private init(controller: TerminalWindowController, parent: NSWindow, panesOnly: Bool, scope: Scope) {
         self.controller = controller
         self.parent = parent
         self.panesOnly = panesOnly
+        self.scope = panesOnly ? .all : scope
         panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 60),
                            styleMask: [.borderless], backing: .buffered, defer: false)
         super.init()
-        all = panesOnly ? Self.panes(around: controller) : Self.panes(around: controller) + items()
+        all = panesOnly ? Self.panes(around: controller)
+            : Self.panes(around: controller) + Self.folders(around: controller) + items()
         build()
         filter("")
     }
@@ -212,6 +217,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Next Workspace", .nextWorkspace, "chevron.right.2")
         command("Previous Workspace", .previousWorkspace, "chevron.left.2")
         command("Go to Pane…", .gotoPane, "rectangle.3.group")
+        command("Go to Directory…", .gotoDirectory, "folder")
         command("Zoom Split", .toggleSplitZoom, "arrow.up.left.and.arrow.down.right")
         command("Equalize Splits", .equalizeSplits, "square.split.2x2")
         command("Next Pane", .gotoSplit(.next), "arrow.right.square")
@@ -297,6 +303,53 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     // MARK: Matching
 
     /// Fuzzy match: every typed character in order. Consecutive runs and
+    // MARK: Folders (Go to Directory, after Rex)
+
+    /// The folders a new tab could start in: where this Mac's panes are, then
+    /// where its shells have been lately. A host's window has none (they're
+    /// that machine's, not this Mac's).
+    private static func folders(around current: TerminalWindowController) -> [Item] {
+        guard current.host == nil else { return [] }
+        let windows = (NSApp.delegate as? AppDelegate)?.windowControllers ?? [current]
+        var seen = Set<String>(), out: [Item] = []
+        let here = windows.filter { $0.host == nil }.flatMap(\.workingDirectories)
+        for path in here + RecentFolders.shared.paths where seen.insert(path).inserted {
+            out.append(folderItem(path, subtitle: here.contains(path) ? "a pane is here" : "recent", in: current))
+            if out.count >= 40 { break }
+        }
+        return out
+    }
+
+    private static func folderItem(_ path: String, subtitle: String, in controller: TerminalWindowController) -> Item {
+        Item(title: (path as NSString).abbreviatingWithTildeInPath, subtitle: subtitle, symbol: "folder", kind: .folder) {
+            [weak controller] in
+            controller?.newTab(workingDirectory: path)
+        }
+    }
+
+    /// A path being typed (`/`, `~`): the folders it could go on to.
+    private func typedFolders(_ query: String) -> [Item] {
+        guard let controller, controller.host == nil, query.hasPrefix("/") || query.hasPrefix("~") else { return [] }
+        let expanded = (query as NSString).expandingTildeInPath
+        let fm = FileManager.default
+        let (parent, prefix) = expanded.hasSuffix("/")
+            ? (expanded, "") : ((expanded as NSString).deletingLastPathComponent, (expanded as NSString).lastPathComponent)
+        var out: [Item] = []
+        var isDirectory: ObjCBool = false
+        if !expanded.hasSuffix("/"), fm.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue {
+            out.append(Self.folderItem(expanded, subtitle: "new tab here", in: controller))
+        }
+        let names = ((try? fm.contentsOfDirectory(atPath: parent)) ?? []).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        for name in names where name.lowercased().hasPrefix(prefix.lowercased()) && name != prefix
+            && (prefix.hasPrefix(".") || !name.hasPrefix(".")) {
+            let path = (parent as NSString).appendingPathComponent(name)
+            guard fm.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            out.append(Self.folderItem(path, subtitle: "new tab here", in: controller))
+            if out.count >= 30 { break }
+        }
+        return out
+    }
+
     /// word starts score higher; nil if it doesn't match.
     static func score(_ query: String, _ text: String) -> Int? {
         guard !query.isEmpty else { return 0 }
@@ -317,10 +370,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         let q = query.trimmingCharacters(in: .whitespaces)
         let inScope = all.filter { scope.admits($0.kind) }
         if q.isEmpty {
-            // Themes only when asked for (their chip, or a search): there are hundreds.
-            shown = inScope.filter { scope == .themes || $0.kind != .theme }
+            // Themes and folders only when asked for (their chip, or a search): there are many.
+            shown = inScope.filter { (scope == .themes || $0.kind != .theme) && (scope == .folders || $0.kind != .folder) }
         } else {
-            shown = inScope.compactMap { item in Self.score(q, item.title + " " + item.subtitle).map { (item, $0) } }
+            // A path being typed lists where it leads first.
+            let typed = scope.admits(.folder) ? typedFolders(q) : []
+            let typedTitles = Set(typed.map(\.title))
+            shown = typed + inScope.filter { !typedTitles.contains($0.title) }
+                .compactMap { item in Self.score(q, item.title + " " + item.subtitle).map { (item, $0) } }
                 .sorted { $0.1 > $1.1 }.prefix(60).map(\.0)
         }
         // Sections (Panes, Sessions, Commands…) when browsing; a search
@@ -349,6 +406,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private static func heading(_ kind: Kind) -> String {
         switch kind {
         case .pane: "Panes"
+        case .folder: "Folders"
         case .workspace: "Workspaces"
         case .session: "Sessions"
         case .command: "Commands"

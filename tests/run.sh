@@ -215,6 +215,10 @@ expect focus-follows-mouse 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/f
   $LIBERTTY --ui-probe "$(sed 's/@FIRST@/1/' $ROOT/tests/fixtures/focus-follows-mouse.txt)" $OUT
 expect focus-follows-mouse-off 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed 's/@FIRST@/2/' $ROOT/tests/fixtures/focus-follows-mouse.txt)" $OUT
+# Go to Directory: the palette's Folders, a typed path, where shells have been.
+mkdir -p $PRIVATE/folders
+expect go-to-directory 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/folders|g" $ROOT/tests/fixtures/go-to-directory.txt)" $OUT
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config
