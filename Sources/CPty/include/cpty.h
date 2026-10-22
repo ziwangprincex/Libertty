@@ -89,7 +89,10 @@ int libertty_sock_recv_fd(int sock);
 
 /// Start `path` in its own session with stdin from /dev/null and output
 /// appended to `log_path` (or /dev/null); no other descriptors are inherited.
-pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path);
+/// `responsible` (macOS): it answers for itself, not for whoever started it,
+/// when macOS asks the user about its programs' privacy access.
+pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
+                              int responsible);
 
 /// A connected pair of Unix stream sockets (close-on-exec, no SIGPIPE).
 int libertty_socketpair(int fds[2]);

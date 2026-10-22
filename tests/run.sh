@@ -8,6 +8,8 @@ set -u
 ROOT=${0:A:h:h}
 cd $ROOT
 CONFIG=${1:-debug}
+# liberttyd embeds its Info.plist at link time, a file SwiftPM doesn't watch.
+[[ ! $ROOT/Sources/liberttyd/Info.plist -nt $(swift build -c $CONFIG --show-bin-path)/liberttyd ]] || touch $ROOT/Sources/liberttyd/main.swift
 # A failed build must stop here: an old binary wouldn't know the probe flags.
 swift build -c $CONFIG > $ROOT/build/test-build.log 2>&1 || { grep -E "error:" $ROOT/build/test-build.log; exit 1; }
 BIN=$(swift build -c $CONFIG --show-bin-path)

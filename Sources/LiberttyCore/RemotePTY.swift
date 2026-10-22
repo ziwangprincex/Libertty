@@ -406,16 +406,22 @@ public enum DaemonClient {
     /// the socket: start it, or have it take over from another build.
     /// Returns whether a compatible liberttyd answers.
     @discardableResult
-    public static func ensureRunning(executable: String, logPath: String?) -> Bool {
+    /// `responsible`: liberttyd answers for itself and its programs when macOS
+    /// asks about privacy access (see `libertty_spawn_detached`). On a host
+    /// Libertty reaches over ssh it keeps sshd's instead, so the host's
+    /// "Full Disk Access for remote users" still covers its sessions.
+    public static func ensureRunning(executable: String, logPath: String?, responsible: Bool = true) -> Bool {
         let mine = DaemonServer.buildID(ofExecutable: executable)
         if let w = hello() {
             if w.version == Wire.version, w.build == mine { return true }
             log("liberttyd[\(w.pid)] is build \(w.build) (protocol \(w.version)); replacing it with \(mine)")
-            guard let pid = spawn(executable, ["--takeover"], logPath: logPath) else { return w.version == Wire.version }
+            guard let pid = spawn(executable, ["--takeover"], logPath: logPath, responsible: responsible) else {
+                return w.version == Wire.version
+            }
             if waitFor({ $0.build == mine }, seconds: 10, child: pid) { return true }
             return hello()?.version == Wire.version
         }
-        guard let pid = spawn(executable, [], logPath: logPath) else { return false }
+        guard let pid = spawn(executable, [], logPath: logPath, responsible: responsible) else { return false }
         // The first run of a freshly built liberttyd can take seconds (the
         // system checks a new binary): wait as long as it's alive.
         return waitFor({ $0.version == Wire.version }, seconds: 10, child: pid)
@@ -432,7 +438,7 @@ public enum DaemonClient {
         return false
     }
 
-    private static func spawn(_ executable: String, _ arguments: [String], logPath: String?) -> pid_t? {
+    private static func spawn(_ executable: String, _ arguments: [String], logPath: String?, responsible: Bool) -> pid_t? {
         if let logPath {
             try? FileManager.default.createDirectory(atPath: logPath.parentPath,
                                                      withIntermediateDirectories: true)
@@ -445,7 +451,7 @@ public enum DaemonClient {
             argv.forEach { free($0) }
             envp.forEach { free($0) }
         }
-        let pid = libertty_spawn_detached(executable, &argv, &envp, logPath)
+        let pid = libertty_spawn_detached(executable, &argv, &envp, logPath, responsible ? 1 : 0)
         guard pid > 0 else {
             log("couldn't start \(executable): \(String(cString: strerror(errno)))")
             return nil

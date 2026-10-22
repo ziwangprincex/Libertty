@@ -41,7 +41,7 @@ public final class DaemonServer {
             let env = ProcessInfo.processInfo.environment
             let home = env["LIBERTTY_HOME"] ?? userHomeDirectory().appendingPath(".libertty")
             let log = env["LIBERTTY_DAEMON_LOG"] ?? home.appendingPath("liberttyd.log")
-            guard DaemonClient.ensureRunning(executable: executable, logPath: log) else {
+            guard DaemonClient.ensureRunning(executable: executable, logPath: log, responsible: false) else {
                 writeError("liberttyd: couldn't start (see \(log))\n")
                 exit(1)
             }

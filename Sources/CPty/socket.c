@@ -138,7 +138,9 @@ int libertty_sock_recv_fd(int sock) {
 #ifdef __linux__
 // No POSIX_SPAWN_CLOEXEC_DEFAULT here: fork, start a session, close what
 // isn't ours to pass on, exec.
-pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path) {
+pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
+                              int responsible) {
+    (void)responsible;  // a macOS notion
     int out = open(log_path ? log_path : "/dev/null", O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     int in = open("/dev/null", O_RDONLY | O_CLOEXEC);
     if (out < 0 || in < 0) return -1;
@@ -187,12 +189,13 @@ static void disclaim_responsibility(posix_spawnattr_t *attr) {
     if (disclaim) disclaim(attr, 1);
 }
 
-pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path) {
+pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
+                              int responsible) {
     posix_spawnattr_t attr;
     posix_spawn_file_actions_t actions;
     posix_spawnattr_init(&attr);
     posix_spawn_file_actions_init(&actions);
-    disclaim_responsibility(&attr);
+    if (responsible) disclaim_responsibility(&attr);
     // Its own session: it outlives the app and gets none of its signals.
     // Close everything else: the daemon must not hold the app's descriptors.
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF

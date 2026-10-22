@@ -17,13 +17,21 @@
     <key>NSAudioCaptureUsageDescription</key><string>A program running in Libertty wants to record this Mac's audio.</string>
     <key>NSBluetoothAlwaysUsageDescription</key><string>A program running in Libertty wants to use Bluetooth.</string>
     <key>NSCalendarsUsageDescription</key><string>A program running in Libertty wants to read your calendars.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>A program running in Libertty wants to read and change your calendars.</string>
     <key>NSCameraUsageDescription</key><string>A program running in Libertty wants to use the camera.</string>
+    <key>NSDesktopFolderUsageDescription</key><string>A program running in Libertty wants to use files on your Desktop.</string>
+    <key>NSDocumentsFolderUsageDescription</key><string>A program running in Libertty wants to use files in your Documents folder.</string>
+    <key>NSDownloadsFolderUsageDescription</key><string>A program running in Libertty wants to use files in your Downloads folder.</string>
+    <key>NSNetworkVolumesUsageDescription</key><string>A program running in Libertty wants to use files on a network volume.</string>
+    <key>NSRemovableVolumesUsageDescription</key><string>A program running in Libertty wants to use files on a removable volume.</string>
     <key>NSContactsUsageDescription</key><string>A program running in Libertty wants to read your contacts.</string>
     <key>NSLocalNetworkUsageDescription</key><string>Programs running in Libertty, and its Web Access, use this to reach devices on your local network.</string>
     <key>NSLocationUsageDescription</key><string>A program running in Libertty wants to know this Mac's location.</string>
+    <key>NSLocationWhenInUseUsageDescription</key><string>A program running in Libertty wants to know this Mac's location.</string>
     <key>NSMicrophoneUsageDescription</key><string>A program running in Libertty wants to use the microphone.</string>
     <key>NSPhotoLibraryUsageDescription</key><string>A program running in Libertty wants to use your photo library.</string>
     <key>NSRemindersUsageDescription</key><string>A program running in Libertty wants to read your reminders.</string>
+    <key>NSRemindersFullAccessUsageDescription</key><string>A program running in Libertty wants to read and change your reminders.</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>A program running in Libertty wants to use speech recognition.</string>
     <key>NSSystemAdministrationUsageDescription</key><string>A program running in Libertty wants to change system settings.</string>
 </dict>

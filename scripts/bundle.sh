@@ -19,8 +19,10 @@ cp $RES/JetBrainsMonoNerdFont-{Regular,Bold,Italic,BoldItalic}.ttf $RES/OFL.txt 
 cp $ROOT/vendor/geist/Geist-{Regular,Medium,SemiBold}.ttf $FONTS/
 cp $ROOT/vendor/geist/OFL.txt $FONTS/Geist-OFL.txt
 
-swift build -c $CONFIG
 BINDIR=$(swift build -c $CONFIG --show-bin-path)
+# liberttyd embeds its Info.plist at link time, a file SwiftPM doesn't watch.
+[[ ! $ROOT/Sources/liberttyd/Info.plist -nt $BINDIR/liberttyd ]] || touch $ROOT/Sources/liberttyd/main.swift
+swift build -c $CONFIG
 BIN=$BINDIR/Libertty
 
 mkdir -p ${DEST:h}

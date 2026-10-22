@@ -17,8 +17,10 @@ enum ParseBench {
         let arguments = ["--session-bench": 1, "--link-probe": 1, "--command-probe": 1, "--responsible-probe": 1,
                          "--ui-probe": 2, "--document-probe": 2, "--remote-probe": 1, "--output-probe": 1,
                          "--shell-probe": 2, "--parse-bench": 1]
+        // Not what follows -e: that's a command to run, its words its own.
+        let own = args.firstIndex(of: "-e").map { Array(args[..<$0]) } ?? args
         for (flag, count) in arguments {
-            guard let i = args.firstIndex(of: flag), i + count >= args.count else { continue }
+            guard let i = own.firstIndex(of: flag), i + count >= own.count else { continue }
             FileHandle.standardError.write(Data("\(flag) needs \(count == 1 ? "an argument" : "\(count) arguments")\n".utf8))
             exit(2)
         }
