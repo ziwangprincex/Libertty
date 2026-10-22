@@ -1,0 +1,9 @@
+# focus-follows-mouse: the pointer coming onto a pane gives it the keyboard
+# (run with it on, and with the default, off: tests/run.sh says which).
+key:cmd+d
+wait:1.2
+expect-focus:2
+hover:1
+expect-focus:@FIRST@
+hover:2
+expect-focus:2

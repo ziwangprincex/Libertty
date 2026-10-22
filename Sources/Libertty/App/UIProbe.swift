@@ -61,6 +61,8 @@ import LiberttyCore
 ///   expect-other:TEXT    a sidebar row of the newest other window contains TEXT, or its panes' text does
 ///   take-tab:N           tab N of the newest other window moves back here, at the end (as dropped on the sidebar)
 ///   expect-subtitle:TEXT the window's subtitle (the most urgent program state) contains TEXT
+///   hover:N              the pointer comes onto pane N of the tab in front (reading order)
+///   expect-focus:N       pane N of the tab in front has the keyboard
 ///   expect-status:TEXT   program states (OSC 7501) as they show include each word of TEXT: e.g.
 ///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
 ///                        mark, the Dock badge, notifications so far, sounds so far)
@@ -481,6 +483,27 @@ enum UIProbe {
                     failures += 1
                 }
                 pump(0.5)
+            case .hover(let n):
+                let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
+                guard panes.indices.contains(n - 1),
+                      let event = NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [],
+                                                         timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                         eventNumber: 0, trackingNumber: 0, userData: nil) else {
+                    print("FAIL  ui-probe hover: no pane \(n)")
+                    failures += 1
+                    break
+                }
+                panes[n - 1].mouseEntered(with: event)
+                pump(0.2)
+            case .expectFocus(let n):
+                let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
+                let focused = panes.firstIndex { $0 === window.firstResponder }.map { $0 + 1 }
+                if focused == n {
+                    print("ok    ui-probe pane \(n) has the keyboard")
+                } else {
+                    print("FAIL  ui-probe focus: pane \(focused.map(String.init) ?? "none"), not \(n)")
+                    failures += 1
+                }
             case .expectSubtitle(let text):
                 let subtitle = window.subtitle
                 if subtitle.contains(text) {
@@ -613,6 +636,7 @@ enum UIProbe {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
+        case hover(Int), expectFocus(Int)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
@@ -689,6 +713,8 @@ enum UIProbe {
             case "expect-tab-count": steps.append(.expectTabCount(Int(arg) ?? -1))
             case "action": steps.append(.action(arg))
             case "expect-subtitle": steps.append(.expectSubtitle(arg))
+            case "hover": steps.append(.hover(Int(arg) ?? 0))
+            case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))
             case "expect-windows": steps.append(.expectWindows(Int(arg) ?? -1))
             case "expect-other": steps.append(.expectOther(arg))
             case "take-tab": steps.append(.takeTab(Int(arg) ?? -1))

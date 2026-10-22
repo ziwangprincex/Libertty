@@ -127,6 +127,8 @@ struct Config: Equatable {
     /// Ghostty's `wait-after-command`: a pane stays when its program ends,
     /// until a key is pressed in it.
     var waitAfterCommand = false
+    /// Ghostty's `focus-follows-mouse`: the pane under the pointer gets the keyboard.
+    var focusFollowsMouse = false
     /// Ghostty's `abnormal-command-exit-runtime` (ms): a program that fails
     /// sooner than this keeps its pane, so its error can be read (Rex too).
     var abnormalCommandExitRuntime = 250
@@ -249,6 +251,7 @@ struct Config: Equatable {
         ("agent-session-names", "Ask coding agents to name their session after their task (libertty +agent-setup installs what asks them); the tab shows the name."),
         ("program-status-sound", "Which program states play a sound as they begin while you're elsewhere: e.g. blocked:Ping,error:Basso,done — a state alone plays the alert sound; the names are macOS's sounds (System Settings ▸ Sound). A state with a sound here doesn't also sound its notification. Default none."),
         ("cursor-style-blink", "Whether the cursor blinks by default: empty (blinks, and programs may turn it off with DEC mode 12), true or false. Programs can still change it (DECSCUSR)."),
+        ("focus-follows-mouse", "Give the keyboard to the pane under the pointer, without a click (as in Ghostty): from one terminal pane to another of the window in front."),
         ("wait-after-command", "Keep a pane open when its program ends, until a key is pressed in it (as in Ghostty). Off: only a program that fails at once keeps it (abnormal-command-exit-runtime)."),
         ("abnormal-command-exit-runtime", "Milliseconds: a program that fails (exits non-zero) sooner keeps its pane open with its error, until a key is pressed in it. 0 turns that off. Default 250."),
         ("undo-timeout", "How long Edit ▸ Undo (⌘Z) can bring back a closed pane, tab or window, programs still running: seconds or e.g. 30s; 0 ends them on close."),
@@ -335,6 +338,7 @@ struct Config: Equatable {
         case "cursor-style-blink": return [cursorStyleBlink.map(String.init) ?? ""]
         case "undo-timeout": return [num(undoTimeout) + "s"]
         case "wait-after-command": return [String(waitAfterCommand)]
+        case "focus-follows-mouse": return [String(focusFollowsMouse)]
         case "abnormal-command-exit-runtime": return [String(abnormalCommandExitRuntime)]
         case "web-access": return [webAccess]
         case "web-access-port": return [String(webAccessPort)]
@@ -629,6 +633,9 @@ struct Config: Equatable {
         case "cursor-style-blink":
             if reset { cursorStyleBlink = nil; return nil }
             guard let x = bool() else { return "true, false or empty" }; cursorStyleBlink = x
+        case "focus-follows-mouse":
+            if reset { focusFollowsMouse = defaults.focusFollowsMouse; return nil }
+            guard let x = bool() else { return "true or false" }; focusFollowsMouse = x
         case "wait-after-command":
             if reset { waitAfterCommand = defaults.waitAfterCommand; return nil }
             guard let x = bool() else { return "true or false" }; waitAfterCommand = x

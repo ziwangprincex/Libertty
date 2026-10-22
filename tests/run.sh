@@ -208,6 +208,13 @@ expect password 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT --persist
 expect password-local 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT
+# focus-follows-mouse: on, the pane under the pointer gets the keyboard; off (the default), it doesn't.
+mkdir -p $PRIVATE/ffm-config/libertty
+print 'focus-follows-mouse = true' > $PRIVATE/ffm-config/libertty/config
+expect focus-follows-mouse 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/ffm-config \
+  $LIBERTTY --ui-probe "$(sed 's/@FIRST@/1/' $ROOT/tests/fixtures/focus-follows-mouse.txt)" $OUT
+expect focus-follows-mouse-off 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed 's/@FIRST@/2/' $ROOT/tests/fixtures/focus-follows-mouse.txt)" $OUT
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config

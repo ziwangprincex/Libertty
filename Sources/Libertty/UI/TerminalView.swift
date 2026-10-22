@@ -552,6 +552,18 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     override func mouseEntered(with event: NSEvent) {
         hovering = true
         updateCloseButton()
+        focusUnderPointer()
+    }
+
+    /// `focus-follows-mouse`: the keyboard comes here from another terminal
+    /// pane of the window in front (its tracking area only reports there) —
+    /// not from a field (the find bar, a rename), a document or an editor,
+    /// not mid-drag, not to a parked pane.
+    private func focusUnderPointer() {
+        guard ConfigStore.shared.config.focusFollowsMouse, !isParked, let window,
+              window.attachedSheet == nil, NSEvent.pressedMouseButtons == 0,
+              let current = window.firstResponder as? TerminalView, current !== self else { return }
+        window.makeFirstResponder(self)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -1106,7 +1118,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     override func rightMouseDragged(with event: NSEvent) { mouseMotion(event) }
     override func otherMouseDragged(with event: NSEvent) { mouseMotion(event) }
-    override func mouseMoved(with event: NSEvent) { mouseMotion(event) }
+    override func mouseMoved(with event: NSEvent) {
+        mouseMotion(event)
+        focusUnderPointer()  // back from a dialog or another app, the pointer already over it
+    }
 
     /// Hover and non-left drags matter only to programs tracking the mouse;
     /// the encoder drops motion the program's mode didn't ask for.

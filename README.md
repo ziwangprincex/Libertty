@@ -80,6 +80,7 @@ ad-hoc signed, so macOS may ask again after an update.
 - A program that fails at once (non-zero within `abnormal-command-exit-runtime`, 250 ms)
   leaves its pane open with its error; a key closes it. `wait-after-command = true` keeps
   every pane whose program ends; `libertty +split --keep-open` keeps one.
+- `focus-follows-mouse = true`: the pane under the pointer gets the keyboard, without a click.
 - Move a pane: out of its split into a tab of its own, into another tab's split, or
   into a window of its own; move a tab to a new window. Dragging a tab out of every
   window opens it in a window of its own, and dropping it on another window's tabs moves
