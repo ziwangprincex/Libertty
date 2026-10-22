@@ -721,24 +721,88 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     func split(_ direction: SplitContainerView.Direction) {
         // A document in front: split the terminal tab instead.
         if !selectedTab.isTerminal { select(terminalTab) }
-        guard let container = selectedTab.container, let focused = selectedTab.focusedPane else { return }
+        guard let focused = selectedTab.focusedPane else { return }
+        split(focused, toward: direction)
+    }
+
+    /// A new terminal beside `pane`, with `share` of its space, running
+    /// `command` (else a shell) in `workingDirectory` (else `pane`'s).
+    /// `focus`: the keyboard goes to it. An error shows on the window.
+    @discardableResult
+    func split(_ pane: TerminalView, toward direction: SplitContainerView.Direction, share: CGFloat = 0.5,
+               command: String? = nil, workingDirectory: String? = nil, focus: Bool = true) -> TerminalView? {
         do {
-            // The new pane buds out from zero width, so give its shell the
-            // size it will settle at (about half) rather than a default.
-            let s = focused.session.size
-            let (cols, rows) = direction == .left || direction == .right
-                ? (max(1, (Int(s.cols) - 1) / 2), Int(s.rows))
-                : (Int(s.cols), max(1, (Int(s.rows) - 1) / 2))
-            let pane = try Self.makePane(config: config, cols: cols, rows: rows)
-            pane.fontSize = focused.fontSize
-            adopt(pane)
-            // Its shell first: one that can't start leaves no dead pane behind.
-            try startSession(of: pane, command: nil, workingDirectory: focusedWorkingDirectory)
-            container.split(focused, with: pane, toward: direction)
-            window?.makeFirstResponder(pane)
-            updateSidebar()
+            return try makeSplit(beside: pane, toward: direction, share: share, command: command,
+                                 workingDirectory: workingDirectory, focus: focus)
         } catch {
             showError(error)
+            return nil
+        }
+    }
+
+    /// The same, the error to the caller (`libertty +split` hears it; no alert waits on anyone).
+    func makeSplit(beside pane: TerminalView, toward direction: SplitContainerView.Direction, share: CGFloat = 0.5,
+                   command: String? = nil, workingDirectory: String? = nil, focus: Bool = true) throws -> TerminalView? {
+        guard let tab = tab(containing: pane), let container = tab.container else { return nil }
+        do {
+            // The new pane buds out from zero size, so give its shell the
+            // size it will settle at rather than a default.
+            let s = pane.session.size
+            let (cols, rows) = direction == .left || direction == .right
+                ? (max(1, Int((CGFloat(Int(s.cols) - 1) * share).rounded(.down))), Int(s.rows))
+                : (Int(s.cols), max(1, Int((CGFloat(Int(s.rows) - 1) * share).rounded(.down))))
+            let new = try Self.makePane(config: config, cols: cols, rows: rows)
+            new.fontSize = pane.fontSize
+            adopt(new)
+            // Its shell first: one that can't start leaves no dead pane behind.
+            try startSession(of: new, command: command, workingDirectory: workingDirectory ?? pane.session.workingDirectory,
+                             keepDirectory: workingDirectory != nil)
+            container.split(pane, with: new, toward: direction, share: share)
+            if focus {
+                if tab !== selectedTab { reveal(new, in: tab) } else { window?.makeFirstResponder(new) }
+            }
+            updateSidebar()
+            return new
+        }
+    }
+
+    enum MoveTarget { case newTab, newWindow, tab(Int) }
+
+    /// Why `pane` can't go to `target`, or nil when it can — asked before
+    /// anything is brought forward (`libertty +move-pane`). Tab N is of the
+    /// workspace `pane` is in.
+    func whyNotMove(_ pane: TerminalView, to target: MoveTarget) -> String? {
+        if isQuick { return "the Quick Terminal's pane stays there" }
+        guard let tab = tab(containing: pane) else { return "it's parked (unpark it first)" }
+        switch target {
+        case .newTab, .newWindow:
+            return tab.panes.count > 1 ? nil : "it's the only pane of its tab"
+        case .tab(let n):
+            let list = workspaceTabs.first { $0.contains { $0 === tab } } ?? tabs
+            guard list.indices.contains(n - 1) else { return "its window has no tab \(n)" }
+            let other = list[n - 1]
+            if other === tab { return "it's in tab \(n) already" }
+            guard other.isTerminal else { return "tab \(n) shows a document" }
+            let alone = tab.container?.views.count == 1 && tab.parked.isEmpty
+            return tab.panes.count > 1 || alone ? nil : "documents beside it would be left without a terminal"
+        }
+    }
+
+    /// The pane showing session `id` in this window, in a split or parked.
+    func pane(showing id: String) -> TerminalView? {
+        allPanes.first { $0.paneID == id }
+    }
+
+    /// Whether `pane` is out of its split (parked).
+    func isOutOfSplit(_ pane: TerminalView) -> Bool { tab(containing: pane) == nil }
+
+    /// After `reveal`: whether the focused pane can go to `target` now —
+    /// any split changing under way (a pane closing) settled first.
+    func canMoveFocusedPane(to target: MoveTarget) -> Bool {
+        guard let pane = selectedTab.focusedPane, selectedTab.container?.contains(pane) == true else { return false }
+        switch target {
+        case .newTab, .newWindow: return canMoveFocusedPaneOut
+        case .tab(let n): return canMoveFocusedPane(toTab: n)
         }
     }
 
@@ -1082,7 +1146,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     private func takeOut(_ pane: TerminalView, from tab: TerminalTab, then: @escaping () -> Void) {
         // Still there: a move asked for twice, or a park just before, already took it
         // (`contains` lets a removal under way finish first).
-        guard let container = tab.container, container.contains(pane) else { return }
+        guard let container = tab.container, container.contains(pane), tab.panes.count > 1 else { return }
         let hadFocus = tab.focusedPane === pane && tab.focusedDocument == nil
         let successor: NSView? = tab.previouslyFocused(besides: pane)
             ?? container.neighbor(of: pane, .left) ?? container.neighbor(of: pane, .up) ?? container.views.first { $0 !== pane }

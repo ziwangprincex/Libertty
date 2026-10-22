@@ -714,6 +714,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                  workingDirectory: info["cwd"])
             return activate()
         }
+        // The Quick Terminal's pane can be split too (it's no window of the list).
+        if PaneRequests.handle(info, in: controllers + [QuickTerminal.shared.windowController].compactMap { $0 }) { return }
         if info["kind"] == "focus", let id = info["id"] {
             if controllers.contains(where: { $0.reveal(paneID: id) }) { activate() }
             return

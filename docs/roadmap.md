@@ -56,6 +56,7 @@
 | `libertty +new-window / +new-tab [--cwd] [-e CMD]`、`libertty +action`、`libertty +open` | ✓ | ✅（发给正在运行的 Libertty，没在运行就先启动） |
 | `ls / new / send / capture / kill / attach` | ✓ | ✅ `libertty +list-sessions / +new-session / +send / +capture / +kill-session / +attach`，`$LIBERTTY_SESSION` |
 | `split / run / focus / wait` | ✓ | ✅ `+action new_split:…`、`+new-session -e`、`+focus ID`、`+wait ID`（退出码原样返回） |
+| 按 pane ID 操作布局（Rex：`rex split -b BLOCK --split=below --ratio 30`、`move`） | — | ✅ `+split [ID] [--down] [--ratio 30] [--cwd] [--no-focus] [-e CMD]`（输出新会话 ID）、`+move-pane [ID] --new-tab / --tab N / --new-window`。App 用回复通知告诉 CLI 结果：成功、找不到、被拒（附原因）或出错；被拒时不抢焦点。⬜ swap、resize |
 | `wait --until prompt|idle`、`capture --ansi/--html`、`events` | ✓ | ✅ `+wait ID --until exit|prompt|idle=MS --timeout S`（超时退出 124；提示符靠 OSC 133，idle 由 liberttyd 计时，值上限一天）、`+capture --ansi / --html`（带颜色的文本、带样式的网页）、`+events [--filter …]`（JSON 行：session-started / prompt / command-started / command-finished / directory / session-ended，每个监听者自己的队列，慢的监听者不拖累别人）；`tests/cli-wait-test.sh`（17 项） |
 | ssh 到没有这份 terminfo 的主机 | ✓ | ✅ shell 集成给 ssh 包一层，远端用 `TERM=xterm-256color`（Ghostty 的 ssh-env 做法，`ssh-env = false` 关掉）；用户自己定义的 ssh 函数或别名优先 |
 | 自带 terminfo | ✓ | ✅ `TERM=xterm-ghostty`：Libertty 的终端就是 libghostty-vt，Ghostty 的 terminfo（MIT）描述得一字不差；App 里带编译好的版本，`TERMINFO` 指过去。程序因此知道支持 undercurl、同步输出等。`term = …` 可以改 |

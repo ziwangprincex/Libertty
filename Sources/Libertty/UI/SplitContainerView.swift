@@ -180,7 +180,8 @@ final class SplitContainerView: NSView {
     // MARK: Structure
 
     /// Split `pane`, the new pane budding out of it toward `direction`.
-    func split(_ pane: NSView, with newPane: NSView, toward direction: Direction) {
+    /// `share`: how much of the space the new pane ends up with.
+    func split(_ pane: NSView, with newPane: NSView, toward direction: Direction, share: CGFloat = 0.5) {
         animator?.finish()
         // Each view lives in the tree once.
         guard let node = root.find(pane), root.find(newPane) == nil else { return }
@@ -192,7 +193,7 @@ final class SplitContainerView: NSView {
         node.split(with: newPane, axis: axis, ratio: newFirst ? 0 : 1, newFirst: newFirst)
         layoutPanes()
         animator = FrameAnimator.run(on: self, duration: Motion.card, update: { [weak self, weak node] p in
-            node?.ratio = newFirst ? 0.5 * CGFloat(p) : 1 - 0.5 * CGFloat(p)
+            node?.ratio = newFirst ? share * CGFloat(p) : 1 - share * CGFloat(p)
             self?.layoutPanes()
         })
     }

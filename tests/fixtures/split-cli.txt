@@ -1,0 +1,61 @@
+# libertty +split and +move-pane: panes arranged from the command line by
+# session ID, as an agent does beside itself (sessions in liberttyd: --persist).
+type:libertty +split nosuchid -e true; echo "EXIT=$?"
+key:enter
+wait:2.0
+expect:EXIT=1
+expect:no window shows session nosuchid
+# A program that's done at once still made its pane: success, with its ID.
+type:Q=$(libertty +split --no-focus -e true); echo "QUICK=$? ${#Q}"
+key:enter
+wait:2.5
+expect:QUICK=0 8
+# Beside this pane, below it, a third of the space, the keyboard left here:
+# it prints the new session's ID, which liberttyd has.
+type:N=$(libertty +split --no-focus --down --ratio 30 -e 'echo SPLIT-$((6*7)); sleep 60'); [ -n "$N" ] && echo "FOUND=$(libertty +list-sessions | grep -c " $N ")"
+key:enter
+wait:3.0
+expect:FOUND=1
+expect:SPLIT-42
+# Below (as wide as this pane), about 30% of the height (the window is 24 rows).
+# (ASCII only: the probe types with a US keyboard, which has no ×.)
+type:set -- $(libertty +list-sessions | awk -v n="$N" '{ for (i = 1; i <= NF; i++) if ($i == n) print $(i + 2) }' | tr -c '0-9' ' '); [ "$2" -ge 4 ] && [ "$2" -le 9 ] && [ "$1" -ge 60 ] && echo SHAPE-$((1+1))
+key:enter
+wait:1.0
+expect:SHAPE-2
+# Still typing here: the shell runs it (the sleeping pane would only echo it).
+type:echo KEPT-$((40 + 2))
+key:enter
+wait:1.0
+expect:KEPT-42
+# It moves to a tab of its own; once alone there, it can't again (nothing
+# comes forward then: typing goes on here).
+type:libertty +move-pane "$N" --new-tab
+key:enter
+wait:2.0
+expect-tab-count:2
+tab:1
+wait:0.5
+type:libertty +move-pane "$N" --new-tab; echo "AGAIN=$?"
+key:enter
+wait:2.0
+expect:AGAIN=1
+expect:only pane of its tab
+expect-tab-count:2
+# Focused, by default: what's typed next goes to it (tr shouts it back; the
+# shell would say the command isn't found, in lower case).
+type:T=$(libertty +split -e 'tr a-z A-Z')
+key:enter
+wait:3.0
+type:focused-here
+key:enter
+wait:1.0
+expect:FOCUSED-HERE
+# Parked, it says so (and the keyboard is back in the shell, where it went).
+action:park_surface
+wait:0.5
+type:libertty +move-pane "$T" --new-tab; echo "PARKED=$?"
+key:enter
+wait:2.0
+expect:PARKED=1
+expect:it's parked

@@ -197,6 +197,9 @@ check agent-setup sh -c '"$0" +agent-setup --claude-dir "$1" --yes && "$0" +agen
 # window's tab to another window (the windows it opens stay off screen).
 expect move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@N@|$RANDOM|g" $ROOT/tests/fixtures/move.txt)" $OUT
+# +split and +move-pane: panes arranged by session ID from a pane's shell.
+expect split-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/split-cli.txt)" $OUT --persist
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config

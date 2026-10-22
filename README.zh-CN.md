@@ -141,6 +141,8 @@ libertty +send ID 'make test\n'
 libertty +wait ID --until exit|prompt|idle=MS [--timeout S]
 libertty +events [--filter KIND,...]
 libertty +attach ID [--window] ; libertty +kill-session ID
+libertty +split [ID] [--down] [--ratio 30] [--no-focus] [-e COMMAND]   # 在会话 ID 的 pane 旁边开一个新 pane，输出新会话的 ID
+libertty +move-pane [ID] --new-tab | --tab N | --new-window
 ```
 
 会话相关命令支持 `--host HOST`。`$LIBERTTY_SESSION` 是当前面板的会话 ID。

@@ -379,8 +379,12 @@ enum AgentCLI {
         ## Other sessions
 
         - `libertty +list-sessions [--json]` — every session: ID, program, size, folder, name.
-        - `libertty +new-session [--cwd DIR] -e COMMAND` — start COMMAND in a session of its own (a dev
-          server, a watcher); prints its ID. It shows as a tab the next time Libertty opens windows.
+        - `libertty +split [--down] [--ratio PERCENT] [--no-focus] -e COMMAND` — a pane beside this one
+          running COMMAND (a dev server, a watcher, tests), with PERCENT of the space; prints its session
+          ID. `--no-focus` leaves the keyboard here. Without -e it's a shell.
+        - `libertty +new-session [--cwd DIR] -e COMMAND` — start COMMAND in a session of its own, in no
+          window; prints its ID. It shows as a tab the next time Libertty opens windows.
+        - `libertty +move-pane ID --new-tab | --tab N | --new-window` — move a pane elsewhere.
         - `libertty +capture ID [--scrollback]` — print its screen (with --scrollback, its history too).
         - `libertty +send ID TEXT` — type TEXT into it; `\\n` is Return.
         - `libertty +wait ID --until prompt|exit|idle=MS [--timeout S]` — block until its shell shows a prompt

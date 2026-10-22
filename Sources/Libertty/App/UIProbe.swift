@@ -119,6 +119,14 @@ enum UIProbe {
             others.append(other)
             return other
         }
+        // `libertty +split` and `+move-pane` from its panes' shells, to this
+        // probe (requests name its private liberttyd's socket).
+        let paneRequests = DistributedNotificationCenter.default().addObserver(
+            forName: RemoteControl.notification, object: nil, queue: .main) { note in
+            guard let info = note.userInfo as? [String: String], RemoteControl.isForUs(info) else { return }
+            _ = PaneRequests.handle(info, in: [controller] + others)
+        }
+        defer { DistributedNotificationCenter.default().removeObserver(paneRequests) }
         // `+open --wait`'s side of it: the editors that said they closed.
         var closedEditors: Set<String> = []
         let closedObserver = DistributedNotificationCenter.default().addObserver(forName: EditorWait.closed, object: nil, queue: .main) { note in

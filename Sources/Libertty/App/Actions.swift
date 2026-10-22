@@ -166,4 +166,45 @@ enum RemoteControl {
     static func isForUs(_ info: [String: String]) -> Bool {
         (info["socket"] ?? Wire.socketPath) == Wire.socketPath
     }
+
+    /// The running Libertty's answers, to requests that ask for one (`reply`: a token).
+    static let replied = Notification.Name("dev.libertty.terminal.remote-reply")
+
+    /// Answer a request that asked (`info["reply"]`); nothing for one that didn't.
+    static func answer(_ info: [String: String], _ answer: [String: String]) {
+        guard let token = info["reply"], !token.isEmpty else { return }
+        var reply = answer
+        reply["token"] = token
+        DistributedNotificationCenter.default().postNotificationName(
+            replied, object: nil, userInfo: reply, deliverImmediately: true)
+    }
+
+    /// Post `info` and wait for Libertty's answer: nil when none came in
+    /// `timeout` seconds (it's gone, or older than the request). Two copies
+    /// of Libertty may both hear it (an installed one and a build): one
+    /// without the pane says `no-pane` at once, so that waits a moment for
+    /// the other's word.
+    static func request(_ info: [String: String], timeout: Double) -> [String: String]? {
+        let token = UUID().uuidString
+        var answers: [[String: String]] = []
+        let observer = DistributedNotificationCenter.default().addObserver(forName: replied, object: nil, queue: .main) { note in
+            guard let reply = note.userInfo as? [String: String], reply["token"] == token else { return }
+            answers.append(reply)
+        }
+        defer { DistributedNotificationCenter.default().removeObserver(observer) }
+        var request = info
+        request["reply"] = token
+        post(request)
+        var deadline = Date().addingTimeInterval(timeout)
+        var provisional = false
+        while Date() < deadline {
+            if let decisive = answers.first(where: { $0["result"] != "no-pane" }) { return decisive }
+            if !answers.isEmpty, !provisional {
+                provisional = true
+                deadline = min(deadline, Date().addingTimeInterval(0.5))
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        return answers.first(where: { $0["result"] != "no-pane" }) ?? answers.first
+    }
 }

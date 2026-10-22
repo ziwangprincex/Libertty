@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [-e COMMAND]`: a pane beside the one showing session ID (this pane's by default), as ⌘D makes it; it prints the new session's ID. `libertty +move-pane [ID] --new-tab | --tab N | --new-window` moves one. Both work with `--host`. The libertty skill tells agents about them (a dev server beside the agent).
 - Move a pane (after Rex): to a tab of its own, into another tab's split (a pane alone in its tab takes the tab along), or to a window of its own; move a tab to a new window. Drag a tab out of every window for a window of its own, or onto another window's tabs to move it there — a window's only tab too, and its window closes. Programs run on through every move. Window menu, palette, context menus and keybind actions.
 - Coding agents (after Rex): `libertty +agent-setup` installs Claude Code hooks and a skill (it shows what it changes and asks first; `--remove` undoes it). In Libertty, Claude Code's tab then says whether it's working, waiting for your approval or done — notifications and the Dock badge follow — and Claude is told which pane it runs in and that you may be looking elsewhere, and names its session after its task (`agent-session-names`).
 - `libertty +status STATE [--message TEXT] …`: any script reports what it's doing to its terminal (OSC 7501).

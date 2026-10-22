@@ -52,6 +52,8 @@ enum CLI {
         case "+events": status = events(rest)
         case "+focus": status = focusSession(rest)
         case "+rename-session": status = renameSession(rest)
+        case "+split": status = split(rest)
+        case "+move-pane": status = movePane(rest)
         case "+status": status = AgentCLI.status(rest)
         case "+agent-hook": status = AgentCLI.hook(rest)
         case "+agent-setup": status = AgentCLI.setup(rest)
@@ -133,6 +135,12 @@ enum CLI {
           libertty +focus ID                bring the pane showing it to the front
           libertty +rename-session [ID] NAME
                                          name a session (this pane's without ID); its tab shows the name
+          libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [-e COMMAND...]
+                                         a new pane beside the one showing session ID (this pane's without it);
+                                         prints the new session's ID (a pane on a host: add --host HOST for --cwd)
+          libertty +move-pane [ID] --new-tab | --tab N | --new-window
+                                         move the pane showing session ID (this pane's without it);
+                                         tab N of its own window
           libertty +attach ID [--window]    show a session in a tab (or window) of the running Libertty; a session
                                          shown twice mirrors: both follow it, closing one leaves the other
         Inside Libertty, $LIBERTTY_SESSION is the current pane's ID.
@@ -149,7 +157,7 @@ enum CLI {
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
           --host HOST                    with +list-sessions, +new-session, +capture, +send,
-                                         +kill-session, +wait or +events: that machine's sessions
+                                         +kill-session, +wait, +events, +split or +move-pane: that machine's sessions
         """)
         return 0
     }
@@ -435,6 +443,118 @@ enum CLI {
             return false
         }
         return true
+    }
+
+    /// `+split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR]
+    /// [--no-focus] [-e COMMAND...]`: a new pane beside the one showing session
+    /// ID (this pane's without it), in the running Libertty. Prints the new
+    /// pane's session ID.
+    private static func split(_ args: [String]) -> Int32 {
+        let usage = "usage: libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [-e COMMAND...]"
+        var beside = ProcessInfo.processInfo.environment["LIBERTTY_SESSION"].flatMap { $0.isEmpty ? nil : $0 }
+        var direction = "right", ratio = 50, cwd = "", command = "", focus = true
+        var i = 0
+        while i < args.count {
+            let a = args[i]
+            switch a {
+            case "--right", "--left", "--down", "--up": direction = String(a.dropFirst(2))
+            case "--no-focus": focus = false
+            case "--ratio":
+                guard i + 1 < args.count, let n = Int(args[i + 1].trimmingCharacters(in: CharacterSet(charactersIn: "%"))),
+                      (10...90).contains(n) else { fail("--ratio is the new pane's share, 10 to 90 (percent)"); return 2 }
+                ratio = n
+                i += 1
+            case "--cwd":
+                guard i + 1 < args.count else { fail(usage); return 2 }
+                if host != nil {
+                    // A host's directory is the host's: given whole, nothing here can expand it.
+                    guard args[i + 1].hasPrefix("/") else { fail("--cwd on a host takes an absolute path"); return 2 }
+                    cwd = args[i + 1]
+                } else {
+                    cwd = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath).standardizedFileURL.path
+                    var isDirectory: ObjCBool = false
+                    guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDirectory), isDirectory.boolValue else {
+                        fail("\(args[i + 1]): no such folder")
+                        return 2
+                    }
+                }
+                i += 1
+            case "-e":
+                guard i + 1 < args.count else { fail(usage); return 2 }
+                command = args[(i + 1)...].joined(separator: " ")
+                i = args.count
+            default:
+                guard !a.hasPrefix("-") else { fail(usage); return 2 }
+                beside = a
+            }
+            i += 1
+        }
+        guard let beside else { fail(usage + " (outside a Libertty session, give the ID of the pane to split)"); return 2 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        let answer = RemoteControl.request(["kind": "split", "beside": beside, "direction": direction,
+                                            "share": String(Double(ratio) / 100), "cwd": cwd, "command": command,
+                                            "focus": focus ? "1" : "0"], timeout: 10)
+        switch answer?["result"] {
+        case "made":
+            let id = answer?["session"] ?? ""
+            guard !id.isEmpty else {
+                fail("made, outside liberttyd (session-persistence = false?): it has no session ID")
+                return 0
+            }
+            print(id)
+            return 0
+        case "no-pane":
+            fail("no window shows session \(beside) (libertty +list-sessions; +attach \(beside) shows one)")
+            return 1
+        case "refused":
+            fail("can't split it: \(answer?["message"] ?? "")")
+            return 1
+        case "error":
+            fail(answer?["message"] ?? "it couldn't be made")
+            return 1
+        default:
+            fail("Libertty didn't answer (one older than this command?)")
+            return 1
+        }
+    }
+
+    /// `+move-pane [ID] --new-tab | --tab N | --new-window`: the pane showing
+    /// session ID (this pane's without it) moves, in the running Libertty.
+    /// Tab N is of the pane's own window and workspace.
+    private static func movePane(_ args: [String]) -> Int32 {
+        let usage = "usage: libertty +move-pane [ID] --new-tab | --tab N | --new-window"
+        var id = ProcessInfo.processInfo.environment["LIBERTTY_SESSION"].flatMap { $0.isEmpty ? nil : $0 }
+        var to: String?
+        var i = 0
+        while i < args.count {
+            switch args[i] {
+            case "--new-tab": to = "new-tab"
+            case "--new-window": to = "new-window"
+            case "--tab":
+                guard i + 1 < args.count, let n = Int(args[i + 1]), n > 0 else { fail(usage); return 2 }
+                to = "tab:\(n)"
+                i += 1
+            case let a where !a.hasPrefix("-"): id = a
+            default: fail(usage); return 2
+            }
+            i += 1
+        }
+        guard let id, let to else { fail(usage); return 2 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        let answer = RemoteControl.request(["kind": "move-pane", "id": id, "to": to], timeout: 10)
+        switch answer?["result"] {
+        case "moved":
+            return 0
+        case "no-pane":
+            fail("no window shows session \(id) (libertty +list-sessions)")
+            return 1
+        case "refused":
+            fail("can't move it: \(answer?["message"] ?? "")")
+            return 1
+        default:
+            fail("Libertty didn't answer (one older than this command?)")
+            return 1
+        }
     }
 
     /// `+rename-session [ID] NAME`: name a session (its tab goes by the

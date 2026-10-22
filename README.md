@@ -201,6 +201,8 @@ libertty +send ID 'make test\n'
 libertty +wait ID --until exit|prompt|idle=MS [--timeout S]
 libertty +events [--filter KIND,...]
 libertty +attach ID [--window] ; libertty +kill-session ID
+libertty +split [ID] [--down] [--ratio 30] [--no-focus] [-e COMMAND]   # a pane beside session ID's; prints its ID
+libertty +move-pane [ID] --new-tab | --tab N | --new-window
 ```
 
 Session commands accept `--host HOST`. `$LIBERTTY_SESSION` holds the current pane's
