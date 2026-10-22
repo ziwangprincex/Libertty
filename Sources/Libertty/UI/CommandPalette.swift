@@ -390,12 +390,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     // MARK: Matching
 
     /// Fuzzy match: every typed character in order. Consecutive runs and
-    /// word starts score higher; nil if it doesn't match.
+    /// word starts score higher; nil if it doesn't match. Where the query
+    /// is there as typed (at a word's start, best), the match starts there:
+    /// "beta" is …/sub-beta's, not letters picked from the path before it.
     static func score(_ query: String, _ text: String) -> Int? {
         guard !query.isEmpty else { return 0 }
         let q = Array(query.lowercased()), t = Array(text.lowercased())
+        var start = 0
+        if t.count >= q.count {
+            let found = (0...(t.count - q.count)).filter { t[$0..<($0 + q.count)].elementsEqual(q) }
+            start = found.first { $0 == 0 || !t[$0 - 1].isLetter && !t[$0 - 1].isNumber } ?? found.first ?? 0
+        }
         var qi = 0, score = 0, run = 0
-        for (i, c) in t.enumerated() where qi < q.count {
+        for (i, c) in t.enumerated() where i >= start && qi < q.count {
             guard c == q[qi] else { run = 0; continue }
             let wordStart = i == 0 || !t[i - 1].isLetter && !t[i - 1].isNumber
             score += 1 + run * 3 + (wordStart ? 8 : 0) + (i == qi ? 4 : 0)
