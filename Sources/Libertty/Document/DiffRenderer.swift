@@ -132,8 +132,9 @@ enum GitDiff {
     /// component names the file. `literal`: the paths are file names, not
     /// patterns (the panel's; `libertty +diff '*.swift'` means a pattern).
     static func write(directory: String, arguments: [String] = [], name: String? = nil, literal: Bool = false) -> Result<URL, Failure> {
+        guard let git = GitCLI.executable else { return .failure(Failure(message: GitCLI.missing)) }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.executableURL = URL(fileURLWithPath: git)
         p.arguments = ["--no-optional-locks", "-c", "core.quotePath=false"] + (literal ? ["--literal-pathspecs"] : [])
             + ["-C", directory, "diff", "--no-color", "--no-ext-diff"] + arguments
         let out = Pipe(), err = Pipe()
@@ -165,8 +166,9 @@ enum GitDiff {
     }
 
     private static func run(_ args: [String]) -> String? {
+        guard let git = GitCLI.executable else { return nil }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.executableURL = URL(fileURLWithPath: git)
         p.arguments = args
         let out = Pipe()
         p.standardOutput = out

@@ -161,6 +161,7 @@ final class GitBlock: BlockService {
     // MARK: Git
 
     private func repository() throws -> String {
+        guard GitCLI.executable != nil else { throw BlockError(GitCLI.missing) }
         if let root { return root }
         if let found = GitCLI.root(of: directory) { root = found; return found }
         throw BlockError("not a git repository")
@@ -323,8 +324,9 @@ final class GitBlock: BlockService {
             guard let url = Self.inside(root, paths[0]) else { throw BlockError("no such file") }
             let base = URL(fileURLWithPath: root).standardizedFileURL.path
             let relative = String(url.path.dropFirst(base.count + 1))
+            guard let git = GitCLI.executable else { throw BlockError(GitCLI.missing) }
             let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            p.executableURL = URL(fileURLWithPath: git)
             p.arguments = ["--no-optional-locks", "-c", "core.quotePath=false", "-C", root,
                            "diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", relative]
             let out = Pipe()

@@ -49,8 +49,9 @@ enum GitCLI {
     /// what the login shell would (Homebrew's gpg, husky's node, git-lfs).
     static func execute(_ args: [String], in directory: String, input: Data? = nil,
                         network: Bool = false) -> Result<String, Failure> {
+        guard let git = executable else { return .failure(Failure(message: missing)) }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.executableURL = URL(fileURLWithPath: git)
         p.arguments = ["--no-optional-locks"] + (args.contains("--") ? ["--literal-pathspecs"] : [])
             + ["-c", "core.quotePath=false", "-C", directory] + args
         var env = ProcessInfo.processInfo.environment
@@ -95,6 +96,55 @@ enum GitCLI {
             return .failure(Failure(message: said.isEmpty ? "git \(args.first ?? "") failed" : said))
         }
         return .success(String(decoding: data, as: UTF8.self))
+    }
+
+    /// What a git command says when there's no git to run.
+    static let missing = "git isn't installed (xcode-select --install sets it up)"
+
+    /// The git to run, or nil when there's none. /usr/bin/git is Apple's
+    /// stub: on a Mac without the Command Line Tools or Xcode it asks to
+    /// install them — at launch and at every prompt, as the file tree reads
+    /// its Git marks. So it counts only when the developer folder it hands
+    /// over to has a git; else another installer's git if there is one.
+    static var executable: String? {
+        if developerToolsHaveGit { return "/usr/bin/git" }
+        // Not the login shell's PATH: reading it runs the user's rc files,
+        // and a git prompt there would run the stub all the same.
+        for dir in LoginShell.withoutShell.split(separator: ":") where dir.hasPrefix("/") {
+            let candidate = String(dir) + "/git"
+            if isProgram(candidate), !isStub(candidate) { return candidate }
+        }
+        return nil
+    }
+
+    /// Whether /usr/bin/git reaches a real git: the developer folder it picks
+    /// (DEVELOPER_DIR, else `xcode-select -s`'s choice, else Xcode, else the
+    /// Command Line Tools) has one. Read from the disk, never by running a
+    /// tool that would itself ask to install them.
+    private static var developerToolsHaveGit: Bool {
+        let fm = FileManager.default
+        let defaults = ["/Applications/Xcode.app/Contents/Developer", "/Library/Developer/CommandLineTools"]
+        let selected = (try? fm.destinationOfSymbolicLink(atPath: "/var/db/xcode_select_link"))
+            .map { $0.hasPrefix("/") ? $0 : "/var/db/" + $0 }
+        let chosen = ProcessInfo.processInfo.environment["DEVELOPER_DIR"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? selected ?? defaults.first { fm.fileExists(atPath: $0) }
+        guard let chosen else { return false }
+        // DEVELOPER_DIR may name Xcode.app itself.
+        return [chosen, chosen + "/Contents/Developer"].contains { isProgram($0 + "/usr/bin/git") }
+    }
+
+    /// An executable file — not a folder, which has the execute bit too.
+    private static func isProgram(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
+            && FileManager.default.isExecutableFile(atPath: path)
+    }
+
+    /// The stub itself, through a symbolic or a hard link.
+    private static func isStub(_ path: String) -> Bool {
+        var file = stat(), stub = stat()
+        guard stat(path, &file) == 0, stat("/usr/bin/git", &stub) == 0 else { return false }
+        return file.st_dev == stub.st_dev && file.st_ino == stub.st_ino
     }
 
     /// The root of the repository `directory` is in, symlinks resolved (as
@@ -181,12 +231,14 @@ enum LoginShell {
         lock.lock()
         defer { lock.unlock() }
         if let cached { return cached }
-        let found = read() ?? fallback
+        let found = read() ?? withoutShell
         cached = found
         return found
     }
 
-    private static var fallback: String {
+    /// Libertty's own PATH with Homebrew's folders: what's known without
+    /// running the login shell.
+    static var withoutShell: String {
         let base = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         let extra = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"].filter { !base.contains($0) }
         return (extra + [base]).joined(separator: ":")

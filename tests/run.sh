@@ -78,6 +78,17 @@ expect output-zsh '^\[out one' $LIBERTTY --output-probe zsh
 expect output-bash '^out three\]' $LIBERTTY --output-probe bash
 expect scrollbar 'scrolled to 200: total 401 offset 200 length 10' $LIBERTTY --scrollbar-probe
 
+# Git: without developer tools /usr/bin/git is Apple's stub, which asks to install
+# them; Libertty must find another git (Homebrew's, say) or do without. Here: an
+# empty DEVELOPER_DIR. Every call then works or says git isn't installed — the
+# stub would answer "xcrun: error: invalid DEVELOPER_DIR path".
+expect git-found '^root: /' $LIBERTTY --git-probe
+mkdir -p $PRIVATE/no-developer-tools
+check git-without-tools sh -c 'out=$(env DEVELOPER_DIR=$1 PATH=/usr/bin:/bin "$0" --git-probe) && echo "$out" &&
+  echo "$out" | grep -q "^git: " && ! echo "$out" | grep -qx "git: /usr/bin/git" &&
+  [ $(echo "$out" | grep -cE "^(status|diff): (ok|git isn.t installed .*)$") = 2 ]' \
+  $LIBERTTY $PRIVATE/no-developer-tools
+
 # TERM and the ssh fallback (needs the bundle's compiled terminfo). The
 # suite builds its own bundle, never build/Libertty.app: that may be the
 # Libertty you're using. One older than this build is rebuilt: an old one

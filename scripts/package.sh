@@ -2,7 +2,8 @@
 # Build an optimized Libertty.app and wrap it in a disk image:
 #   scripts/package.sh            → build/Libertty-<version>.dmg
 # Ad-hoc signed (no Developer ID): on another Mac, the first launch needs
-# right-click ▸ Open, or `xattr -dr com.apple.quarantine /Applications/Libertty.app`.
+# System Settings ▸ Privacy & Security ▸ Open Anyway (right-click ▸ Open before
+# macOS 15), or `xattr -dr com.apple.quarantine /Applications/Libertty.app`.
 set -euo pipefail
 ROOT=${0:A:h:h}
 cd $ROOT

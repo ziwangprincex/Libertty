@@ -41,6 +41,7 @@ enum ParseBench {
         if args.contains("--paste-probe") { pasteProbe() }
         if args.contains("--clear-probe") { clearProbe() }
         if args.contains("--scrollbar-probe") { scrollbarProbe() }
+        if args.contains("--git-probe") { gitProbe() }
         if args.contains("--ligature-config-probe") { ligatureConfigProbe() }
         if args.contains("--web-probe") { MainActor.assumeIsolated { webProbe() } }
         if args.contains("--kitty-reattach-probe") { kittyReattachProbe() }
@@ -794,6 +795,24 @@ enum ParseBench {
             print("scrollbar-probe: \(error)")
             exit(1)
         }
+    }
+
+    /// `Libertty --git-probe`: which git Libertty runs for the current folder,
+    /// and what it gets from it — on a Mac without developer tools (try
+    /// `DEVELOPER_DIR=/nonexistent`) never /usr/bin/git, Apple's stub.
+    private static func gitProbe() -> Never {
+        let directory = FileManager.default.currentDirectoryPath
+        print("git: \(GitCLI.executable ?? "none")")
+        print("root: \(GitCLI.root(of: directory) ?? "none")")
+        switch GitCLI.execute(["status", "--porcelain"], in: directory) {
+        case .success: print("status: ok")
+        case .failure(let why): print("status: \(why.message)")
+        }
+        switch GitDiff.write(directory: directory) {
+        case .success: print("diff: ok")
+        case .failure(let why): print("diff: \(why.message)")
+        }
+        exit(0)
     }
 
     /// `Libertty --resize-bench`: cost of one grid resize (reflow) with a full
