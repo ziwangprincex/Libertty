@@ -328,6 +328,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     /// The pane's × (shown on hover while its tab is split) asks to close it.
     var onRequestClose: ((TerminalView) -> Void)?
+    /// Its program ended and it stayed (a quick failure, wait-after-command):
+    /// the next key closes it.
+    var closesOnKey = false
     /// Taken out of its split but running on (Park Pane): in no window, and a
     /// Picture in Picture of it stays.
     var isParked = false
@@ -790,6 +793,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     override func keyDown(with event: NSEvent) {
         if !hasMarkedText(), let action = ConfigStore.shared.keybinds.action(for: event),
            ActionDispatcher.perform(action, in: self) {
+            return
+        }
+        // Its program ended and it stayed: a key (pressed now, not one held
+        // from before) closes it, and goes nowhere else.
+        if closesOnKey {
+            if !event.isARepeat, !event.modifierFlags.contains(.command) { onRequestClose?(self) }
             return
         }
         if hideMouseWhileTyping { NSCursor.setHiddenUntilMouseMoves(true) }

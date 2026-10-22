@@ -18,7 +18,7 @@ enum PaneRequests {
         }
     }
 
-    /// `{beside, direction?, share?, cwd?, command?, focus?}`: a new pane
+    /// `{beside, direction?, share?, cwd?, command?, focus?, keepOpen?}`: a new pane
     /// beside the one showing session `beside`. Answers `made` with the new
     /// pane's session ID ("" for one outside liberttyd), `no-pane`, `refused`
     /// (it's parked) or `error`, with why.
@@ -36,7 +36,8 @@ enum PaneRequests {
         do {
             made = try controller.makeSplit(beside: pane, toward: direction, share: share,
                                             command: info["command"].flatMap { $0.isEmpty ? nil : $0 },
-                                            workingDirectory: info["cwd"].flatMap { $0.isEmpty ? nil : $0 }, focus: focus)
+                                            workingDirectory: info["cwd"].flatMap { $0.isEmpty ? nil : $0 }, focus: focus,
+                                            keepOpen: info["keepOpen"] == "1")
         } catch {
             return RemoteControl.answer(info, ["result": "error", "message": error.localizedDescription])
         }

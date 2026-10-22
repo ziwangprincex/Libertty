@@ -738,7 +738,7 @@ final class DaemonSession {
     private func exited(_ status: Int32) {
         compressor?.stop()
         // The shell's exit code, as `$?` would show it (128 + signal if killed).
-        let code = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
+        let code = PTY.exitCode(fromWaitStatus: status)
         lock.lock()
         endCode = code
         endStatus = status

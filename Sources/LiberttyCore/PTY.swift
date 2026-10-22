@@ -164,6 +164,11 @@ public final class PTY: TerminalBackend {
         }
     }
 
+    /// A wait status as `$?` shows it: the exit code, or 128 + the signal that ended it.
+    public static func exitCode(fromWaitStatus status: Int32) -> Int32 {
+        (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
+    }
+
     private func childClosed() {
         guard !exited else { return }
         exited = true

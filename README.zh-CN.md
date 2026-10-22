@@ -44,6 +44,7 @@ Libertty 是一个 macOS 终端模拟器。VT 解析和终端状态由
 - 标签页可放在侧栏或窗口顶部（`tab-bar = sidebar | top`）；支持分屏；面板标题栏可选（`pane-headers = never | split | always`）。
 - 收起面板（Park）：把面板移出布局，其中的程序继续运行，之后可以放回。
 - 浮动面板（Float）：把面板以卡片形式显示在窗口一角。
+- 程序一启动就失败（`abnormal-command-exit-runtime` 毫秒内以非 0 状态退出，默认 250）时，pane 保留并显示错误，按任意键关闭。`wait-after-command = true` 让所有程序退出后都保留 pane；`libertty +split --keep-open` 只保留这一个。
 - 移动 pane：从分屏移到新标签、移进另一个标签的分屏，或者移到新窗口；把标签移到新窗口。把标签拖出所有窗口会开成一个新窗口，拖到另一个窗口的标签列表上就移过去（窗口菜单、命令面板、右键菜单；`move_surface_to_new_tab`、`move_surface_to_tab:N`、`move_surface_to_new_window`、`move_tab_to_new_window`）。
 - 工作区（Workspaces）：同一窗口内的多组命名标签页（⌘⇧1…9）。
 - 命令面板（⌘⇧P）、跳转到面板（⌘P）、标签页总览（⌘⇧\\）、Quick Terminal、画中画、广播输入；关闭面板、标签页或窗口可撤销（`undo-timeout`）。

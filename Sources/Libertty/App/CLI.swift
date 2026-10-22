@@ -135,8 +135,9 @@ enum CLI {
           libertty +focus ID                bring the pane showing it to the front
           libertty +rename-session [ID] NAME
                                          name a session (this pane's without ID); its tab shows the name
-          libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [-e COMMAND...]
-                                         a new pane beside the one showing session ID (this pane's without it);
+          libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [--keep-open] [-e COMMAND...]
+                                         a new pane beside the one showing session ID (this pane's without it),
+                                         kept when its program ends with --keep-open;
                                          prints the new session's ID (a pane on a host: add --host HOST for --cwd)
           libertty +move-pane [ID] --new-tab | --tab N | --new-window
                                          move the pane showing session ID (this pane's without it);
@@ -450,15 +451,16 @@ enum CLI {
     /// ID (this pane's without it), in the running Libertty. Prints the new
     /// pane's session ID.
     private static func split(_ args: [String]) -> Int32 {
-        let usage = "usage: libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [-e COMMAND...]"
+        let usage = "usage: libertty +split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR] [--no-focus] [--keep-open] [-e COMMAND...]"
         var beside = ProcessInfo.processInfo.environment["LIBERTTY_SESSION"].flatMap { $0.isEmpty ? nil : $0 }
-        var direction = "right", ratio = 50, cwd = "", command = "", focus = true
+        var direction = "right", ratio = 50, cwd = "", command = "", focus = true, keepOpen = false
         var i = 0
         while i < args.count {
             let a = args[i]
             switch a {
             case "--right", "--left", "--down", "--up": direction = String(a.dropFirst(2))
             case "--no-focus": focus = false
+            case "--keep-open": keepOpen = true
             case "--ratio":
                 guard i + 1 < args.count, let n = Int(args[i + 1].trimmingCharacters(in: CharacterSet(charactersIn: "%"))),
                       (10...90).contains(n) else { fail("--ratio is the new pane's share, 10 to 90 (percent)"); return 2 }
@@ -493,7 +495,7 @@ enum CLI {
         guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
         let answer = RemoteControl.request(["kind": "split", "beside": beside, "direction": direction,
                                             "share": String(Double(ratio) / 100), "cwd": cwd, "command": command,
-                                            "focus": focus ? "1" : "0"], timeout: 10)
+                                            "focus": focus ? "1" : "0", "keepOpen": keepOpen ? "1" : "0"], timeout: 10)
         switch answer?["result"] {
         case "made":
             let id = answer?["session"] ?? ""

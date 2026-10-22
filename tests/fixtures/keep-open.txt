@@ -1,0 +1,42 @@
+# A program that fails at once keeps its pane, so its error can be read; a
+# key closes it. One that's done at once without failing goes, as before;
+# --keep-open keeps it whatever (sessions in liberttyd: --persist).
+type:libertty +split -e 'echo BOOM-$((40+2)); exit 3'
+key:enter
+wait:2.5
+expect-tab:2 panes
+expect:BOOM-42
+expect:Exited with status 3
+# It stays through a visit to another workspace.
+workspace:new
+wait:1.0
+workspace:1
+wait:0.5
+expect:BOOM-42
+expect-tab:2 panes
+# The keyboard is in it (+split focuses): a key closes it.
+key:x
+wait:1.0
+expect-not:BOOM-42
+type:libertty +split --no-focus -e 'echo QUICK-$((2+3))'
+key:enter
+wait:2.5
+expect-not:QUICK-5
+# Restart Shell in Pane brings a shell back in a kept pane.
+type:libertty +split -e 'echo FAILED-$((5+5)); exit 1'
+key:enter
+wait:2.5
+expect:FAILED-10
+action:restart_surface
+wait:2.0
+type:echo RESTARTED-$((1+1))
+key:enter
+wait:1.0
+expect:RESTARTED-2
+expect-tab:2 panes
+type:libertty +split --no-focus --keep-open -e 'echo KEPT-$((3+4))'
+key:enter
+wait:2.5
+expect:KEPT-7
+expect:Exited with status 0
+expect-tab:3 panes

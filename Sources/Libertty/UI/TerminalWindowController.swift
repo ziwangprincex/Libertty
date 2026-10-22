@@ -742,7 +742,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     /// The same, the error to the caller (`libertty +split` hears it; no alert waits on anyone).
     func makeSplit(beside pane: TerminalView, toward direction: SplitContainerView.Direction, share: CGFloat = 0.5,
-                   command: String? = nil, workingDirectory: String? = nil, focus: Bool = true) throws -> TerminalView? {
+                   command: String? = nil, workingDirectory: String? = nil, focus: Bool = true,
+                   keepOpen: Bool = false) throws -> TerminalView? {
         guard let tab = tab(containing: pane), let container = tab.container else { return nil }
         do {
             // The new pane buds out from zero size, so give its shell the
@@ -753,6 +754,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
                 : (Int(s.cols), max(1, Int((CGFloat(Int(s.rows) - 1) * share).rounded(.down))))
             let new = try Self.makePane(config: config, cols: cols, rows: rows)
             new.fontSize = pane.fontSize
+            new.session.keepsPaneAfterExit = keepOpen
             adopt(new)
             // Its shell first: one that can't start leaves no dead pane behind.
             try startSession(of: new, command: command, workingDirectory: workingDirectory ?? pane.session.workingDirectory,
@@ -835,7 +837,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             // be gone by then — or going (`contains` lets a pane shrinking
             // away finish), and then there's nothing to restart.
             guard let self, let tab = self.tab(containing: old), let container = tab.container,
-                  container.contains(old), !old.session.hasExited else { return }
+                  container.contains(old), !old.session.hasExited || old.closesOnKey else { return }
             // Where it was, whatever `working-directory` says for new panes
             // (that's for when where it was is unknown, or gone).
             var isDirectory: ObjCBool = false
@@ -914,7 +916,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             if asCard { for j in tab.parked.indices { tab.parked[j].showsCard = false } }
             tab.parked.append(TerminalTab.Parked(pane: pane, anchor: next, side: side(of: next), showsCard: asCard))
             pane.isParked = true
-        } else if undoable, CloseUndo.shared.enabled, let next {
+        } else if undoable, !pane.session.hasExited, CloseUndo.shared.enabled, let next {
             let side = side(of: next)
             CloseUndo.shared.closed("Close Pane", restore: { [weak self, weak tab] in
                 guard let self, let tab, self.tabs.contains(where: { $0 === tab }), let container = tab.container,
@@ -954,6 +956,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// The focused pane can be parked: another terminal stays in view.
     var canParkFocusedPane: Bool {
         selectedTab.isTerminal && selectedTab.focusedDocument == nil && selectedTab.panes.count > 1
+            && selectedTab.focusedPane?.session.hasExited != true
             && !(selectedTab.focusedPane.map { pane in selectedTab.parked.contains { $0.pane === pane } } ?? false)
     }
 
@@ -1084,6 +1087,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             join()
         }
     }
+
+    /// A one-off run (`Libertty -e`, a measurement): a pane goes with its
+    /// program, so the run ends with it (bench scripts wait on that).
+    static var oneShot = false
 
     /// Who opens a window for a tab: the app, or (`--ui-probe`) a probe, off screen.
     static var openWindowForTab: (TerminalTab, TerminalWindowController, NSPoint?) -> TerminalWindowController? = { tab, source, origin in
@@ -1678,7 +1685,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         // read. With nothing to poll the chain stops, and whatever adds a
         // pane calls updateSidebar, which starts it again.
         let wanted: [(ObjectIdentifier, pid_t)] = everyTab.flatMap(\.everyPane).compactMap { pane in
-            guard pane.session.host == nil, let pid = pane.session.shellPID else { return nil }
+            guard pane.session.host == nil, !pane.session.hasExited, let pid = pane.session.shellPID else { return nil }
             return (ObjectIdentifier(pane.session), pid)
         }
         guard !wanted.isEmpty else {
@@ -2247,6 +2254,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             updateSidebar()
             return
         }
+        // A program that failed at once (or any, with wait-after-command or
+        // --keep-open) leaves its pane, so what it said can be read; a key
+        // in it closes it (Ghostty, Rex).
+        let ran = session.startedAt.map { CACurrentMediaTime() - $0 }
+        let code = PTY.exitCode(fromWaitStatus: status)
+        let failedAtOnce = code != 0 && config.abnormalCommandExitRuntime > 0
+            && (ran.map { $0 * 1000 < Double(config.abnormalCommandExitRuntime) } ?? false)
+        if !Self.oneShot, failedAtOnce || config.waitAfterCommand || session.keepsPaneAfterExit, tab(containing: pane) != nil {
+            let after = ran.map { String(format: " after %.2f s", $0) } ?? ""
+            session.note("[Exited with status \(code)\(after). Press any key to close this pane.]")
+            pane.closesOnKey = true
+            updateSidebar()
+            return
+        }
         // The program ended by itself: nothing to bring back.
         removePane(pane, undoable: false)
     }
@@ -2517,7 +2538,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             Notifier.shared.clear(pane: entry.pane.paneID)
         }
         tab.parked.removeAll { $0.pane.session.hasExited }
-        for pane in tab.panes where pane.session.hasExited { removePane(pane, undoable: false) }
+        // A pane kept to show how its program ended stays until a key closes it.
+        for pane in tab.panes where pane.session.hasExited && !pane.closesOnKey { removePane(pane, undoable: false) }
     }
 
     func switchWorkspace(offset: Int) {

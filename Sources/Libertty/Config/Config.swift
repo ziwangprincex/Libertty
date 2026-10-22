@@ -124,6 +124,12 @@ struct Config: Equatable {
     /// Ghostty's `undo-timeout`: how long a closed pane, tab or window can
     /// be brought back with ⌘Z (its programs keep running meanwhile); 0 ends them at once.
     var undoTimeout: Double = 5
+    /// Ghostty's `wait-after-command`: a pane stays when its program ends,
+    /// until a key is pressed in it.
+    var waitAfterCommand = false
+    /// Ghostty's `abnormal-command-exit-runtime` (ms): a program that fails
+    /// sooner than this keeps its pane, so its error can be read (Rex too).
+    var abnormalCommandExitRuntime = 250
     /// Libertty ▸ Web Access: off, local (this Mac only) or network.
     var webAccess = "off"
     var webAccessPort = 7682
@@ -243,6 +249,8 @@ struct Config: Equatable {
         ("agent-session-names", "Ask coding agents to name their session after their task (libertty +agent-setup installs what asks them); the tab shows the name."),
         ("program-status-sound", "Which program states play a sound as they begin while you're elsewhere: e.g. blocked:Ping,error:Basso,done — a state alone plays the alert sound; the names are macOS's sounds (System Settings ▸ Sound). A state with a sound here doesn't also sound its notification. Default none."),
         ("cursor-style-blink", "Whether the cursor blinks by default: empty (blinks, and programs may turn it off with DEC mode 12), true or false. Programs can still change it (DECSCUSR)."),
+        ("wait-after-command", "Keep a pane open when its program ends, until a key is pressed in it (as in Ghostty). Off: only a program that fails at once keeps it (abnormal-command-exit-runtime)."),
+        ("abnormal-command-exit-runtime", "Milliseconds: a program that fails (exits non-zero) sooner keeps its pane open with its error, until a key is pressed in it. 0 turns that off. Default 250."),
         ("undo-timeout", "How long Edit ▸ Undo (⌘Z) can bring back a closed pane, tab or window, programs still running: seconds or e.g. 30s; 0 ends them on close."),
         ("web-access", "Show this Mac's panes in a browser (Libertty ▸ Web Access…): off, local (this Mac only; reach it through ssh -L or Tailscale) or network (the local network too, plain HTTP). Every page needs the link's secret."),
         ("web-access-port", "The port Web Access listens on."),
@@ -326,6 +334,8 @@ struct Config: Equatable {
         case "ssh-env": return [String(sshEnv)]
         case "cursor-style-blink": return [cursorStyleBlink.map(String.init) ?? ""]
         case "undo-timeout": return [num(undoTimeout) + "s"]
+        case "wait-after-command": return [String(waitAfterCommand)]
+        case "abnormal-command-exit-runtime": return [String(abnormalCommandExitRuntime)]
         case "web-access": return [webAccess]
         case "web-access-port": return [String(webAccessPort)]
         case "web-access-input": return [String(webAccessInput)]
@@ -619,6 +629,12 @@ struct Config: Equatable {
         case "cursor-style-blink":
             if reset { cursorStyleBlink = nil; return nil }
             guard let x = bool() else { return "true, false or empty" }; cursorStyleBlink = x
+        case "wait-after-command":
+            if reset { waitAfterCommand = defaults.waitAfterCommand; return nil }
+            guard let x = bool() else { return "true or false" }; waitAfterCommand = x
+        case "abnormal-command-exit-runtime":
+            if reset { abnormalCommandExitRuntime = defaults.abnormalCommandExitRuntime; return nil }
+            guard let x = int(0...60_000) else { return "milliseconds, 0 to 60000" }; abnormalCommandExitRuntime = x
         case "undo-timeout":
             if reset { undoTimeout = defaults.undoTimeout; return nil }
             guard let x = Self.duration(v) else { return "a duration like 5, 5s or 1m" }; undoTimeout = min(x, 3600)

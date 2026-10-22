@@ -200,6 +200,9 @@ expect move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
 # +split and +move-pane: panes arranged by session ID from a pane's shell.
 expect split-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/split-cli.txt)" $OUT --persist
+# A program that fails at once keeps its pane (a key closes it); --keep-open.
+expect keep-open 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/keep-open.txt)" $OUT --persist
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config

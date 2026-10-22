@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before any window: folders opened at launch get persistent sessions too.
         let config = ConfigStore.shared.config
+        TerminalWindowController.oneShot = oneShot
         Persistence.setUp(wanted: (config.sessionPersistence && !oneShot) || CommandLine.arguments.contains("--persist"))
     }
 

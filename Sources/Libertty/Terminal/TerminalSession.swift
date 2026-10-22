@@ -168,6 +168,7 @@ final class TerminalSession {
     }
 
     private func join(_ host: RemoteHost, id: String, command: String?, workingDirectory: String?, config: Config) {
+        startedAt = nil  // a host's start time isn't this Mac's to measure
         self.host = host
         persistentID = id
         linkUp = false
@@ -255,6 +256,8 @@ final class TerminalSession {
     /// Start the user's login shell, or `command` through `/bin/sh -c` when
     /// given: in liberttyd when sessions persist, else on a pty of our own.
     func start(workingDirectory: String? = nil, command: String? = nil, shellPath: String? = nil) throws {
+        // From when it runs (liberttyd answered): its exit comes after this, on the main queue.
+        defer { startedAt = CACurrentMediaTime() }
         var (executable, arguments, environment) = Self.launchSpec(command: command, shell: shellPath)
         let startDirectory = workingDirectory ?? NSHomeDirectory()
         if Persistence.enabled {
@@ -331,6 +334,11 @@ final class TerminalSession {
 
     /// The program ended (main thread).
     private(set) var hasExited = false
+    /// When this window started its program (nil for one it attached to
+    /// running): how long it ran, when it ends.
+    private(set) var startedAt: CFTimeInterval?
+    /// Its pane stays when the program ends (`libertty +split --keep-open`).
+    var keepsPaneAfterExit = false
 
     /// (count, time of the latest) output parsed, for `--latency-trace`.
     var outputMark: (count: UInt64, time: CFTimeInterval) { lock.withLock { (outputCount, lastOutputTime) } }
@@ -340,7 +348,8 @@ final class TerminalSession {
 
     /// On a host only the shell integration's marks can say.
     var hasForegroundProgram: Bool {
-        host == nil ? pty?.hasForegroundProgram ?? false : lock.withLock { promptState == .running }
+        guard !hasExited else { return false }
+        return host == nil ? pty?.hasForegroundProgram ?? false : lock.withLock { promptState == .running }
     }
 
     /// The process group in front of a shell's terminal: its leader's pid
@@ -387,6 +396,14 @@ final class TerminalSession {
         var buf = [CChar](repeating: 0, count: 64)
         libertty_proc_name(pid, &buf, Int32(buf.count))
         return String(cString: buf)
+    }
+
+    /// A line of Libertty's own at the end of the screen (not the program's,
+    /// which has ended): dim, after what it printed.
+    func note(_ text: String) {
+        let bytes = Array("\r\n\u{1b}[0;2m\(text)\u{1b}[0m".utf8)
+        lock.withLock { ghostty_terminal_vt_write(terminal, bytes, bytes.count) }
+        requestRender()
     }
 
     // MARK: Output (io queue)
