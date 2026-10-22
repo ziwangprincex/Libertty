@@ -25,6 +25,8 @@ Libertty 是一个 macOS 终端模拟器。VT 解析和终端状态由
 
 不需要安装 Xcode 或 Command Line Tools。Git 客户端、Git 面板和文件树的 Git 标记需要 `git`：可以来自 Command Line Tools（`xcode-select --install`），也可以是其他安装，例如 Homebrew 的。没有 git 时，这些功能会提示 git 未安装，Libertty 的其他部分照常使用。
 
+会话里的程序需要的隐私权限（摄像头、麦克风、文件与文件夹、完全磁盘访问）归会话守护进程 Libertty Sessions 所有，macOS 也以它的名义询问。要让程序拥有完全磁盘访问权限，在"系统设置 ▸ 隐私与安全性 ▸ 完全磁盘访问权限"里添加 `/Applications/Libertty.app/Contents/MacOS/liberttyd`（在文件对话框里按 ⌘⇧G 可以直接输入路径）。Libertty 是临时签名，更新后 macOS 可能会再问一次。
+
 ## 功能
 
 ### 终端
@@ -35,6 +37,7 @@ Libertty 是一个 macOS 终端模拟器。VT 解析和终端状态由
 - 支持 OSC 8 超链接、OSC 9 / OSC 777 通知、OSC 9;4 进度、OSC 52 剪贴板（默认禁止读取）和 OSC 7501 程序状态。
 - ⌘-点击可打开 URL，以及带行号和列号的文件路径（`src/a.swift:42:7`）。
 - 长时间运行的命令结束时发送通知（`notify-on-command-finish`），提供通知收件箱；Dock 图标上的角标显示等待输入的程序数量。
+- 程序状态（OSC 7501：工作中、等你处理、完成、失败）：每种状态是否显示在标签上、是否发通知、是否计入 Dock 角标、是否播放声音，都可以分别设置（`program-status-indicator`、`-notify`、`-dock-badge`、`-sound`）。
 
 ### 窗口、标签页与面板
 

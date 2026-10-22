@@ -55,6 +55,9 @@ import LiberttyCore
 ///   roundtrip:            save this window's layout and build a window from it: same workspaces, same parked panes
 ///   expect-float:yes|no  whether the tab in front shows a floating pane card (Float Pane)
 ///   expect-strip:TEXT    a tab along the top (`tab-bar = top`) is named TEXT
+///   expect-status:TEXT   program states (OSC 7501) as they show include each word of TEXT: e.g.
+///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
+///                        mark, the Dock badge, notifications so far, sounds so far)
 enum UIProbe {
     static func run(script: String, output: String) -> Never {
         let app = NSApplication.shared
@@ -174,6 +177,16 @@ enum UIProbe {
                     print("ok    ui-probe palette shows \(text)")
                 } else {
                     print("FAIL  ui-probe palette: first row is \(first.debugDescription), not \(text)")
+                    failures += 1
+                }
+            case .expectStatus(let text):
+                // Word for word: `dock=1` isn't `dock=10`, `sounds=` is none.
+                let summary = controller.statusSummary
+                let shown = Set(summary.split(separator: " "))
+                if text.split(separator: " ").allSatisfy(shown.contains) {
+                    print("ok    ui-probe status shows \(text)")
+                } else {
+                    print("FAIL  ui-probe status: no \(text) in \(summary)")
                     failures += 1
                 }
             case .expectTab(let text):
@@ -520,7 +533,7 @@ enum UIProbe {
     private enum Step {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
-        case expectStrip(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), undo
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -588,6 +601,7 @@ enum UIProbe {
             case "expect-scope": steps.append(.expectScope(arg))
             case "expect-tab": steps.append(.expectTab(arg))
             case "expect-strip": steps.append(.expectStrip(arg))
+            case "expect-status": steps.append(.expectStatus(arg))
             case "expect-float": steps.append(.expectFloat(arg == "yes"))
             case "workspace": steps.append(.workspace(arg))
             case "roundtrip": steps.append(.roundtrip)

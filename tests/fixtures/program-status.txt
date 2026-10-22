@@ -1,0 +1,23 @@
+# Program states (OSC 7501) with the default settings: a tab shows every
+# state, notifications and the pane's edge follow blocked, done and error,
+# the Dock badge counts blocked, and nothing plays a sound of its own.
+# (A probe's app is never active: every pane counts as out of sight.)
+#
+# Blocked lasts while its program runs: the next prompt clears it.
+type:printf '\033]7501;state=blocked:app=probe\a'; sleep 3
+key:enter
+wait:1.0
+expect-status:tab=blocked dock=1 inbox=1 sounds=
+wait:3.0
+expect-status:tab=none dock=0 inbox=1
+# Working shows on the tab, and that's all.
+type:printf '\033]7501;state=working:app=probe\a'; sleep 3
+key:enter
+wait:1.0
+expect-status:tab=working dock=0 inbox=1
+wait:3.0
+# Done stays after the prompt, until the pane is looked at.
+type:printf '\033]7501;state=done:app=probe\a'
+key:enter
+wait:1.0
+expect-status:tab=done dock=0 inbox=2 sounds=

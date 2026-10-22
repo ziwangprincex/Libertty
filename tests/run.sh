@@ -167,6 +167,19 @@ expect git-panel 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@REPO@|$R
 # the palette's "No matches", rename in place.
 mkdir -p $PRIVATE/gui/deep/a/b/c/proj $PRIVATE/gui/elsewhere/here
 expect gorex-gui 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/gui|g" $ROOT/tests/fixtures/gorex-gui.txt)" $OUT
+# Program states (OSC 7501): the tab, notifications, the Dock badge and sounds,
+# with the default settings and with each one set apart.
+mkdir -p $PRIVATE/empty-config
+expect program-status 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/program-status.txt)" $OUT
+mkdir -p $PRIVATE/status-config/libertty
+print 'program-status-indicator = blocked,error\nprogram-status-notify = error\nprogram-status-dock-badge = blocked,done\nprogram-status-sound = blocked:Ping,done' \
+  > $PRIVATE/status-config/libertty/config
+expect program-status-settings 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/status-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/program-status-settings.txt)" $OUT
+print 'program-status-notify = blocked,bogus\nprogram-status-sound = done:NoSuchSound' > $PRIVATE/status-bad.conf
+expect program-status-config 'unknown state “bogus”' $LIBERTTY +validate-config --config-file $PRIVATE/status-bad.conf
+expect program-status-sound-config 'no sound named “NoSuchSound”' $LIBERTTY +validate-config --config-file $PRIVATE/status-bad.conf
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config

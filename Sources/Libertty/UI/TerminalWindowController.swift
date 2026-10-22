@@ -440,6 +440,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         let old = self.config
         self.config = config
         if config != old { allPanes.forEach { $0.apply(config) } }
+        // Which program states tabs show and the Dock counts.
+        if config.programStatusIndicator != old.programStatusIndicator { updateTitle() }
+        if config.programStatusDockBadge != old.programStatusDockBadge { onAttentionChange?() }
+        if config.programStatusNotify != old.programStatusNotify || config.programStatusSound != old.programStatusSound {
+            rememberProgramStates()
+        }
         // Editors follow their keys and the text size.
         if config.editorKeymap != old.editorKeymap || config.fontSize != old.fontSize {
             documents(in: everyTab).forEach { $0.applyEditorSettings() }
@@ -1317,6 +1323,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     var isInspectorShown: Bool { !inspectorItem.isCollapsed }
     /// A pane of the tab in front fills it (toggle_split_zoom).
     var isZoomed: Bool { selectedTab.container?.zoomed != nil }
+
+    /// Program states as they show (`--ui-probe`): the tab in front's mark,
+    /// the Dock badge's count, the notification inbox, the sounds played.
+    var statusSummary: String {
+        "tab=\(status(of: selectedTab)?.state.name ?? "none") dock=\(attentionCount) "
+            + "inbox=\(Notifier.shared.inbox.count) sounds=\(StatusSound.played.joined(separator: ","))"
+    }
+
     /// What each sidebar row says (`--ui-probe` checks it).
     var sidebarRows: [String] {
         tabs.map { tab in
@@ -1805,25 +1819,54 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     }
 
     /// OSC 7501: a program that now needs you (or is done) while you're elsewhere.
+    /// Its most urgent record decides; each way of telling you follows its own
+    /// setting and its own memory: a notification and the pane's lit edge
+    /// (`program-status-notify`), a sound (`program-status-sound`).
     private var notifiedRecords: [ObjectIdentifier: String] = [:]
+    private var soundedRecords: [ObjectIdentifier: String] = [:]
     private func notifyIfNeeded(_ session: TerminalSession) {
-        guard config.desktopNotifications, let pane = pane(for: session) else { return }
+        guard let pane = pane(for: session) else { return }
         let key = ObjectIdentifier(session)
-        guard let record = session.programStatus.headline, record.state == .blocked || record.state == .done || record.state == .error
-        else { notifiedRecords[key] = nil; return }
+        let top = session.programStatus.headline
+        let looked = isLookedAt(pane)
         // Once per state change, not per report.
-        let signature = "\(record.id)|\(record.state)|\(record.title)|\(record.message)"
-        guard notifiedRecords[key] != signature else { return }
-        notifiedRecords[key] = signature
+        let sound = top.flatMap { config.programStatusSound[$0.state] }
+        if let top, let sound {
+            if soundedRecords[key] != Self.signature(top) {
+                soundedRecords[key] = Self.signature(top)
+                if !looked { StatusSound.play(sound, for: pane.paneID) }
+            }
+        } else {
+            soundedRecords[key] = nil
+        }
+        guard let top, config.programStatusNotify.contains(top.state) else { notifiedRecords[key] = nil; return }
+        guard notifiedRecords[key] != Self.signature(top) else { return }
+        notifiedRecords[key] = Self.signature(top)
         // In the window: the pane's edge lights up (unless you're typing in it).
         if pane !== focusedTerminal || !(window?.isKeyWindow ?? false) {
-            pane.flashHalo(Self.color(for: record.state))
+            pane.flashHalo(Self.color(for: top.state))
         }
-        guard !isLookedAt(pane) else { return }
-        let app = session.programStatus.effectiveApp(of: record)
-        let what = [app, record.title].filter { !$0.isEmpty }.joined(separator: " · ")
-        Notifier.shared.post(title: "\(Self.label(for: record))\(what.isEmpty ? "" : ": " + what)",
-                             body: record.message.isEmpty ? title(ofPane: pane) : record.message, pane: pane.paneID)
+        guard !looked, config.desktopNotifications else { return }
+        let app = session.programStatus.effectiveApp(of: top)
+        let what = [app, top.title].filter { !$0.isEmpty }.joined(separator: " · ")
+        Notifier.shared.post(title: "\(Self.label(for: top))\(what.isEmpty ? "" : ": " + what)",
+                             body: top.message.isEmpty ? title(ofPane: pane) : top.message, pane: pane.paneID,
+                             sound: sound == nil)
+    }
+
+    private static func signature(_ record: ProgramStatusStore.Record) -> String {
+        "\(record.id)|\(record.state)|\(record.title)|\(record.message)"
+    }
+
+    /// The settings changed: what programs are in now isn't news, even in a
+    /// state a setting just took in — only what they go on to do is.
+    private func rememberProgramStates() {
+        for pane in allPanes {
+            let key = ObjectIdentifier(pane.session)
+            let top = pane.session.programStatus.headline
+            notifiedRecords[key] = top.flatMap { config.programStatusNotify.contains($0.state) ? Self.signature($0) : nil }
+            soundedRecords[key] = top.flatMap { config.programStatusSound[$0.state] != nil ? Self.signature($0) : nil }
+        }
     }
 
     /// The user can see this pane right now: Libertty is active, its window key,
@@ -1909,8 +1952,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         programs[ObjectIdentifier(pane.session)]?.symbol ?? "apple.terminal"
     }
 
-    /// How many panes need the user (OSC 7501 blocked), for the Dock badge.
-    var attentionCount: Int { allPanes.filter { $0.session.programStatus.headline?.state == .blocked }.count }
+    /// How many panes have a program in a state the Dock badge counts
+    /// (`program-status-dock-badge`; by default, waiting for you).
+    var attentionCount: Int {
+        allPanes.filter { $0.session.programStatus.headline(among: config.programStatusDockBadge) != nil }.count
+    }
     var onAttentionChange: (() -> Void)?
     /// Tabs, splits, names or focus changed: the saved layout should follow
     /// soon, so a crash right after a split doesn't bring the panes back as
@@ -2047,9 +2093,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         return nil
     }
 
-    /// The most urgent OSC 7501 record among a tab's panes.
+    /// The most urgent OSC 7501 record among a tab's panes, of the states
+    /// tabs show (`program-status-indicator`).
     private func status(of tab: TerminalTab) -> ProgramStatusStore.Record? {
-        tab.everyPane.compactMap(\.session.programStatus.headline).max { $0.state < $1.state }
+        tab.everyPane.compactMap { $0.session.programStatus.headline(among: config.programStatusIndicator) }
+            .max { $0.state < $1.state }
     }
 
     /// The window title is the selected tab's. The subtitle shows the most
@@ -2078,7 +2126,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         }
         hostChip.refresh(host: nil, linkUp: true)
         let candidates = allPanes.compactMap { pane in
-            pane.session.programStatus.headline.map { (pane.session.programStatus, $0) }
+            pane.session.programStatus.headline(among: config.programStatusIndicator).map { (pane.session.programStatus, $0) }
         }
         if let (store, record) = candidates.max(by: { $0.1.state < $1.1.state }) {
             let app = store.effectiveApp(of: record)

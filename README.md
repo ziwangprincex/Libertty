@@ -39,6 +39,13 @@ the file tree's Git marks need a `git`: the one from the Command Line Tools
 (`xcode-select --install`) or another installation such as Homebrew's. Without one,
 they report that git isn't installed and the rest of Libertty works as usual.
 
+Privacy permissions of the programs in Libertty's sessions (camera, microphone, files
+and folders, Full Disk Access) belong to Libertty Sessions, the session daemon, and
+macOS asks for them in its name. To give your programs Full Disk Access, add
+`/Applications/Libertty.app/Contents/MacOS/liberttyd` under System Settings ▸ Privacy &
+Security ▸ Full Disk Access (⌘⇧G in the file dialog accepts the path). Libertty is
+ad-hoc signed, so macOS may ask again after an update.
+
 ## Features
 
 ### Terminal
@@ -55,6 +62,9 @@ they report that git isn't installed and the rest of Libertty works as usual.
 - ⌘-click opens URLs and file paths with line and column (`src/a.swift:42:7`).
 - Notifications for long-running commands (`notify-on-command-finish`), a
   notification inbox, and a Dock badge for programs waiting for input.
+- Program states (OSC 7501: working, waiting for you, done, failed): which of them
+  show on tabs, notify, count in the Dock badge or play a sound is set per state
+  (`program-status-indicator`, `-notify`, `-dock-badge`, `-sound`).
 
 ### Windows, tabs and panes
 

@@ -1,0 +1,23 @@
+# Program states (OSC 7501) with settings of their own (tests/run.sh writes
+# them): tabs show only blocked and error; only error notifies; the Dock
+# counts blocked and done; blocked plays Ping and done the alert sound.
+type:printf '\033]7501;state=working:app=probe\a'; sleep 3
+key:enter
+wait:1.0
+expect-status:tab=none dock=0 inbox=0 sounds=
+wait:3.0
+type:printf '\033]7501;state=blocked:app=probe\a'; sleep 3
+key:enter
+wait:1.0
+expect-status:tab=blocked dock=1 inbox=0 sounds=Ping
+wait:3.0
+# Done: not on the tab, but counted, with the alert sound.
+type:printf '\033]7501;state=done:app=probe\a'
+key:enter
+wait:1.0
+expect-status:tab=none dock=1 inbox=0 sounds=Ping,alert
+# Error replaces done (the same record): on the tab, notified, not counted.
+type:printf '\033]7501;state=error:app=probe\a'
+key:enter
+wait:1.0
+expect-status:tab=error dock=0 inbox=1 sounds=Ping,alert

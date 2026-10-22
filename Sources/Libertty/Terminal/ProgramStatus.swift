@@ -7,12 +7,28 @@ import Foundation
 /// libghostty-vt validates and decodes reports; this store owns the records.
 /// Main thread only.
 final class ProgramStatusStore {
-    enum State: Int, Comparable {
+    enum State: Int, Comparable, CaseIterable {
         case idle, done, working, error, blocked
 
         /// What a tab shows when several records disagree: the one that most
         /// needs the user wins.
         static func < (a: State, b: State) -> Bool { a.rawValue < b.rawValue }
+
+        /// The specification's names, in the order settings list them.
+        static let named: [(name: String, state: State)] = [
+            ("idle", .idle), ("working", .working), ("blocked", .blocked), ("done", .done), ("error", .error),
+        ]
+        var name: String { Self.named.first { $0.state == self }!.name }
+        /// A state by its name; "waiting" and "failed" are what the interface calls two of them.
+        init?(name: String) {
+            switch name.lowercased() {
+            case "waiting": self = .blocked
+            case "failed": self = .error
+            case let other:
+                guard let state = Self.named.first(where: { $0.name == other })?.state else { return nil }
+                self = state
+            }
+        }
     }
 
     enum Kind { case none, permission, question, auth }
@@ -110,8 +126,13 @@ final class ProgramStatusStore {
     }
 
     /// The record a tab or pane icon should reflect, if any.
-    var headline: Record? {
-        records.values.max { a, b in
+    var headline: Record? { headline(among: nil) }
+
+    /// The most urgent record whose state is one of `states` (nil: any) — what
+    /// a tab shows, a notification says or the Dock counts, each following
+    /// the states its setting names.
+    func headline(among states: Set<State>?) -> Record? {
+        records.values.filter { states?.contains($0.state) ?? true }.max { a, b in
             a.state != b.state ? a.state < b.state : a.stamp < b.stamp
         }
     }

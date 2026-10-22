@@ -187,7 +187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return true
     }
 
-    /// The Dock icon counts panes waiting for you (OSC 7501 blocked).
+    /// The Dock icon counts panes whose programs are in a state it counts
+    /// (`program-status-dock-badge`; by default, waiting for you).
     private func updateDockBadge() {
         let n = controllers.reduce(0) { $0 + $1.attentionCount }
         NSApp.dockTile.badgeLabel = n > 0 ? String(n) : nil

@@ -47,7 +47,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         NotificationCenter.default.post(name: Self.inboxChanged, object: nil)
     }
 
-    func post(title: String, body: String, pane: String) {
+    /// `sound`: false when the caller plays a sound of its own for it.
+    func post(title: String, body: String, pane: String, sound: Bool = true) {
         let key = pane + "\u{1}" + title + "\u{1}" + body
         let now = Date()
         recent = recent.filter { now.timeIntervalSince($0.value) < 2 }
@@ -62,7 +63,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = title.isEmpty ? "Libertty" : title
         content.body = body
-        content.sound = .default
+        content.sound = sound ? .default : nil
         content.userInfo = ["pane": pane]
         content.threadIdentifier = pane
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
@@ -115,5 +116,24 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if s < 60 { return "\(s)s" }
         if s < 3600 { return "\(s / 60)m \(s % 60)s" }
         return "\(s / 3600)h \((s % 3600) / 60)m"
+    }
+}
+
+/// A program state's sound (`program-status-sound`): one of macOS's, by
+/// name, or "" for the alert sound. Under a probe it's only noted: tests
+/// make no noise.
+enum StatusSound {
+    private(set) static var played: [String] = []
+    /// A session shown in two windows reports to each: one sound.
+    private static var recent: [String: Date] = [:]
+
+    static func play(_ name: String, for pane: String) {
+        let now = Date()
+        recent = recent.filter { now.timeIntervalSince($0.value) < 2 }
+        let key = pane + "\u{1}" + name
+        guard recent[key] == nil else { return }
+        recent[key] = now
+        if Probe.running { return played.append(name.isEmpty ? "alert" : name) }
+        if name.isEmpty { NSSound.beep() } else { NSSound(named: NSSound.Name(name))?.play() }
     }
 }

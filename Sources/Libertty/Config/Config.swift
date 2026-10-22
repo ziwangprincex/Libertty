@@ -106,6 +106,15 @@ struct Config: Equatable {
     /// while you're elsewhere tell you so.
     var notifyOnCommandFinish = NotifyWhen.unfocused
     var notifyOnCommandFinishAfter: Double = 10
+    /// Each way a program's state (OSC 7501) gets your attention follows the
+    /// states its setting names, apart from the others (after Rex): the
+    /// tab's mark, notifications (with the pane's lit edge), the Dock badge,
+    /// a sound.
+    var programStatusIndicator = Set(ProgramStatusStore.State.allCases)
+    var programStatusNotify: Set<ProgramStatusStore.State> = [.blocked, .done, .error]
+    var programStatusDockBadge: Set<ProgramStatusStore.State> = [.blocked]
+    /// A state's sound, by name ("" for the alert sound).
+    var programStatusSound: [ProgramStatusStore.State: String] = [:]
     /// Ghostty's `cursor-style-blink`: nil blinks by default (and lets DEC
     /// mode 12 decide), true/false fix the default; programs can still change it.
     var cursorStyleBlink: Bool?
@@ -225,6 +234,10 @@ struct Config: Equatable {
         ("desktop-notifications", "Show notifications programs ask for (OSC 9, OSC 777), and when a program reports it needs you (OSC 7501: approval, a question, sign-in) or finished, while you're elsewhere."),
         ("notify-on-command-finish", "never, unfocused or always: notify when a command that ran at least notify-on-command-finish-after ends (needs shell integration)."),
         ("notify-on-command-finish-after", "How long a command must run to be notified about: seconds, or with a unit (30s, 2m)."),
+        ("program-status-indicator", "Which program states (OSC 7501) a tab and the window's subtitle show, comma-separated from idle, working, blocked (waiting for you), done and error; all (default) or none."),
+        ("program-status-notify", "Which program states notify you while you're elsewhere (with desktop-notifications) and light the pane's edge. Default blocked,done,error."),
+        ("program-status-dock-badge", "Which program states the Dock icon's badge counts. Default blocked."),
+        ("program-status-sound", "Which program states play a sound as they begin while you're elsewhere: e.g. blocked:Ping,error:Basso,done — a state alone plays the alert sound; the names are macOS's sounds (System Settings ▸ Sound). A state with a sound here doesn't also sound its notification. Default none."),
         ("cursor-style-blink", "Whether the cursor blinks by default: empty (blinks, and programs may turn it off with DEC mode 12), true or false. Programs can still change it (DECSCUSR)."),
         ("undo-timeout", "How long Edit ▸ Undo (⌘Z) can bring back a closed pane, tab or window, programs still running: seconds or e.g. 30s; 0 ends them on close."),
         ("web-access", "Show this Mac's panes in a browser (Libertty ▸ Web Access…): off, local (this Mac only; reach it through ssh -L or Tailscale) or network (the local network too, plain HTTP). Every page needs the link's secret."),
@@ -297,6 +310,13 @@ struct Config: Equatable {
         case "desktop-notifications": return [String(desktopNotifications)]
         case "notify-on-command-finish": return [notifyOnCommandFinish.rawValue]
         case "notify-on-command-finish-after": return [num(notifyOnCommandFinishAfter) + "s"]
+        case "program-status-indicator": return [Self.statesString(programStatusIndicator)]
+        case "program-status-notify": return [Self.statesString(programStatusNotify)]
+        case "program-status-dock-badge": return [Self.statesString(programStatusDockBadge)]
+        case "program-status-sound":
+            return [ProgramStatusStore.State.named.compactMap { name, state in
+                programStatusSound[state].map { $0.isEmpty ? name : "\(name):\($0)" }
+            }.joined(separator: ",")]
         case "term": return [term]
         case "ssh-env": return [String(sshEnv)]
         case "cursor-style-blink": return [cursorStyleBlink.map(String.init) ?? ""]
@@ -321,6 +341,33 @@ struct Config: Equatable {
     }
 
     // MARK: Parsing
+
+    struct Problem: Error { var message: String }
+
+    /// "blocked,done", "all" or "none" → states.
+    static func states(_ text: String) -> Result<Set<ProgramStatusStore.State>, Problem> {
+        switch text.lowercased() {
+        case "all": return .success(Set(ProgramStatusStore.State.allCases))
+        case "none": return .success([])
+        default: break
+        }
+        var states = Set<ProgramStatusStore.State>()
+        for raw in text.split(separator: ",") {
+            let name = raw.trimmingCharacters(in: .whitespaces)
+            if name.isEmpty { continue }
+            guard let state = ProgramStatusStore.State(name: name) else {
+                return .failure(Problem(message: "unknown state “\(name)” (idle, working, blocked, done, error, all or none)"))
+            }
+            states.insert(state)
+        }
+        return .success(states)
+    }
+
+    static func statesString(_ states: Set<ProgramStatusStore.State>) -> String {
+        if states.isEmpty { return "none" }
+        if states.count == ProgramStatusStore.State.allCases.count { return "all" }
+        return ProgramStatusStore.State.named.filter { states.contains($0.state) }.map(\.name).joined(separator: ",")
+    }
 
     /// "10", "10s", "2m", "1h", "1m30s" → seconds.
     static func duration(_ text: String) -> Double? {
@@ -531,6 +578,29 @@ struct Config: Equatable {
         case "notify-on-command-finish-after":
             if reset { notifyOnCommandFinishAfter = defaults.notifyOnCommandFinishAfter; return nil }
             guard let x = Self.duration(v) else { return "a duration like 10, 10s or 2m" }; notifyOnCommandFinishAfter = x
+        case "program-status-indicator":
+            if reset { programStatusIndicator = defaults.programStatusIndicator; return nil }
+            switch Self.states(v) { case .success(let s): programStatusIndicator = s; case .failure(let why): return why.message }
+        case "program-status-notify":
+            if reset { programStatusNotify = defaults.programStatusNotify; return nil }
+            switch Self.states(v) { case .success(let s): programStatusNotify = s; case .failure(let why): return why.message }
+        case "program-status-dock-badge":
+            if reset { programStatusDockBadge = defaults.programStatusDockBadge; return nil }
+            switch Self.states(v) { case .success(let s): programStatusDockBadge = s; case .failure(let why): return why.message }
+        case "program-status-sound":
+            if reset || v.lowercased() == "none" { programStatusSound = [:]; return nil }
+            var sounds: [ProgramStatusStore.State: String] = [:]
+            for raw in v.split(separator: ",") {
+                let item = raw.trimmingCharacters(in: .whitespaces)
+                if item.isEmpty { continue }
+                let parts = item.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                guard let state = ProgramStatusStore.State(name: parts[0]) else { return "unknown state “\(parts[0])”" }
+                let sound = parts.count > 1 ? parts[1] : ""
+                if !sound.isEmpty, NSSound(named: NSSound.Name(sound)) == nil { return "no sound named “\(sound)”" }
+                sounds[state] = sound
+            }
+            programStatusSound = sounds
         case "term":
             if reset { term = defaults.term; return nil }
             guard v.allSatisfy({ $0.isLetter || $0.isNumber || "-._+".contains($0) }) else { return "a terminal type name like xterm-256color" }
