@@ -1,0 +1,55 @@
+# Coding agents on the tab: Claude Code's hook (`libertty +agent-hook`, as
+# `+agent-setup` installs it, with the hook's JSON on stdin), `+status`, and
+# naming a session (`+rename-session`). In a real agent the shell isn't at
+# its prompt meanwhile; here each step sleeps, since a prompt ends working
+# and blocked. Checks come 2 s into a 4 s sleep, the next step 2 s after it.
+type:echo '{}' | libertty +agent-hook claude SessionStart; sleep 4
+key:enter
+wait:2.0
+expect:You are running in Libertty
+expect:libertty +rename-session NAME
+expect-status:tab=idle
+wait:3.0
+type:echo '{}' | libertty +agent-hook claude UserPromptSubmit; sleep 4
+key:enter
+wait:2.0
+expect-status:tab=working
+wait:3.0
+type:printf '%s' '{"notification_type":"permission_prompt","message":"Claude needs your permission to use Bash"}' | libertty +agent-hook claude Notification; sleep 4
+key:enter
+wait:2.0
+expect-status:tab=blocked dock=1
+wait:3.0
+expect-status:tab=none dock=0
+# A turn that ends without Stop (Esc, a tool refused): idle_prompt clears it.
+type:echo '{}' | libertty +agent-hook claude UserPromptSubmit; echo '{"notification_type":"idle_prompt"}' | libertty +agent-hook claude Notification; sleep 4
+key:enter
+wait:2.0
+expect-status:tab=none
+wait:3.0
+# Done stays after the prompt (until looked at), idle_prompt or not; the end takes it away.
+type:echo '{}' | libertty +agent-hook claude Stop; echo '{"notification_type":"idle_prompt"}' | libertty +agent-hook claude Notification
+key:enter
+wait:2.0
+expect-status:tab=done
+type:echo '{}' | libertty +agent-hook claude SessionEnd
+key:enter
+wait:2.0
+expect-status:tab=none
+# Outside Libertty the hook says and does nothing.
+type:printf 'out=%s\n' "$(echo '{}' | TERM_PROGRAM=other libertty +agent-hook claude SessionStart | wc -c | tr -d ' ')"
+key:enter
+wait:2.0
+expect:out=0
+# Any script can report.
+type:libertty +status working --app probe --message 'a long build'; sleep 4
+key:enter
+wait:2.0
+expect-status:tab=working
+wait:3.0
+# A name: the tab goes by it, and the session list shows it.
+type:libertty +rename-session probe-task && libertty +list-sessions
+key:enter
+wait:2.5
+expect-tab:probe-task
+expect:“probe-task”

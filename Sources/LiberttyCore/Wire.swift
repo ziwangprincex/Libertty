@@ -50,10 +50,11 @@ public enum Wire {
         case storeLayout = 17 // header {client, local?} | a Mac's window layout, opaque (empty: none) → result {ok}
         case loadLayout = 18  // {client, local?} → result: header {client} | that Mac's, else (not local) the latest host layout
         case events = 19      // {kinds?: [String]} → result {ok}, then `event` frames until the connection closes
+        case rename = 20      // {id, label}: name a session ("" for none) → result {ok, label}
 
         // Daemon → client
         case welcome = 101    // {version, build, pid, features?}
-        case attached = 102   // u32 header length | header JSON {id, pid, cols, rows} | snapshot
+        case attached = 102   // u32 header length | header JSON {id, pid, cols, rows, label?} | snapshot
         case output = 103     // program output
         case exited = 104     // {status}
         case result = 105     // {ok, error?, …}
@@ -61,6 +62,7 @@ public enum Wire {
         case snapshot = 107   // the session as it is now, in place of output the window fell too far
                               // behind to be sent (only to a window that attached with catchUp)
         case event = 108      // what happened in a session (`events`): {event, id, time, …}
+        case label = 109      // {label}: the session was named (to the windows showing it)
     }
 
     public static let maxFrame = 256 << 20
@@ -158,6 +160,31 @@ public struct SessionInfo: Codable, Sendable {
     public var clients: Int
     public var created: Double
     public var command: String
+    /// Its name (`+rename-session`), if it has one.
+    public var label: String?
+
+    /// A session's name as it may be kept and shown: one line of at most 256
+    /// bytes, whole characters, without control or invisible formatting
+    /// characters (it comes from programs, and shows in tab titles) — the
+    /// joiner inside an emoji excepted. The standard library only: liberttyd
+    /// on Linux has no Foundation strings.
+    public static func cleanLabel(_ text: String) -> String {
+        let visible = String(String.UnicodeScalarView(text.unicodeScalars.filter { scalar in
+            switch scalar.properties.generalCategory {
+            case .control, .lineSeparator, .paragraphSeparator: false
+            case .format: scalar.value == 0x200D
+            default: true
+            }
+        }))
+        var label = "", bytes = 0
+        for character in visible.drop(while: \.isWhitespace) {
+            bytes += character.utf8.count
+            if bytes > 256 { break }
+            label.append(character)
+        }
+        while label.last?.isWhitespace == true { label.removeLast() }
+        return label
+    }
 
     /// The local directory in an OSC 7 `file://host/path` report (or a bare path).
     public static func directory(fromPwd raw: String) -> String? {

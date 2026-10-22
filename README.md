@@ -124,6 +124,17 @@ File-backed blocks (canvas, board, notebook) write atomically, refuse to overwri
 file changed elsewhere without confirmation, and reload external changes when they
 have no unsaved edits.
 
+### Coding agents
+
+- `libertty +agent-setup` adds hooks to Claude Code's settings (`$CLAUDE_CONFIG_DIR`, else
+  `~/.claude`; `--claude-dir` for another) and a skill describing Libertty's command line. It
+  lists the changes and asks first; `--remove` takes them out. In Libertty, a Claude Code
+  session then shows on its tab whether it is working, waiting for you (approval) or done,
+  is told which pane it runs in, and names its session after its task
+  (`agent-session-names = false` turns naming off). Outside Libertty the hooks do nothing.
+- `libertty +status STATE` reports a program's state to the terminal from any script (OSC 7501).
+- `libertty +rename-session [ID] NAME` names a session; its tab and `+list-sessions` show the name.
+
 ## Requirements and build
 
 - macOS 14+, Swift 6 (the Command Line Tools are sufficient), Zig 0.16

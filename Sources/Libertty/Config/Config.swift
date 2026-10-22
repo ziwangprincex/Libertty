@@ -115,6 +115,9 @@ struct Config: Equatable {
     var programStatusDockBadge: Set<ProgramStatusStore.State> = [.blocked]
     /// A state's sound, by name ("" for the alert sound).
     var programStatusSound: [ProgramStatusStore.State: String] = [:]
+    /// Agents set up by `libertty +agent-setup` are asked to name their
+    /// session after their task (Rex's "Let agents name sessions").
+    var agentSessionNames = true
     /// Ghostty's `cursor-style-blink`: nil blinks by default (and lets DEC
     /// mode 12 decide), true/false fix the default; programs can still change it.
     var cursorStyleBlink: Bool?
@@ -237,6 +240,7 @@ struct Config: Equatable {
         ("program-status-indicator", "Which program states (OSC 7501) a tab and the window's subtitle show, comma-separated from idle, working, blocked (waiting for you), done and error; all (default) or none."),
         ("program-status-notify", "Which program states notify you while you're elsewhere (with desktop-notifications) and light the pane's edge. Default blocked,done,error."),
         ("program-status-dock-badge", "Which program states the Dock icon's badge counts. Default blocked."),
+        ("agent-session-names", "Ask coding agents to name their session after their task (libertty +agent-setup installs what asks them); the tab shows the name."),
         ("program-status-sound", "Which program states play a sound as they begin while you're elsewhere: e.g. blocked:Ping,error:Basso,done — a state alone plays the alert sound; the names are macOS's sounds (System Settings ▸ Sound). A state with a sound here doesn't also sound its notification. Default none."),
         ("cursor-style-blink", "Whether the cursor blinks by default: empty (blinks, and programs may turn it off with DEC mode 12), true or false. Programs can still change it (DECSCUSR)."),
         ("undo-timeout", "How long Edit ▸ Undo (⌘Z) can bring back a closed pane, tab or window, programs still running: seconds or e.g. 30s; 0 ends them on close."),
@@ -310,6 +314,7 @@ struct Config: Equatable {
         case "desktop-notifications": return [String(desktopNotifications)]
         case "notify-on-command-finish": return [notifyOnCommandFinish.rawValue]
         case "notify-on-command-finish-after": return [num(notifyOnCommandFinishAfter) + "s"]
+        case "agent-session-names": return [String(agentSessionNames)]
         case "program-status-indicator": return [Self.statesString(programStatusIndicator)]
         case "program-status-notify": return [Self.statesString(programStatusNotify)]
         case "program-status-dock-badge": return [Self.statesString(programStatusDockBadge)]
@@ -578,6 +583,9 @@ struct Config: Equatable {
         case "notify-on-command-finish-after":
             if reset { notifyOnCommandFinishAfter = defaults.notifyOnCommandFinishAfter; return nil }
             guard let x = Self.duration(v) else { return "a duration like 10, 10s or 2m" }; notifyOnCommandFinishAfter = x
+        case "agent-session-names":
+            if reset { agentSessionNames = defaults.agentSessionNames; return nil }
+            guard let x = bool() else { return "true or false" }; agentSessionNames = x
         case "program-status-indicator":
             if reset { programStatusIndicator = defaults.programStatusIndicator; return nil }
             switch Self.states(v) { case .success(let s): programStatusIndicator = s; case .failure(let why): return why.message }

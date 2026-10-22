@@ -80,6 +80,12 @@ Shell 运行在 `liberttyd` 中，由 Libertty 按需启动。应用退出、崩
 
 基于文件的块（画布、看板、Notebook）采用原子写入；文件在别处被修改后，未经确认不会覆盖；没有未保存的修改时会自动载入外部改动。
 
+### 编程 Agent
+
+- `libertty +agent-setup` 给 Claude Code 的配置（`$CLAUDE_CONFIG_DIR`，没有就是 `~/.claude`；`--claude-dir` 指定其他目录）加上 hook，并安装一个介绍 Libertty 命令行的 skill。它会先列出要改的内容并询问，`--remove` 可以撤掉。之后在 Libertty 里运行 Claude Code，标签上会显示它在工作、等你处理（需要批准）还是已完成；它会知道自己在哪个 pane，并按任务给会话起名（`agent-session-names = false` 关闭起名）。在其他终端里这些 hook 什么都不做。
+- `libertty +status STATE`：任何脚本都能向终端报告程序状态（OSC 7501）。
+- `libertty +rename-session [ID] NAME`：给会话起名，标签和 `+list-sessions` 都会显示这个名字。
+
 ## 环境要求与构建
 
 - macOS 14+、Swift 6（Command Line Tools 即可）、Zig 0.16（`brew install zig@0.16`）。

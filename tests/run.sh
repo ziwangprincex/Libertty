@@ -180,6 +180,19 @@ expect program-status-settings 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVA
 print 'program-status-notify = blocked,bogus\nprogram-status-sound = done:NoSuchSound' > $PRIVATE/status-bad.conf
 expect program-status-config 'unknown state “bogus”' $LIBERTTY +validate-config --config-file $PRIVATE/status-bad.conf
 expect program-status-sound-config 'no sound named “NoSuchSound”' $LIBERTTY +validate-config --config-file $PRIVATE/status-bad.conf
+# Coding agents: Claude Code's hook as it runs it, +status, and a session's
+# name on its tab (in liberttyd: --persist).
+expect agent 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/agent.txt)" $OUT --persist
+# +agent-setup in a Claude Code folder of the test's own: its hooks and skill
+# go in once, others' hooks stay, --remove takes only Libertty's away.
+AGENT=$PRIVATE/claude
+mkdir -p $AGENT
+print '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]},"model":"opus"}' > $AGENT/settings.json
+check agent-setup sh -c '"$0" +agent-setup --claude-dir "$1" --yes && "$0" +agent-setup --claude-dir "$1" --yes | grep -q "nothing to do" &&
+  [ "$(grep -c "agent-hook claude" "$1/settings.json")" = 6 ] && grep -q "say done" "$1/settings.json" && [ -f "$1/skills/libertty/SKILL.md" ] &&
+  "$0" +agent-setup --claude-dir "$1" --remove --yes && ! grep -q agent-hook "$1/settings.json" &&
+  grep -q "say done" "$1/settings.json" && grep -q opus "$1/settings.json" && [ ! -d "$1/skills/libertty" ]' $LIBERTTY $AGENT
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config

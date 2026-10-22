@@ -58,6 +58,7 @@
 | `wait --until prompt|idle`、`capture --ansi/--html`、`events` | ✓ | ✅ `+wait ID --until exit|prompt|idle=MS --timeout S`（超时退出 124；提示符靠 OSC 133，idle 由 liberttyd 计时，值上限一天）、`+capture --ansi / --html`（带颜色的文本、带样式的网页）、`+events [--filter …]`（JSON 行：session-started / prompt / command-started / command-finished / directory / session-ended，每个监听者自己的队列，慢的监听者不拖累别人）；`tests/cli-wait-test.sh`（17 项） |
 | ssh 到没有这份 terminfo 的主机 | ✓ | ✅ shell 集成给 ssh 包一层，远端用 `TERM=xterm-256color`（Ghostty 的 ssh-env 做法，`ssh-env = false` 关掉）；用户自己定义的 ssh 函数或别名优先 |
 | 自带 terminfo | ✓ | ✅ `TERM=xterm-ghostty`：Libertty 的终端就是 libghostty-vt，Ghostty 的 terminfo（MIT）描述得一字不差；App 里带编译好的版本，`TERMINFO` 指过去。程序因此知道支持 undercurl、同步输出等。`term = …` 可以改 |
+| 会话命名、agent 集成（Rex：`rex skill setup`、"Let agents name sessions"） | — | ✅ `+rename-session [ID] NAME`（名字存在 liberttyd，升级接管时也带着，标签按名字显示，`+list-sessions`、`+events label` 能看到）；`+status STATE` 任何脚本都能上报 OSC 7501；`+agent-setup` 给 Claude Code 装 hook 和 skill（先列出改动并询问，保留别人的 hook、备份、跟随符号链接、保持文件权限，`--remove` 撤掉）：标签显示工作中 / 等你批准 / 完成，agent 知道自己在哪个 pane，并按任务给会话起名（`agent-session-names`）。真实 Claude Code 跑过一遍。⬜ Codex 等其他 agent |
 
 ## 4. 程序状态与通知
 
@@ -72,6 +73,8 @@
 | OSC 133 命令块：在命令之间跳转、拿到退出码 | ✓ | ✓ | ✅ ⌘↑/⌘↓ 跳到上/下一个提示符；退出码和耗时用于完成通知 |
 | OSC 9 / 777 桌面通知、OSC 9;4 进度 | ✓ | ✓ | ✅ |
 | OSC 52 剪贴板（ssh 里的 vim/tmux 复制） | ✓ | ✓ | ✅ 写默认允许，读默认拒绝（`clipboard-read/-write`） |
+| 按状态分别设置提醒（Rex："Independently configure tab indicators, system notifications, Dock badges, and sounds"） | — | ✓ | ✅ `program-status-indicator / -notify / -dock-badge / -sound`，默认行为不变 |
+| 隐私权限归属（摄像头、麦克风、文件夹等） | — | ✓ | ✅ liberttyd 自己承担责任进程（`responsibility_spawnattrs_setdisclaim`），内嵌带用途说明的 Info.plist（"Libertty Sessions"）；ssh 远程主机上保持 sshd 的权限。⚠️ 实际弹窗需要在真机上试 |
 
 ## 5. 终端能力（大部分来自 libghostty-vt，不用自己写）
 

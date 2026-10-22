@@ -18,6 +18,7 @@ protocol TerminalSessionDelegate: AnyObject {
     func sessionCommandFinished(_ session: TerminalSession, command: String, exitCode: Int32?, duration: TimeInterval)
     func sessionProgressChanged(_ session: TerminalSession)
     func sessionLinkChanged(_ session: TerminalSession)
+    func sessionLabelChanged(_ session: TerminalSession)
 }
 
 extension TerminalSessionDelegate {
@@ -30,6 +31,8 @@ extension TerminalSessionDelegate {
     func sessionProgressChanged(_ session: TerminalSession) {}
     /// A session on a host: its link went down or came back (`session.linkUp`).
     func sessionLinkChanged(_ session: TerminalSession) {}
+    /// It was named, or its name changed (`session.label`).
+    func sessionLabelChanged(_ session: TerminalSession) {}
 }
 
 /// A program's OSC 9;4 progress report.
@@ -102,6 +105,9 @@ final class TerminalSession {
     private(set) var host: RemoteHost?
     /// On a host: whether the link to it is up (false while connecting).
     private(set) var linkUp = true
+    /// Its name in liberttyd (`libertty +rename-session`), "" for none: its
+    /// tab goes by it.
+    private(set) var label = ""
     /// The link has been up at least once (so a drop is a reconnect).
     private(set) var hasConnectedOnce = false
     /// Set on `io` when new output landed; cleared by the renderer.
@@ -300,6 +306,14 @@ final class TerminalSession {
                     // The window may have resized while the link was down.
                     if up { self.pty?.resize(self.size) }
                     self.delegate?.sessionLinkChanged(self)
+                }
+            }
+            label = remote.label
+            remote.onLabel = { [weak self] label in
+                DispatchQueue.main.async {
+                    guard let self, self.label != label else { return }
+                    self.label = label
+                    self.delegate?.sessionLabelChanged(self)
                 }
             }
             remote.startReading()

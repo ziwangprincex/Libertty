@@ -1724,6 +1724,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         updateTitle()
     }
 
+    func sessionLabelChanged(_ session: TerminalSession) {
+        updateTitle()
+    }
+
     /// `bell-features`, as in Ghostty.
     func sessionBell(_ session: TerminalSession) {
         let features = config.bellFeatures
@@ -2023,6 +2027,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     func label(of pane: TerminalView) -> (name: String, detail: String) {
         let session = pane.session
         let directory = Self.shortDirectory(session.workingDirectory)
+        // Named (`+rename-session`, an agent naming its task): that, and what runs there.
+        if !session.label.isEmpty {
+            return (session.label, programs[ObjectIdentifier(session)]?.name ?? directory)
+        }
         let title = ProgramStatusStore.sanitize(session.title).trimmingCharacters(in: .whitespaces)
         let ownTitle = !title.isEmpty && !Self.isShellTitle(title, directory: session.workingDirectory)
         if let tile = programs[ObjectIdentifier(session)] {

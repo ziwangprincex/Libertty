@@ -31,6 +31,15 @@ public final class RemotePTY: TerminalBackend {
     public var onCatchUp: ((Data) -> Void)?
     /// On another machine: the link went down (false) or is back (true), on `queue`.
     public var onLinkChange: ((Bool) -> Void)?
+    /// The session was named (`+rename-session`), here or meanwhile, on `queue`.
+    public var onLabel: ((String) -> Void)?
+    /// Its name as liberttyd last said ("" for none).
+    public var label: String {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return currentLabel
+    }
+    private var currentLabel = ""
 
     private var connection: Connection?
     private let queue: DispatchQueue
@@ -81,8 +90,10 @@ public final class RemotePTY: TerminalBackend {
     public static func attach(id: String, address: DaemonAddress = .local, queue: DispatchQueue) throws -> (RemotePTY, Data) {
         guard let c = address.connect() else { throw DaemonClientError.unavailable }
         c.setBufferSizes(1 << 21)
-        let (pid, snapshot) = try attach(c, id: id)
-        return (RemotePTY(id: id, pid: pid, connection: c, address: address, queue: queue), snapshot)
+        let (pid, snapshot, label) = try attach(c, id: id)
+        let pty = RemotePTY(id: id, pid: pid, connection: c, address: address, queue: queue)
+        pty.currentLabel = label
+        return (pty, snapshot)
     }
 
     /// A session on a machine that may not be reachable yet (a window
@@ -96,7 +107,7 @@ public final class RemotePTY: TerminalBackend {
         return pty
     }
 
-    private static func attach(_ c: Connection, id: String) throws -> (pid_t, Data) {
+    private static func attach(_ c: Connection, id: String) throws -> (pid_t, Data, String) {
         c.setReceiveTimeout(20)
         c.send(.attach, json: ["id": id, "catchUp": true])
         guard let reply = c.receive() else { throw DaemonClientError.unavailable }
@@ -104,7 +115,7 @@ public final class RemotePTY: TerminalBackend {
             throw DaemonClientError.refused(reply.json["error"] as? String ?? "unexpected reply")
         }
         c.setReceiveTimeout(0)
-        return (pid_t(header["pid"] as? Int ?? 0), body)
+        return (pid_t(header["pid"] as? Int ?? 0), body, header["label"] as? String ?? "")
     }
 
     /// Begin delivering output; set the handlers first.
@@ -134,6 +145,9 @@ public final class RemotePTY: TerminalBackend {
                         // first, and nothing after is pushed until it's done.
                         let snapshot = Data(payload)
                         queue.sync { onCatchUp?(snapshot) }
+                    case .label:
+                        let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
+                        setLabel(json?["label"] as? String ?? "")
                     case .exited:
                         let status = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         stateLock.lock()
@@ -153,6 +167,15 @@ public final class RemotePTY: TerminalBackend {
             if finished || !redial(bytes, wake: wake) { break }
         }
         if bytes.close() { wake() }
+    }
+
+    /// A name from liberttyd: kept, and told on `queue` when it's news.
+    private func setLabel(_ label: String) {
+        stateLock.lock()
+        let changed = label != currentLabel
+        currentLabel = label
+        stateLock.unlock()
+        if changed { queue.async { [weak self] in self?.onLabel?(label) } }
     }
 
     private var currentConnection: Connection? {
@@ -186,9 +209,10 @@ public final class RemotePTY: TerminalBackend {
             c.setBufferSizes(1 << 21)
             let snapshot: Data
             do {
-                let (pid, data) = try Self.attach(c, id: id)
+                let (pid, data, label) = try Self.attach(c, id: id)
                 self.pid = pid
                 snapshot = data
+                setLabel(label)
             } catch DaemonClientError.refused {
                 // The session is gone. Restoring: start a fresh one in its place.
                 guard let request = pendingFallback?(), let fresh = address.connect(),

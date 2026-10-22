@@ -51,6 +51,10 @@ enum CLI {
         case "+wait": status = waitSession(rest)
         case "+events": status = events(rest)
         case "+focus": status = focusSession(rest)
+        case "+rename-session": status = renameSession(rest)
+        case "+status": status = AgentCLI.status(rest)
+        case "+agent-hook": status = AgentCLI.hook(rest)
+        case "+agent-setup": status = AgentCLI.setup(rest)
         default:
             fail("unknown command \(command); see libertty +help")
             status = 2
@@ -111,7 +115,7 @@ enum CLI {
           libertty +diff [GIT DIFF ARGS]    this repository's changes, rendered beside the terminal
 
         Sessions (kept by liberttyd; they outlive the app — see session-persistence):
-          libertty +list-sessions [--json]  every session: id, process, size, windows showing it, directory
+          libertty +list-sessions [--json]  every session: id, process, size, windows showing it, directory, name
           libertty +new-session [--cwd DIR] [-e COMMAND...]  start one without a window (Libertty shows it at its next launch)
           libertty +capture ID [--scrollback] [--ansi | --html]
                                          print a session's screen (and history): text, with its colors
@@ -125,11 +129,22 @@ enum CLI {
           libertty +events [--filter KIND,...]
                                          what happens in the sessions, a JSON object a line, until ^C:
                                          session-started, session-ended, command-started,
-                                         command-finished, prompt, title, directory, bell
+                                         command-finished, prompt, title, directory, label, bell
           libertty +focus ID                bring the pane showing it to the front
+          libertty +rename-session [ID] NAME
+                                         name a session (this pane's without ID); its tab shows the name
           libertty +attach ID [--window]    show a session in a tab (or window) of the running Libertty; a session
                                          shown twice mirrors: both follow it, closing one leaves the other
         Inside Libertty, $LIBERTTY_SESSION is the current pane's ID.
+
+        Programs and agents:
+          libertty +status STATE [--app NAME] [--title TEXT] [--message TEXT] [--kind KIND] [--progress N] [--id ID]
+                                         report to this terminal what a program is doing (OSC 7501): idle, working,
+                                         blocked (waiting for you; KIND permission, question or auth), done, error;
+                                         clear [--id ID] takes it back
+          libertty +agent-setup [--claude-dir DIR] [--remove] [--dry-run] [--yes]
+                                         Claude Code hooks (its tab says when it works, waits for you or is done;
+                                         it learns where it runs) and a skill for this command line; asks first
 
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
@@ -422,6 +437,37 @@ enum CLI {
         return true
     }
 
+    /// `+rename-session [ID] NAME`: name a session (its tab goes by the
+    /// name); "" takes the name away. Without ID, this pane's.
+    private static func renameSession(_ args: [String]) -> Int32 {
+        let usage = "usage: libertty +rename-session [ID] NAME"
+        let id: String, name: String
+        switch args.count {
+        case 1:
+            guard let mine = ProcessInfo.processInfo.environment["LIBERTTY_SESSION"], !mine.isEmpty else {
+                fail(usage + " (outside a Libertty session, give its ID)")
+                return 2
+            }
+            (id, name) = (mine, args[0])
+        case 2:
+            (id, name) = (args[0], args[1])
+        default:
+            fail(usage + " (quote a name with spaces)")
+            return 2
+        }
+        switch DaemonClient.request(.rename, json: ["id": id, "label": name], needing: "label", address: daemon) {
+        case .unanswered:
+            fail("liberttyd isn't running")
+            return 1
+        case .unsupported:
+            fail("this liberttyd can't name sessions; restart Libertty to update it")
+            return 1
+        case .answered(let frame):
+            guard frame.json["ok"] as? Bool == true else { fail(frame.json["error"] as? String ?? "no session \(id)"); return 1 }
+            return 0
+        }
+    }
+
     private static func listSessions(_ args: [String]) -> Int32 {
         guard let sessions = DaemonClient.sessions(address: daemon) else {
             let why = host.map { "can't reach \($0.destination)" + (($0.lastError as? LocalizedError)?.errorDescription.map { ": " + $0 } ?? "") }
@@ -450,7 +496,7 @@ enum CLI {
             let shown = s.clients == 0 ? "detached" : (s.clients == 1 ? "shown" : "shown ×\(s.clients)")
             let marker = s.id == mine ? "*" : " "
             print("\(marker) \(s.id)  \(name.padding(toLength: 10, withPad: " ", startingAt: 0)) \(s.cols)×\(s.rows)  "
-                  + "\(shown.padding(toLength: 9, withPad: " ", startingAt: 0)) \(dir)")
+                  + "\(shown.padding(toLength: 9, withPad: " ", startingAt: 0)) \(dir)" + (s.label.map { "  “\($0)”" } ?? ""))
         }
         return 0
     }

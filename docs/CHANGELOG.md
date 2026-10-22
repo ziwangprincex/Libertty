@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Coding agents (after Rex): `libertty +agent-setup` installs Claude Code hooks and a skill (it shows what it changes and asks first; `--remove` undoes it). In Libertty, Claude Code's tab then says whether it's working, waiting for your approval or done — notifications and the Dock badge follow — and Claude is told which pane it runs in and that you may be looking elsewhere, and names its session after its task (`agent-session-names`).
+- `libertty +status STATE [--message TEXT] …`: any script reports what it's doing to its terminal (OSC 7501).
+- `libertty +rename-session [ID] NAME`: a session's name, kept by liberttyd (through updates too); its tab goes by it, `+list-sessions` and `+events` (`label`) show it.
 - Program states (OSC 7501) get your attention the way you choose, state by state (after Rex): `program-status-indicator` (what a tab and the window's subtitle show), `program-status-notify` (notifications and the pane's lit edge), `program-status-dock-badge` (what the Dock badge counts) and `program-status-sound` (e.g. `blocked:Ping,error:Basso`). The defaults keep things as they were.
 - Programs in Libertty that ask for the camera, the microphone, contacts and the like now ask in liberttyd's name ("Libertty Sessions"), with a line saying why. They used to ask in the name of whoever started liberttyd — Libertty, gone once it quits, or another terminal — and with no text. Full Disk Access for your sessions is now granted to liberttyd (README ▸ Install). On a host reached over ssh, liberttyd keeps sshd's permissions as before. Programs that were already running when liberttyd was updated keep the old arrangement until they exit.
 

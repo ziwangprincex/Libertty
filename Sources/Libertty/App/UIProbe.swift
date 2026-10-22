@@ -3,7 +3,7 @@ import WebKit
 import CoreGraphics
 import LiberttyCore
 
-/// `Libertty --ui-probe SCRIPT OUTDIR`: run the real app off screen and
+/// `Libertty --ui-probe SCRIPT OUTDIR [--persist]`: run the real app off screen and
 /// replay a script of real AppKit events at it, taking PNGs as it goes
 /// (ELN's shot, GoRex's ui.Tester). The app never activates, so keystrokes
 /// meant for other apps stay there.
@@ -71,6 +71,9 @@ enum UIProbe {
         let steps = parse(text)
         guard !steps.isEmpty else { print("ui-probe: empty script"); exit(2) }
 
+        // `--persist`: its shells live in (the probe's private) liberttyd, as
+        // they do in the app — what needs a session ID ($LIBERTTY_SESSION).
+        Persistence.setUp(wanted: CommandLine.arguments.contains("--persist"))
         // A window of its own, off screen, with a shell in a scratch folder.
         let scratch = NSTemporaryDirectory() + "libertty-ui-probe-\(getpid())"
         try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)

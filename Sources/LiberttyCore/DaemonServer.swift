@@ -114,7 +114,7 @@ public final class DaemonServer {
     /// What this liberttyd does beyond protocol 1's beginnings, in `welcome`:
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
-    static let features = ["layout", "catchUp", "waitUntil", "events"]
+    static let features = ["layout", "catchUp", "waitUntil", "events", "label"]
 
     private init(path: String) {
         self.path = path
@@ -290,6 +290,11 @@ public final class DaemonServer {
                 let format = (json["format"] as? String).flatMap(Snapshots.TextFormat.init) ?? .plain
                 connection.send(.result, json: ["ok": true, "format": format.rawValue,
                                                 "text": s.capture(scrollback: json["scrollback"] as? Bool ?? false, format: format)])
+            case .rename:
+                let json = frame.json
+                guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
+                s.rename(json["label"] as? String ?? "")
+                connection.send(.result, json: ["ok": true, "label": s.label])
             case .send:
                 let json = frame.json
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
@@ -524,6 +529,7 @@ final class DaemonSession {
         id = header["id"] as? String ?? UUID().uuidString
         created = header["created"] as? Double ?? Date().timeIntervalSince1970
         command = header["command"] as? String ?? ""
+        name = SessionInfo.cleanLabel(header["label"] as? String ?? "")
         let pid = pid_t(header["pid"] as? Int ?? 0)
         scrollback = header["scrollback"] as? Int ?? 10_000_000
         size = GridSize(cols: UInt16(header["cols"] as? Int ?? 80), rows: UInt16(header["rows"] as? Int ?? 24),
@@ -786,6 +792,7 @@ final class DaemonSession {
         defer { lock.unlock() }
         let outbox = Outbox(connection, catchUp: catchUp, session: self)
         var header: [String: Any] = ["id": id, "pid": Int(pty.pid), "cols": Int(size.cols), "rows": Int(size.rows)]
+        if !name.isEmpty { header["label"] = name }
         if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
@@ -1007,7 +1014,32 @@ final class DaemonSession {
         var p = GhosttyString()
         let pwd = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_PWD, &p) == GHOSTTY_SUCCESS ? String(borrowed: p) : ""
         return SessionInfo(id: id, pid: pty.pid, title: title, workingDirectory: pwd,
-                           cols: size.cols, rows: size.rows, clients: clients.count, created: created, command: command)
+                           cols: size.cols, rows: size.rows, clients: clients.count, created: created, command: command,
+                           label: name.isEmpty ? nil : name)
+    }
+
+    // MARK: Its name
+
+    /// What `+rename-session` named it ("" for nothing); under `lock`.
+    private var name = ""
+
+    var label: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return name
+    }
+
+    /// Name it: the windows showing it hear (they name its tab after it),
+    /// and so does `+events`.
+    func rename(_ label: String) {
+        let clean = SessionInfo.cleanLabel(label)
+        lock.lock()
+        guard clean != name else { return lock.unlock() }
+        name = clean
+        let frame = (try? JSONSerialization.data(withJSONObject: ["label": clean])) ?? Data()
+        for c in clients { c.send(.label, frame) }
+        lock.unlock()
+        DaemonEvents.shared.publish("label", session: id, ["label": clean])
     }
 
     func capture(scrollback: Bool, format: Snapshots.TextFormat = .plain) -> String {
@@ -1031,6 +1063,7 @@ final class DaemonSession {
         let header: [String: Any] = [
             "id": id, "pid": Int(pty.pid), "created": created, "command": command, "scrollback": scrollback,
             "cols": Int(size.cols), "rows": Int(size.rows), "widthPx": Int(size.widthPx), "heightPx": Int(size.heightPx),
+            "label": name,
         ]
         return (fd, header, snapshot)
     }
