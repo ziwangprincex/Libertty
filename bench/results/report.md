@@ -1,6 +1,6 @@
 ### Throughput, MB/s (median sample; higher is better)
 
-| benchmark | lumen | kitty | ghostty | otty | tern |
+| benchmark | libertty | kitty | ghostty | otty | tern |
 |---|---:|---:|---:|---:|---:|
 | grid (cols×rows) | 120×40 | 120×40 | 123×42 | 97×31 | 160×45 |
 | cursor_motion | 170 | 145 | 154 | 92 | **217** |
@@ -17,7 +17,7 @@
 | unicode | 138 | 153 | 179 | 4 | **256** |
 
 Geometric mean of throughput relative to the best per benchmark (1.00 = best everywhere):
-- lumen: 0.79 over 12 benchmarks
+- libertty: 0.79 over 12 benchmarks
 - kitty: 0.48 over 12 benchmarks
 - ghostty: 0.68 over 12 benchmarks
 - otty: 0.30 over 12 benchmarks
@@ -25,7 +25,7 @@ Geometric mean of throughput relative to the best per benchmark (1.00 = best eve
 
 ### Median ms per sample (lower is better; only comparable at equal grid sizes)
 
-| benchmark | lumen | kitty | ghostty | otty | tern |
+| benchmark | libertty | kitty | ghostty | otty | tern |
 |---|---:|---:|---:|---:|---:|
 | grid (cols×rows) | 120×40 | 120×40 | 123×42 | 97×31 | 160×45 |
 | cursor_motion | 52 | 61 | 62 | 97 | **40** |

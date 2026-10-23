@@ -21,8 +21,6 @@ MODE=${2:-}
 [[ -z $MODE || $MODE == --publish || $MODE == --restage || $MODE == --refresh ]] || { echo $USAGE; exit 2; }
 source scripts/release.conf
 KEY=${LIBERTTY_UPDATE_KEY:-$HOME/.config/libertty-release/update.key}
-# Made when Libertty was called Lumen: the same key, where it was.
-[[ -f $KEY || -n ${LIBERTTY_UPDATE_KEY:-} ]] || KEY=$HOME/.config/lumen-release/update.key
 [[ -f $KEY ]] || { echo "no signing key at $KEY"; exit 1; }
 mkdir -p build
 [[ build/sign-update -nt scripts/sign-update.swift ]] || swiftc -O scripts/sign-update.swift -o build/sign-update

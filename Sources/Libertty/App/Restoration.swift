@@ -143,18 +143,25 @@ enum Restoration {
         return base.appendingPathComponent("Libertty/windows.json")
     }
 
-    /// Where the layout was saved when Libertty was called Lumen (read once,
-    /// until Libertty saves its own).
-    private static var earlierURL: URL? {
-        guard !isPrivate else { return nil }
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Lumen/windows.json")
+    /// Where the layout was saved when Libertty was called Lumen: moved to
+    /// Libertty's, once, if Libertty hasn't saved its own.
+    private static func moveEarlierLayout() {
+        guard !isPrivate else { return }
+        let fm = FileManager.default
+        let earlier = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Lumen")
+        let file = earlier.appendingPathComponent("windows.json")
+        guard !fm.fileExists(atPath: url.path), fm.fileExists(atPath: file.path) else { return }
+        try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard (try? fm.moveItem(at: file, to: url)) != nil else { return }
+        // The folder held only that.
+        if (try? fm.contentsOfDirectory(atPath: earlier.path))?.isEmpty == true { try? fm.removeItem(at: earlier) }
     }
 
     private static var lastWritten: Data?
 
     static func load() -> SavedState? {
-        guard let data = (try? Data(contentsOf: url)) ?? earlierURL.flatMap({ try? Data(contentsOf: $0) }) else { return nil }
+        moveEarlierLayout()
+        guard let data = try? Data(contentsOf: url) else { return nil }
         lastWritten = data
         return try? JSONDecoder().decode(SavedState.self, from: data)
     }

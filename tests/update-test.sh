@@ -10,7 +10,6 @@ set -euo pipefail
 ROOT=${0:A:h:h}
 cd $ROOT
 KEY=${LIBERTTY_UPDATE_KEY:-$HOME/.config/libertty-release/update.key}
-[[ -f $KEY || -n ${LIBERTTY_UPDATE_KEY:-} ]] || KEY=$HOME/.config/lumen-release/update.key  # made as Lumen
 [[ build/sign-update -nt scripts/sign-update.swift ]] || swiftc -O scripts/sign-update.swift -o build/sign-update
 T=$(mktemp -d)
 trap 'rm -rf $T' EXIT

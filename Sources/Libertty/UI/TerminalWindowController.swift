@@ -3023,7 +3023,7 @@ extension TerminalWindowController: PaneHeaderSource {
             let size = "\(pane.session.size.cols)×\(pane.session.size.rows)"
             let directory = Self.shortDirectory(pane.session.workingDirectory)
             // At a prompt the label is the folder: the header names it by its
-            // last part, then says where it is (Tern's "cwd  lumen-test/…/cwd").
+            // last part, then says where it is (Tern's "cwd  libertty-test/…/cwd").
             var name = label.name, detail = label.detail.isEmpty ? directory : label.detail
             if label.detail.isEmpty, label.name == directory, let path = pane.session.workingDirectory {
                 name = path == NSHomeDirectory() ? "~" : (path as NSString).lastPathComponent

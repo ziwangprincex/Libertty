@@ -817,11 +817,13 @@ final class ConfigStore {
         let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
         let current = base.appendingPathComponent("libertty")
-        // Libertty was called Lumen: its settings stay where they were
-        // until there are new ones (nothing is moved or rewritten).
+        // Libertty was called Lumen: a folder of that name (with a config in
+        // it) becomes Libertty's, once — moved, nothing rewritten. Should
+        // that fail, it's read where it is.
         let earlier = base.appendingPathComponent("lumen")
         let fm = FileManager.default
-        if !fm.fileExists(atPath: current.path), fm.fileExists(atPath: earlier.appendingPathComponent("config").path) {
+        if !fm.fileExists(atPath: current.path), fm.fileExists(atPath: earlier.appendingPathComponent("config").path),
+           (try? fm.moveItem(at: earlier, to: current)) == nil {
             return earlier
         }
         return current
