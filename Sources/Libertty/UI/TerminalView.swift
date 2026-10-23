@@ -123,8 +123,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     }
 
     /// Take on new settings. The font size follows the config only when the
-    /// config's size changed, so ⌘+/⌘- zoom survives unrelated edits.
-    func apply(_ config: Config) {
+    /// config's size changed, so ⌘+/⌘- zoom survives unrelated edits —
+    /// unless `resetFontSize` (Reload Configuration).
+    func apply(_ config: Config, resetFontSize: Bool = false) {
         session.apply(config)
         let theme = config.resolvedTheme
         renderer.selectionColor = theme.selection
@@ -150,7 +151,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         let size = CGFloat(config.fontSize)
         let familyChanged = config.fontFamily != fontFamily
         fontFamily = config.fontFamily
-        if configFontSize != size {
+        if configFontSize != size || resetFontSize {
             configFontSize = size
             if fontSize != size {
                 fontSize = size  // rebuilds fonts
@@ -930,6 +931,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     override func doCommand(by selector: Selector) {}
 
     // MARK: Actions
+
+    /// The background its theme gives it, "#rrggbb" (`--ui-probe`).
+    var backgroundHex: String {
+        guard let color = dimLayer.backgroundColor.flatMap(NSColor.init(cgColor:))?.usingColorSpace(.sRGB) else { return "none" }
+        return String(format: "#%02x%02x%02x", Int((color.redComponent * 255).rounded()),
+                      Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()))
+    }
 
     func adjustFontSize(by delta: Double) {
         fontSize = min(72, max(6, fontSize + CGFloat(delta)))

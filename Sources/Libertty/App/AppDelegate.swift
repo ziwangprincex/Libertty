@@ -8,7 +8,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var menuKeybinds: Keybinds?
     private var globalKeybinds: [Keybinds.Binding]?
     private var shownWarnings: [String] = []
-    private var appearanceObservation: NSKeyValueObservation?
     /// Finder/`open` asked for a folder or script before launch finished:
     /// that window replaces the usual first one.
     private var openedDocument = false
@@ -44,10 +43,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // Plugins that are on start with the app (their commands, their events).
         PluginHost.shared.start()
         configToken = ConfigStore.shared.observe { [weak self] _ in self?.configDidChange() }
-        // `theme = light:A,dark:B` follows the system appearance.
-        appearanceObservation = NSApp.observe(\.effectiveAppearance) { _, _ in
-            DispatchQueue.main.async { ConfigStore.shared.notify() }
-        }
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(remoteRequest(_:)), name: RemoteControl.notification, object: nil,
             suspensionBehavior: .deliverImmediately)

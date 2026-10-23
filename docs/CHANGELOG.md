@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: a config saved in place (VS Code, nano, `>>`) wasn't reloaded until the file was replaced; changes to a theme's file never reached the panes, not even with Reload Configuration; and with `theme = light:A,dark:B` the panes didn't follow the system's light/dark switch.
+- Reload Configuration also takes every pane back to `font-size`: ⌘+/⌘- zoom, which new tabs, splits and windows inherit and windows keep when they come back, ends there (⌘0 resets one pane).
 - Check for Updates shows what's new in a box of its own that scrolls — the release's notes as text, with bullets, code, bold and links — and a link to the release's page, instead of the raw notes stretching the dialog. The update feed carries a short summary for older versions' dialogs.
 - Homebrew: `brew install --cask ziwangprincex/libertty/libertty` (Apple silicon). The cask clears the quarantine flag, so Libertty opens without "Open Anyway", and `zap` removes everything Libertty keeps; Libertty still updates itself.
 

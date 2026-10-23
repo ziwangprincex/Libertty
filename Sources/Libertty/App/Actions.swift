@@ -125,7 +125,7 @@ enum ActionDispatcher {
         case .writeScrollbackFile(let then): controller?.writeTextFile(selection: false, then: then)
         case .writeSelectionFile(let then): controller?.writeTextFile(selection: true, then: then)
         case .openConfig: AppDelegate.openConfigFile()
-        case .reloadConfig: ConfigStore.shared.reload(force: true)
+        case .reloadConfig: ConfigStore.shared.reloadByRequest()
         case .quit: NSApp.terminate(nil)
         case .ignore: break
         case .unbind: return false

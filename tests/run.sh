@@ -222,6 +222,13 @@ expect focus-follows-mouse-off 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVA
 mkdir -p $PRIVATE/folders
 expect go-to-directory 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/folders|g" $ROOT/tests/fixtures/go-to-directory.txt)" $OUT
+# Config changes reach the panes: written in place or replaced, a theme's
+# file, light/dark, Reload Configuration (back to font-size after ⌘+).
+mkdir -p $PRIVATE/reload-config/libertty/themes
+printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/reload-config/libertty/config
+printf 'background = #112233\n' > $PRIVATE/reload-config/libertty/themes/probe-theme
+expect config-reload 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/reload-config \
+  $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/reload-config/libertty|g" $ROOT/tests/fixtures/config-reload.txt)" $OUT
 # The sidebar's activity filter.
 expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-activity.txt)" $OUT

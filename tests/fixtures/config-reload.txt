@@ -1,0 +1,50 @@
+# Config changes reach the panes (run with a config folder of its own,
+# @CFG@): a file written in place (VS Code, nano, >>) or replaced (most
+# editors), a theme file the config names, the system's light/dark switch
+# with `theme = light:A,dark:B`, and Reload Configuration — which also takes
+# every pane back to `font-size` after ⌘+.
+#
+# Starts with: font-size = 14, theme = probe-theme (background #112233).
+expect-font:14
+expect-background:#112233
+# Written in place.
+shell:printf 'font-size = 16\ntheme = probe-theme\n' > @CFG@/config
+wait:0.6
+expect-font:16
+# Replaced, as most editors save.
+shell:printf 'font-size = 15\ntheme = probe-theme\n' > @CFG@/config.new && mv @CFG@/config.new @CFG@/config
+wait:0.6
+expect-font:15
+# The theme's own file, in place and replaced: the panes take its colors.
+shell:printf 'background = #445566\n' > @CFG@/themes/probe-theme
+wait:0.6
+expect-background:#445566
+shell:printf 'background = #778899\n' > @CFG@/themes/probe-theme.new && mv @CFG@/themes/probe-theme.new @CFG@/themes/probe-theme
+wait:0.6
+expect-background:#778899
+# ⌘+ stays through edits that don't touch font-size…
+action:increase_font_size:1
+expect-font:16
+shell:printf 'font-size = 15\ntheme = probe-theme\nscrollback-limit = 5000\n' > @CFG@/config
+wait:0.6
+expect-font:16
+# …and Reload Configuration takes the pane back to it.
+reload:config
+expect-font:15
+# Light and dark themes follow the system's appearance.
+shell:printf 'font-size = 15\ntheme = light:Libertty Light,dark:Libertty Dark\n' > @CFG@/config
+wait:0.6
+appearance:light
+expect-background:#faf9f6
+appearance:dark
+expect-background:#1c1c1e
+# A theme named by its path, saved by deleting it and writing it anew (the
+# config refuses it while it's gone, and takes it once it's back).
+shell:echo 'background = #135790' > @CFG@/own-theme && printf 'theme = @CFG@/own-theme\n' > @CFG@/config
+wait:0.6
+expect-background:#135790
+shell:rm @CFG@/own-theme
+wait:0.4
+shell:echo 'background = #abcdef' > @CFG@/own-theme
+wait:0.6
+expect-background:#abcdef

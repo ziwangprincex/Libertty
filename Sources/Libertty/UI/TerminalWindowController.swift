@@ -308,6 +308,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
                 self?.updateTitleVisibility()
             }
         }
+        // Its panes were made with this config and theme already.
+        appliedTheme = config.resolvedTheme
         configToken = ConfigStore.shared.observe { [weak self] config in self?.configDidChange(config) }
         updateDimming()
     }
@@ -442,21 +444,35 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     // MARK: Settings
 
+    /// The theme the panes last took (its file may change under its name).
+    private var appliedTheme: Theme?
+
     private func configDidChange(_ config: Config) {
         let old = self.config
         self.config = config
-        if config != old { allPanes.forEach { $0.apply(config) } }
+        // The panes take it when it changed — or its theme did (the theme's
+        // file, the system's appearance), or Reload Configuration asked.
+        let theme = config.resolvedTheme
+        let requested = ConfigStore.shared.reloadingByRequest
+        if config != old || theme != appliedTheme || requested {
+            allPanes.forEach { $0.apply(config, resetFontSize: requested) }
+        }
+        let themeChanged = theme != appliedTheme
+        appliedTheme = theme
         // Which program states tabs show and the Dock counts.
         if config.programStatusIndicator != old.programStatusIndicator { updateTitle() }
         if config.programStatusDockBadge != old.programStatusDockBadge { onAttentionChange?() }
         if config.programStatusNotify != old.programStatusNotify || config.programStatusSound != old.programStatusSound {
             rememberProgramStates()
         }
-        // Editors follow their keys and the text size.
+        // Editors follow their keys and the text size (documents get the
+        // theme from applyWindowStyle).
         if config.editorKeymap != old.editorKeymap || config.fontSize != old.fontSize {
             documents(in: everyTab).forEach { $0.applyEditorSettings() }
         }
         applyWindowStyle()
+        // Pane headers and dimmed documents are in the theme's colors.
+        if themeChanged { updateDimming() }
         // The sidebar and inspector follow their settings when those change.
         if config.windowSidebar != old.windowSidebar {
             (Motion.reduced ? sidebarItem : sidebarItem.animator()).isCollapsed = !config.windowSidebar

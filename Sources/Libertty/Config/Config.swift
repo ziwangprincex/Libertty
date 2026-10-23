@@ -833,9 +833,16 @@ final class ConfigStore {
     let url: URL
 
     private var observers: [UUID: (Config) -> Void] = [:]
-    private var watchers: [String: DispatchSourceFileSystemObject] = [:]
+    /// Files and folders watched, by path, with which file or folder each is.
+    private var watchers: [String: (source: DispatchSourceFileSystemObject, identity: FileIdentity)] = [:]
+    private var pendingReload: DispatchWorkItem?
     private var watching = false
+    private var appearanceObservation: NSKeyValueObservation?
     private var lastFiles: [String: String] = [:]
+    /// The themes the config names, light and dark, as their files say.
+    private var lastThemes: [Theme] = []
+    /// Reload Config is notifying: panes go back to `font-size` too.
+    private(set) var reloadingByRequest = false
 
     private init() {
         url = Self.directory.appendingPathComponent("config")
@@ -846,7 +853,16 @@ final class ConfigStore {
 
     /// Call `handler` now and on every change until the returned token is released.
     func observe(_ handler: @escaping (Config) -> Void) -> AnyObject {
-        if !watching { watching = true; watchFiles() }
+        if !watching {
+            watching = true
+            watchFiles(themes: Self.requestedTheme(in: lastFiles.keys.map { URL(fileURLWithPath: $0) }, lastFiles) ?? config.theme)
+        }
+        // `theme = light:A,dark:B` follows the system appearance.
+        if appearanceObservation == nil, let app = NSApp {
+            appearanceObservation = app.observe(\.effectiveAppearance) { _, _ in
+                DispatchQueue.main.async { ConfigStore.shared.notify() }
+            }
+        }
         let id = UUID()
         observers[id] = handler
         handler(config)
@@ -859,25 +875,37 @@ final class ConfigStore {
         deinit { cancel() }
     }
 
-    /// Re-read every file. Observers hear about it only when something
-    /// changed, unless `force` (Reload Config, a system appearance change).
+    /// Re-read every file — and the theme files the config names. Observers
+    /// hear about it only when something changed, unless `force`.
     func reload(force: Bool = false) {
         ThemeLibrary.shared.invalidate()
         let (parsed, problems, files) = Config.load(url)
         var contents: [String: String] = [:]
         for f in files { contents[f.path] = (try? String(contentsOf: f, encoding: .utf8)) ?? "" }
-        let changed = contents != lastFiles || parsed != config || problems != warnings
+        let themes = [parsed.resolvedTheme(dark: false), parsed.resolvedTheme(dark: true)]
+        let changed = contents != lastFiles || parsed != config || problems != warnings || themes != lastThemes
         lastFiles = contents
+        lastThemes = themes
+        // What to watch follows what was read, every time (a file written
+        // anew is another file; a theme briefly gone may be back).
+        if watching { watchFiles(themes: Self.requestedTheme(in: files, contents) ?? parsed.theme) }
         guard force || changed else { return }
         warnings = problems
         config = parsed
         keybinds = parsed.keybindTable
-        if watching { watchFiles() }
         notify()
     }
 
     func notify() {
         for handler in observers.values { handler(config) }
+    }
+
+    /// Libertty ▸ Reload Configuration: everything again, from the files as
+    /// they are, the text size of every pane too (⌘+/⌘- zoom ends).
+    func reloadByRequest() {
+        reloadingByRequest = true
+        defer { reloadingByRequest = false }
+        reload(force: true)
     }
 
     // MARK: Editing the file
@@ -1004,27 +1032,82 @@ final class ConfigStore {
 
     // MARK: Watching
 
-    /// Watch the directories, not the files: editors save by replacing them.
-    /// Includes elsewhere and the user themes folder are watched too.
-    private func watchFiles() {
-        var dirs = Set([url.deletingLastPathComponent().path, Self.directory.appendingPathComponent("themes").path])
-        for path in lastFiles.keys { dirs.insert((path as NSString).deletingLastPathComponent) }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        for dir in dirs where watchers[dir] == nil {
-            let fd = open(dir, O_EVTONLY)
-            guard fd >= 0 else { continue }
-            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete],
-                                                                   queue: .main)
-            var pending: DispatchWorkItem?
-            source.setEventHandler { [weak self] in
-                pending?.cancel()
-                let work = DispatchWorkItem { self?.reload() }
-                pending = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+    /// Watch the files read and the theme files `themes` names, and the
+    /// folders they're in: a file written in place (VS Code, nano, `>>`)
+    /// tells its own watcher, one replaced by a new file (most editors, a
+    /// save that deletes first) its folder's — the new file is watched
+    /// after the reload that causes. Every event, from any of them, reloads
+    /// once, a moment after the last.
+    private func watchFiles(themes: ThemeSpec) {
+        var files = Set(lastFiles.keys)
+        for name in [themes.light, themes.dark] where Theme.builtIn(name) == nil {
+            if let url = ThemeLibrary.shared.url(for: name) { files.insert(url.path) }
+            // Not there now: its folder tells when it is.
+            else if name.hasPrefix("/") || name.hasPrefix("~") {
+                files.insert((name as NSString).expandingTildeInPath)
             }
+        }
+        var folders = Set([url.deletingLastPathComponent().path, Self.directory.appendingPathComponent("themes").path])
+        for path in files { folders.insert((path as NSString).deletingLastPathComponent) }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var newFile = false
+        for path in folders.union(files) {
+            var info = stat()
+            guard stat(path, &info) == 0 else {
+                // Gone (for now): its folder's watcher covers it.
+                if let old = watchers.removeValue(forKey: path) { old.source.cancel() }
+                continue
+            }
+            let identity = FileIdentity(device: info.st_dev, inode: info.st_ino)
+            if let watcher = watchers[path] {
+                if watcher.identity == identity { continue }
+                watcher.source.cancel()
+            }
+            let fd = open(path, O_EVTONLY)
+            guard fd >= 0 else { continue }
+            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd,
+                                                                   eventMask: [.write, .extend, .delete, .rename], queue: .main)
+            source.setEventHandler { [weak self] in self?.reloadSoon() }
             source.setCancelHandler { close(fd) }
             source.resume()
-            watchers[dir] = source
+            watchers[path] = (source, identity)
+            if files.contains(path) { newFile = true }
         }
+        // A file just made may have been read before it was written: once
+        // more, now that its writes reach its watcher.
+        if newFile { reloadSoon() }
+        for (path, watcher) in watchers where !folders.contains(path) && !files.contains(path) {
+            watcher.source.cancel()
+            watchers[path] = nil
+        }
+    }
+
+    /// The theme the files ask for, the last `theme =` line read — also
+    /// one refused because its file isn't there (an editor saving it anew):
+    /// watched all the same, so it's taken once it's back.
+    private static func requestedTheme(in files: [URL], _ contents: [String: String]) -> ThemeSpec? {
+        var spec: ThemeSpec?
+        for file in files {
+            for line in (contents[file.path] ?? "").split(whereSeparator: \.isNewline).map(String.init)
+            where key(of: line) == "theme" {
+                var v = value(of: line)
+                if v.count >= 2, v.hasPrefix("\""), v.hasSuffix("\"") { v = String(v.dropFirst().dropLast()) }
+                spec = v.isEmpty ? nil : ThemeSpec(v) ?? spec
+            }
+        }
+        return spec
+    }
+
+    private struct FileIdentity: Equatable {
+        var device: dev_t
+        var inode: ino_t
+    }
+
+    /// One reload a moment after the last of a burst of events.
+    private func reloadSoon() {
+        pendingReload?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.reload() }
+        pendingReload = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 }

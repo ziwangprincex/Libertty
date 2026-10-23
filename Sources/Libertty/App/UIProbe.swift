@@ -30,6 +30,10 @@ import LiberttyCore
 ///                         (`=TEXT`: are exactly TEXT)
 ///   expect-tab-count:N    the window (its workspace in front) has N tabs
 ///   expect-shown:N[:TEXT] the sidebar's filters leave N rows showing (each containing TEXT)
+///   reload:config         Libertty ▸ Reload Configuration
+///   appearance:light|dark the app's appearance, as the system's switch sets it
+///   expect-font:SIZE      the focused pane's text size, in points
+///   expect-background:#RRGGBB  the focused pane's background (its theme's)
 ///   undo:go               Edit ▸ Undo (a probe has no menu for ⌘Z to reach)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -513,6 +517,30 @@ enum UIProbe {
                     print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
                     failures += 1
                 }
+            case .reload:
+                ConfigStore.shared.reloadByRequest()
+                pump(0.3)
+            case .appearance(let dark):
+                // As the system's switching would (`theme = light:A,dark:B` follows it).
+                NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                pump(0.4)
+            case .expectBackground(let hex):
+                // What the pane draws behind its text (its dimming layer takes the same).
+                let bg = controller.focusedTerminal.backgroundHex
+                if bg == hex {
+                    print("ok    ui-probe background \(hex)")
+                } else {
+                    print("FAIL  ui-probe background: \(bg), not \(hex)")
+                    failures += 1
+                }
+            case .expectFont(let size):
+                let shown = Double(controller.focusedTerminal.fontSize)
+                if shown == size {
+                    print("ok    ui-probe font \(size)")
+                } else {
+                    print("FAIL  ui-probe font: \(shown), not \(size)")
+                    failures += 1
+                }
             case .action(let text):
                 let actions = text.split(separator: ",").map { Action(String($0)) }
                 guard !actions.isEmpty, actions.allSatisfy({ $0 != nil }) else {
@@ -646,7 +674,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), undo
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -724,6 +752,12 @@ enum UIProbe {
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 steps.append(.expectShown(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
             case "action": steps.append(.action(arg))
+            case "reload": steps.append(.reload)
+            case "appearance":
+                guard arg == "light" || arg == "dark" else { print("ui-probe: appearance:light or appearance:dark"); exit(2) }
+                steps.append(.appearance(arg == "dark"))
+            case "expect-background": steps.append(.expectBackground(arg.lowercased()))
+            case "expect-font": steps.append(.expectFont(Double(arg) ?? -1))
             case "expect-subtitle": steps.append(.expectSubtitle(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))

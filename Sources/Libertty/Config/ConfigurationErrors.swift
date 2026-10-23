@@ -74,7 +74,7 @@ private struct ConfigurationErrorsView: View {
                 Spacer()
                 Button("Ignore") { model.errors = [] }
                     .keyboardShortcut(.cancelAction)
-                Button("Reload Configuration") { ConfigStore.shared.reload(force: true) }
+                Button("Reload Configuration") { ConfigStore.shared.reloadByRequest() }
                     .keyboardShortcut(.defaultAction)
             }
             .controlSize(.large)
