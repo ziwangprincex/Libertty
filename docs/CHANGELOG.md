@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - `window-padding-color` (Ghostty's): `extend` carries the colors of the cells at the grid's edges out to the pane's edges, so a program's background fills its card (after Rex's "Match program backgrounds"); not above or below a prompt, a row with cells in the default background (reverse video too) or powerline glyphs, except in full-screen programs; scrolled part of a row, the rows cut at the edges are carried. `extend-always` carries every edge; `background`, the default, keeps the padding as it was. Snapshots take `--set KEY=VALUE` and `--pixels X,Y;…`.
 - The sidebar filters tabs by activity (after Rex): the button at the end of its filter field, the palette or `show_tabs:working|waiting|attention|all` lists only the tabs whose programs are working, waiting for you, or finished or failed; rows come and go as their states change, the name filter narrows further, and the count says how many show ("1/4").
