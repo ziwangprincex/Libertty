@@ -83,9 +83,9 @@ final class UpdateController: NSObject {
     private func offer(_ release: Updater.Release, automatic: Bool) {
         let alert = NSAlert()
         alert.messageText = "Libertty \(release.version) is available"
-        var detail = "You have \(Updater.currentVersion). Programs keep running while Libertty restarts, and your windows come back."
-        if let notes = release.notes, !notes.isEmpty { detail += "\n\n" + notes }
-        alert.informativeText = detail
+        alert.informativeText = "You have \(Updater.currentVersion). Programs keep running while Libertty restarts, and your windows come back."
+        // What's new, in a box of its own size: a release's notes can be long.
+        if let notes = Self.notesView(for: release) { alert.accessoryView = notes }
         alert.addButton(withTitle: ready != nil ? "Restart to Update" : "Install and Restart")
         alert.addButton(withTitle: "Later")
         if automatic { alert.addButton(withTitle: "Skip This Version") }
@@ -138,6 +138,134 @@ final class UpdateController: NSObject {
                 tell("Libertty couldn't update.", detail: error.localizedDescription)
             }
         }
+    }
+
+    // MARK: What's new
+
+    /// The release's notes, Markdown shown as text (bullets, code, bold,
+    /// links), scrolling past a few dozen lines, with a link to its page.
+    static func notesView(for release: Updater.Release) -> NSView? {
+        let markdown = [release.releaseNotes, release.notes].compactMap { $0 }.first { !$0.isEmpty } ?? ""
+        let text = render(notes: markdown)
+        if let page = release.releasePage.flatMap(URL.init(string:)) {
+            if text.length > 0 { text.append(NSAttributedString(string: "\n")) }
+            text.append(NSAttributedString(string: "All changes on GitHub", attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .link: page,
+            ]))
+        }
+        guard text.length > 0 else { return nil }
+        let width: CGFloat = 440, maxHeight: CGFloat = 300
+        let textView = NSTextView(usingTextLayoutManager: false)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 0, height: 4)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = .width
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        textView.textStorage?.setAttributedString(text)
+        guard let layout = textView.layoutManager, let container = textView.textContainer else { return nil }
+        // The text's height at a width; past the box's, the scroller takes
+        // its share of the width (all of it, where scroll bars always show).
+        func height(at textWidth: CGFloat) -> CGFloat {
+            textView.frame = NSRect(x: 0, y: 0, width: textWidth, height: 10)
+            layout.ensureLayout(for: container)
+            return ceil(layout.usedRect(for: container).height) + 8
+        }
+        var full = height(at: width)
+        let scrolls = full > maxHeight
+        if scrolls {
+            let inner = NSScrollView.contentSize(forFrameSize: NSSize(width: width, height: maxHeight),
+                                                 horizontalScrollerClass: nil, verticalScrollerClass: NSScroller.self,
+                                                 borderType: .noBorder, controlSize: .regular,
+                                                 scrollerStyle: NSScroller.preferredScrollerStyle)
+            full = height(at: inner.width)
+        }
+        textView.frame.size.height = full
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: min(full, maxHeight)))
+        scroll.documentView = textView
+        scroll.hasVerticalScroller = scrolls
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        return scroll
+    }
+
+    /// The changelog's Markdown, line by line: `- `, `* `, `+ ` and `1. `
+    /// items with a hanging indent (nested by their own indent; an indented
+    /// line under one continues it), `> ` (the summary) and paragraphs as
+    /// text, `# ` headings in bold; inline code, bold, italics, struck text
+    /// and links within.
+    static func render(notes markdown: String) -> NSMutableAttributedString {
+        let size = NSFont.smallSystemFontSize
+        let font = NSFont.systemFont(ofSize: size)
+        let out = NSMutableAttributedString()
+        func item(level: Int, continued: Bool) -> NSParagraphStyle {
+            let style = NSMutableParagraphStyle()
+            let indent = CGFloat(level + 1) * 14
+            style.headIndent = indent
+            style.firstLineHeadIndent = continued ? indent : indent - 14
+            style.tabStops = [NSTextTab(textAlignment: .left, location: indent)]
+            style.paragraphSpacing = 5
+            return style
+        }
+        let plain = NSMutableParagraphStyle()
+        plain.paragraphSpacing = 7
+        var lastItemLevel: Int?
+        for raw in markdown.split(whereSeparator: \.isNewline) {
+            let indent = raw.prefix { $0 == " " || $0 == "\t" }.reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            var style: NSParagraphStyle = plain, prefix = "", bold = false
+            let marker = line.firstMatch(of: #/^([-*+]|\d+[.)])\s+/#)
+            if let marker {
+                let level = min(indent / 2, 3)
+                let number = String(marker.output.1)
+                prefix = (number.first?.isNumber == true ? number : "•") + "\t"
+                line.removeSubrange(marker.range)
+                style = item(level: level, continued: false)
+                lastItemLevel = level
+            } else if indent >= 2, let level = lastItemLevel {
+                style = item(level: level, continued: true)  // the item above, on
+            } else if line.hasPrefix(">") {
+                line = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
+                lastItemLevel = nil
+            } else if let heading = line.firstMatch(of: #/^#{1,6}\s+/#) {
+                line.removeSubrange(heading.range)
+                bold = true
+                lastItemLevel = nil
+            } else {
+                lastItemLevel = nil
+            }
+            if out.length > 0 { out.append(NSAttributedString(string: "\n", attributes: [.font: font])) }
+            let start = out.length
+            out.append(NSAttributedString(string: prefix, attributes: [.font: font]))
+            out.append(inline(line, size: size, bold: bold))
+            out.addAttribute(.paragraphStyle, value: style, range: NSRange(location: start, length: out.length - start))
+        }
+        out.addAttribute(.foregroundColor, value: NSColor.labelColor, range: NSRange(location: 0, length: out.length))
+        return out
+    }
+
+    /// One line's inline Markdown; as typed if it isn't Markdown.
+    private static func inline(_ line: String, size: CGFloat, bold: Bool) -> NSAttributedString {
+        let base = bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
+        guard let parsed = try? AttributedString(markdown: line, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        else { return NSAttributedString(string: line, attributes: [.font: base]) }
+        let out = NSMutableAttributedString()
+        for run in parsed.runs {
+            let intent = run.inlinePresentationIntent ?? []
+            let strong = bold || intent.contains(.stronglyEmphasized)
+            var font = intent.contains(.code) ? .monospacedSystemFont(ofSize: size - 0.5, weight: strong ? .semibold : .regular)
+                : strong ? NSFont.boldSystemFont(ofSize: size) : base
+            if intent.contains(.emphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+            var attributes: [NSAttributedString.Key: Any] = [.font: font]
+            if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            if let link = run.link { attributes[.link] = link }
+            out.append(NSAttributedString(string: String(parsed[run.range].characters), attributes: attributes))
+        }
+        return out
     }
 
     // MARK: UI

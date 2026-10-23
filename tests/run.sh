@@ -66,6 +66,8 @@ expect diff-render '^(.*main\.swift.*\+4</span> <span class="del">−3.*notes\.m
 expect config-validates 'ok$' $LIBERTTY +validate-config --config-file /dev/null
 expect config-get 'false|true' $LIBERTTY +get window-vsync
 expect ligature-config 'all 8 right' $LIBERTTY --ligature-config-probe
+# Check for Updates: a release's long notes in a box that scrolls (look at the PNGs).
+expect update-notes 'notes box: 440x300' $LIBERTTY --update-notes-probe $ROOT/tests/fixtures/appcast.json $OUT/update-notes.png
 
 # Links, selection, shell integration
 expect links-url 'text https://example.com/a_\(b\) 0:4-28' $LIBERTTY --link-probe 'printf "see https://example.com/a_(b), ok.\n"'

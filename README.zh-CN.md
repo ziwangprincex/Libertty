@@ -14,14 +14,26 @@ Libertty 是一个 macOS 终端模拟器。VT 解析和终端状态由
 
 - 版本 0.3.0。需要 macOS 14 或更高版本；构建脚本产出 Apple silicon（arm64）二进制。
 - 未经过 Apple 公证。更新包改用 Ed25519 签名校验（见[更新与发布](#更新与发布)）。
-- 已在 [GitHub Releases](https://github.com/ziwangprincex/Libertty/releases) 发布（DMG 和 zip）。暂无 Homebrew cask。
+- 已在 [GitHub Releases](https://github.com/ziwangprincex/Libertty/releases) 发布（DMG 和 zip），也可以用 Homebrew 安装（[ziwangprincex/homebrew-libertty](https://github.com/ziwangprincex/homebrew-libertty)）。
 - 已知缺口：屏幕共享只能在本机查看，不能传到远程主机；陷入死循环的插件会一直占用它自己的线程，直到 Libertty 重启；Notebook 不渲染交互组件（ipywidgets）。
 
 ## 安装
 
+用 Homebrew：
+
+```sh
+brew install --cask ziwangprincex/libertty/libertty
+```
+
+Libertty 会装到"应用程序"里，`libertty` 命令链接到 Homebrew 的 `bin`，隔离标记也会去掉，第一次打开不需要"仍要打开"。
+
+或者手动安装：
+
 1. 从[最新版本](https://github.com/ziwangprincex/Libertty/releases/latest)下载 `Libertty-版本号.dmg`，打开后把 Libertty 拖到"应用程序"文件夹。
 2. 应用未经公证，第一次打开会被 macOS 拦下。先打开一次，然后在"系统设置 ▸ 隐私与安全性"中点"仍要打开"；或者在打开前运行 `xattr -dr com.apple.quarantine /Applications/Libertty.app`。
 3. 可选：在 Libertty 的 shell 里可以直接使用 `libertty` 命令。要在其他地方使用，建一个链接：`ln -s /Applications/Libertty.app/Contents/Resources/bin/libertty ~/.local/bin/libertty`。
+
+两种方式装的 Libertty 都会自己更新（见[更新与发布](#更新与发布)）。
 
 不需要安装 Xcode 或 Command Line Tools。Git 客户端、Git 面板和文件树的 Git 标记需要 `git`：可以来自 Command Line Tools（`xcode-select --install`），也可以是其他安装，例如 Homebrew 的。没有 git 时，这些功能会提示 git 未安装，Libertty 的其他部分照常使用。
 
@@ -170,8 +182,9 @@ Libertty --git-probe                             # 在当前目录下 Libertty �
 
 ## 更新与发布
 
-- 通过 Libertty ▸ 检查更新…、每日自动检查（`auto-update = check | download | off`）或 `libertty +update [--check]` 更新。更新包是一个 zip，其 Ed25519 签名必须与应用内置的公钥（`scripts/update-public-key.txt`）匹配。安装时替换应用包并重新启动，会话在 liberttyd 中继续运行。
-- `scripts/release.sh VERSION` 根据 `docs/CHANGELOG.md` 中对应版本的段落，在 `build/release/VERSION` 中生成 zip、DMG、`appcast.json` 和 Homebrew cask；加 `--publish` 则上传到 `scripts/release.conf` 中配置的仓库和 tap。签名私钥从 `~/.config/libertty-release/update.key`（或 `$LIBERTTY_UPDATE_KEY`）读取，不在仓库中。
+- 通过 Libertty ▸ 检查更新…、每日自动检查（`auto-update = check | download | off`）或 `libertty +update [--check]` 更新。更新对话框列出新版本的改动，并链接到发布页面。更新包是一个 zip，其 Ed25519 签名必须与应用内置的公钥（`scripts/update-public-key.txt`）匹配。安装时替换应用包并重新启动，会话在 liberttyd 中继续运行。
+- 用 Homebrew 安装的 Libertty 也这样自己更新；cask 标明了这一点（`auto_updates`）。应用版本比 cask 旧时，`brew upgrade` 也会更新它；它自己更新过之后，`brew upgrade` 就不再动它。
+- `scripts/release.sh VERSION` 根据 `docs/CHANGELOG.md` 中对应版本的段落（其中 `> ` 开头的一行是旧版本更新对话框显示的简短摘要），在 `build/release/VERSION` 中生成 zip、DMG、`appcast.json`、Homebrew cask 和发布页面的文字；加 `--publish` 则上传到 `scripts/release.conf` 中配置的仓库和 tap，`--refresh` 重新上传已发布版本的说明、更新信息和 cask。tap 的 README 是 `scripts/tap-README.md`，tap 的提交使用本仓库自己的 git 身份。签名私钥从 `~/.config/libertty-release/update.key`（或 `$LIBERTTY_UPDATE_KEY`）读取，不在仓库中。
 
 ## 目录结构
 

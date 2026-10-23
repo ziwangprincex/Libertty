@@ -562,7 +562,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// not mid-drag, not to a parked pane.
     private func focusUnderPointer() {
         guard ConfigStore.shared.config.focusFollowsMouse, !isParked, let window,
-              window.attachedSheet == nil, NSEvent.pressedMouseButtons == 0,
+              // Not while dragging. (A probe's pointer is its own, with no
+              // buttons; the real mouse is the user's, doing something else.)
+              window.attachedSheet == nil, Probe.running || NSEvent.pressedMouseButtons == 0,
               let current = window.firstResponder as? TerminalView, current !== self,
               // Not in the middle of composing (Pinyin…): that would be lost.
               !current.hasMarkedText() else { return }

@@ -1,0 +1,10 @@
+{
+  "version": "99.0.0",
+  "url": "https://example.com/Libertty-99.0.0.zip",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "signature": "",
+  "size": 1,
+  "notes": "A summary of the release.\n\nAll changes: https://example.com/releases/tag/v99.0.0",
+  "releaseNotes": "> A summary of the release, in a sentence or two.\n## Added\n- A change with `code`, **bold**, *italic*, ~~struck~~, **`bold code`** and a [link](https://example.com/1).\n  An indented line continues the item above, under its text.\n  - A nested item, indented once more.\n1. A numbered item.\n2. Another, long enough to wrap onto a second line inside the box that holds the notes.\n#123 is an issue number, not a heading.\n- Change 1: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 2: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 3: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 4: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 5: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 6: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 7: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 8: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 9: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 10: long enough to wrap onto a second line in the box, so that the box has to scroll.\n- Change 11: long enough to wrap onto a second line in the box, so that the box has to scroll.",
+  "releasePage": "https://example.com/releases/tag/v99.0.0"
+}

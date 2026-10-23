@@ -17,12 +17,24 @@ an editor, a Git client, a browser, a task manager and others.
 - Not notarized by Apple. Updates are verified with an Ed25519 signature instead (see
   [Updates and releases](#updates-and-releases)).
 - Published on [GitHub Releases](https://github.com/ziwangprincex/Libertty/releases)
-  (DMG and zip). No Homebrew cask yet.
+  (DMG and zip) and as a Homebrew cask
+  ([ziwangprincex/homebrew-libertty](https://github.com/ziwangprincex/homebrew-libertty)).
 - Known gaps: screen sharing works only on the local Mac (not to a remote host); a
   plugin stuck in an endless loop occupies its own thread until Libertty restarts;
   notebooks do not render interactive widgets (ipywidgets).
 
 ## Install
+
+With Homebrew:
+
+```sh
+brew install --cask ziwangprincex/libertty/libertty
+```
+
+This installs Libertty in Applications, links the `libertty` command into Homebrew's `bin`,
+and clears the quarantine flag, so the first launch needs no "Open Anyway".
+
+Or by hand:
 
 1. Download `Libertty-VERSION.dmg` from the
    [latest release](https://github.com/ziwangprincex/Libertty/releases/latest), open it
@@ -33,6 +45,8 @@ an editor, a Git client, a browser, a task manager and others.
 3. Optional: the `libertty` command is on `PATH` in Libertty's shells. To use it
    elsewhere, link it:
    `ln -s /Applications/Libertty.app/Contents/Resources/bin/libertty ~/.local/bin/libertty`.
+
+Either way Libertty updates itself (see [Updates and releases](#updates-and-releases)).
 
 Xcode and the Command Line Tools are not required. The Git client, the Git panel and
 the file tree's Git marks need a `git`: the one from the Command Line Tools
@@ -248,12 +262,19 @@ Benchmarks against other terminals are in `bench/` (`bench/RESULTS.md`).
 ## Updates and releases
 
 - Libertty ▸ Check for Updates…, or daily (`auto-update = check | download | off`), or
-  `libertty +update [--check]`. An update is a zip whose Ed25519 signature must match
-  the public key built into the app (`scripts/update-public-key.txt`). Installing
-  replaces the bundle and relaunches; sessions continue in liberttyd.
-- `scripts/release.sh VERSION` stages the zip, DMG, `appcast.json` and Homebrew cask in
-  `build/release/VERSION` from the matching section of `docs/CHANGELOG.md`;
-  `--publish` uploads them to the repository and tap in `scripts/release.conf`. The
+  `libertty +update [--check]`. The dialog lists what's new and links to the release's
+  page. An update is a zip whose Ed25519 signature must match the public key built into
+  the app (`scripts/update-public-key.txt`). Installing replaces the bundle and
+  relaunches; sessions continue in liberttyd.
+- Installed with Homebrew, Libertty updates itself the same way; the cask says so
+  (`auto_updates`). `brew upgrade` also updates it while it's older than the cask, and
+  leaves it alone once it has updated itself.
+- `scripts/release.sh VERSION` stages the zip, DMG, `appcast.json`, Homebrew cask and the
+  release page's text in `build/release/VERSION` from the matching section of
+  `docs/CHANGELOG.md` (its `> ` line is the short summary older versions' dialogs show);
+  `--publish` uploads them to the repository and tap in `scripts/release.conf`, and
+  `--refresh` uploads a published version's notes, feed and cask again. The tap's README is
+  `scripts/tap-README.md`, and its commits use this repository's own git identity. The
   signing key is read from `~/.config/libertty-release/update.key` (or
   `$LIBERTTY_UPDATE_KEY`) and is not part of the repository.
 

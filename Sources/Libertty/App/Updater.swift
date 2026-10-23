@@ -19,7 +19,14 @@ enum Updater {
         /// Base64 Ed25519 signature of the zip's bytes.
         var signature: String
         var size: Int
+        /// A few lines of plain text, for any version's dialog (0.2.0's
+        /// shows them as they are) and `+update --check`.
         var notes: String?
+        /// Every change, as Markdown (the changelog's section): what the
+        /// dialog lists, when the feed has it.
+        var releaseNotes: String?
+        /// The release's page.
+        var releasePage: String?
         var minimumSystemVersion: String?
     }
 
