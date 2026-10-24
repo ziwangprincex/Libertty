@@ -34,6 +34,8 @@ import LiberttyCore
 ///   expect-regrids:N      the focused pane changed its grid N times since the last expect-regrids
 ///   metrics:LABEL         print the focused pane's text size, cells, scale, grid, grid changes
 ///   motion:on|off         animations as the app runs them (a probe starts with them off)
+///   update:install|later  Libertty ▸ Check for Updates…, its dialog answered (run from an app bundle)
+///   expect-app-version:V  the app bundle on disk is version V
 ///   reload:config         Libertty ▸ Reload Configuration
 ///   appearance:light|dark the app's appearance, as the system's switch sets it
 ///   expect-font:SIZE      the focused pane's text size, in points
@@ -524,6 +526,31 @@ enum UIProbe {
                     print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
                     failures += 1
                 }
+            case .update(let install):
+                // Libertty ▸ Check for Updates…, its dialog answered (Install
+                // and Restart, or Later); up to a minute for the download.
+                MainActor.assumeIsolated {
+                    let updates = UpdateController.shared
+                    updates.probeAnswer = install ? .alertFirstButtonReturn : .alertSecondButtonReturn
+                    updates.checkForUpdates(nil)
+                    let deadline = Date().addingTimeInterval(60)
+                    repeat { pump(0.1) } while updates.isBusy && Date() < deadline
+                    for line in updates.probeLog { print("update: \(line.replacingOccurrences(of: "\n", with: " "))") }
+                    if updates.isBusy {
+                        print("FAIL  ui-probe update: still under way after 60 s")
+                        failures += 1
+                    }
+                }
+            case .expectAppVersion(let version):
+                // The bundle on disk now (an install replaced it).
+                let info = NSDictionary(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist"))
+                let found = info?["CFBundleShortVersionString"] as? String ?? "none"
+                if found == version {
+                    print("ok    ui-probe app is \(version)")
+                } else {
+                    print("FAIL  ui-probe app: \(found), not \(version)")
+                    failures += 1
+                }
             case .metrics(let label):
                 // The focused pane as drawn: its text size, cells, layer and drawable;
                 // what has the keyboard; the window's title and content area.
@@ -710,7 +737,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), undo
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -791,6 +818,10 @@ enum UIProbe {
             case "action-now": steps.append(.actionNow(arg))
             case "expect-regrids": steps.append(.expectRegrids(Int(arg) ?? -1))
             case "reload": steps.append(.reload)
+            case "update":
+                guard arg == "install" || arg == "later" else { print("ui-probe: update:install or update:later"); exit(2) }
+                steps.append(.update(install: arg == "install"))
+            case "expect-app-version": steps.append(.expectAppVersion(arg))
             case "metrics": steps.append(.metrics(arg))
             case "motion":
                 guard arg == "on" || arg == "off" else { print("ui-probe: motion:on or motion:off"); exit(2) }

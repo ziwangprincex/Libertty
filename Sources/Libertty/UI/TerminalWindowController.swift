@@ -2769,6 +2769,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// Set when the user already confirmed closing (a whole window or all of them).
     var skipCloseConfirmation = false
     var hasRunningPrograms: Bool { allPanes.contains { $0.session.hasForegroundProgram } }
+    /// Running programs that quitting would end even with persistence: those
+    /// in panes liberttyd doesn't hold (it was slow to start, or refused one).
+    var hasRunningLocalPrograms: Bool {
+        allPanes.contains { $0.session.persistentID == nil && $0.session.host == nil && $0.session.hasForegroundProgram }
+    }
 
     // MARK: Closing
 

@@ -36,44 +36,61 @@ final class UpdateController: NSObject {
         guard Date().timeIntervalSince(last) > 23 * 3600 else { return }
         busy = true
         task = Task { @MainActor in
-            defer { busy = false }
             do {
                 let release = try await Updater.check()
-                UserDefaults.standard.set(Date(), forKey: Self.lastCheckKey)
-                guard let release, release.version != UserDefaults.standard.string(forKey: Self.skippedKey) else { return }
+                noteChecked()
+                guard let release, release.version != UserDefaults.standard.string(forKey: Self.skippedKey) else {
+                    busy = false
+                    return
+                }
                 if mode == .download {
                     let zip = try await Updater.download(release) { _ in }
                     ready = (release, zip)
+                    busy = false
                     announceReady(release)
                 } else {
+                    // The check is over before the question: Install starts
+                    // what comes next (it would find the check still busy).
+                    busy = false
                     offer(release, automatic: true)
                 }
             } catch {
+                busy = false
                 // Quiet in the background: the next check tries again.
                 NSLog("Libertty: update check: \(error.localizedDescription)")
             }
         }
     }
 
+    /// When the last check was (a probe's copy of the app shares the app's
+    /// preferences: it mustn't put the user's daily check off).
+    private func noteChecked() {
+        if !Probe.running { UserDefaults.standard.set(Date(), forKey: Self.lastCheckKey) }
+    }
+
     /// Libertty ▸ Check for Updates…: always answers, even "you're up to date".
     @objc func checkForUpdates(_ sender: Any?) {
-        if let ready { return offer(ready.release, automatic: false) }
         guard !busy else { return }
+        if let ready { return offer(ready.release, automatic: false) }
         guard Updater.feedURL != nil else { return tell("Updates aren't set up for this build.", detail: "It was built without an update feed (see scripts/release.sh).") }
         busy = true
         showProgress("Checking for updates…", indeterminate: true)
         task = Task { @MainActor in
-            defer { busy = false }
+            let release: Updater.Release?
             do {
-                let release = try await Updater.check()
-                UserDefaults.standard.set(Date(), forKey: Self.lastCheckKey)
-                hideProgress()
-                if let release { offer(release, automatic: false) } else {
-                    tell("Libertty \(Updater.currentVersion) is the newest version.", detail: "")
-                }
+                release = try await Updater.check()
+                noteChecked()
             } catch {
+                busy = false
                 hideProgress()
-                tell("Couldn't check for updates.", detail: error.localizedDescription)
+                return tell("Couldn't check for updates.", detail: error.localizedDescription)
+            }
+            // The check is over before the question: Install and Restart
+            // starts the download (it would find the check still busy).
+            busy = false
+            hideProgress()
+            if let release { offer(release, automatic: false) } else {
+                tell("Libertty \(Updater.currentVersion) is the newest version.", detail: "")
             }
         }
     }
@@ -90,7 +107,7 @@ final class UpdateController: NSObject {
         alert.addButton(withTitle: "Later")
         if automatic { alert.addButton(withTitle: "Skip This Version") }
         alert.icon = NSApp.applicationIconImage
-        switch alert.runModal() {
+        switch answer(alert) {
         case .alertFirstButtonReturn: install(release)
         case .alertThirdButtonReturn: UserDefaults.standard.set(release.version, forKey: Self.skippedKey)
         default: break
@@ -112,7 +129,8 @@ final class UpdateController: NSObject {
     // MARK: Installing
 
     private func install(_ release: Updater.Release) {
-        guard !busy || ready != nil else { return }
+        // One at a time (a second would share the first's staging folder).
+        guard !busy else { return }
         busy = true
         let app = Bundle.main.bundleURL
         task = Task { @MainActor in
@@ -130,6 +148,11 @@ final class UpdateController: NSObject {
                 showProgress("Installing…", indeterminate: true)
                 try await Task.detached { try Updater.install(zip, release: release, over: app) }.value
                 try? FileManager.default.removeItem(at: zip)
+                // A probe checks what's on disk; nothing to restart into.
+                if Probe.running {
+                    probeLog.append("installed \(release.version) over \(app.path)")
+                    return hideProgress()
+                }
                 Updater.relaunch(app.path)
                 NSApp.terminate(nil)
             } catch {
@@ -275,10 +298,24 @@ final class UpdateController: NSObject {
         alert.messageText = message
         alert.informativeText = detail
         alert.icon = NSApp.applicationIconImage
-        alert.runModal()
+        _ = answer(alert)
+    }
+
+    /// `--ui-probe` (no one there to click): how the dialogs are answered,
+    /// what they and the install said, and whether anything is under way.
+    var probeAnswer = NSApplication.ModalResponse.alertSecondButtonReturn
+    private(set) var probeLog: [String] = []
+    var isBusy: Bool { busy }
+
+    private func answer(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        guard Probe.running else { return alert.runModal() }
+        probeLog.append(alert.messageText + (alert.informativeText.isEmpty ? "" : ": \(alert.informativeText)"))
+        return probeAnswer
     }
 
     private func showProgress(_ title: String, indeterminate: Bool) {
+        // A probe's runs show nothing on the user's screen.
+        guard !Probe.running else { return }
         if progressWindow == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 96),
                                 styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)

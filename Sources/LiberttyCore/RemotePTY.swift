@@ -81,7 +81,7 @@ public final class RemotePTY: TerminalBackend {
         var request = request
         request.catchUp = true  // see readLoop's `.snapshot`
         c.send(.create, encoding: request)
-        guard let reply = c.receive() else { throw DaemonClientError.unavailable }
+        guard let reply = c.receive() else { throw DaemonClientError.noReply }
         guard reply.kind == .attached, let (header, _) = reply.headerAndBody else {
             throw DaemonClientError.refused(reply.json["error"] as? String ?? "unexpected reply")
         }
@@ -359,12 +359,16 @@ public final class RemotePTY: TerminalBackend {
 }
 
 public enum DaemonClientError: Error, CustomStringConvertible {
+    /// Nothing listens on its socket.
     case unavailable
+    /// It took the request and didn't answer in time.
+    case noReply
     case refused(String)
 
     public var description: String {
         switch self {
         case .unavailable: "liberttyd isn't reachable"
+        case .noReply: "liberttyd didn't answer"
         case .refused(let why): why
         }
     }
@@ -450,23 +454,51 @@ public enum DaemonClient {
     /// Libertty reaches over ssh it keeps sshd's instead, so the host's
     /// "Full Disk Access for remote users" still covers its sessions.
     public static func ensureRunning(executable: String, logPath: String?, responsible: Bool = true) -> Bool {
-        let mine = DaemonServer.buildID(ofExecutable: executable)
-        if let w = hello() {
-            if w.version == Wire.version, w.build == mine { return true }
-            log("liberttyd[\(w.pid)] is build \(w.build) (protocol \(w.version)); replacing it with \(mine)")
-            guard let pid = spawn(executable, ["--takeover"], logPath: logPath, responsible: responsible) else {
-                return w.version == Wire.version
-            }
-            if waitFor({ $0.build == mine }, seconds: 10, child: pid) { return true }
-            return hello()?.version == Wire.version
-        }
-        guard let pid = spawn(executable, [], logPath: logPath, responsible: responsible) else { return false }
-        // The first run of a freshly built liberttyd can take seconds (the
-        // system checks a new binary): wait as long as it's alive.
-        return waitFor({ $0.version == Wire.version }, seconds: 10, child: pid)
+        if case .running = start(executable: executable, logPath: logPath, responsible: responsible) { return true }
+        return false
     }
 
-    private static func waitFor(_ condition: (Welcome) -> Bool, seconds: Double, child: pid_t) -> Bool {
+    /// How starting liberttyd went: it answers, it's still coming up (the
+    /// pid of the one started), or it couldn't be started.
+    public enum Start { case running, starting(pid_t), failed }
+
+    /// Start (or replace an older build of) liberttyd, waiting up to `seconds`
+    /// for it to answer.
+    public static func start(executable: String, logPath: String?, responsible: Bool = true,
+                             seconds: Double = 10) -> Start {
+        let mine = DaemonServer.buildID(ofExecutable: executable)
+        if let w = hello() {
+            if w.version == Wire.version, w.build == mine { return .running }
+            log("liberttyd[\(w.pid)] is build \(w.build) (protocol \(w.version)); replacing it with \(mine)")
+            guard let pid = spawn(executable, ["--takeover"], logPath: logPath, responsible: responsible) else {
+                return w.version == Wire.version ? .running : .failed
+            }
+            switch waitFor({ $0.build == mine }, seconds: seconds, child: pid) {
+            case true?: return .running
+            // Still coming up (its first run): it takes over when it does.
+            case nil where w.version != Wire.version: return .starting(pid)
+            default: return hello()?.version == Wire.version ? .running : .failed
+            }
+        }
+        guard let pid = spawn(executable, [], logPath: logPath, responsible: responsible) else { return .failed }
+        // The first run of a freshly installed liberttyd can take long: the
+        // system checks a new binary before it runs (seen: over half a minute).
+        switch waitFor({ $0.version == Wire.version }, seconds: seconds, child: pid) {
+        case true?: return .running
+        case false?: return .failed
+        case nil: return .starting(pid)
+        }
+    }
+
+    /// Wait for a liberttyd started earlier (`.starting`) as long as it's
+    /// alive, up to `seconds`: whether it answered.
+    public static func awaitStart(of pid: pid_t, seconds: Double) -> Bool {
+        waitFor({ $0.version == Wire.version }, seconds: seconds, child: pid) == true
+    }
+
+    /// True once it answers as wanted, false if it exited first, nil when the
+    /// time ran out with it still alive (still starting).
+    private static func waitFor(_ condition: (Welcome) -> Bool, seconds: Double, child: pid_t) -> Bool? {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             if let w = hello(timeout: 0.5), condition(w) { return true }
@@ -474,7 +506,8 @@ public enum DaemonClient {
             if kill(child, 0) != 0 { return hello(timeout: 0.5).map(condition) ?? false }
             usleep(20_000)
         }
-        return false
+        if kill(child, 0) == 0 { return nil }
+        return hello(timeout: 0.5).map(condition) ?? false
     }
 
     private static func spawn(_ executable: String, _ arguments: [String], logPath: String?, responsible: Bool) -> pid_t? {

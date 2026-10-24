@@ -3,7 +3,9 @@
 # serves it through a file:// feed, and has a copy of the current app
 #   1. report it (+update --check),
 #   2. refuse a tampered zip (correct SHA-256, wrong signature),
-#   3. install the genuine one and come up as the new version.
+#   3. install the genuine one and come up as the new version,
+#   4. do the same from Check for Updates… and its Install and Restart
+#      (a UI probe answers the dialog).
 # Its bundles are its own: build/Libertty.app (perhaps the Libertty you're
 # using) is left alone.
 set -euo pipefail
@@ -43,5 +45,11 @@ $APP +update > /dev/null && ok "genuine zip installed" || bad "install"
 [[ $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' $T/Libertty.app/Contents/Info.plist) == 99.0.0 ]] \
   && ok "app is now 99.0.0" || bad "version after install"
 codesign -v $T/Libertty.app && ok "code signature intact" || bad "code signature"
+
+# The dialog's way, in another copy of the current app.
+LIBERTTY_APP=$T/gui/Libertty.app scripts/bundle.sh release > /dev/null 2>&1
+out=$($T/gui/Libertty.app/Contents/MacOS/Libertty --ui-probe $'update:install\nexpect-app-version:99.0.0' $T/probe 2>&1)
+[[ $out == *"ok    ui-probe app is 99.0.0"* ]] && ok "Check for Updates, Install and Restart installs it" \
+  || bad "the dialog's install: $(print -r -- $out | grep -v '^(no LIBERTTY')"
 (( fails == 0 )) && echo "all passed"
 exit $(( fails > 0 ))

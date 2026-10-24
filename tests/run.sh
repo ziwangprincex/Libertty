@@ -23,6 +23,15 @@ export LIBERTTY_DAEMON_SOCKET=$PRIVATE/liberttyd.sock LIBERTTY_DAEMON_LOG=$PRIVA
 export LIBERTTY_DATA_DIR=$PRIVATE
 failures=0
 
+# The first run of a freshly built binary waits for the system to check it
+# (seen: over half a minute). Once, here, so no test pays for it.
+mkdir -p $PRIVATE/warm
+LIBERTTY_DAEMON_SOCKET=$PRIVATE/warm/d.sock LIBERTTY_DAEMON_LOG=$PRIVATE/warm/d.log $BIN/liberttyd > /dev/null 2>&1 &
+warm=$!
+for i in {1..600}; do [[ -S $PRIVATE/warm/d.sock ]] && break; sleep 0.1; done
+kill $warm 2> /dev/null
+wait $warm 2> /dev/null
+
 # Nothing may hang the suite: every command gets two minutes.
 limit() { perl -e 'alarm shift; exec @ARGV or die "$ARGV[0]: $!\n"' 120 "$@"; }
 
@@ -230,8 +239,14 @@ printf 'background = #112233\n' > $PRIVATE/reload-config/libertty/themes/probe-t
 expect config-reload 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/reload-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/reload-config/libertty|g" $ROOT/tests/fixtures/config-reload.txt)" $OUT
 # The sidebar sliding in and out: one grid change per slide, the text size kept.
-expect sidebar-slide 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
-  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-slide.txt)" $OUT
+# (AppKit doesn't run a slide while every display sleeps: then there's nothing to check.)
+if system_profiler SPDisplaysDataType 2> /dev/null | grep -q 'Display Asleep: No' \
+   || ! system_profiler SPDisplaysDataType 2> /dev/null | grep -q 'Display Asleep'; then
+  expect sidebar-slide 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+    $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-slide.txt)" $OUT
+else
+  echo "skip  sidebar-slide: the displays are asleep (slides don't run)"
+fi
 # The sidebar's activity filter.
 expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-activity.txt)" $OUT

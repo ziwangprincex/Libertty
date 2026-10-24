@@ -267,7 +267,13 @@ final class TerminalSession {
                                         environment: environment, workingDirectory: startDirectory,
                                         size: size, scrollback: ConfigStore.shared.config.scrollbackLimit)
             do {
-                let remote = try RemotePTY.create(request, queue: io)
+                let remote: RemotePTY
+                do {
+                    remote = try RemotePTY.create(request, queue: io)
+                } catch DaemonClientError.unavailable where Persistence.restart() {
+                    // It had gone (it exits when idle; it may have crashed): once more.
+                    remote = try RemotePTY.create(request, queue: io)
+                }
                 persistentID = id
                 connect(remote)
             } catch {

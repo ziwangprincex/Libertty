@@ -43,6 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // Plugins that are on start with the app (their commands, their events).
         PluginHost.shared.start()
         configToken = ConfigStore.shared.observe { [weak self] _ in self?.configDidChange() }
+        // liberttyd came up late, or went: Quit and End Sessions comes or goes.
+        NotificationCenter.default.addObserver(forName: Persistence.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let keybinds = self.menuKeybinds else { return }
+                NSApp.mainMenu = self.makeMainMenu(keybinds)
+            }
+        }
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(remoteRequest(_:)), name: RemoteControl.notification, object: nil,
             suspensionBehavior: .deliverImmediately)
@@ -193,7 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     /// Libertty ▸ Quit and End Sessions: what quitting does without persistence.
     @objc func quitEndingSessions(_ sender: Any?) {
-        guard confirmUnsavedEverywhere(quitting: true), confirmEndingPrograms(title: "Quit and end every program?") else { return }
+        guard confirmUnsavedEverywhere(quitting: true), confirmEndingPrograms(title: "Quit and end every program?", all: true) else { return }
         for c in controllers {
             c.skipCloseConfirmation = true
             c.window?.close()
@@ -215,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             case .alertFirstButtonReturn:
                 TerminalWindowController.saveAll(unsaved) { [weak self] ok in
                     // Saved: the programs' question still comes, as it would have.
-                    let programsOK = ok && (self?.endingSessions == true || Persistence.enabled
+                    let programsOK = ok && (self?.endingSessions == true
                         || self?.confirmEndingPrograms(title: "Quit Libertty?") == true)
                     sender.reply(toApplicationShouldTerminate: programsOK)
                 }
@@ -224,7 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             default: return .terminateCancel
             }
         }
-        if oneShot || endingSessions || Persistence.enabled { return .terminateNow }
+        if oneShot || endingSessions { return .terminateNow }
         return confirmEndingPrograms(title: "Quit Libertty?") ? .terminateNow : .terminateCancel
     }
 
@@ -257,8 +264,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
     }
 
-    private func confirmEndingPrograms(title: String) -> Bool {
-        guard ConfigStore.shared.config.confirmClose, controllers.contains(where: \.hasRunningPrograms) else { return true }
+    /// With persistence, only programs in panes liberttyd doesn't hold end
+    /// (Quit and End Sessions ends them all, and asks about all).
+    private func confirmEndingPrograms(title: String, all: Bool = false) -> Bool {
+        let ending: (TerminalWindowController) -> Bool = Persistence.enabled && !all ? \.hasRunningLocalPrograms : \.hasRunningPrograms
+        guard ConfigStore.shared.config.confirmClose, controllers.contains(where: ending) else { return true }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = "Programs are still running and will be ended."
