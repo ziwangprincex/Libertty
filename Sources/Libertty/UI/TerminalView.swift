@@ -745,12 +745,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         setNeedsRender(force: true)
     }
 
-    /// A column of the window (the sidebar, the inspector) slides in or out:
-    /// the grid stays as it is meanwhile — the edge uncovers background or
-    /// clips the last columns — and takes the new width once, at the end.
-    /// Reflowing at every frame of the slide redrew everything each frame
-    /// and had the shell redraw its prompt mid-way: the content jumped.
-    /// How many slides hold it (they may overlap: a second toggle mid-way).
+    /// A column of the window (the sidebar, the inspector) comes or goes: the
+    /// grid stays as it is meanwhile — the edge uncovers background or clips
+    /// the last columns — and fits the view again when the last hold lets go.
+    /// Reflowing at every frame of a slide redrew everything each frame and
+    /// had the shell redraw its prompt mid-way: the content jumped.
+    /// How many hold it (slides may overlap: a second toggle mid-way).
     private var gridHolds = 0
     private var holdsGrid: Bool { gridHolds > 0 }
 

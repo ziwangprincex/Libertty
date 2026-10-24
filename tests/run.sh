@@ -238,15 +238,10 @@ printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/reload-config/libertty
 printf 'background = #112233\n' > $PRIVATE/reload-config/libertty/themes/probe-theme
 expect config-reload 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/reload-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/reload-config/libertty|g" $ROOT/tests/fixtures/config-reload.txt)" $OUT
-# The sidebar sliding in and out: one grid change per slide, the text size kept.
-# (AppKit doesn't run a slide while every display sleeps: then there's nothing to check.)
-if system_profiler SPDisplaysDataType 2> /dev/null | grep -q 'Display Asleep: No' \
-   || ! system_profiler SPDisplaysDataType 2> /dev/null | grep -q 'Display Asleep'; then
-  expect sidebar-slide 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
-    $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-slide.txt)" $OUT
-else
-  echo "skip  sidebar-slide: the displays are asleep (slides don't run)"
-fi
+expect column-fit 'column-fit: all passed' $LIBERTTY --column-fit-probe
+# The sidebar and inspector come and go around the terminal: it stays put, its grid unchanged.
+expect sidebar-toggle 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-toggle.txt)" $OUT
 # The sidebar's activity filter.
 expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-activity.txt)" $OUT

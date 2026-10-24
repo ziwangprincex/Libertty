@@ -89,6 +89,15 @@ final class TerminalTab {
     var content: NSView { container ?? document! }
 }
 
+/// A terminal window. A `--ui-probe`'s stays off every screen: AppKit
+/// would move a titled window back onto one (onto the built-in display's
+/// corner, say), there for the user to see.
+final class TerminalWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        Probe.running ? frameRect : super.constrainFrameRect(frameRect, to: screen)
+    }
+}
+
 /// One terminal window, laid out like Tern and Otty: tabs and files in a
 /// sidebar, the selected tab's panes in the middle, an inspector on the
 /// right, and the common actions in the toolbar.
@@ -235,11 +244,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         sidebarItem.isCollapsed = !showSidebar || (config.tabBar == .top && !config.sidebarFiles)
         let contentItem = NSSplitViewItem(viewController: areaController)
         contentItem.minimumThickness = 240
+        // The terminals take what the window gains or loses (its edge dragged).
+        contentItem.holdingPriority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.defaultLow.rawValue - 1)
         inspectorItem = NSSplitViewItem(inspectorWithViewController: inspector)
         inspectorItem.minimumThickness = 220
         inspectorItem.maximumThickness = 420
         inspectorItem.canCollapse = true
         inspectorItem.isCollapsed = !showInspector
+
 
         // No line between the columns: the window is one surface. (Its own
         // split view, given before the controller's view loads, and the
@@ -259,9 +271,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         let window: NSWindow = quick
             ? QuickPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: grid.height),
                          styleMask: [.borderless, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
-            : NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: grid.height),
-                       styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                       backing: .buffered, defer: false)
+            : TerminalWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: grid.height),
+                             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                             backing: .buffered, defer: false)
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         // Tabs live in the sidebar, not in macOS's tab bar.
@@ -310,9 +322,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         }
         // Its panes were made with this config and theme already.
         appliedTheme = config.resolvedTheme
-        splitController.slide = { [weak self] change in
-            guard let self else { return change() }
-            self.slideColumns(change)
+        splitController.toggle = { [weak self] sidebar in
+            if sidebar { self?.toggleSidebar() } else { self?.toggleInspector() }
         }
         configToken = ConfigStore.shared.observe { [weak self] config in self?.configDidChange(config) }
         updateDimming()
@@ -1596,18 +1607,66 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     /// The side columns slide in and out — unless the user asked for less
     /// motion: then they just appear and go.
-    func toggleSidebar() {
-        if Motion.reduced { sidebarItem.isCollapsed.toggle() } else { splitController.toggleSidebar(nil) }
-    }
+    func toggleSidebar() { setCollapsed(sidebarItem, !sidebarItem.isCollapsed) }
 
-    /// Fold a column away or bring it back, sliding (unless the user asked
-    /// for less motion).
+    /// Fold a column (the sidebar, the inspector) away or bring it back. The
+    /// window gives it its width, or takes it back, on its side, at once:
+    /// the terminals keep their size and their place on the screen, and
+    /// nothing in them moves or reflows (their programs never hear of it).
+    /// Where the window can't grow — full screen, filling its screen (zoomed,
+    /// tiled), the Quick Terminal at its edge — the column slides in over the
+    /// terminals' width instead (unless the user asked for less motion).
     private func setCollapsed(_ item: NSSplitViewItem, _ collapsed: Bool) {
-        if Motion.reduced { item.isCollapsed = collapsed } else { slideColumns { item.animator().isCollapsed = collapsed } }
+        guard item.isCollapsed != collapsed else { return }
+        guard let window, !isQuick, !window.styleMask.contains(.fullScreen), !window.isZoomed,
+              !fillsScreen(window) else {
+            return slideColumns { (Motion.reduced ? item : item.animator()).isCollapsed = collapsed }
+        }
+        let area = areaController.view
+        let before = area.window.map { $0.convertToScreen(area.convert(area.bounds, to: nil)) } ?? .zero
+        // Its grids stay as they are while the window catches up.
+        let panes = allPanes.filter { $0.window != nil }
+        panes.forEach { $0.holdGrid() }
+        defer { panes.forEach { $0.releaseGrid() } }
+        // One picture on the screen: the column and the window's new edge together.
+        window.disableScreenUpdatesUntilFlush()
+        item.isCollapsed = collapsed
+        splitController.view.layoutSubtreeIfNeeded()
+        // The window moves its edges by what the terminals' area moved and
+        // shrank (whatever AppKit did to fit the column), so the area is
+        // where it was.
+        let after = window.convertToScreen(area.convert(area.bounds, to: nil))
+        guard after != before else { return }
+        var frame = window.frame
+        frame.origin.x += before.minX - after.minX
+        frame.size.width += before.width - after.width
+        window.setFrame(Self.onScreen(frame, from: window.frame, visible: window.screen?.visibleFrame), display: true)
+        splitController.view.layoutSubtreeIfNeeded()
     }
 
-    /// A column slides in or out (`change`, animated): the terminals keep
-    /// their grid through the slide and take the new width once it's over.
+    /// As wide as its screen allows: growing would push it off.
+    private func fillsScreen(_ window: NSWindow) -> Bool {
+        guard let visible = window.screen?.visibleFrame else { return false }
+        return Self.fills(window.frame, visible: visible)
+    }
+
+    static func fills(_ frame: NSRect, visible: NSRect) -> Bool { frame.width >= visible.width - 1 }
+
+    /// `frame` kept on the screen's `visible` part when the window (`old`)
+    /// was within it, by moving it; past the screen's width, the terminals
+    /// give up the rest.
+    static func onScreen(_ frame: NSRect, from old: NSRect, visible: NSRect?) -> NSRect {
+        guard let visible, old.minX >= visible.minX, old.maxX <= visible.maxX else { return frame }
+        var f = frame
+        f.size.width = min(f.width, visible.width)
+        if f.minX < visible.minX { f.origin.x = visible.minX }
+        if f.maxX > visible.maxX { f.origin.x = visible.maxX - f.width }
+        return f
+    }
+
+    /// A column slides in or out over the terminals' width (`change`,
+    /// animated): they keep their grid through the slide and take the new
+    /// width once, when it's over.
     private func slideColumns(_ change: () -> Void) {
         let panes = allPanes.filter { $0.window != nil }
         panes.forEach { $0.holdGrid() }
@@ -1622,9 +1681,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: release)
     }
 
-    func toggleInspector() {
-        if Motion.reduced { inspectorItem.isCollapsed.toggle() } else { splitController.toggleInspector(nil) }
-    }
+    func toggleInspector() { setCollapsed(inspectorItem, !inspectorItem.isCollapsed) }
 
     var isSidebarShown: Bool { !sidebarItem.isCollapsed }
 

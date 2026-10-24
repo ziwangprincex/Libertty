@@ -31,6 +31,7 @@ import LiberttyCore
 ///   expect-tab-count:N    the window (its workspace in front) has N tabs
 ///   expect-shown:N[:TEXT] the sidebar's filters leave N rows showing (each containing TEXT)
 ///   action-now:A          an action, not waiting for what it starts (shots of an animation)
+///   expect-unmoved:here   the focused pane is where it was on the screen at the last one, same size
 ///   expect-regrids:N      the focused pane changed its grid N times since the last expect-regrids
 ///   metrics:LABEL         print the focused pane's text size, cells, scale, grid, grid changes
 ///   motion:on|off         animations as the app runs them (a probe starts with them off)
@@ -78,6 +79,24 @@ import LiberttyCore
 ///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
 ///                        mark, the Dock badge, notifications so far, sounds so far)
 enum UIProbe {
+    /// Show `window` far off every screen. Being shown, a titled window is
+    /// moved onto a screen if it's off them all (to the built-in display's
+    /// corner, say: there for the user to see), so it moves off once shown,
+    /// unseen meanwhile.
+    private static func hideOffScreen(_ window: NSWindow, at origin: NSPoint) {
+        window.alphaValue = 0
+        window.orderFrontRegardless()
+        window.setFrameOrigin(origin)
+        window.alphaValue = 1
+        if NSScreen.screens.contains(where: { $0.frame.intersects(window.frame) }) {
+            print("ui-probe: the window is on a screen at \(window.frame.origin); stopping rather than showing it")
+            exit(1)
+        }
+    }
+
+    /// The focused pane's frame on the screen at the last `expect-unmoved`.
+    private static var paneFrameMark: NSRect?
+
     /// Each pane's grid changes at its last `expect-regrids`.
     private static var regridMarks: [ObjectIdentifier: Int] = [:]
 
@@ -109,8 +128,7 @@ enum UIProbe {
         }
         let window = controller.window!
         PluginHost.shared.frontController = { [weak controller] in controller }
-        window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
-        window.orderFrontRegardless()
+        hideOffScreen(window, at: NSPoint(x: -20000, y: -20000))
         window.makeKey()
         // Wait for the shell's first prompt (whatever it looks like):
         // keystrokes sent before it is interactive can be lost.
@@ -130,8 +148,7 @@ enum UIProbe {
             let other = TerminalWindowController(restoring: [tab], selected: 0, frame: nil, showSidebar: true,
                                                  showInspector: false, config: Config())
             other.markRestored(unstarted: [])
-            other.window?.setFrameOrigin(NSPoint(x: -20000, y: -21000))
-            other.window?.orderFrontRegardless()
+            if let w = other.window { hideOffScreen(w, at: NSPoint(x: -20000, y: -21000)) }
             try? other.start()
             others.append(other)
             return other
@@ -561,6 +578,20 @@ enum UIProbe {
             case .motion(let on):
                 // Animations as the user's app runs them (a probe has them off).
                 Motion.forceReduced = !on
+            case .expectUnmoved:
+                // The focused pane where it was on the screen at the last of
+                // these, to the point (the first one notes it).
+                let pane = controller.focusedTerminal
+                let frame = window.convertToScreen(pane.convert(pane.bounds, to: nil))
+                let size = "\(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)),\(Int(frame.minY))"
+                if let last = paneFrameMark, last != frame {
+                    let was = "\(Int(last.width))x\(Int(last.height)) at \(Int(last.minX)),\(Int(last.minY))"
+                    print("FAIL  ui-probe pane moved: \(size), was \(was) (window \(Int(window.frame.width)) wide)")
+                    failures += 1
+                } else {
+                    print("ok    ui-probe pane \(size) (window \(Int(window.frame.width)) wide)")
+                }
+                paneFrameMark = frame
             case .reload:
                 ConfigStore.shared.reloadByRequest()
                 pump(0.3)
@@ -737,7 +768,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), undo
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -818,6 +849,7 @@ enum UIProbe {
             case "action-now": steps.append(.actionNow(arg))
             case "expect-regrids": steps.append(.expectRegrids(Int(arg) ?? -1))
             case "reload": steps.append(.reload)
+            case "expect-unmoved": steps.append(.expectUnmoved)
             case "update":
                 guard arg == "install" || arg == "later" else { print("ui-probe: update:install or update:later"); exit(2) }
                 steps.append(.update(install: arg == "install"))
@@ -1054,10 +1086,15 @@ enum UIProbe {
         }
     }
 
+    private static func terminals(in view: NSView) -> [TerminalView] {
+        (view as? TerminalView).map { [$0] } ?? view.subviews.flatMap(terminals(in:))
+    }
+
     /// The window's pixels, as winshot takes them (one window, no others).
-    /// While the display sleeps the window server has no image of it; then
-    /// the window's views draw themselves into a bitmap instead (the Metal
-    /// terminal shows as its last frame, or blank). Says which it was.
+    /// Off every screen (a probe's) or while the display sleeps, the window
+    /// server has no image of it; then the window's views draw themselves
+    /// into a bitmap instead, each terminal's own frame over it (above its
+    /// overlays: a find bar, a dimmed pane show as if absent). Says which it was.
     private static func capture(_ window: NSWindow, to path: String) {
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
                                                  withIntermediateDirectories: true)
@@ -1077,8 +1114,22 @@ enum UIProbe {
             return
         }
         view.cacheDisplay(in: view.bounds, to: rep)
+        // Terminals draw with Metal, which drawing the views leaves out: each
+        // pane's own frame over its place.
+        if let context = NSGraphicsContext(bitmapImageRep: rep) {
+            // (The context is in points, bottom-left; the images in pixels.)
+            let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+            for pane in terminals(in: view) where !pane.isHiddenOrHasHiddenAncestor {
+                guard let image = pane.thumbnail() else { continue }
+                let rect = pane.convert(pane.bounds, to: view)
+                let flipped = view.isFlipped ? NSRect(x: rect.minX, y: view.bounds.height - rect.maxY,
+                                                       width: rect.width, height: rect.height) : rect
+                context.cgContext.draw(image, in: CGRect(x: flipped.minX, y: flipped.maxY - CGFloat(image.height) / scale,
+                                                         width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
+            }
+        }
         if let data = rep.representation(using: .png, properties: [:]), (try? data.write(to: URL(fileURLWithPath: path))) != nil {
-            print("shot \(path) (drawn: the window server had no image — the display may be asleep)")
+            print("shot \(path) (drawn: off every screen, or the display asleep)")
         } else {
             print("ui-probe: couldn't capture \(path)")
         }
