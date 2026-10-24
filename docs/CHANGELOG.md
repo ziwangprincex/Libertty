@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
+> The sidebar slides without the terminal jerking; config changes reach the panes again (files saved in place, theme files, light and dark); Reload Configuration also resets the text size; settings kept under Lumen's name move to Libertty's; and Check for Updates lists what's new.
+
+- Settings and window layouts kept under Lumen's name (`~/.config/lumen`, Application Support/Lumen) move to Libertty's the first time Libertty starts; they used to be read where they were for good.
 - Fixed: the sidebar and inspector sliding in or out made the terminal jerk: its grid changed at nearly every frame of the slide, redrawing everything each time and having the shell redraw its prompt mid-way. The grid now stays as it is through the slide and takes the new width once, at its end.
 - `libertty +list-panes`: every pane of the running Libertty with its session, text size and font, cell size, scale and grid — what to look at when text seems to change size.
 - Fixed: a config saved in place (VS Code, nano, `>>`) wasn't reloaded until the file was replaced; changes to a theme's file never reached the panes, not even with Reload Configuration; and with `theme = light:A,dark:B` the panes didn't follow the system's light/dark switch.
