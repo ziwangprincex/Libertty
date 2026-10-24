@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.2
+
+> Install and Restart in the update dialog installs again (from 0.3.1 or earlier, update this once with `brew upgrade --cask libertty` or `libertty +update`); and a slow first start of the session daemon after an install no longer leaves that run's shells outside it.
 
 - Fixed: when liberttyd's first run took long (macOS checks a newly installed binary; seen at over half a minute, after `brew install`), Libertty gave up after 10 s and ran every shell of that run itself, so none outlived quitting; liberttyd, coming up later with no session, then exited. Libertty now keeps waiting for it in the background and starts it again for a new pane that finds it gone; panes from then on persist. Quitting asks first when panes liberttyd doesn't hold still run programs (before, with persistence on, it ended them without asking).
 - Fixed: Check for Updates found the new version, but Install and Restart did nothing — the dialog was shown while the check still counted as under way, and an install won't start while anything else is. The daily check's dialog (`auto-update = check`) had the same fault; `libertty +update` and `auto-update = download` weren't affected. tests/update-test.sh now installs through the dialog too.
