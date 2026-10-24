@@ -43,6 +43,7 @@ enum CLI {
         case "+render-diff": status = renderDiff(rest)
         case "+render-markdown": status = renderMarkdown(rest)
         case "+list-sessions": status = listSessions(rest)
+        case "+list-panes": status = listPanes()
         case "+new-session": status = newSession(rest)
         case "+capture": status = capture(rest)
         case "+send": status = send(rest)
@@ -123,6 +124,7 @@ enum CLI {
 
         Sessions (kept by liberttyd; they outlive the app — see session-persistence):
           libertty +list-sessions [--json]  every session: id, process, size, windows showing it, directory, name
+          libertty +list-panes           every pane of the running Libertty: session, text size and font, cell, scale, grid
           libertty +new-session [--cwd DIR] [-e COMMAND...]  start one without a window (Libertty shows it at its next launch)
           libertty +capture ID [--scrollback] [--ansi | --html]
                                          print a session's screen (and history): text, with its colors
@@ -723,6 +725,17 @@ enum CLI {
         let text = args.dropFirst().joined(separator: " ")
             .replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\t", with: "\t")
         return result(DaemonClient.request(.send, json: ["id": args[0], "text": text], address: daemon)) ? 0 : 1
+    }
+
+    /// `+list-panes`: the running Libertty's panes as it draws them.
+    private static func listPanes() -> Int32 {
+        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard let answer = RemoteControl.request(["kind": "list-panes"], timeout: 3) else {
+            fail("Libertty didn't answer (an older version doesn't know +list-panes)")
+            return 1
+        }
+        if let text = answer["text"], !text.isEmpty { print(text) }
+        return 0
     }
 
     /// `+send-key ID KEY...`: press keys in a session — `ctrl+c`, `enter`,

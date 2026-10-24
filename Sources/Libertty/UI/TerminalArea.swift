@@ -81,6 +81,23 @@ final class TerminalAreaView: NSView {
     }
 }
 
+/// The window's columns. Sliding the sidebar or inspector in or out (the
+/// toolbar's button, a menu, a key) goes through `slide`, which the window
+/// sets: its terminals keep their grid until the slide ends.
+final class ColumnsController: NSSplitViewController {
+    var slide: ((() -> Void) -> Void)?
+
+    override func toggleSidebar(_ sender: Any?) {
+        guard let slide else { return super.toggleSidebar(sender) }
+        slide { super.toggleSidebar(sender) }
+    }
+
+    override func toggleInspector(_ sender: Any?) {
+        guard let slide else { return super.toggleInspector(sender) }
+        slide { super.toggleInspector(sender) }
+    }
+}
+
 /// The window's columns (sidebar, panes, inspector) with no line between
 /// them: they're one surface, the divider drawn in the frame's color (a
 /// clear one would leave a hole to black).

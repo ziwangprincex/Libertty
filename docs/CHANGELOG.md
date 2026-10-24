@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: the sidebar and inspector sliding in or out made the terminal jerk: its grid changed at nearly every frame of the slide, redrawing everything each time and having the shell redraw its prompt mid-way. The grid now stays as it is through the slide and takes the new width once, at its end.
+- `libertty +list-panes`: every pane of the running Libertty with its session, text size and font, cell size, scale and grid — what to look at when text seems to change size.
 - Fixed: a config saved in place (VS Code, nano, `>>`) wasn't reloaded until the file was replaced; changes to a theme's file never reached the panes, not even with Reload Configuration; and with `theme = light:A,dark:B` the panes didn't follow the system's light/dark switch.
 - Reload Configuration also takes every pane back to `font-size`: ⌘+/⌘- zoom, which new tabs, splits and windows inherit and windows keep when they come back, ends there (⌘0 resets one pane).
 - Check for Updates shows what's new in a box of its own that scrolls — the release's notes as text, with bullets, code, bold and links — and a link to the release's page, instead of the raw notes stretching the dialog. The update feed carries a short summary for older versions' dialogs.

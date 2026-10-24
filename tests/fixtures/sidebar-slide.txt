@@ -1,0 +1,31 @@
+# The sidebar sliding in and out (animated, as in the app): the terminal
+# keeps its grid through the slide and takes the new width once, when the
+# slide ends — not at every frame, which redrew everything and had the shell
+# redraw its prompt mid-way (the content jumped). The text size never changes.
+# (With Reduce Motion on in System Settings nothing slides: it passes anyway.)
+wait:1.0
+# (The grid it starts with counts as one; from here on, the slides.)
+expect-regrids:1
+expect-font:13
+motion:on
+# action: waits 0.6 s — the slide is over, its 1 s fallback isn't: the
+# change came when the slide said it ended.
+action:toggle_sidebar
+expect-regrids:1
+expect-font:13
+action:toggle_sidebar
+expect-regrids:1
+expect-font:13
+# A second toggle 0.1 s into the first, back where it was: no slide lets go
+# of the other's hold, and the grid never changes.
+action-now:toggle_sidebar
+wait:0.1
+action-now:toggle_sidebar
+wait:1.5
+expect-regrids:0
+expect-font:13
+# And back into the terminal from the sidebar.
+key:shift+tab
+wait:0.5
+expect-regrids:0
+expect-font:13

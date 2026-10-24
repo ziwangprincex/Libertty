@@ -229,6 +229,9 @@ printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/reload-config/libertty
 printf 'background = #112233\n' > $PRIVATE/reload-config/libertty/themes/probe-theme
 expect config-reload 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/reload-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/reload-config/libertty|g" $ROOT/tests/fixtures/config-reload.txt)" $OUT
+# The sidebar sliding in and out: one grid change per slide, the text size kept.
+expect sidebar-slide 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-slide.txt)" $OUT
 # The sidebar's activity filter.
 expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-activity.txt)" $OUT

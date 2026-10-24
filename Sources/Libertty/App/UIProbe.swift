@@ -30,6 +30,10 @@ import LiberttyCore
 ///                         (`=TEXT`: are exactly TEXT)
 ///   expect-tab-count:N    the window (its workspace in front) has N tabs
 ///   expect-shown:N[:TEXT] the sidebar's filters leave N rows showing (each containing TEXT)
+///   action-now:A          an action, not waiting for what it starts (shots of an animation)
+///   expect-regrids:N      the focused pane changed its grid N times since the last expect-regrids
+///   metrics:LABEL         print the focused pane's text size, cells, scale, grid, grid changes
+///   motion:on|off         animations as the app runs them (a probe starts with them off)
 ///   reload:config         Libertty ▸ Reload Configuration
 ///   appearance:light|dark the app's appearance, as the system's switch sets it
 ///   expect-font:SIZE      the focused pane's text size, in points
@@ -72,6 +76,9 @@ import LiberttyCore
 ///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
 ///                        mark, the Dock badge, notifications so far, sounds so far)
 enum UIProbe {
+    /// Each pane's grid changes at its last `expect-regrids`.
+    private static var regridMarks: [ObjectIdentifier: Int] = [:]
+
     static func run(script: String, output: String) -> Never {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)  // no Dock icon, nothing in front
@@ -517,6 +524,16 @@ enum UIProbe {
                     print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
                     failures += 1
                 }
+            case .metrics(let label):
+                // The focused pane as drawn: its text size, cells, layer and drawable;
+                // what has the keyboard; the window's title and content area.
+                let responder = window.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
+                print("metrics \(label): \(controller.focusedTerminal.metricsSummary) responder \(responder) "
+                      + "title \(window.titleVisibility == .visible ? "shown" : "hidden") subtitle '\(window.subtitle)' "
+                      + "layout \(Int(window.contentLayoutRect.width))x\(Int(window.contentLayoutRect.height))")
+            case .motion(let on):
+                // Animations as the user's app runs them (a probe has them off).
+                Motion.forceReduced = !on
             case .reload:
                 ConfigStore.shared.reloadByRequest()
                 pump(0.3)
@@ -541,6 +558,25 @@ enum UIProbe {
                     print("FAIL  ui-probe font: \(shown), not \(size)")
                     failures += 1
                 }
+            case .expectRegrids(let n):
+                // Grid changes of the focused pane since the last of these (for it).
+                let pane = controller.focusedTerminal
+                let since = pane.regridCount - (regridMarks[ObjectIdentifier(pane)] ?? 0)
+                regridMarks[ObjectIdentifier(pane)] = pane.regridCount
+                if since == n {
+                    print("ok    ui-probe \(n) grid changes")
+                } else {
+                    print("FAIL  ui-probe grid changes: \(since), not \(n)")
+                    failures += 1
+                }
+            case .actionNow(let text):
+                // Without waiting for it to settle: shots of a slide in progress.
+                guard let action = Action(text) else {
+                    print("FAIL  ui-probe action-now: unknown \(text)")
+                    failures += 1
+                    break
+                }
+                ActionDispatcher.perform(action, in: controller.focusedTerminal, controller: controller)
             case .action(let text):
                 let actions = text.split(separator: ",").map { Action(String($0)) }
                 guard !actions.isEmpty, actions.allSatisfy({ $0 != nil }) else {
@@ -674,7 +710,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), undo
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), undo
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -752,7 +788,13 @@ enum UIProbe {
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 steps.append(.expectShown(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
             case "action": steps.append(.action(arg))
+            case "action-now": steps.append(.actionNow(arg))
+            case "expect-regrids": steps.append(.expectRegrids(Int(arg) ?? -1))
             case "reload": steps.append(.reload)
+            case "metrics": steps.append(.metrics(arg))
+            case "motion":
+                guard arg == "on" || arg == "off" else { print("ui-probe: motion:on or motion:off"); exit(2) }
+                steps.append(.motion(arg == "on"))
             case "appearance":
                 guard arg == "light" || arg == "dark" else { print("ui-probe: appearance:light or appearance:dark"); exit(2) }
                 steps.append(.appearance(arg == "dark"))

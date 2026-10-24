@@ -133,7 +133,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// The sidebar was folded because the tabs moved to the top and it had no files to show.
     private var foldedForTabBar = false
 
-    private let splitController = NSSplitViewController()
+    private let splitController = ColumnsController()
     private let sidebar = SidebarViewController()
     private let areaController = TerminalAreaViewController()
     private let inspector = InspectorViewController()
@@ -310,6 +310,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         }
         // Its panes were made with this config and theme already.
         appliedTheme = config.resolvedTheme
+        splitController.slide = { [weak self] change in
+            guard let self else { return change() }
+            self.slideColumns(change)
+        }
         configToken = ConfigStore.shared.observe { [weak self] config in self?.configDidChange(config) }
         updateDimming()
     }
@@ -475,10 +479,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         if themeChanged { updateDimming() }
         // The sidebar and inspector follow their settings when those change.
         if config.windowSidebar != old.windowSidebar {
-            (Motion.reduced ? sidebarItem : sidebarItem.animator()).isCollapsed = !config.windowSidebar
+            setCollapsed(sidebarItem, !config.windowSidebar)
         }
         if config.windowInspector != old.windowInspector {
-            (Motion.reduced ? inspectorItem : inspectorItem.animator()).isCollapsed = !config.windowInspector
+            setCollapsed(inspectorItem, !config.windowInspector)
         }
         if config.sidebarShowHiddenFiles != old.sidebarShowHiddenFiles || config.sidebarFiles != old.sidebarFiles {
             updateSidebar(force: true)
@@ -492,10 +496,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         // left, and comes back with the tabs (unless the user folded it).
         if config.tabBar == .top, !config.sidebarFiles, config.tabBar != old.tabBar || old.sidebarFiles, isSidebarShown {
             foldedForTabBar = true
-            (Motion.reduced ? sidebarItem : sidebarItem.animator()).isCollapsed = true
+            setCollapsed(sidebarItem, true)
         } else if config.tabBar == .sidebar, foldedForTabBar {
             foldedForTabBar = false
-            (Motion.reduced ? sidebarItem : sidebarItem.animator()).isCollapsed = false
+            setCollapsed(sidebarItem, false)
         }
     }
 
@@ -1594,6 +1598,28 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// motion: then they just appear and go.
     func toggleSidebar() {
         if Motion.reduced { sidebarItem.isCollapsed.toggle() } else { splitController.toggleSidebar(nil) }
+    }
+
+    /// Fold a column away or bring it back, sliding (unless the user asked
+    /// for less motion).
+    private func setCollapsed(_ item: NSSplitViewItem, _ collapsed: Bool) {
+        if Motion.reduced { item.isCollapsed = collapsed } else { slideColumns { item.animator().isCollapsed = collapsed } }
+    }
+
+    /// A column slides in or out (`change`, animated): the terminals keep
+    /// their grid through the slide and take the new width once it's over.
+    private func slideColumns(_ change: () -> Void) {
+        let panes = allPanes.filter { $0.window != nil }
+        panes.forEach { $0.holdGrid() }
+        var released = false
+        let release = {
+            guard !released else { return }
+            released = true
+            panes.forEach { $0.releaseGrid() }
+        }
+        NSAnimationContext.runAnimationGroup({ _ in change() }, completionHandler: release)
+        // Should the slide never say it ended.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: release)
     }
 
     func toggleInspector() {

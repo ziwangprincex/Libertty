@@ -13,9 +13,32 @@ enum PaneRequests {
         case "move-pane":
             move(info, in: controllers)
             return true
+        case "list-panes":
+            list(info, in: controllers)
+            return true
         default:
             return false
         }
+    }
+
+    /// Every terminal pane of every window, one line each: where it is, its
+    /// session, and how it's drawn — text size and font, cell, scale, grid.
+    private static func list(_ info: [String: String], in controllers: [TerminalWindowController]) {
+        var lines: [String] = []
+        for (w, controller) in controllers.enumerated() {
+            let groups = controller.workspaceTabs
+            for (s, group) in groups.enumerated() {
+                let workspace = groups.count > 1 ? "workspace \(s + 1) " : ""
+                for (t, tab) in group.enumerated() {
+                    for (p, pane) in tab.everyPane.enumerated() {
+                        let id = pane.session.persistentID ?? "-"
+                        let focused = tab === controller.selectedTab && pane === controller.focusedTerminal ? " *" : ""
+                        lines.append("window \(w + 1) \(workspace)tab \(t + 1) pane \(p + 1)  \(id)  \(pane.metricsSummary)\(focused)")
+                    }
+                }
+            }
+        }
+        RemoteControl.answer(info, ["result": "ok", "text": lines.joined(separator: "\n")])
     }
 
     /// `{beside, direction?, share?, cwd?, command?, focus?, keepOpen?}`: a new pane

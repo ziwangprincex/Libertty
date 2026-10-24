@@ -745,6 +745,25 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         setNeedsRender(force: true)
     }
 
+    /// A column of the window (the sidebar, the inspector) slides in or out:
+    /// the grid stays as it is meanwhile — the edge uncovers background or
+    /// clips the last columns — and takes the new width once, at the end.
+    /// Reflowing at every frame of the slide redrew everything each frame
+    /// and had the shell redraw its prompt mid-way: the content jumped.
+    /// How many slides hold it (they may overlap: a second toggle mid-way).
+    private var gridHolds = 0
+    private var holdsGrid: Bool { gridHolds > 0 }
+
+    func holdGrid() { gridHolds += 1 }
+
+    /// The last hold let go: the grid fits the view again.
+    func releaseGrid() {
+        gridHolds = max(0, gridHolds - 1)
+        if gridHolds == 0 { updateGrid() }
+    }
+    /// How many grid changes the pane has made (`--ui-probe` counts a slide's).
+    private(set) var regridCount = 0
+
     /// Fit the grid and drawable to the view. Returns whether either changed,
     /// i.e. whether what is on screen is now out of date.
     @discardableResult
@@ -780,10 +799,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             changed = true
         }
 
-        let grid = GridSize(cols: UInt16(clamping: cols), rows: UInt16(clamping: rows),
-                            widthPx: UInt16(clamping: cols * fonts.cellWidth),
-                            heightPx: UInt16(clamping: rows * fonts.cellHeight))
+        let grid = holdsGrid ? session.size : GridSize(cols: UInt16(clamping: cols), rows: UInt16(clamping: rows),
+                                                       widthPx: UInt16(clamping: cols * fonts.cellWidth),
+                                                       heightPx: UInt16(clamping: rows * fonts.cellHeight))
         let regrid = grid != session.size
+        if regrid { regridCount += 1 }
         if regrid { changed = true }
         session.resize(to: grid, cellWidthPx: UInt32(fonts.cellWidth), cellHeightPx: UInt32(fonts.cellHeight))
         if regrid { onGridResize?(self) }
@@ -931,6 +951,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     override func doCommand(by selector: Selector) {}
 
     // MARK: Actions
+
+    /// Its text size, cell, layer scale and gravity, drawable and bounds (`--ui-probe`).
+    var metricsSummary: String {
+        let f = renderer.fonts
+        let regrids = Probe.running ? " regrids \(regridCount)" : ""
+        return "font \(fontSize)pt \(f.familyName) cell \(f.cellWidth)x\(f.cellHeight)px scale \(f.scale) "
+            + "layer \(metalLayer.contentsScale) gravity \(metalLayer.contentsGravity.rawValue) "
+            + "drawable \(Int(metalLayer.drawableSize.width))x\(Int(metalLayer.drawableSize.height)) "
+            + "bounds \(Int(bounds.width))x\(Int(bounds.height)) grid \(session.size.cols)x\(session.size.rows)" + regrids
+    }
 
     /// The background its theme gives it, "#rrggbb" (`--ui-probe`).
     var backgroundHex: String {
