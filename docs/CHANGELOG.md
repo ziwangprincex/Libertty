@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.4
+
+> Bug fixes throughout: background tabs no longer take the keyboard from the find bar, Redo after Undo Close no longer crashes, Korean and Japanese input keeps every character, Chinese folder names and links work, the cursor covers a whole Chinese character, Ctrl keys work on AZERTY, QWERTZ and Dvorak, and focus reporting and colored, curly underlines are supported.
 
 - Fixed: a tab changing in the background (its title, its program's state, output) took the keyboard out of the find bar or the tab filter and gave it to the terminal, closed the tab overview, and scrolled the sidebar's tabs back to the selected one; rows also lost their hover and their spinners restarted. The sidebar now updates only the rows that changed and never selects a tab again by itself.
 - Fixed: Redo after Undo Close (⇧⌘Z) crashed Libertty.
