@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.3
+
+> Showing or hiding the sidebar or the inspector leaves the terminal exactly as it was: the window grows or shrinks around it, and nothing in it reflows or redraws.
 
 - Showing or hiding the sidebar or the inspector leaves the terminal exactly as it was: the window grows or shrinks by the column's width on its side, at once, so the terminal keeps its size and its place on the screen, nothing in it reflows and the shell doesn't redraw its prompt. Where the window can't grow — full screen, a window filling its screen, the Quick Terminal — the column slides in over the terminal's width as before. UI tests' windows stay off every screen (they could land on a laptop's built-in display).
 
