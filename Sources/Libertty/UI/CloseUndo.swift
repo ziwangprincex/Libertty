@@ -30,8 +30,13 @@ final class CloseUndo {
                 entry.work?.cancel()
                 self.pending.removeAll { $0 === entry }
                 if let reclose = restore() {
-                    // Redo closes it again, which registers a fresh undo.
-                    self.manager.registerUndo(withTarget: entry) { _ in MainActor.assumeIsolated { reclose() } }
+                    // Redo closes it again, which registers a fresh undo. The
+                    // manager doesn't keep its targets, and `pending` let go of
+                    // this one: the handler keeps it (a freed target crashes Redo).
+                    self.manager.registerUndo(withTarget: entry) { [entry] _ in
+                        _ = entry
+                        MainActor.assumeIsolated { reclose() }
+                    }
                     self.manager.setActionName(name)
                 }
             }

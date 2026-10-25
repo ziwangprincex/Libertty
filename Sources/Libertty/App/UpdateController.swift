@@ -15,6 +15,8 @@ final class UpdateController: NSObject {
     /// Downloaded and verified in the background (`auto-update = download`):
     /// waiting for the user to restart into it.
     private var ready: (release: Updater.Release, zip: URL)?
+    /// The version the background check is downloading (`auto-update = download`).
+    private var downloading: String?
     private static let skippedKey = "UpdateSkippedVersion"
     private static let lastCheckKey = "UpdateLastCheck"
 
@@ -31,7 +33,7 @@ final class UpdateController: NSObject {
 
     private func backgroundCheck() {
         let mode = ConfigStore.shared.config.autoUpdate
-        guard mode != .off, !busy, ready == nil else { return }
+        guard mode != .off, !busy, ready == nil, installed == nil else { return }
         let last = UserDefaults.standard.object(forKey: Self.lastCheckKey) as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 23 * 3600 else { return }
         busy = true
@@ -44,6 +46,8 @@ final class UpdateController: NSObject {
                     return
                 }
                 if mode == .download {
+                    downloading = release.version
+                    defer { downloading = nil }
                     let zip = try await Updater.download(release) { _ in }
                     ready = (release, zip)
                     busy = false
@@ -70,7 +74,20 @@ final class UpdateController: NSObject {
 
     /// Libertty ▸ Check for Updates…: always answers, even "you're up to date".
     @objc func checkForUpdates(_ sender: Any?) {
-        guard !busy else { return }
+        // Installed, its restart cancelled: Restart to Update is just that
+        // (what relaunches it waits for Libertty to quit).
+        if installed != nil { return NSApp.terminate(nil) }
+        guard !busy else {
+            // Already under way: say so rather than nothing.
+            if let downloading {
+                return tell("Libertty \(downloading) is downloading.", detail: "Libertty tells you when it's ready to install.")
+            }
+            if let progressWindow, progressWindow.isVisible {
+                Probe.activateApp()
+                return progressWindow.makeKeyAndOrderFront(nil)
+            }
+            return tell("Libertty is checking for updates.", detail: "It tells you if there's a new version.")
+        }
         if let ready { return offer(ready.release, automatic: false) }
         guard Updater.feedURL != nil else { return tell("Updates aren't set up for this build.", detail: "It was built without an update feed (see scripts/release.sh).") }
         busy = true
@@ -124,7 +141,9 @@ final class UpdateController: NSObject {
     }
 
     static let readyChanged = Notification.Name("LiberttyUpdateReady")
-    var isReady: Bool { ready != nil }
+    var isReady: Bool { ready != nil || installed != nil }
+    /// Installed over this copy, the restart into it cancelled.
+    private var installed: String?
 
     // MARK: Installing
 
@@ -155,6 +174,14 @@ final class UpdateController: NSObject {
                 }
                 Updater.relaunch(app.path)
                 NSApp.terminate(nil)
+                // Still here: the quit was cancelled (unsaved text, running
+                // programs). The new version is on disk and opens once Libertty
+                // quits; its download is gone, so Restart to Update only quits.
+                hideProgress()
+                ready = nil
+                installed = release.version
+                NotificationCenter.default.post(name: Self.readyChanged, object: nil)
+                tell("Libertty \(release.version) is installed.", detail: "It opens the next time you quit Libertty.")
             } catch {
                 hideProgress()
                 ready = nil

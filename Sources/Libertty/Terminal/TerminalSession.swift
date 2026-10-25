@@ -19,10 +19,13 @@ protocol TerminalSessionDelegate: AnyObject {
     func sessionProgressChanged(_ session: TerminalSession)
     func sessionLinkChanged(_ session: TerminalSession)
     func sessionLabelChanged(_ session: TerminalSession)
+    func sessionSearchChanged(_ session: TerminalSession)
 }
 
 extension TerminalSessionDelegate {
     func sessionWorkingDirectoryChanged(_ session: TerminalSession) {}
+    /// An open search's count or highlights changed after output (`session.searchResult`).
+    func sessionSearchChanged(_ session: TerminalSession) {}
     /// OSC 9 / OSC 777: the program asks for a desktop notification.
     func sessionDesktopNotification(_ session: TerminalSession, title: String, body: String) {}
     /// A command ended (OSC 133 D after C), with how long it ran.
@@ -328,9 +331,12 @@ final class TerminalSession {
                     self.delegate?.sessionLabelChanged(self)
                 }
             }
+            // (Ours before it reads: its first output may ask for an answer.)
+            pty = backend
             remote.startReading()
         } else if let local = backend as? PTY {
             local.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
+            pty = backend
             local.startReading()
         }
         pty = backend
@@ -452,16 +458,31 @@ final class TerminalSession {
     @discardableResult
     func updateRenderState(_ state: GhosttyRenderState) -> Bool {
         let pending = renderPending.consume()
-        lock.withLock {
+        let searchMoved: Bool = lock.withLock {
             _ = ghostty_render_state_update(state, terminal)
             var screen = GHOSTTY_TERMINAL_SCREEN_PRIMARY
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &screen)
             renderedAlternateScreen = screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE
             // Keep an open search in step with new output and scrolling.
-            if search != nil, pending { refreshSearchLocked() }
+            guard search != nil, pending else { return false }
+            let before = searchResult
+            refreshSearchLocked()
+            return searchIncomplete || searchResult != before
+        }
+        if searchMoved {
+            // Its count is for the bar to show; one not caught up with the
+            // output yet (a flood) goes on at the next frame, not only at the next output.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if self.searchIncomplete { self.markRenderPending() }
+                self.delegate?.sessionSearchChanged(self)
+            }
         }
         return pending
     }
+
+    /// The open search hasn't gone through all the output yet.
+    private(set) var searchIncomplete = false
 
     /// Visible kitty-protocol images, and pixels for those `needs` doesn't
     /// have cached (main thread, with the render state).
@@ -533,7 +554,8 @@ final class TerminalSession {
         let ok: Bool = lock.withLock {
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_KITTY_KEYBOARD_FLAGS, &flags)
             if key.action != GHOSTTY_KEY_ACTION_RELEASE, !key.composing,
-               key.mods == GhosttyMods(GHOSTTY_MODS_SHIFT), flags & 0b1000 == 0,
+               // (Either Shift: which side it was is no part of the text.)
+               key.mods & ~GhosttyMods(GHOSTTY_MODS_SHIFT_SIDE) == GhosttyMods(GHOSTTY_MODS_SHIFT), flags & 0b1000 == 0,
                let text = key.text, !text.isEmpty {
                 plain = text
                 return true
@@ -668,7 +690,10 @@ final class TerminalSession {
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &y)
             var sequence = "\u{1b}[3J"  // scrollback
             if atPrompt {
-                sequence += "\u{1b}[H\u{1b}[2J"
+                // Erased first, the scrollback after: at a prompt, an erase of the
+                // whole screen moves it into the scrollback (libghostty's ^L
+                // heuristic), which would then keep the last screenful.
+                sequence = "\u{1b}[H\u{1b}[2J\u{1b}[3J"
             } else if y > 0 {
                 // Erase from the top through the end of the row above the
                 // cursor, then put the cursor back (CUP is one-based). Not
@@ -927,6 +952,27 @@ final class TerminalSession {
         if focused { programStatus.markSeen() }
     }
 
+    /// Whether the pane last had the keyboard, as the program was told.
+    private var reportedFocus: Bool?
+
+    /// The pane left its window (another tab, parked, moved) with the
+    /// keyboard: AppKit doesn't resign it then, so the program is told here.
+    func reportFocusLost() {
+        if reportedFocus == true { reportFocus(false) }
+    }
+
+    /// Focus reporting (mode 1004): a program that asked for it (tmux's
+    /// `focus-events`, an editor reloading files on focus) hears when its pane
+    /// gains or loses the keyboard — CSI I, CSI O — once per change.
+    func reportFocus(_ focused: Bool) {
+        guard reportedFocus != focused else { return }
+        reportedFocus = focused
+        var mode = GhosttyTerminalModeConfig(mode: ghostty_mode_new(1004, false), value: false)
+        lock.withLock { _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_MODE, &mode) }
+        guard mode.value else { return }
+        pty?.write(Data((focused ? "\u{1b}[I" : "\u{1b}[O").utf8))
+    }
+
     /// Cursor cell in the active screen (for placing the IME candidate window).
     var cursorPosition: (x: UInt16, y: UInt16) {
         var x: UInt16 = 0, y: UInt16 = 0
@@ -1008,13 +1054,17 @@ final class TerminalSession {
 
     /// After restoring a snapshot: what the callbacks would have told us.
     private func adoptRestoredState() {
-        var s = GhosttyString()
-        if ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_TITLE, &s) == GHOSTTY_SUCCESS { title = String(s) }
-        var p = GhosttyString()
+        // Copied out under the lock: the reader may be parsing output into
+        // this terminal already, and an OSC 0/2/7 frees what these point at.
+        let (title, pwd) = lock.withLock { () -> (String?, String?) in
+            var s = GhosttyString(), p = GhosttyString()
+            return (ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_TITLE, &s) == GHOSTTY_SUCCESS ? String(s) : nil,
+                    ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_PWD, &p) == GHOSTTY_SUCCESS ? String(p) : nil)
+        }
+        if let title { self.title = title }
         // A screen that never heard where its shell is keeps the folder known
         // so far (a host pane's, from its layout).
-        if ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_PWD, &p) == GHOSTTY_SUCCESS,
-           let path = Self.path(fromPwd: String(p), remote: host != nil) {
+        if let pwd, let path = Self.path(fromPwd: pwd, remote: host != nil) {
             workingDirectory = path
         }
     }
@@ -1037,7 +1087,6 @@ final class TerminalSession {
                 ghostty_search_free(search)
             }
             search = nil
-            searchResult = SearchResult()
             var g: GhosttySelectionGesture?
             ghostty_selection_gesture_free(gesture, terminal)
             if ghostty_selection_gesture_new(nil, &g) == GHOSTTY_SUCCESS, let g { gesture = g }
@@ -1056,6 +1105,8 @@ final class TerminalSession {
         let config = ConfigStore.shared.config
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // The old copy's matches (on main: the renderer reads them there).
+            self.lock.withLock { self.searchResult = SearchResult() }
             self.apply(config)
             if reassertSize { self.pty?.resize(self.size) }
             self.adoptRestoredState()
@@ -1210,8 +1261,9 @@ final class TerminalSession {
     static func path(fromPwd raw: String, remote: Bool = false) -> String? {
         var path = raw
         if raw.hasPrefix("file://") {
-            guard let url = URL(string: raw), url.isFileURL else { return nil }
-            if !remote, let host = url.host?.lowercased(), !host.isEmpty, host != "localhost",
+            guard let url = SessionInfo.fileURL(raw) else { return nil }
+            let host = url.host.lowercased()
+            if !remote, !host.isEmpty, host != "localhost",
                host != Self.localHostName, !Self.localHostName.hasPrefix(host + ".") {
                 return nil  // a remote shell (ssh) reported its directory
             }
@@ -1491,6 +1543,7 @@ extension TerminalSession {
             }
             guard !needle.isEmpty else {
                 searchResult = SearchResult()
+                searchIncomplete = false
                 return
             }
             _ = ghostty_search_run(search)
@@ -1516,6 +1569,7 @@ extension TerminalSession {
             if let search { ghostty_search_free(search) }
             search = nil
             searchResult = SearchResult()
+            searchIncomplete = false
         }
         markRenderPending()
     }
@@ -1526,19 +1580,22 @@ extension TerminalSession {
         guard let search else { return }
         var needle = GhosttyString()
         guard ghostty_search_get(search, GHOSTTY_SEARCH_DATA_NEEDLE, &needle) == GHOSTTY_SUCCESS else {
+            // Nothing to look for (the field emptied): nothing left to catch up on.
             searchResult = SearchResult()
+            searchIncomplete = false
             return
         }
         // Bounded: a few feed/tick rounds per frame at most.
+        var status = GHOSTTY_SEARCH_STATUS_RUNNING
         for _ in 0..<8 {
             _ = ghostty_search_feed(search)
-            var status = GHOSTTY_SEARCH_STATUS_RUNNING
             var ticks = 0
             while ghostty_search_tick(search, &status) == GHOSTTY_SUCCESS, status == GHOSTTY_SEARCH_STATUS_RUNNING, ticks < 64 {
                 ticks += 1
             }
             if status == GHOSTTY_SEARCH_STATUS_COMPLETE { break }
         }
+        searchIncomplete = status != GHOSTTY_SEARCH_STATUS_COMPLETE
         var result = SearchResult(active: true)
         var total = 0
         _ = ghostty_search_get(search, GHOSTTY_SEARCH_DATA_TOTAL_MATCHES, &total)
@@ -1603,9 +1660,13 @@ struct TerminalLink: Equatable {
 }
 
 extension TerminalSession {
-    /// URLs written out in text: these schemes, up to whitespace or quotes.
+    /// URLs written out in text: these schemes, up to whitespace, quotes or
+    /// CJK punctuation (`详见 https://x.dev/a，然后…`: the comma ends it; a
+    /// URL's own Chinese or Japanese, as in `/wiki/中文` or `佐々木`, is kept:
+    /// only the punctuation and symbols of those blocks, and the quotes,
+    /// dashes and ellipses Chinese text uses (“…” —— ……), end it).
     private static let urlPattern = try! NSRegularExpression(
-        pattern: #"(?:https?|ftp|file)://[^\s<>"'`]+|mailto:[^\s<>"'`]+"#)
+        pattern: #"(?:https?|ftp|file)://[[^\s<>"'`]--[[\x{2010}-\x{2027}\x{2030}-\x{205E}\x{3000}-\x{303F}\x{FF01}-\x{FF65}]&&[\p{P}\p{S}\p{Zs}]]]+|mailto:[[^\s<>"'`]--[[\x{2010}-\x{2027}\x{2030}-\x{205E}\x{3000}-\x{303F}\x{FF01}-\x{FF65}]&&[\p{P}\p{S}\p{Zs}]]]+"#)
 
     /// Paths as tools print them: `src/a.swift:12:4`, `./x`, `~/y`, `/z/w.txt`.
     private static let pathPattern = try! NSRegularExpression(pattern: #"[~./]?[\w.@+\-]*(?:/[\w.@+\-]+)+/?(?::\d+){0,2}|[\w@+\-][\w.@+\-]*\.[A-Za-z]\w*(?::\d+){0,2}"#)
@@ -1783,9 +1844,16 @@ extension TerminalSession {
             var lines: [String] = []
             lines.reserveCapacity(rows)
             var scalars = [UInt32](repeating: 0, count: 16)
+            var cx: UInt16 = 0, cy: UInt16 = 0
+            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_X, &cx)
+            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &cy)
+            // Where the cursor is in its line's text (UTF-16, as VoiceOver
+            // counts): a wide character is two cells but one character.
+            var cursorOffset = Int(cx)
             for y in 0..<rows {
                 var line = ""
                 for x in 0..<cols {
+                    if y == Int(cy), x == Int(cx) { cursorOffset = (line as NSString).length }
                     var point = GhosttyPoint()
                     point.tag = GHOSTTY_POINT_TAG_VIEWPORT
                     point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
@@ -1806,10 +1874,7 @@ extension TerminalSession {
                 while line.hasSuffix(" ") { line.removeLast() }
                 lines.append(line)
             }
-            var cx: UInt16 = 0, cy: UInt16 = 0
-            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_X, &cx)
-            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &cy)
-            return (lines, (Int(cy), Int(cx)))
+            return (lines, (Int(cy), cursorOffset))
         }
     }
 }
@@ -1874,19 +1939,24 @@ extension TerminalSession {
                 r.size = MemoryLayout<GhosttyGridRef>.size
                 return ghostty_terminal_grid_ref(terminal, point, &r) == GHOSTTY_SUCCESS ? r : nil
             }
-            func isPrompt(_ y: Int) -> Bool {
-                guard var r = ref(y) else { return false }
-                var row: GhosttyRow = 0
+            func state(_ y: Int) -> GhosttyRowSemanticPrompt {
                 var state = GHOSTTY_ROW_SEMANTIC_NONE
-                guard ghostty_grid_ref_row(&r, &row) == GHOSTTY_SUCCESS else { return false }
+                guard var r = ref(y) else { return state }
+                var row: GhosttyRow = 0
+                guard ghostty_grid_ref_row(&r, &row) == GHOSTTY_SUCCESS else { return state }
                 _ = ghostty_row_get(row, GHOSTTY_ROW_DATA_SEMANTIC_PROMPT, &state)
-                return state != GHOSTTY_ROW_SEMANTIC_NONE
+                return state
             }
+            func isPrompt(_ y: Int) -> Bool { state(y) != GHOSTTY_ROW_SEMANTIC_NONE }
             // From the bottom: the current prompt, then the output above it,
             // up to the previous command's prompt rows.
             var y = total - 1
             while y >= 0, !isPrompt(y) { y -= 1 }      // skip past anything under the prompt
-            while y >= 0, isPrompt(y) { y -= 1 }       // the current prompt
+            // The current prompt: its lines up to its first (a two-line
+            // prompt's second line continues it). Above that, prompt rows
+            // straight away are the previous command's: it printed nothing.
+            while y >= 0, state(y) == GHOSTTY_ROW_SEMANTIC_PROMPT_CONTINUATION { y -= 1 }
+            if y >= 0, state(y) == GHOSTTY_ROW_SEMANTIC_PROMPT { y -= 1 }
             let last = y
             while y >= 0, !isPrompt(y) { y -= 1 }      // the output
             let first = y + 1

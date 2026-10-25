@@ -52,6 +52,22 @@ page-js:(() => { const td = document.querySelector("table.grid tbody tr td:nth-c
 wait:0.8
 expect-shell:python3 -I -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select name from users where id = 1').fetchone()[0])" @DIR@/app.db ==> Edited Name
 expect-page:Edited Name
+# Typed into a TEXT column, text stays as typed (not the number 2139).
+page-click:css:.row[data-name="contacts"]
+wait:0.6
+page-js:(() => { const td = document.querySelector("table.grid tbody tr td:nth-child(3)"); td.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); const i = td.querySelector("input"); i.value = "02139"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return "edited"; })() ==> edited
+wait:0.8
+expect-shell:python3 -I -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select zip, typeof(zip) from contacts').fetchone())" @DIR@/app.db ==> ('02139', 'text')
+# A batch failing part-way rolls back: its change isn't committed by the next call.
+page-click:Query
+wait:0.3
+page-type:.query-box textarea=BEGIN; UPDATE contacts SET name = 'bob'; SELECT * FROM nosuch
+page-click:Run
+wait:0.6
+expect-page:nosuch
+page-click:css:.row[data-name="users"]
+wait:0.6
+expect-shell:python3 -I -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select name from contacts').fetchone()[0])" @DIR@/app.db ==> ann
 # The smallest integer shows (no crash); a cut cell isn't edited.
 page-click:css:.row[data-name="notes"]
 wait:0.6

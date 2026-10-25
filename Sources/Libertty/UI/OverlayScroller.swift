@@ -111,6 +111,19 @@ final class OverlayScroller: NSView {
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
 
+    /// Leaving the window (its tab put away) sends no mouseExited: the
+    /// pointer is over it no more, and it mustn't stay up or keep the clicks.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        guard hovering || dragging != nil else { return }
+        hovering = false
+        dragging = nil
+        hideWork?.cancel()
+        alphaValue = 0
+        updateColors()
+        layoutKnob()
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         // Only the strip at the edge, and only when there's something to scroll.
         state.scrollable && alphaValue > 0.01 || hovering ? super.hitTest(point) : nil

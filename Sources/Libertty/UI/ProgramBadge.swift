@@ -178,7 +178,8 @@ final class TileStack: NSView {
     private var overflow = 0
 
     private func changed() {
-        shown = Array(tiles.prefix(Self.cap))
+        // The last ones: the focused pane's comes last, to sit in front.
+        shown = Array(tiles.suffix(Self.cap))
         overflow = tiles.count - shown.count
         invalidateIntrinsicContentSize()
         needsDisplay = true

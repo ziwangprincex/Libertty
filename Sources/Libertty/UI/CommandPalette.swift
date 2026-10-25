@@ -97,7 +97,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         self.controller = controller
         self.parent = parent
         self.panesOnly = panesOnly
-        self.scope = panesOnly ? .all : scope
+        // No Folders for a host's window: it opens on everything instead
+        // (its shortcut still closes it: `openedScope` is what was asked for).
+        let shown = scope == .folders && controller.host != nil ? .all : scope
+        self.scope = panesOnly ? .all : shown
         openedScope = scope
         Self.lastListing = nil
         panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 60),
@@ -297,8 +300,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             }
         }
         // (Panes come first, from `panes()`: tabs are reached through them.)
-        // Sessions liberttyd keeps that no window shows.
-        if Persistence.enabled, let sessions = DaemonClient.sessions() {
+        // Sessions this Mac's liberttyd keeps that no window shows (a host's
+        // window shows that machine's sessions only: not these).
+        if Persistence.enabled, controller?.host == nil, let sessions = DaemonClient.sessions() {
             for s in sessions where s.clients == 0 {
                 let dir = SessionInfo.directory(fromPwd: s.workingDirectory).map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
                 out.append(Item(title: "Show Session \(s.id)", subtitle: [s.title, dir].filter { !$0.isEmpty }.joined(separator: " · "),
@@ -623,6 +627,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         parent.makeKeyAndOrderFront(nil)
         // Its blur and text follow the window's light or dark, not the system's.
         panel.appearance = parent.appearance
+        // (Its lines too: a layer's color is resolved once, in the appearance then.)
+        (parent.appearance ?? NSApp.effectiveAppearance).performAsCurrentDrawingAppearance {
+            panel.contentView?.layer?.borderColor = NSColor.separatorColor.cgColor
+            for line in [topLine, footerLine] { line.layer?.backgroundColor = NSColor.separatorColor.cgColor }
+        }
         // Mostly opaque over the blur (Tern's 0.98): readable on any desktop.
         let dark = parent.appearance?.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let tint = dark ? NSColor(srgbRed: 40 / 255, green: 43 / 255, blue: 52 / 255, alpha: 0.92)
@@ -660,17 +669,22 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         parent?.removeChildWindow(panel)
         panel.orderOut(nil)
         if refocus, let controller { controller.window?.makeKeyAndOrderFront(nil) }
+        // The keyboard went elsewhere: over the Quick Terminal, it goes away now.
+        if !refocus { controller?.autohideIfAway() }
     }
 
-    private func runSelected() {
-        let row = table.selectedRow
+    private func runSelected() { run(row: table.selectedRow) }
+
+    private func run(row: Int) {
         guard rows.indices.contains(row), case .item(let item) = rows[row] else { return }
         close()
         // After the palette is gone, so the action sees the real focus.
         DispatchQueue.main.async { item.run() }
     }
 
-    @objc private func clicked(_ sender: Any?) { runSelected() }
+    /// The row clicked, not the one selected: a heading can't be selected,
+    /// and clicking one would run the item hovered last.
+    @objc private func clicked(_ sender: Any?) { run(row: table.clickedRow) }
 
     /// The palette's panel, while one is open (`--ui-probe` types into it).
     static var openPanel: NSWindow? { current?.panel }

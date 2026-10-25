@@ -1,0 +1,11 @@
+diff --cc f.txt
+index c717f71,f1675d8..0000000
+--- a/f.txt
++++ b/f.txt
+@@@ -1,2 -1,2 +1,6 @@@
+  a
+++<<<<<<< HEAD
+ +B-main
+++=======
++ B-other
+++>>>>>>> other

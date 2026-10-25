@@ -1,0 +1,121 @@
+# Panes: moving between them while one is zoomed; Redo after Undo of a
+# close (it crashed); two sibling panes ending at once (the split kept a
+# blank slot for one of them, and the tab's count of panes was wrong).
+type:echo PANE-A
+key:enter
+wait:0.4
+key:cmd+d
+wait:0.8
+expect-panes:2
+expect-focus:2
+# Zoomed, the keys still reach the pane beside it (and the zoom ends).
+key:cmd+alt+left
+wait:0.3
+expect-focus:1
+key:cmd+shift+enter
+wait:0.4
+key:cmd+alt+right
+wait:0.4
+expect-focus:2
+# Close, Undo, Redo.
+key:cmd+w
+wait:0.8
+expect-panes:1
+undo:go
+expect-panes:2
+redo:go
+wait:0.6
+expect-panes:1
+# Two siblings ending together, with the app's animations.
+motion:on
+key:cmd+d
+wait:0.8
+type:while [ ! -e race-go ]; do sleep 0.02; done; exit
+key:enter
+key:cmd+shift+d
+wait:0.8
+type:while [ ! -e race-go ]; do sleep 0.02; done; exit
+key:enter
+wait:0.3
+expect-panes:3
+key:cmd+alt+left
+wait:0.3
+expect-focus:1
+type:touch race-go
+key:enter
+wait:1.5
+expect-panes:1
+type:echo STILL-HERE
+key:enter
+wait:0.5
+expect:STILL-HERE
+# Focus reporting (mode 1004): a program that asked for it hears its pane
+# gain and lose the keyboard, once per change.
+type:printf '\033[?1004h'; stty -echo -icanon; x=$(dd bs=1 count=6 2>/dev/null | od -An -c | tr -d ' \n'); stty sane; printf '\033[?1004l'; echo "GOT:$x"
+key:enter
+wait:0.5
+focus-event:in
+focus-event:in
+focus-event:out
+wait:0.5
+expect:GOT:033[I033[O
+# ⌘K at a prompt clears the scrollback too, the screen above the prompt included.
+type:for i in $(seq 1 60); do echo "CLEARME-$i"; done
+key:enter
+wait:0.8
+key:cmd+k
+wait:0.8
+expect-not:CLEARME-
+# A folder named in Chinese with a space, a # and a % (the shell sends them as they are):
+# the tab follows it, and a new tab opens there.
+# (Typed as printf's octal escapes: the probe's keys can't type 我的 文档.)
+type:d="$(printf '\346\210\221\347\232\204 \346\226\207\346\241\243')/C#/100%"; mkdir -p "$d" && cd "$d"
+key:enter
+wait:0.8
+expect-tab:100%
+tab:here
+wait:0.8
+type:pwd
+key:enter
+wait:0.6
+expect:我的 文档/C#/100%
+# Leaving the window with the keyboard (another tab) is losing focus too:
+# AppKit doesn't resign the pane then.
+type:printf '\033[?1004h'; stty -echo -icanon; x=$(dd bs=1 count=6 2>/dev/null | od -An -c | tr -d ' \n'); stty sane; printf '\033[?1004l'; echo "LEFT:$x"
+key:enter
+wait:0.5
+focus-event:in
+tab:new
+wait:0.6
+tab:2
+wait:0.6
+expect:LEFT:033[I033[O
+# The find bar's search moves with the keyboard: to the other pane, off a
+# pane parked (its highlights go), not back onto it when it's unparked.
+tab:new
+wait:0.5
+type:echo FOOBAR
+key:enter
+key:cmd+d
+wait:0.8
+type:echo FOOBAR
+key:enter
+wait:0.5
+key:cmd+f
+type:FOOBAR
+wait:0.6
+expect-searching:1
+action:goto_split:left
+wait:0.5
+expect-searching:1
+action:park_surface
+wait:1.0
+expect-tab:1 parked
+expect-searching:1
+action:end_search
+wait:0.4
+expect-searching:0
+action:unpark_surface
+wait:1.0
+expect-tab:2 panes
+expect-searching:0

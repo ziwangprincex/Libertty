@@ -290,6 +290,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         inspector.controller = self
         area.findBar.onChange = { [weak self] text in self?.find(text) }
         area.findBar.onNavigate = { [weak self] older in self?.findNext(older: older) }
+        area.findBar.onArrow = { [weak self] up in
+            guard let self else { return }
+            // A document's next match is down the page; a terminal's older one is up.
+            self.findNext(older: self.searchDocument == nil ? up : !up)
+        }
         area.findBar.onClose = { [weak self] in _ = self?.endSearch() }
 
         workspaces.flatMap(\.tabs).forEach(adoptAll)
@@ -332,19 +337,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    func start(command: String? = nil, workingDirectory: String? = nil) throws {
+    /// `workingDirectory`: a folder asked for (Finder, a Service, `--cwd`):
+    /// it, whatever `working-directory` says; `inherited`: the window it was
+    /// made from's, which `working-directory` may overrule.
+    func start(command: String? = nil, workingDirectory: String? = nil, inherited: String? = nil) throws {
         // Lay out first so the pty is born with the window's real grid size.
         window?.contentView?.layoutSubtreeIfNeeded()
         area.layoutSubtreeIfNeeded()
         everyTab.forEach { $0.container?.layoutPanes() }
         if restored {
             // Restored panes whose program is gone get a new shell where it was.
+            // (Where each was, whatever `working-directory` says for new ones.)
             for (pane, directory) in unstarted {
-                try? startSession(of: pane, command: nil, workingDirectory: directory)
+                try? startSession(of: pane, command: nil, workingDirectory: directory, keepDirectory: directory != nil)
             }
             unstarted = []
         } else {
-            try startSession(of: focusedTerminal, command: command, workingDirectory: workingDirectory)
+            try startSession(of: focusedTerminal, command: command, workingDirectory: workingDirectory ?? inherited,
+                             keepDirectory: workingDirectory != nil)
         }
         window?.makeFirstResponder(selectedTab.focusTarget)
         updateBroadcastBorders()
@@ -552,7 +562,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             adopt(pane)
             // Its shell first — in the folder of the pane focused until now,
             // and one that can't start leaves no dead tab behind.
-            try startSession(of: pane, command: command, workingDirectory: workingDirectory ?? focusedWorkingDirectory)
+            // A folder asked for is kept; the focused pane's is `working-directory`'s to overrule.
+            try startSession(of: pane, command: command, workingDirectory: workingDirectory ?? focusedWorkingDirectory,
+                             keepDirectory: workingDirectory != nil)
             let tab = TerminalTab(pane: pane)
             let index = (tabs.firstIndex { $0 === selectedTab } ?? tabs.count - 1) + 1
             tabs.insert(tab, at: index)
@@ -911,7 +923,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// `unsavedAsked`: the documents its tab would take along were asked about.
     private func removePane(_ pane: TerminalView, undoable: Bool = true, parking: Bool = false, asCard: Bool = false,
                             unsavedAsked: Bool = false) {
-        guard let tab = tab(containing: pane), let container = tab.container else { return }
+        // (`contains` lets a removal under way finish: the panes are counted after it.)
+        guard let tab = tab(containing: pane), let container = tab.container, container.contains(pane) else { return }
         // Documents beside it don't keep a tab open on their own. A tab
         // with parked panes behind it shows the latest of them in its place.
         guard tab.panes.count > 1 else {
@@ -940,7 +953,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         let successor: NSView? = tab.previouslyFocused(besides: pane) ?? next
         // Where it was, relative to the pane that takes its place.
         func side(of next: NSView) -> SplitContainerView.Direction {
-            let a = pane.frame, b = next.frame
+            // Their slots: a zoomed pane's frame is the whole container.
+            let a = container.slot(of: pane), b = container.slot(of: next)
             return a.minX >= b.maxX - 1 ? .right : a.maxX <= b.minX + 1 ? .left : a.minY >= b.maxY - 1 ? .down : .up
         }
         if parking {
@@ -1557,6 +1571,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         tab.focusedPane = pane
         tab.focusedDocument = nil
         tab.noteFocus(pane)
+        // The find bar searches the focused pane: another one focused (a
+        // click, a pane closed, parked or unparked), the search — its
+        // highlights, its count — moves along with it.
+        if tab === selectedTab, isSearching, searchDocument == nil, let old = searchedPane, old !== pane {
+            old.session.endSearch()
+            old.setNeedsRender(force: true)
+            find(area.findBar.field.stringValue)
+        }
         if tab !== selectedTab { select(tab) }
         updateDimming()
         updateTitle()
@@ -2041,10 +2063,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             }
             return
         }
+        searchedPane = focusedTerminal
         focusedTerminal.session.find(text)
         focusedTerminal.setNeedsRender(force: true)
         area.findBar.show(result: focusedTerminal.session.searchResult)
     }
+
+    /// The terminal the find bar's search is in (its highlights are there).
+    private weak var searchedPane: TerminalView?
 
     func findNext(older: Bool) {
         if area.findBar.isHidden { return startSearch() }
@@ -2068,8 +2094,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             window?.makeFirstResponder(doc.focusTarget)
             return true
         }
-        focusedTerminal.session.endSearch()
-        focusedTerminal.setNeedsRender(force: true)
+        let searched = searchedPane ?? focusedTerminal
+        searched.session.endSearch()
+        searched.setNeedsRender(force: true)
+        searchedPane = nil
         window?.makeFirstResponder(focusedTerminal)
         return true
     }
@@ -2100,6 +2128,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
                 self.area.findBar.show(result: self.focusedTerminal.session.searchResult)
             }
         }
+    }
+
+    func sessionSearchChanged(_ session: TerminalSession) {
+        guard let pane = pane(for: session) else { return }
+        // Still going through the output: the next frame goes on with it.
+        if session.searchIncomplete { pane.setNeedsRender() }
+        if isSearching, pane === focusedTerminal { area.findBar.show(result: session.searchResult) }
     }
 
     func sessionTitleChanged(_ session: TerminalSession, title: String) {
@@ -2854,6 +2889,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     func windowDidBecomeKey(_ notification: Notification) {
         focusedTerminal.session.setFocused(true)
+        // The pane with the keyboard tells its program (focus reporting).
+        (window?.firstResponder as? TerminalView)?.session.reportFocus(true)
         selectedTab.panes.forEach { $0.setNeedsRender(force: true) }
         updateSidebar()
     }
@@ -2863,13 +2900,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     func windowDidExitFullScreen(_ notification: Notification) { allPanes.forEach { $0.updateDisplaySync() } }
 
     func windowDidResignKey(_ notification: Notification) {
+        (window?.firstResponder as? TerminalView)?.session.reportFocus(false)
         selectedTab.panes.forEach { $0.setNeedsRender(force: true) }
-        // The quick terminal goes away when you click elsewhere (not for its own sheets).
-        if isQuick, config.quickTerminalAutohide, window?.attachedSheet == nil, window?.isVisible == true {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.window?.isKeyWindow == false, NSApp.modalWindow == nil else { return }
-                QuickTerminal.shared.hide(restoreFocus: false)
-            }
+        autohideIfAway()
+    }
+
+    /// The quick terminal goes away when you click elsewhere — not for its
+    /// own sheets, nor for a window of its own on top (the palette opened over
+    /// it: that one asks again when it closes).
+    func autohideIfAway() {
+        guard isQuick, config.quickTerminalAutohide, window?.attachedSheet == nil, window?.isVisible == true else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window?.isKeyWindow == false, NSApp.modalWindow == nil,
+                  NSApp.keyWindow?.parent !== self.window else { return }
+            QuickTerminal.shared.hide(restoreFocus: false)
         }
     }
 

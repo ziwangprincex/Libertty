@@ -117,6 +117,8 @@ enum EditorAssets {
     /// binary (no NUL in its first 8 KB). Wider than `canShow`: a commit
     /// message (`git commit` with `EDITOR="libertty +open --wait"`) has no extension.
     static func canEdit(_ url: URL) -> Bool {
+        // A symlink (dotfiles kept elsewhere) is the file it points to.
+        let url = url.resolvingSymlinksInPath()
         guard url.isFileURL, let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true, (values.fileSize ?? 0) < 5_000_000 else { return false }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }

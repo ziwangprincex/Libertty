@@ -270,6 +270,9 @@ final class Plugin {
         isRunning = false
         commandTitles = []
         current = nil
+        // Kept to ask whether it's stuck: Reload or off-and-on would
+        // otherwise start another run beside a thread that never comes back.
+        last = run
         // Its context goes on its own queue, after whatever is running there.
         run.queue.async {
             run.stopped = true
@@ -301,10 +304,13 @@ final class Plugin {
     /// Its thread has been in one call for over five seconds (an endless loop:
     /// JavaScriptCore can't be interrupted from outside, so it stays until Libertty quits).
     var isStuck: Bool {
-        guard let run = current else { return false }
+        guard let run = current ?? last else { return false }
         run.pendingLock.lock(); defer { run.pendingLock.unlock() }
         return run.busySince.map { Date().timeIntervalSince($0) > 5 } ?? false
     }
+
+    /// The run stopped last (its thread may still be in a call).
+    private var last: Run?
 
     /// Lines logged on the plugin's thread, handed to the main thread in
     /// batches (a plugin printing in a loop mustn't flood it): at most 300 kept,

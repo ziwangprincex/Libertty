@@ -103,6 +103,44 @@ expect-editor:hi
 editor-insert:yo 
 editor-save:go
 expect-shell:od -An -tx1 @DIR@/utf16.txt | tr -d ' \n' ==> fffe79006f0068006900
+# UTF-8 with its mark (Windows' editors) keeps the mark.
+open:@DIR@/bom.txt
+editor-wait:go
+expect-editor:hi
+editor-insert:yo
+editor-save:go
+expect-shell:od -An -tx1 @DIR@/bom.txt | tr -d ' \n' ==> efbbbf796f68690a
+# A symlink (dotfiles kept elsewhere) opens in the editor and saves through to its file.
+open:@DIR@/linked.txt
+editor-wait:go
+expect-editor:target
+editor-insert:via link
+editor-save:go
+expect-file:@DIR@/target.txt=via linktarget
+# Saved and closed as one (vim's :wq): no question about changes already saved.
+open:@DIR@/wq.txt
+editor-wait:go
+editor-insert:wq here
+expect-tab-count:9
+editor-js:window.webkit.messageHandlers.libertty.postMessage({type: "save", text: libertty.takeText(), close: true})
+wait:0.6
+expect-sheet:no
+expect-file:@DIR@/wq.txt=wq here
+expect-tab-count:8
+# Rendered Markdown: a table of contents' link scrolls to its heading
+# (not Finder, not a tab for the folder), and so does a non-ASCII one.
+open:@DIR@/toc.md
+page-wait:go
+expect-tab-count:9
+page-js:window.scrollY ==> 0
+page-click:css:a[href="#far-below"]
+wait:0.5
+page-js:window.scrollY > 500 ==> true
+page-js:window.scrollTo(0, 0) || true ==> true
+page-click:css:a[href="#café"]
+wait:0.5
+page-js:window.scrollY > 500 ==> true
+expect-tab-count:9
 # A shell exiting would close the window with unsaved text in it: it asks.
 open:@DIR@/notes.md
 editor-insert:more notes

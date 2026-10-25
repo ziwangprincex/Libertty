@@ -36,3 +36,16 @@ action:show_tabs:attention
 expect-shown:2:ER
 action:show_tabs:all
 expect-shown:4
+# A tab changing (a title, a state) doesn't take the keyboard from the
+# find bar: the sidebar's update doesn't select the tab again.
+tab:new
+type:(sleep 1.5; printf '\033]2;RETITLED\a'; sleep 1; printf '\033]7501;state=working:app=probe\a') &
+key:enter
+wait:0.3
+key:cmd+f
+wait:3.5
+expect-tab:RETITLED
+expect-focus:0
+key:escape
+wait:0.3
+expect-focus:1

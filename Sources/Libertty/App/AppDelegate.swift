@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var saveTimer: Timer?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // A held key repeats (vim's hjkl), as in every terminal, rather than
+        // offering accents (macOS's press and hold). As Ghostty; a setting of
+        // the user's own, in Libertty's domain or everywhere, still wins.
+        UserDefaults.standard.register(defaults: ["ApplePressAndHoldEnabled": false])
         // Before any window: folders opened at launch get persistent sessions too.
         let config = ConfigStore.shared.config
         TerminalWindowController.oneShot = oneShot
@@ -54,8 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             self, selector: #selector(remoteRequest(_:)), name: RemoteControl.notification, object: nil,
             suspensionBehavior: .deliverImmediately)
 
+        // What Finder opened as Libertty launched came before the saved
+        // windows: it goes back in front of them.
+        let openedAtLaunch = controllers
         if !oneShot { restoreWindows() }
         restoring = false
+        if openedDocument { openedAtLaunch.forEach { $0.window?.makeKeyAndOrderFront(nil) } }
         // `libertty +open` when Libertty wasn't running: its requests ride on the
         // launch arguments (a notification would arrive before anyone listens).
         let opens = Self.launchOpenRequests()
@@ -184,9 +192,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
-    /// Bring the pane with this id forward, in whichever window has it.
+    /// Bring the pane with this id forward, in whichever window has it —
+    /// the Quick Terminal's too (it's no window of the list), brought down for it.
     func reveal(paneID: String) -> Bool {
-        guard controllers.contains(where: { $0.reveal(paneID: paneID) }) else { return false }
+        if !controllers.contains(where: { $0.reveal(paneID: paneID) }) {
+            guard let quick = QuickTerminal.shared.windowController, quick.pane(showing: paneID) != nil else { return false }
+            QuickTerminal.shared.show()
+            _ = quick.reveal(paneID: paneID)
+        }
         activate()
         return true
     }
@@ -256,8 +269,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         case .alertFirstButtonReturn:
             var result: Bool?
             TerminalWindowController.saveAll(unsaved) { result = $0 }
-            // Saves finish on the main run loop (the editor hands its text over).
-            while result == nil { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05)) }
+            // Saves finish on the main run loop (the editor hands its text over),
+            // and may ask first (changed on disk, couldn't save): a sheet,
+            // whose buttons need events delivered, not only the run loop turned.
+            while result == nil {
+                if let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05), inMode: .default, dequeue: true) {
+                    NSApp.sendEvent(event)
+                }
+            }
             return result == true
         case .alertThirdButtonReturn: return true
         default: return false
@@ -286,7 +305,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     /// Clicking the Dock icon with no windows open opens one.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { open(tabbedInto: nil) }
+        // Only when there's no window at all: minimized ones count as none
+        // visible, and AppKit brings one of them back itself (as Ghostty lets it).
+        if !flag, controllers.isEmpty { open(tabbedInto: nil) }
         return true
     }
 
@@ -337,7 +358,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     /// The terminal window the user was last in, even while another app is active.
     var frontController: TerminalWindowController? {
-        NSApp.orderedWindows.lazy.compactMap { $0.windowController as? TerminalWindowController }.first
+        // Only the app's windows: `orderedWindows` also lists one hidden for
+        // Undo Close (it closes for good at its timeout), or not shown yet.
+        NSApp.orderedWindows.lazy.compactMap { $0.windowController as? TerminalWindowController }
+            .first { c in self.controllers.contains { $0 === c } }
     }
 
     /// Close All Windows: one confirmation for everything still running.
@@ -370,8 +394,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             let controller = try TerminalWindowController(
                 config: ConfigStore.shared.config, fontSize: fontSize, cols: cols, rows: rows)
             register(controller)
+            // Cascaded from the window in front, as macOS places a new
+            // document's window: centered, each would hide the one before
+            // exactly. Back to the screen's top left when it would go off it.
+            if let from = source?.window, from.isVisible, !from.styleMask.contains(.fullScreen),
+               let window = controller.window, let visible = from.screen?.visibleFrame {
+                let size = window.frame.size
+                var frame = NSRect(x: from.frame.minX + 28, y: from.frame.maxY - 28 - size.height,
+                                   width: size.width, height: size.height)
+                if frame.maxX > visible.maxX || frame.minY < visible.minY {
+                    frame.origin = NSPoint(x: visible.minX + 28, y: visible.maxY - 28 - size.height)
+                }
+                window.setFrame(window.constrainFrameRect(frame, to: from.screen), display: false)
+            }
             controller.showWindow(nil)
-            try controller.start(command: command, workingDirectory: workingDirectory ?? source?.focusedWorkingDirectory)
+            try controller.start(command: command, workingDirectory: workingDirectory, inherited: source?.focusedWorkingDirectory)
             if ResizeTrace.requested, controllers.count == 1, let window = controller.window {
                 ResizeTrace.start(window: window, controller: controller)
             }
@@ -416,7 +453,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu.title == Self.movePaneMenuTitle else { return }
         menu.removeAllItems()
-        let controller = frontController
+        // The key window's tabs: what its items act on (menuAction).
+        let controller = NSApp.keyWindow?.windowController as? TerminalWindowController
         for (i, tab) in (controller?.tabs ?? []).enumerated() where tab.isTerminal && tab !== controller?.selectedTab {
             let name = controller?.label(of: tab).name ?? ""
             let item = menu.addItem(withTitle: "\(i + 1)  \(name)", action: #selector(menuAction(_:)), keyEquivalent: "")
@@ -614,6 +652,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         case .newWindow:
             open(tabbedInto: nil)
             activate()
+        case .toggleQuickTerminal:
+            // Its own panel: no window to bring forward (that would also take
+            // the keyboard from it, so the next press could never put it away).
+            QuickTerminal.shared.toggle()
+        case .openConfig, .reloadConfig, .connectToHost:
+            // About the app, not a window.
+            ActionDispatcher.perform(action)
         default:
             // Everything else acts on Libertty's front window, brought forward first.
             if frontController == nil { open(tabbedInto: nil) }
@@ -724,7 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // The Quick Terminal's pane can be split too (it's no window of the list).
         if PaneRequests.handle(info, in: controllers + [QuickTerminal.shared.windowController].compactMap { $0 }) { return }
         if info["kind"] == "focus", let id = info["id"] {
-            if controllers.contains(where: { $0.reveal(paneID: id) }) { activate() }
+            _ = reveal(paneID: id)
             return
         }
         if info["kind"] == "attach", let id = info["id"] {
@@ -748,7 +793,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     @objc func menuAction(_ sender: NSMenuItem) {
         guard let action = (sender.representedObject as? ActionBox)?.action else { return }
-        ActionDispatcher.perform(action, in: NSApp.keyWindow?.firstResponder as? TerminalView)
+        // The window the menu was validated for (the key one): with a find
+        // field or a document focused there, `frontController` could be
+        // another window (one floating on top), or none (the Quick Terminal's panel).
+        ActionDispatcher.perform(action, in: NSApp.keyWindow?.firstResponder as? TerminalView,
+                                 controller: NSApp.keyWindow?.windowController as? TerminalWindowController)
     }
 
     @objc func useFloatAsDefault(_ sender: Any?) {
@@ -764,7 +813,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return undo ? manager.canUndo : manager.canRedo
         }
         if let action = (item.representedObject as? ActionBox)?.action, action == .toggleBroadcastInput {
-            item.state = frontController?.isBroadcasting == true ? .on : .off
+            item.state = (NSApp.keyWindow?.windowController as? TerminalWindowController)?.isBroadcasting == true ? .on : .off
         }
         let controller = NSApp.keyWindow?.windowController as? TerminalWindowController
         if item.action == #selector(makeDefaultTerminal(_:)) {

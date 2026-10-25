@@ -203,8 +203,9 @@ enum GitCLI {
     }
 }
 
-/// Reads a pipe to its end on a thread of its own.
-private final class Drain: @unchecked Sendable {
+/// A pipe read to its end on a thread of its own: two pipes read one after
+/// the other deadlock when the process fills the second first (git's warnings).
+final class Drain: @unchecked Sendable {
     private var data = Data()
     private let done = DispatchSemaphore(value: 0)
 

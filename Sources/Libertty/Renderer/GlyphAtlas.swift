@@ -12,8 +12,9 @@ final class GlyphAtlas {
         var isColor: Bool
     }
 
-    let texture: MTLTexture
-    let size: Int
+    private(set) var texture: MTLTexture
+    private(set) var size: Int
+    private let device: MTLDevice
     private let fonts: FontSet
     /// Fast path for the common case: one codepoint, keyed by codepoint|style|span.
     private var scalarCache: [UInt64: Entry] = [:]
@@ -23,14 +24,23 @@ final class GlyphAtlas {
     private(set) var generation = 0
 
     init(device: MTLDevice, fonts: FontSet, size: Int = 4096) {
+        self.device = device
         self.fonts = fonts
         self.size = size
+        texture = Self.makeTexture(device, size)
+    }
+
+    private static func makeTexture(_ device: MTLDevice, _ size: Int) -> MTLTexture {
         let desc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm, width: size, height: size, mipmapped: false)
         desc.usage = .shaderRead
         desc.storageMode = .shared
-        texture = device.makeTexture(descriptor: desc)!
+        return device.makeTexture(descriptor: desc)!
     }
+
+    /// The most it grows to: one screen of distinct glyphs at a very large
+    /// size (a few hundred CJK characters at 72 pt) must fit at once.
+    private static let largest = 8192
 
     func entry(scalar: UInt32, style: FontSet.Style, span: Int) -> Entry? {
         let key = UInt64(scalar) | UInt64(style.rawValue) << 32 | UInt64(span) << 40
@@ -197,7 +207,13 @@ final class GlyphAtlas {
         return (shelfX, shelfY)
     }
 
+    /// Full: start over — in a texture twice as big the first time (memory
+    /// is only taken as glyphs fill it), wiped after that.
     private func reset() {
+        if size < Self.largest {
+            size *= 2
+            texture = Self.makeTexture(device, size)
+        }
         scalarCache.removeAll(keepingCapacity: true)
         clusterCache.removeAll(keepingCapacity: true)
         shelfX = 0; shelfY = 0; shelfHeight = 0

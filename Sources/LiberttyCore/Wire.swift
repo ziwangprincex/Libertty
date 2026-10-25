@@ -191,8 +191,20 @@ public struct SessionInfo: Codable, Sendable {
     /// The local directory in an OSC 7 `file://host/path` report (or a bare path).
     public static func directory(fromPwd raw: String) -> String? {
         guard !raw.isEmpty else { return nil }
-        if raw.hasPrefix("file://") { return URL(string: raw)?.path }
+        if raw.hasPrefix("file://") { return fileURL(raw)?.path }
         return raw.hasPrefix("/") ? raw : nil
+    }
+
+    /// An OSC 7 `file://host/path`, taken apart by hand. Shells send the path
+    /// as it is, with only `%` and spaces encoded: `URL(string:)` reads a `#`
+    /// or `?` in a folder's name as the URL's fragment or query, and with any
+    /// non-ASCII in it ("我的 文档") encodes the whole string again, `%20` too.
+    public static func fileURL(_ raw: String) -> (host: String, path: String)? {
+        guard raw.hasPrefix("file://") else { return nil }
+        let rest = raw.dropFirst("file://".count)
+        guard let slash = rest.firstIndex(of: "/") else { return nil }
+        let encoded = String(rest[slash...])
+        return (String(rest[..<slash]), encoded.removingPercentEncoding ?? encoded)
     }
 }
 

@@ -88,8 +88,13 @@ final class ScreenShareBlock: BlockService {
     private func start(id: String, kind: String, fps: Int, width: Int) async throws -> [String: Any] {
         stop()
         if ownOnly, kind != "window" { throw BlockError("Only Libertty's own windows here.") }
+        // This start's turn, taken before anything is awaited: a tab closed
+        // (or put away) while the system lists what can be captured ends it.
+        generation += 1
+        let run = generation
         // A window that isn't on any Space right now is still listed (and unscreen bits excluded).
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: !ownOnly && kind != "window")
+        guard run == generation, !closed else { throw BlockError("Stopped.") }
         let filter: SCContentFilter
         let size: CGSize
         if kind == "window" {
@@ -115,8 +120,6 @@ final class ScreenShareBlock: BlockService {
         config.showsCursor = true
         // A window's own background, not the desktop behind it.
         config.ignoreShadowsSingleWindow = true
-        generation += 1
-        let run = generation
         // Frames come on the capture queue; the page is spoken to on the main thread.
         let page = PageLink(self)
         let capturer = Capturer(fps: fps) { jpeg, w, h in

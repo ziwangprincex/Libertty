@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: a tab changing in the background (its title, its program's state, output) took the keyboard out of the find bar or the tab filter and gave it to the terminal, closed the tab overview, and scrolled the sidebar's tabs back to the selected one; rows also lost their hover and their spinners restarted. The sidebar now updates only the rows that changed and never selects a tab again by itself.
+- Fixed: Redo after Undo Close (⇧⌘Z) crashed Libertty.
+- Fixed: Korean, and Japanese typed on after a conversion, lost text: a key that finished one character and began the next sent only the new one.
+- Fixed: holding a key (vim's hjkl) offered accents instead of repeating it.
+- Fixed: two sibling panes ending at once (a broadcast `exit`) left a blank pane that couldn't be clicked, and kept their tab open.
+- Fixed: Shift-dragging a selection in a program that uses the mouse (tmux, vim) gave the rest of the drag to the program when Shift was let go before the button.
+- Fixed: while a pane was zoomed, moving to the pane beside it did nothing; Undo put a closed zoomed pane back on the wrong side.
+- Fixed: the command palette in the Quick Terminal made it slide away; clicking a section heading in the palette ran the item hovered last; a host's window listed this Mac's sessions, and Go to Directory there showed nothing.
+- Fixed: clicking a Picture in Picture window, or a notification, of a Quick Terminal pane did nothing.
+- Fixed: in rendered Markdown, a link to a heading (a table of contents) opened the folder in Finder instead of scrolling to it.
+- Fixed: vim's `:wq` in the editor asked to save changes it had just saved.
+- Fixed: the editor stripped a UTF-8 file's byte-order mark on saving, and wouldn't edit a symlinked file (dotfiles kept elsewhere).
+- Fixed: the system's light/dark switching (or a theme change) reloaded every web page and PDF, losing what was typed and where they were.
+- Fixed: a document reloading as its file changed jumped to the top when the file was briefly gone or written in pieces.
+- Fixed: in a document, the find bar's arrows searched the wrong way.
+- Fixed: Enclosing Folder in the file tree went back at the next update; the tree lost its selection and scroll after each command; the tab's context menu could act on another tab if one closed while it was open.
+- Fixed: Install and Restart left "Installing…" up for good when the quit was cancelled; Check for Updates did nothing while an update downloaded.
+- Fixed: Close All Windows or Quit and End Sessions hung when saving a document needed to ask something (the file changed on disk, or couldn't be written).
+- Fixed: in a folder whose name has Chinese (or other non-ASCII) text and a space, or a `#`, `?` or `%`, Libertty lost track of the shell's folder: new tabs and splits opened in the folder before.
+- Fixed: ⌘K at a prompt left the last screenful in the scrollback.
+- Fixed: ⌘-clicking a link followed by Chinese punctuation (`详见 https://…，然后`) took the punctuation and the text after it into the link.
+- Fixed: the block cursor on a Chinese (wide) character covered only half of it and hid the other half; it covers both cells now. VoiceOver's caret on a line with wide characters was in the wrong place.
+- Fixed: Ctrl+letter on AZERTY, QWERTZ and Dvorak sent the US key's control code (AZERTY's Ctrl+A sent ^Q, Ctrl+W suspended vim); characters typed with Option (German `@`, `{`) went out as Alt+key to programs using the kitty keyboard protocol (fish, Neovim, Helix); `macos-option-as-alt = right` never worked; modifier keys alone never reached programs that ask for them.
+- Focus reporting (mode 1004): programs that ask for it (tmux's `focus-events`, editors reloading files) hear when their pane gains or loses the keyboard.
+- Underlines in their own color (SGR 58) and curly, dotted and dashed ones, as Neovim's diagnostics draw them; they were all straight and in the text's color.
+- Fixed: a screen of many distinct characters at a large size (Chinese at 72 pt) drew some of them wrong: the glyph cache grows once before it starts over, and a frame that fills it is drawn again.
+- Fixed: the find bar's highlights stayed on a pane after focus moved to another pane of the split; its count stopped short after a flood of output.
+- Fixed: Copy Output of Last Command after a command that printed nothing (`cd`) copied the output of the one before.
+- Fixed: text that may run commands, dropped on a terminal, went nowhere; it asks, as pasting does.
+- Fixed: the browser block replaced the page with a file a link said to download (`<a download>`, an export) instead of saving it to Downloads.
+- Fixed: a removed `-- comment` line (SQL, Lua, Haskell) in a diff started a phantom file and miscounted the rest; a `.patch` from `git format-patch` showed its signature as a change.
+- Fixed: the SQLite block turned text typed into a TEXT column into a number (`02139` became `2139`); a batch that failed part-way left its transaction open, and the next action committed its changes; rows with very large rowids couldn't be edited.
+- Fixed: the Git block's Stage, Unstage and Discard Hunk failed with `diff.noprefix` set; Show Changes could hang in a repository whose line-ending warnings filled git's error output.
+- Fixed: Reload, or turning a plugin off and on, while it was stuck in a loop started another thread pinned at full speed each time.
+- Fixed: in rendered Markdown, a link to a local program or script (`install.command`, an app) ran it in one click; it asks first now, and a folder shows in Finder. Two headings could get the same anchor; a UTF-8 file's byte-order mark was dropped by the board, notebook and canvas; source shown without the editor in a CRLF file colored everything after the first comment.
+- Fixed: the Quick Terminal's hotkey brought another Libertty window forward with it and couldn't put the Quick Terminal away; menu commands could act on a window floating on top instead of the one in front; ⌘N stacked new windows exactly on top of each other; a folder opened from Finder (or Services, `--cwd`) was ignored with `working-directory = home`, and so were restored panes' folders; a folder opened as Libertty launched ended up behind the restored windows; the Dock icon opened a new window when every window was minimized; notifications from before a relaunch weren't cleared when their pane was looked at.
+- The floating pane card and Picture in Picture stay within half the height of a tall, narrow pane's split or screen; a tab with more than four programs keeps the focused one's glyph; the overlay scroller, pane × buttons, find bar, palette and status rings follow the window's light or dark.
+
 ## 0.3.3
 
 > Showing or hiding the sidebar or the inspector leaves the terminal exactly as it was: the window grows or shrinks around it, and nothing in it reflows or redraws.

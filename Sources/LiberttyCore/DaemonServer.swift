@@ -927,7 +927,10 @@ final class DaemonSession {
         _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &y)
         var sequence = "\u{1b}[3J"
         if atPrompt {
-            sequence += "\u{1b}[H\u{1b}[2J"
+            // Erased first, the scrollback after: at a prompt, an erase of the
+            // whole screen moves it into the scrollback (libghostty's ^L
+            // heuristic), which would then keep the last screenful.
+            sequence = "\u{1b}[H\u{1b}[2J\u{1b}[3J"
         } else if y > 0 {
             // Erase from the top through the row above the cursor, then put it back.
             sequence += "\u{1b}[\(y);\(size.cols)H\u{1b}[1J\u{1b}[\(y + 1);\(x + 1)H"

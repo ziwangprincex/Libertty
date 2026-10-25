@@ -79,11 +79,15 @@ final class FloatingPaneCard: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// A third of the container, between 220 and 420 points wide, in the pane's shape.
+    /// A third of the container, between 220 and 420 points wide, in the
+    /// pane's shape — and no more than half its height (a tall, narrow
+    /// column would otherwise cover the split from top to bottom).
     func size(in container: NSSize) -> NSSize {
         guard let pane, pane.drawableSize.width > 0, pane.drawableSize.height > 0 else { return NSSize(width: 300, height: 190) }
         let shape = pane.drawableSize.height / pane.drawableSize.width
-        let width = min(420, max(220, container.width / 3), max(80, container.width - 2 * Self.margin))
+        var width = min(420, max(220, container.width / 3), max(80, container.width - 2 * Self.margin))
+        let tallest = max(60, (container.height - 2 * Self.margin) / 2)
+        if width * shape > tallest { width = tallest / shape }
         return NSSize(width: width, height: width * shape)
     }
 
@@ -97,8 +101,15 @@ final class FloatingPaneCard: NSView {
         chrome.frame = NSRect(x: 0, y: 0, width: size.width, height: 26)
     }
 
+    /// Its edge in the window's light or dark (a layer's color is resolved once).
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.borderColor = NSColor.separatorColor.cgColor }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.borderColor = NSColor.separatorColor.cgColor }
         link?.invalidate()
         link = nil
         guard let window, let pane else { return }

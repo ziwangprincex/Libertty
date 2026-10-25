@@ -114,7 +114,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
            !urls.isEmpty {
             sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
         } else if let text = pasteboard.string(forType: .string) {
-            _ = session.paste(text, allowUnsafe: false)
+            // As a paste: text that may run commands asks first (it used to go nowhere).
+            if session.paste(text, allowUnsafe: false) == .needsConfirmation { confirmUnsafePaste(text) }
         } else {
             return false
         }
@@ -188,7 +189,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         super.viewDidMoveToWindow()
         displayLink?.invalidate()
         displayLink = nil
-        guard window != nil else { return }
+        guard window != nil else {
+            // Out of the window (closed, parked, another tab): it draws no
+            // more, so nothing else would stop its cursor's blink — and it
+            // has no keyboard, which nothing else would tell its program.
+            session.reportFocusLost()
+            blinkTimer?.invalidate()
+            blinkTimer = nil
+            renderer?.blinkOn = true
+            return
+        }
         let link = displayLink(target: self, selector: #selector(step(_:)))
         // ProMotion: ask for the panel's full rate; the system clamps it.
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -316,6 +326,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     override func becomeFirstResponder() -> Bool {
         session.setFocused(true)
+        // (In a window in front only: one in the background gets it when it comes forward.)
+        session.reportFocus(window?.isKeyWindow == true)
         setNeedsRender(force: true)
         onFocus?(self)
         return true
@@ -386,7 +398,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         b.toolTip = TerminalWindowController.tip("Close Pane", .closeSurface)
         b.wantsLayer = true
         b.layer?.cornerRadius = 11
-        b.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85).cgColor
         b.isHidden = true
         b.alphaValue = 0
         addSubview(b)
@@ -396,7 +407,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     private func updateCloseButton() {
         let show = showsCloseButton && hovering
-        if show { closeButton.isHidden = false }
+        if show {
+            updateCloseButtonColor()
+            closeButton.isHidden = false
+        }
         closeButton.frame = NSRect(x: bounds.width - 30, y: 8, width: 22, height: 22)
         activityDot.frame = NSRect(x: bounds.width - (show ? 52 : 21), y: show ? 13 : 10, width: 11, height: 11)
         updateNameTag(show: show)
@@ -674,6 +688,15 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         if showsFocusLine { focusLine.layer?.backgroundColor = NSColor.controlAccentColor.cgColor }
+        // (Asked only while it shows: asking makes the button.)
+        if showsCloseButton && hovering { updateCloseButtonColor() }
+    }
+
+    /// The × button's disc, in the appearance the pane has now.
+    private func updateCloseButtonColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            closeButton.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85).cgColor
+        }
     }
 
     /// A view, placed in the view's own (flipped) coordinates: a sublayer
@@ -715,6 +738,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     }
 
     override func resignFirstResponder() -> Bool {
+        session.reportFocus(false)
         setNeedsRender(force: true)
         return true
     }
@@ -848,24 +872,40 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         // Let the input method see the key first: it may compose (Pinyin,
         // Kana, dead keys) or commit text. With Option as Alt it sees the key
         // without Option, so ⌥F types "f" and is sent as Alt+F (ESC f).
-        interpretKeyEvents([optionIsAlt(event.modifierFlags) ? Self.withoutOption(event) : event])
+        let translation = optionIsAlt(event.modifierFlags) ? Self.withoutOption(event) : event
+        interpretKeyEvents([translation])
 
         let committed = keyTextAccumulator ?? []
-        if hasMarkedText() || (hadMarkedText && committed.isEmpty) {
-            // Still composing, or the key only edited/cancelled the composition.
-            setNeedsRender()
-            return
-        }
-        if hadMarkedText, !committed.isEmpty {
-            // Composition finished: the committed text is the input.
-            if !isReadOnly {
+        if hadMarkedText || hasMarkedText() {
+            // The input method had the key. What it committed is the input —
+            // also when the same key starts the next composition (Korean
+            // commits each syllable so; Japanese, typing on after a conversion).
+            // Nothing committed: it only edited or cancelled the composition.
+            if !committed.isEmpty, !isReadOnly {
                 committed.forEach(session.sendText)
                 broadcastPeers?().forEach { peer in committed.forEach(peer.session.sendText) }
             }
+            setNeedsRender()
             return
         }
-        let text = committed.isEmpty ? nil : committed.joined()
-        send(event, action: event.isARepeat ? GHOSTTY_KEY_ACTION_REPEAT : GHOSTTY_KEY_ACTION_PRESS, text: text)
+        // Nothing inserted (Ctrl+letter goes to doCommand, not insertText):
+        // the key's own character on this layout, so Ctrl+A on AZERTY is ^A,
+        // not the US key's ^Q (Ghostty's `ghosttyCharacters`).
+        let text = committed.isEmpty ? Self.keyText(translation) : committed.joined()
+        send(event, action: event.isARepeat ? GHOSTTY_KEY_ACTION_REPEAT : GHOSTTY_KEY_ACTION_PRESS, text: text,
+             translationFlags: translation.modifierFlags)
+    }
+
+    /// What a key types for the encoder: its characters, a control
+    /// character's without Control (the encoder makes the control code),
+    /// none for a function key (AppKit's private-use range).
+    private static func keyText(_ event: NSEvent) -> String? {
+        guard event.type == .keyDown || event.type == .keyUp, let characters = event.characters else { return nil }
+        if characters.unicodeScalars.count == 1, let scalar = characters.unicodeScalars.first {
+            if scalar.value < 0x20 { return event.characters(byApplyingModifiers: event.modifierFlags.subtracting(.control)) }
+            if (0xF700...0xF8FF).contains(scalar.value) { return nil }
+        }
+        return characters
     }
 
     override func keyUp(with event: NSEvent) {
@@ -888,17 +928,25 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         send(event, action: pressed ? GHOSTTY_KEY_ACTION_PRESS : GHOSTTY_KEY_ACTION_RELEASE, text: nil)
     }
 
-    private func send(_ event: NSEvent, action: GhosttyKeyAction, text: String?) {
+    /// `translationFlags`: the modifiers the key's text was made with
+    /// (Option left out when it acts as Alt).
+    private func send(_ event: NSEvent, action: GhosttyKeyAction, text: String?,
+                      translationFlags: NSEvent.ModifierFlags? = nil) {
         guard !isReadOnly else { return }
         let key = ghosttyKeyForKeyCode[event.keyCode] ?? GHOSTTY_KEY_UNIDENTIFIED
-        let unshifted = event.characters(byApplyingModifiers: [])?.unicodeScalars.first?.value ?? 0
+        // (A modifier's own event has no characters: asking raises an exception.)
+        let unshifted = event.type == .keyDown || event.type == .keyUp
+            ? event.characters(byApplyingModifiers: [])?.unicodeScalars.first?.value ?? 0 : 0
         // Control characters are the encoder's job (from key + mods); only pass printable text.
         let printable = text.flatMap { t in
             t.unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value != 0x7F && !(0xF700...0xF8FF).contains($0.value) }
                 ? t : nil
         }
         let input = TerminalSession.Key(
-            action: action, key: key, mods: Self.mods(event.modifierFlags), consumedMods: 0,
+            // Consumed: the modifiers that made the text (Option for German's
+            // @, Shift for !). Control and Command never do.
+            action: action, key: key, mods: Self.mods(event.modifierFlags),
+            consumedMods: Self.mods((translationFlags ?? event.modifierFlags).subtracting([.control, .command])),
             text: printable, unshiftedCodepoint: unshifted, composing: false)
         let sent = session.send(input)
         // Broadcast Input: the same key, encoded for each pane's own modes.
@@ -943,6 +991,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if flags.contains(.option) { m |= GhosttyMods(GHOSTTY_MODS_ALT) }
         if flags.contains(.command) { m |= GhosttyMods(GHOSTTY_MODS_SUPER) }
         if flags.contains(.capsLock) { m |= GhosttyMods(GHOSTTY_MODS_CAPS_LOCK) }
+        // Which side: the right one (`macos-option-as-alt = right` needs it).
+        let raw = flags.rawValue
+        if raw & UInt(NX_DEVICERSHIFTKEYMASK) != 0 { m |= GhosttyMods(GHOSTTY_MODS_SHIFT_SIDE) }
+        if raw & UInt(NX_DEVICERCTLKEYMASK) != 0 { m |= GhosttyMods(GHOSTTY_MODS_CTRL_SIDE) }
+        if raw & UInt(NX_DEVICERALTKEYMASK) != 0 { m |= GhosttyMods(GHOSTTY_MODS_ALT_SIDE) }
+        if raw & UInt(NX_DEVICERCMDKEYMASK) != 0 { m |= GhosttyMods(GHOSTTY_MODS_SUPER_SIDE) }
         return m
     }
 
@@ -1072,7 +1126,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        if reportsMouse(event) {
+        // What the press was decides the whole drag: Shift let go before the
+        // button doesn't hand the rest of a selection to the program.
+        if pressedButtons.contains(event.buttonNumber) {
             report(event, GHOSTTY_MOUSE_ACTION_MOTION, button: Self.button(event))
             return
         }
@@ -1088,7 +1144,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     override func mouseUp(with event: NSEvent) {
         stopAutoscroll()
-        if pressedButtons.remove(event.buttonNumber) != nil || reportsMouse(event) {
+        if pressedButtons.remove(event.buttonNumber) != nil {
             report(event, GHOSTTY_MOUSE_ACTION_RELEASE, button: Self.button(event))
             return
         }

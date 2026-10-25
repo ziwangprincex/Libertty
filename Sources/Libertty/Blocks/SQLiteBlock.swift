@@ -79,16 +79,13 @@ final class SQLiteBlock: BlockService {
             return try query(sql)
         case "update":
             guard writable else { throw BlockError("The database is open read-only: Allow Changes first.") }
+            // (A rowid past 2^53 comes as text: JavaScript's numbers can't hold it.)
             guard let name = params["name"] as? String, let column = params["column"] as? String,
-                  let rowid = (params["rowid"] as? Int64) ?? (params["rowid"] as? Int).map(Int64.init) else {
+                  let rowid = (params["rowid"] as? Int64) ?? (params["rowid"] as? Int).map(Int64.init)
+                    ?? (params["rowid"] as? String).flatMap(Int64.init) else {
                 throw BlockError("which cell?")
             }
-            // A number typed stays a number (an untyped column would keep "42" as text).
-            var value: Any? = params["value"]
-            if params["null"] as? Bool != true, let text = value as? String, !text.isEmpty {
-                if let n = Int64(text) { value = n } else if let d = Double(text), text.range(of: #"^-?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$"#, options: .regularExpression) != nil { value = d }
-            }
-            try update(name, column: column, rowid: rowid, value: value, null: params["null"] as? Bool ?? false)
+            try update(name, column: column, rowid: rowid, value: params["value"], null: params["null"] as? Bool ?? false)
             return true
         default:
             throw BlockError("unknown call \(method)")
@@ -133,6 +130,18 @@ final class SQLiteBlock: BlockService {
     /// returns rows gives the result (cut at `limit`).
     private func execute(_ sql: String, bind: [Any?] = [], limit: Int = resultLimit) throws -> (columns: [String], types: [String], rows: [[Any]], changes: Int, truncated: Bool) {
         let db = try connection()
+        do {
+            return try run(sql, on: db, bind: bind, limit: limit)
+        } catch {
+            // A batch that failed part-way mustn't leave its transaction open:
+            // its lock would hold the file, and the next call would commit
+            // what it had done.
+            if sqlite3_get_autocommit(db) == 0 { _ = sqlite3_exec(db, "ROLLBACK", nil, nil, nil) }
+            throw error
+        }
+    }
+
+    private func run(_ sql: String, on db: OpaquePointer, bind: [Any?], limit: Int) throws -> (columns: [String], types: [String], rows: [[Any]], changes: Int, truncated: Bool) {
         dbLock.lock(); running = db; dbLock.unlock()
         defer { dbLock.lock(); running = nil; dbLock.unlock() }
         var result: (columns: [String], types: [String], rows: [[Any]], changes: Int, truncated: Bool) = ([], [], [], 0, false)
@@ -277,9 +286,21 @@ final class SQLiteBlock: BlockService {
     }
 
     private func update(_ name: String, column: String, rowid: Int64, value: Any?, null: Bool) throws {
-        let columns = try execute("SELECT name FROM pragma_table_info(?)", bind: [name]).rows.compactMap { $0.first as? String }
-        guard columns.contains(column) else { throw BlockError("There's no column \(column).") }
-        // Text the page typed: a number stays a number where the column's affinity says so (SQLite converts).
+        let info = try execute("SELECT name, type FROM pragma_table_info(?)", bind: [name]).rows
+        guard let declared = info.first(where: { $0.first as? String == column }) else { throw BlockError("There's no column \(column).") }
+        // Text the page typed goes in as typed: the column's type converts it
+        // (TEXT keeps a zip code's "02139", INTEGER makes "42" a number). A
+        // column with no type converts nothing, so a number typed there is made one here.
+        var value = value
+        if (declared.count > 1 ? declared[1] as? String ?? "" : "").isEmpty, let text = value as? String, !text.isEmpty {
+            // (Only as numbers are written: "007" keeps its zeros, as text;
+            // and only what the number keeps whole: an integer past Int64, or
+            // more digits than a double holds, stays as typed.)
+            let canonical = text.range(of: #"^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$"#, options: .regularExpression) != nil
+            let digits = text.prefix { $0 != "e" && $0 != "E" }.filter(\.isNumber).drop { $0 == "0" }.count
+            if canonical, let n = Int64(text), String(n) == text { value = n }
+            else if canonical, text.contains(where: { ".eE".contains($0) }), digits <= 15, let d = Double(text) { value = d }
+        }
         _ = try execute("UPDATE \(Self.quoted(name)) SET \(Self.quoted(column)) = ? WHERE rowid = ?", bind: [null ? nil : value, rowid])
     }
 

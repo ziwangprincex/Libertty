@@ -276,7 +276,11 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     // own; a frame's file isn't something you asked for).
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        decisionHandler(kind == .web && !response.canShowMIMEType && response.isForMainFrame ? .download : .allow)
+        // Also one the server says to save (Content-Disposition: attachment —
+        // an export's CSV, a PDF to keep), even if a page could show it.
+        let disposition = (response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let attachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
+        decisionHandler(kind == .web && response.isForMainFrame && (!response.canShowMIMEType || attachment) ? .download : .allow)
     }
 
     /// Where each download is going; and every browser's, so two at once never pick one name.
@@ -478,8 +482,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     private func readFile() -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         byteOrderMark = Data()
-        if let text = String(data: data, encoding: .utf8) {
+        // UTF-8's mark is kept for the save (decoding would drop it).
+        let utf8Mark: [UInt8] = [0xEF, 0xBB, 0xBF]
+        let utf8Body = data.starts(with: utf8Mark) ? data.dropFirst(utf8Mark.count) : data[...]
+        if let text = String(data: utf8Body, encoding: .utf8) {
             encoding = .utf8
+            if utf8Body.count < data.count { byteOrderMark = Data(utf8Mark) }
             editableEncoding = true
             return text
         }
@@ -586,7 +594,14 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             write(text) { [weak self] ok in
                 guard let self, ok else { return }
                 self.runEditor("libertty.saved()")
-                if close { self.onRequestClose?(self) }
+                guard close else { return }
+                // Saved (vim's :wq): closing mustn't ask about the changes the
+                // page hasn't yet said are gone.
+                if self.hasUnsavedChanges {
+                    self.hasUnsavedChanges = false
+                    self.onEditingStateChange?(self)
+                }
+                self.onRequestClose?(self)
             }
         case "close":
             onRequestClose?(self)
@@ -771,7 +786,6 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         b.toolTip = "Close Pane (⌘W)"
         b.wantsLayer = true
         b.layer?.cornerRadius = 11
-        b.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85).cgColor
         b.isHidden = true
         b.alphaValue = 0
         addSubview(b)
@@ -824,13 +838,25 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         if showsFocusLine { focusLine.layer?.backgroundColor = NSColor.controlAccentColor.cgColor }
+        // (Asked only while it shows: asking makes the button.)
+        if showsCloseButton && hovering { updateCloseButtonColor() }
+    }
+
+    /// The × button's disc, in the appearance the pane has now.
+    private func updateCloseButtonColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            closeButton.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85).cgColor
+        }
     }
 
     private var closeFrame: NSRect { NSRect(x: bounds.width - 30, y: bounds.height - 30, width: 22, height: 22) }
 
     private func updateCloseButton() {
         let show = showsCloseButton && hovering
-        if show { closeButton.isHidden = false }
+        if show {
+            updateCloseButtonColor()
+            closeButton.isHidden = false
+        }
         closeButton.frame = closeFrame
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = Motion.duration(Motion.hover)
@@ -876,6 +902,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                   let json = String(data: data, encoding: .utf8) else { return }
             return runEditor("libertty.setTheme(\(json))")
         }
+        // A web page and a PDF aren't drawn in the theme's colors: loading
+        // them again would lose what's in them (a form, a scroll, the page).
+        if kind == .web || kind == .pdf {
+            self.theme = theme
+            return
+        }
         let render = renderMarkdown && Self.isMarkdown(url) && !showsSource
         guard force || theme != self.theme || render != rendered else { return }
         self.theme = theme
@@ -889,6 +921,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         if kind == .block { return loadBlock() }
         if isEditing { return loadEditor() }
         guard keepScroll else { return show(scroll: nil) }
+        // A reload under way already knows where the reader was (the new
+        // page, at the top until it's done, would say 0).
+        if !loaded, let y = pendingScroll { return show(scroll: y) }
         web.evaluateJavaScript("window.scrollY") { [weak self] value, _ in
             self?.show(scroll: value as? Double)
         }
@@ -1004,6 +1039,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if kind == .web {
             // A web app moves around inside itself; other schemes go to their apps.
+            // A link that says to save what it leads to (`<a download>`, a web
+            // app's Export): to Downloads, not over the page.
+            if action.shouldPerformDownload { return decisionHandler(.download) }
             guard let target = action.request.url, let scheme = target.scheme?.lowercased(),
                   !["http", "https", "about", "data", "blob"].contains(scheme) else { return decisionHandler(.allow) }
             decisionHandler(.cancel)
@@ -1025,12 +1063,54 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         }
         // In-page anchors scroll; everything else leaves the page.
         if target.isFileURL, let htmlFile, target.path == htmlFile.path { return decisionHandler(.allow) }
+        // "#install" resolves against the page's <base> (the document's
+        // folder), not the page: it's this page's anchor all the same.
+        if target.isFileURL, let fragment = target.fragment, !fragment.isEmpty,
+           [url.deletingLastPathComponent().path, url.path].contains(target.standardizedFileURL.path) {
+            decisionHandler(.cancel)
+            return scroll(toAnchor: fragment.removingPercentEncoding ?? fragment)
+        }
         decisionHandler(.cancel)
         if target.isFileURL, Self.canShow(target), FileManager.default.fileExists(atPath: target.path) {
             onOpenDocument?(target)
+        } else if target.isFileURL {
+            confirmOpeningFile(target)
         } else {
             NSWorkspace.shared.open(target)
         }
+    }
+
+    /// A link in a document to a local file Libertty can't show: a README's
+    /// `install.command` or an app would run on one click (a cloned repo's
+    /// files carry no quarantine for Gatekeeper to ask), so it asks first.
+    /// A folder is shown in Finder.
+    private func confirmOpeningFile(_ target: URL) {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory) else { return NSSound.beep() }
+        let package = NSWorkspace.shared.isFilePackage(atPath: target.path)
+        if isDirectory.boolValue, !package { return NSWorkspace.shared.activateFileViewerSelecting([target]) }
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Open “\(target.lastPathComponent)”?"
+        alert.informativeText = "This document links to it. If it's a program or a script, opening it runs it.\n\n"
+            + (target.path as NSString).abbreviatingWithTildeInPath
+        alert.addButton(withTitle: "Show in Finder")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Open")
+        alert.beginSheetModal(for: window) { response in
+            switch response {
+            case .alertFirstButtonReturn: NSWorkspace.shared.activateFileViewerSelecting([target])
+            case .alertThirdButtonReturn: NSWorkspace.shared.open(target)
+            default: break
+            }
+        }
+    }
+
+    /// Scroll to the element with this id (a heading's anchor).
+    private func scroll(toAnchor id: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: [id]),
+              let quoted = String(data: data, encoding: .utf8)?.dropFirst().dropLast() else { return }
+        web.evaluateJavaScript("var e=document.getElementById(\(quoted));if(e)e.scrollIntoView();")
     }
 
     /// A page opening a new window (target=_blank): the browser gets it.
@@ -1114,7 +1194,13 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             guard let self else { return }
             // Editors save by replacing the file: follow the new one.
             if source.data.contains(.rename) || source.data.contains(.delete) {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.watch(); self.load(keepScroll: true) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.watch()
+                    // Still gone (a branch switch): the page stays as it was
+                    // until the file is back, so its scroll is kept for it.
+                    // (The editor hears it's gone: its text is unsaved now.)
+                    if self.isEditing || FileManager.default.fileExists(atPath: self.url.path) { self.load(keepScroll: true) }
+                }
             } else {
                 self.load(keepScroll: true)
             }

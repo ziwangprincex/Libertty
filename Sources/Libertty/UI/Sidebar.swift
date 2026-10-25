@@ -103,11 +103,10 @@ final class StatusBadge: NSView {
         switch new {
         case .none:
             break
-        case .ring(let percent, let color):
+        case .ring(let percent, _):
             track.isHidden = false
             arc.isHidden = false
-            track.strokeColor = color.withAlphaComponent(0.25).cgColor
-            arc.strokeColor = color.cgColor
+            updateRingColors()
             if let percent {
                 arc.strokeStart = 0
                 arc.strokeEnd = CGFloat(max(3, percent)) / 100
@@ -115,14 +114,7 @@ final class StatusBadge: NSView {
                 // Indeterminate: a quarter arc going round (still with reduced motion).
                 arc.strokeStart = 0
                 arc.strokeEnd = 0.28
-                if !Motion.reduced {
-                    let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-                    spin.fromValue = 0
-                    spin.toValue = -2 * CGFloat.pi
-                    spin.duration = 1
-                    spin.repeatCount = .infinity
-                    arc.add(spin, forKey: "spin")
-                }
+                spinIfIndeterminate()
             }
         case .symbol(let name, let color):
             image.isHidden = false
@@ -137,6 +129,38 @@ final class StatusBadge: NSView {
         }
         image.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
         needsLayout = true
+    }
+
+    /// An indeterminate ring goes round — again after the badge was out of
+    /// its window (Core Animation drops the spin then: the top tabs' bar
+    /// replaced, a row reused).
+    private func spinIfIndeterminate() {
+        guard case .ring(nil, _) = look, !Motion.reduced, arc.animation(forKey: "spin") == nil else { return }
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = -2 * CGFloat.pi
+        spin.duration = 1
+        spin.repeatCount = .infinity
+        arc.add(spin, forKey: "spin")
+    }
+
+    /// The ring's colors in the badge's own light or dark (a layer's color is resolved once).
+    private func updateRingColors() {
+        guard case .ring(_, let color) = look else { return }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            track.strokeColor = color.withAlphaComponent(0.25).cgColor
+            arc.strokeColor = color.cgColor
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { spinIfIndeterminate() }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateRingColors()
     }
 
     override func layout() {
@@ -436,20 +460,45 @@ final class SidebarViewController: NSViewController {
             if finishRename() { return }
         }
         if tabs != self.tabs {
-            self.tabs = tabs
-            tabsTable.reloadData()
+            if tabs.count == self.tabs.count {
+                // Only the rows that changed: reloading them all drops the
+                // selection, the hover and the rows' spinners.
+                let changed = IndexSet(tabs.indices.filter { tabs[$0] != self.tabs[$0] })
+                self.tabs = tabs
+                tabsTable.reloadData(forRowIndexes: changed, columnIndexes: [0])
+                tabsTable.noteHeightOfRows(withIndexesChanged: changed)
+            } else {
+                self.tabs = tabs
+                tabsTable.reloadData()
+            }
             fitTabsHeight()
         }
         if tabsTable.selectedRow != selected {
+            // The window's selection shown, not the user picking a tab: it
+            // mustn't select it again (that takes the keyboard to the terminal).
+            syncingSelection = true
             tabsTable.selectRowIndexes([selected], byExtendingSelection: false)
+            syncingSelection = false
         }
-        tabsTable.scrollRowToVisible(selected)
+        // Brought into view when the selection moves, not at every update
+        // (the list scrolled to look for another tab stays where it is).
+        if selected != scrolledTo.row || tabs.count != scrolledTo.count {
+            scrolledTo = (selected, tabs.count)
+            tabsTable.scrollRowToVisible(selected)
+        }
         placeSelectionCard()
     }
+
+    /// The selection is being set to the window's: no tab to select.
+    private var syncingSelection = false
+    /// The row last brought into view, and how many there were.
+    private var scrolledTo = (row: -1, count: -1)
 
     /// The selection card sits behind the rows, over the selected one.
     private lazy var selectionCard: SelectionCard = {
         let card = SelectionCard()
+        // As wide as the rows when the sidebar's edge is dragged.
+        card.autoresizingMask = [.width]
         tabsTable.addSubview(card, positioned: .below, relativeTo: nil)
         return card
     }()
@@ -484,7 +533,17 @@ final class SidebarViewController: NSViewController {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Close Other Tabs", action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
+        menu.delegate = self
         return menu
+    }
+
+    /// The tab the menu was opened on. Its items find its row again when
+    /// chosen: tabs may close or move while the menu is open (a program
+    /// ending), and the row clicked would then be another tab's.
+    private weak var menuTab: TerminalTab?
+    private var menuRow: Int {
+        guard let tab = menuTab else { return -1 }
+        return controller?.tabs.firstIndex { $0 === tab } ?? -1
     }
 
     /// Rename in place: the row's name becomes an editable field. Return
@@ -556,14 +615,14 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func renameTab(_ sender: Any?) {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         guard row >= 0 else { return }
         controller?.selectTab(at: row)
         beginRename(row: row)
     }
 
     @objc private func resetTabName(_ sender: Any?) {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         if row >= 0 { controller?.renameTab(at: row, to: "") }
     }
 
@@ -580,34 +639,34 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func moveTabUp(_ sender: Any?) {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         if let to = shownRow(from: row, by: -1) { controller?.moveTab(from: row, to: to) }
     }
 
     @objc private func moveTabDown(_ sender: Any?) {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         if let to = shownRow(from: row, by: 1) { controller?.moveTab(from: row, to: to) }
     }
 
     @objc private func moveTabToNewWindow(_ sender: Any?) {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         guard row >= 0, let tab = controller?.tab(at: row) else { return }
         controller?.moveTabToNewWindow(tab)
     }
 
     @objc private func duplicateTab(_ sender: Any?) {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         guard row >= 0 else { return }
         controller?.duplicateTab(at: row)
     }
 
     @objc fileprivate func closeTab(_ sender: Any?) {
-        let row = (sender as? NSButton).map { tabsTable.row(for: $0) } ?? tabsTable.clickedRow
+        let row = (sender as? NSButton).map { tabsTable.row(for: $0) } ?? menuRow
         if row >= 0 { controller?.closeTab(at: row) }
     }
 
     @objc private func closeOtherTabs(_ sender: Any?) {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         if row >= 0 { controller?.closeOtherTabs(keeping: row) }
     }
 
@@ -628,12 +687,20 @@ final class SidebarViewController: NSViewController {
         ConfigStore.shared.set("sidebar-files", filesShown ? "false" : "true")
     }
 
+    /// The tree follows the focused pane's folder when that changes; a
+    /// folder gone up to from it (Enclosing Folder) stays until then, or
+    /// until Follow Focused Pane.
     func show(directory: String, showHidden: Bool) {
+        guard directory != followed || showHidden != files.showHidden else { return }
+        followed = directory
         folderLabel.stringValue = directory == NSHomeDirectory() ? (directory as NSString).lastPathComponent
             : (directory as NSString).lastPathComponent
         folderLabel.toolTip = (directory as NSString).abbreviatingWithTildeInPath
         files.show(root: directory, showHidden: showHidden)
     }
+
+    /// The focused pane's folder, as the tree last followed it.
+    private var followed: String?
 
     /// A prompt in the focused pane: a command may have changed files
     /// anywhere (the tree's watcher sees only the root folder).
@@ -668,7 +735,10 @@ final class SidebarViewController: NSViewController {
         ConfigStore.shared.set("sidebar-show-hidden-files", files.showHidden ? "false" : "true")
     }
 
-    @objc private func follow(_ sender: Any?) { controller?.updateSidebar(force: true) }
+    @objc private func follow(_ sender: Any?) {
+        followed = nil
+        controller?.updateSidebar(force: true)
+    }
 
     @objc private func copyRoot(_ sender: Any?) {
         guard let root = files.rootPath else { return }
@@ -692,10 +762,14 @@ extension StatusBadge {
     }
 }
 
+extension SidebarViewController: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) { menuTab = controller?.tab(at: tabsTable.clickedRow) }
+}
+
 extension SidebarViewController: NSMenuItemValidation {
     /// Move Up/Down stop at the ends; Reset Name only for a renamed tab.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        let row = tabsTable.clickedRow
+        let row = menuRow
         switch item.action {
         case #selector(moveTabUp(_:)): return shownRow(from: row, by: -1) != nil
         case #selector(moveTabDown(_:)): return shownRow(from: row, by: 1) != nil
@@ -725,7 +799,8 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = tabsTable.selectedRow
         placeSelectionCard()
-        if row >= 0 { controller?.selectTab(at: row) }
+        guard !syncingSelection, row >= 0, controller?.tab(at: row) !== controller?.selectedTab else { return }
+        controller?.selectTab(at: row)
     }
 
     // Drag to reorder; onto another window's tabs to move it there; out of
@@ -1231,6 +1306,9 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         guard let rootPath else { return }
         let expanded = (0..<outline.numberOfRows).compactMap { outline.item(atRow: $0) as? FileNode }
             .filter { outline.isItemExpanded($0) }.map(\.url)
+        // Where the reader was: the file picked, and how far down.
+        let selected = (outline.item(atRow: outline.selectedRow) as? FileNode)?.url
+        let scrolled = contentView.bounds.origin
         root = FileNode(url: URL(fileURLWithPath: rootPath, isDirectory: true), isDirectory: true)
         outline.reloadData()
         // Re-open what was open.
@@ -1241,6 +1319,11 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
             }
         }
         expand(root?.children(showHidden: showHidden) ?? [])
+        if let selected, let row = (0..<outline.numberOfRows).first(where: { (outline.item(atRow: $0) as? FileNode)?.url == selected }) {
+            outline.selectRowIndexes([row], byExtendingSelection: false)
+        }
+        contentView.scroll(to: scrolled)
+        reflectScrolledClipView(contentView)
         refreshGitStatus()
     }
 

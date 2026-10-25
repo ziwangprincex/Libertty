@@ -86,7 +86,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// Notifications about a pane go once it's been looked at.
     func clear(pane: String) {
-        guard available, authorization == true else { return }
+        // (Not only once this run has asked to notify: a banner from before
+        // a relaunch names the same pane, and taking one away needs no permission.)
+        guard available, authorization != false else { return }
         let center = UNUserNotificationCenter.current()
         center.getDeliveredNotifications { delivered in
             let ids = delivered.filter { $0.request.content.userInfo["pane"] as? String == pane }.map(\.request.identifier)

@@ -249,12 +249,14 @@ final class SplitContainerView: NSView {
 
     /// Close `pane`: it shrinks away and its sibling grows into the space.
     func remove(_ pane: NSView, completion: @escaping () -> Void) {
+        // A removal under way first: it changes the tree this one looks in
+        // (two sibling panes closing at once, as a broadcast `exit` does).
+        animator?.finish()
         guard let node = root.find(pane), let parent = node.parent,
               let sibling = parent.children.first(where: { $0 !== node }) else {
             completion()
             return
         }
-        animator?.finish()
         // A pane closing behind the zoomed one leaves the zoom alone; the
         // zoomed pane closing ends it (layoutPanes notices it's gone).
         if zoomed === pane { zoomed = nil }
@@ -292,11 +294,15 @@ final class SplitContainerView: NSView {
         layoutPanes()
     }
 
+    /// Where `view` sits in the split: its slot, whatever it shows now (a
+    /// zoomed pane fills the container; the others are hidden in theirs).
+    func slot(of view: NSView) -> CGRect { root.find(view)?.frame ?? view.frame }
+
     /// The pane whose center is closest in `direction` from `pane`.
     func neighbor(of pane: NSView, _ direction: Direction) -> NSView? {
-        let from = pane.frame
+        let from = slot(of: pane)
         return views.filter { $0 !== pane }.compactMap { other -> (NSView, CGFloat)? in
-            let to = other.frame
+            let to = slot(of: other)
             let ok: Bool = switch direction {
             case .left: to.maxX <= from.minX + 1
             case .right: to.minX >= from.maxX - 1

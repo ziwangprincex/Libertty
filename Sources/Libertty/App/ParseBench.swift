@@ -710,6 +710,27 @@ enum ParseBench {
                 failures += 1
             }
         }
+        // AZERTY's Ctrl+A: the physical key is US Q, the text the layout's "a"
+        // (TerminalView passes it): ^A goes out, not ^Q.
+        do {
+            let session = try TerminalSession(size: GridSize(cols: 60, rows: 6, widthPx: 600, heightPx: 120))
+            try session.start(command: "sleep 0.4; od -An -c")
+            RunLoop.main.run(until: Date().addingTimeInterval(0.7))
+            session.send(TerminalSession.Key(
+                action: GHOSTTY_KEY_ACTION_PRESS, key: GHOSTTY_KEY_Q, mods: GhosttyMods(GHOSTTY_MODS_CTRL), consumedMods: 0,
+                text: "a", unshiftedCodepoint: 0x61, composing: false))
+            session.sendText("\n\u{04}")
+            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+            let text = session.scrollbackText()
+            if text.contains("001"), !text.contains("021") { print("ok    kitty-key layout ctrl: ^A") } else {
+                print("FAIL  kitty-key layout ctrl: wanted 001 (^A), screen has \(text.trimmingCharacters(in: .whitespacesAndNewlines).suffix(50))")
+                failures += 1
+            }
+            session.terminate()
+        } catch {
+            print("FAIL  kitty-key layout ctrl: \(error)")
+            failures += 1
+        }
         press("legacy: @", enable: "", expect: "@", absent: "[50")
         press("disambiguate: @", enable: "\\033[>1u", expect: "@", absent: "[50")
         press("report-all: CSI u", enable: "\\033[>8u", expect: "[50;2u", absent: "@")
@@ -785,6 +806,11 @@ enum ParseBench {
             let ok = session.selectLastCommandOutput()
             print("selected: \(ok)")
             print("[" + (session.selectedText() ?? "") + "]")
+            // A command that prints nothing: there's no output of it to take
+            // (not the one before's).
+            session.sendText("cd .\n")
+            RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+            print("after a silent command: \(session.selectLastCommandOutput() ? "selected [\(session.selectedText() ?? "")]" : "nothing")")
             exit(0)
         } catch {
             print("output-probe: \(error)")

@@ -12,7 +12,21 @@ enum DiffRenderer {
         var oldLine = 0, newLine = 0
         /// The current file has hunks already (so a `---` starts the next one).
         var inHunks = false
+        /// Lines the hunk under way still has, old and new (its `@@` says how
+        /// many): while it has any, a line is the hunk's by its first
+        /// character — a removed `-- comment` is `--- comment`, not a file.
+        var oldLeft = 0, newLeft = 0
+        /// Past the last hunk of a counted one, `git format-patch`'s `-- `
+        /// signature and its version: no change, up to the next header.
+        var counted = false, trailer = false
         func esc(_ s: some StringProtocol) -> String { MarkdownRenderer.escape(String(s)) }
+        /// Text before a file (a commit's message and stats): where it came, before that file.
+        func emitPreamble() {
+            if !preamble.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                out += "<pre class=\"preamble\">\(preamble)</pre>"
+            }
+            preamble = ""
+        }
         func flush() {
             guard let f = file else { return }
             out += "<section class=\"file\"><header><span class=\"name\">\(esc(f.name))</span>"
@@ -28,8 +42,47 @@ enum DiffRenderer {
         if lines.last == "" { lines.removeLast() }  // the final newline isn't a line
         for raw in lines {
             let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
+            if file != nil, oldLeft > 0 || newLeft > 0 {
+                if line.hasPrefix("+") {
+                    row("add", "", String(newLine), "+", Highlighter.html(String(line.dropFirst()), language: file!.language))
+                    newLine += 1
+                    newLeft -= 1
+                    file?.added += 1
+                    continue
+                }
+                if line.hasPrefix("-") {
+                    row("del", String(oldLine), "", "−", Highlighter.html(String(line.dropFirst()), language: file!.language))
+                    oldLine += 1
+                    oldLeft -= 1
+                    file?.removed += 1
+                    continue
+                }
+                if line.hasPrefix(" ") || line.isEmpty {
+                    row("ctx", String(oldLine), String(newLine), "", Highlighter.html(String(line.dropFirst()), language: file!.language))
+                    oldLine += 1
+                    newLine += 1
+                    oldLeft -= 1
+                    newLeft -= 1
+                    continue
+                }
+                if line.hasPrefix("\\") {
+                    row("meta", "", "", "", esc(line))  // \ No newline at end of file
+                    continue
+                }
+                // Anything else: the hunk was shorter than it said; read on as before.
+                oldLeft = 0
+                newLeft = 0
+            }
+            if trailer {
+                guard line.hasPrefix("diff ") || line.hasPrefix("--- ") || line.hasPrefix("From ") || line.hasPrefix("@@") else { continue }
+                trailer = false
+                // The next patch of a series: its header is no line of this file.
+                if line.hasPrefix("From ") { flush() }
+            }
             if line.hasPrefix("diff --git ") {
+                counted = false
                 flush()
+                emitPreamble()
                 // diff --git a/path b/path: the new name.
                 let parts = line.dropFirst("diff --git ".count).components(separatedBy: " b/")
                 let name = parts.count > 1 ? parts.last! : String(line.dropFirst("diff --git ".count))
@@ -42,7 +95,9 @@ enum DiffRenderer {
                 let name = path.hasPrefix("a/") || path.hasPrefix("b/") ? String(path.dropFirst(2)) : path
                 if line.hasPrefix("--- "), file == nil || inHunks {
                     // A plain unified diff (no git header): a file starts here.
+                    counted = false
                     flush()
+                    emitPreamble()
                     file = (name, "", "", 0, 0)
                     inHunks = false
                 }
@@ -63,10 +118,27 @@ enum DiffRenderer {
                     oldLine = Int(scanner[1].dropFirst().split(separator: ",").first ?? "") ?? 0
                     newLine = Int(scanner[2].dropFirst().split(separator: ",").first ?? "") ?? 0
                 }
+                // A plain hunk's lines are counted (-start[,count] +start[,count],
+                // a count left out is 1). Not a merge's `@@@` (its lines have
+                // a column per parent): read by their first character, as before.
+                if line.hasPrefix("@@ "), scanner.count > 2 {
+                    let old = scanner[1].split(separator: ","), new = scanner[2].split(separator: ",")
+                    oldLeft = old.count > 1 ? Int(old[1]) ?? 0 : 1
+                    newLeft = new.count > 1 ? Int(new[1]) ?? 0 : 1
+                    counted = true
+                } else {
+                    oldLeft = 0
+                    newLeft = 0
+                    counted = false
+                }
                 row("hunk", "", "", "", esc(line))
                 inHunks = true
             } else if line.hasPrefix("index ") && !inHunks {
                 continue  // blob hashes: noise here
+            } else if line == "-- ", counted || !inHunks {
+                // format-patch's signature, after the last hunk (or a file with
+                // none: binary, renamed). Not in a merge's uncounted `@@@` hunk.
+                trailer = true
             } else if line.hasPrefix("+") {
                 row("add", "", String(newLine), "+", Highlighter.html(String(line.dropFirst()), language: file!.language))
                 newLine += 1
@@ -87,9 +159,7 @@ enum DiffRenderer {
             }
         }
         flush()
-        if !preamble.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            out = "<div class=\"diff\"><pre class=\"preamble\">\(preamble)</pre>" + out.dropFirst("<div class=\"diff\">".count)
-        }
+        emitPreamble()
         if out == "<div class=\"diff\">" { out += "<p class=\"empty\">No changes.</p>" }
         return out + "</div>"
     }
@@ -141,8 +211,11 @@ enum GitDiff {
         p.standardOutput = out
         p.standardError = err
         do { try p.run() } catch { return .failure(Failure(message: error.localizedDescription)) }
+        // Both at once: git fills a pipe of warnings (a line ending each, for
+        // hundreds of files) and waits on it while stdout is still being read.
+        let errorsDrain = Drain(err.fileHandleForReading)
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        let errors = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let errors = String(decoding: errorsDrain.wait(), as: UTF8.self)
         p.waitUntilExit()
         // `--no-index` (a new file against /dev/null) exits 1 for "they differ".
         let differs = arguments.contains("--no-index") && p.terminationStatus == 1

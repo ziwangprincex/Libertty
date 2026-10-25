@@ -42,6 +42,11 @@ import LiberttyCore
 ///   expect-font:SIZE      the focused pane's text size, in points
 ///   expect-background:#RRGGBB  the focused pane's background (its theme's)
 ///   undo:go               Edit ▸ Undo (a probe has no menu for ⌘Z to reach)
+///   redo:go               Edit ▸ Redo
+///   expect-panes:N        the tab in front has N panes in its split
+///   focus-event:in|out    the focused pane gains or loses the keyboard, as its program hears it
+///   expect-searching:N    N panes of the tab in front (parked ones too) have a search open
+///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
 ///   editor-insert:TEXT    put TEXT at the editor's cursor (`type:` sends real keys)
@@ -514,6 +519,33 @@ enum UIProbe {
                     failures += 1
                 }
                 pump(0.5)
+            case .focusEvent(let focused):
+                controller.focusedTerminal.session.reportFocus(focused)
+                pump(0.3)
+            case .expectSearching(let n):
+                let count = controller.selectedTab.everyPane.filter { $0.session.searchResult.active }.count
+                if count == n { print("ok    ui-probe \(n) panes searching") } else {
+                    print("FAIL  ui-probe searching: \(count) panes, not \(n)")
+                    failures += 1
+                }
+            case .expectPanes(let n):
+                let count = controller.selectedPaneCount
+                if count == n { print("ok    ui-probe \(n) panes") } else {
+                    print("FAIL  ui-probe panes: \(count), not \(n)")
+                    failures += 1
+                }
+            case .redo:
+                let redone = MainActor.assumeIsolated { () -> Bool in
+                    let manager = CloseUndo.shared.manager
+                    guard manager.canRedo else { return false }
+                    manager.redo()
+                    return true
+                }
+                if !redone {
+                    print("FAIL  ui-probe redo: nothing to redo")
+                    failures += 1
+                }
+                pump(0.5)
             case .hover(let n):
                 let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
                 guard panes.indices.contains(n - 1),
@@ -528,11 +560,12 @@ enum UIProbe {
                 pump(0.2)
             case .expectFocus(let n):
                 let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
-                let focused = panes.firstIndex { $0 === window.firstResponder }.map { $0 + 1 }
+                // 0: none of them (the keyboard is in a field: the find bar, a filter).
+                let focused = panes.firstIndex { $0 === window.firstResponder }.map { $0 + 1 } ?? 0
                 if focused == n {
-                    print("ok    ui-probe pane \(n) has the keyboard")
+                    print("ok    ui-probe " + (n == 0 ? "no pane has the keyboard" : "pane \(n) has the keyboard"))
                 } else {
-                    print("FAIL  ui-probe focus: pane \(focused.map(String.init) ?? "none"), not \(n)")
+                    print("FAIL  ui-probe focus: pane \(focused == 0 ? "none" : String(focused)), not \(n)")
                     failures += 1
                 }
             case .expectSubtitle(let text):
@@ -768,7 +801,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -870,6 +903,10 @@ enum UIProbe {
             case "expect-other": steps.append(.expectOther(arg))
             case "take-tab": steps.append(.takeTab(Int(arg) ?? -1))
             case "undo": steps.append(.undo)
+            case "redo": steps.append(.redo)
+            case "expect-panes": steps.append(.expectPanes(Int(arg) ?? -1))
+            case "focus-event": steps.append(.focusEvent(arg == "in"))
+            case "expect-searching": steps.append(.expectSearching(Int(arg) ?? -1))
             case "open", "edit":
                 var path = arg, line: Int?
                 if let colon = arg.lastIndex(of: ":"), let n = Int(arg[arg.index(after: colon)...]) {

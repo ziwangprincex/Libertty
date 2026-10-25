@@ -8,4 +8,7 @@ db.execute("CREATE VIEW top_users AS SELECT name, score FROM users WHERE score >
 # A cell too long for the grid, and the smallest integer (abs() of it traps).
 db.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT, n INTEGER)")
 db.execute("INSERT INTO notes VALUES (1, ?, -9223372036854775808)", ("x" * 50000,))
+# A zip code is text: "02134" must stay as typed, leading zero and all.
+db.execute("CREATE TABLE contacts (name TEXT, zip TEXT)")
+db.execute("INSERT INTO contacts VALUES ('ann', '02134')")
 db.commit()

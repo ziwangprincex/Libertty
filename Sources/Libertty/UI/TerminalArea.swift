@@ -130,6 +130,9 @@ final class TerminalAreaViewController: NSViewController {
 final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
     var onChange: ((String) -> Void)?
     var onNavigate: ((_ older: Bool) -> Void)?
+    /// The bar's arrows: up the page or down it (older is up in a
+    /// terminal's scrollback, but a document's next match is below).
+    var onArrow: ((_ up: Bool) -> Void)?
     var onClose: (() -> Void)?
 
     let field = NSTextField()
@@ -189,6 +192,12 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Its edge in the window's light or dark (a layer's color is resolved once).
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.borderColor = NSColor.separatorColor.cgColor }
+    }
+
     /// Documents report only whether the text was found.
     func showDocument(found: Bool, empty: Bool) {
         count.stringValue = empty ? "" : found ? "" : "No matches"
@@ -219,7 +228,7 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
         }
     }
 
-    @objc private func older() { onNavigate?(true) }
-    @objc private func newer() { onNavigate?(false) }
+    @objc private func older() { if let onArrow { onArrow(true) } else { onNavigate?(true) } }
+    @objc private func newer() { if let onArrow { onArrow(false) } else { onNavigate?(false) } }
     @objc private func close() { onClose?() }
 }

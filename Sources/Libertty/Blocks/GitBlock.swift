@@ -129,7 +129,7 @@ final class GitBlock: BlockService {
             }
             let verb = ["stashPop": "pop", "stashApply": "apply", "stashDrop": "drop", "stashShow": "show"][method]!
             blockWork(reply) {
-                if verb == "show" { return Self.capped(try self.git(["stash", "show", "-p", "--no-color", "--include-untracked", ref])) }
+                if verb == "show" { return Self.capped(try self.git(["stash", "show", "-p", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--include-untracked", ref])) }
                 try self.git(["stash", verb, ref])
                 return true
             }
@@ -309,7 +309,7 @@ final class GitBlock: BlockService {
                 i += 1
             }
         }
-        var result = Self.capped(try git(["show", "--no-color", "--format=", "-M", "--no-ext-diff", hash]))
+        var result = Self.capped(try git(["show", "--no-color", "--format=", "-M", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", hash]))
         result.merge(["hash": f[0], "parents": f[1].split(separator: " ").map(String.init), "author": f[2], "email": f[3],
                       "time": Int(f[4]) ?? 0, "committer": f[5], "message": f[6].trimmingCharacters(in: .whitespacesAndNewlines),
                       "files": list]) { _, new in new }
@@ -328,7 +328,7 @@ final class GitBlock: BlockService {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: git)
             p.arguments = ["--no-optional-locks", "-c", "core.quotePath=false", "-C", root,
-                           "diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", relative]
+                           "diff", "--no-color", "--no-ext-diff", "--no-index", "--src-prefix=a/", "--dst-prefix=b/", "--", "/dev/null", relative]
             let out = Pipe()
             p.standardOutput = out
             p.standardError = FileHandle.nullDevice
@@ -337,7 +337,7 @@ final class GitBlock: BlockService {
             p.waitUntilExit()
             return Self.capped(String(decoding: data, as: UTF8.self))
         }
-        return Self.capped(try git(["diff", "--no-color", "--no-ext-diff", "-M"] + (staged ? ["--cached"] : []) + ["--"] + paths))
+        return Self.capped(try git(["diff", "--no-color", "--no-ext-diff", "-M", "--src-prefix=a/", "--dst-prefix=b/"] + (staged ? ["--cached"] : []) + ["--"] + paths))
     }
 
     private func branches() throws -> [String: Any] {

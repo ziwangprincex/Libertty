@@ -105,11 +105,14 @@ final class PictureInPicture: NSObject, NSWindowDelegate {
         return b
     }
 
-    /// A third of the pane's width (between 240 and 480 points), in its shape.
+    /// A third of the pane's width (between 240 and 480 points), in its
+    /// shape, and no taller than half the screen (a tall, narrow pane).
     private static func initialSize(for pane: TerminalView) -> NSSize {
         let s = pane.bounds.size
         guard s.width > 0, s.height > 0 else { return NSSize(width: 360, height: 220) }
-        let width = min(480, max(240, s.width / 3))
+        var width = min(480, max(240, s.width / 3))
+        let tallest = max(160, ((pane.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800) / 2)
+        if width * s.height / s.width > tallest { width = tallest * s.width / s.height }
         return NSSize(width: width, height: width * s.height / s.width)
     }
 

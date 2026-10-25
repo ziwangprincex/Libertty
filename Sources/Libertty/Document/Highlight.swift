@@ -89,7 +89,8 @@ enum Highlighter {
             if let lc = lang.lineComments.first(where: { startsWith($0, at: i) }),
                lc != "#" || i == 0 || chars[i - 1].isWhitespace || chars[i - 1] == ";" {
                 var j = i
-                while j < chars.count, chars[j] != "\n" { j += 1 }
+                // (`isNewline`: in a CRLF file "\r\n" is one Character, not "\n".)
+                while j < chars.count, !chars[j].isNewline { j += 1 }
                 span("c", String(chars[i..<j]))
                 i = j
                 continue
@@ -111,11 +112,11 @@ enum Highlighter {
                 i = j
                 continue
             }
-            if lang.strings.contains(ch), !(ch == "'" && language == "rust" && i + 2 < chars.count && chars[i + 2] != "'") {
+            if lang.strings.contains(ch), !(ch == "'" && ["rust", "rs"].contains(language.lowercased()) && i + 2 < chars.count && chars[i + 2] != "'") {
                 var j = i + 1
                 while j < chars.count, chars[j] != ch {
                     if chars[j] == "\\" { j += 2; continue }
-                    if chars[j] == "\n", ch != "`" { break }
+                    if chars[j].isNewline, ch != "`" { break }
                     j += 1
                 }
                 j = min(chars.count, j + 1)

@@ -362,9 +362,18 @@ struct MarkdownRenderer {
         for c in plain.lowercased() {
             if c.isLetter || c.isNumber || c == "-" || c == "_" { s.append(c) } else if c == " " { s.append("-") }
         }
-        let n = slugs[s, default: 0]
-        slugs[s] = n + 1
-        return n == 0 ? s : "\(s)-\(n)"
+        // Numbered past any id already given ("Example", "Example",
+        // "Example 1": example, example-1, example-1-1), as GitHub does.
+        var candidate = s
+        var n = slugs[s, default: 0]
+        if n > 0 { candidate = "\(s)-\(n)" }
+        while n > 0, slugs[candidate] != nil {
+            n += 1
+            candidate = "\(s)-\(n)"
+        }
+        slugs[s, default: 0] += 1
+        if candidate != s { slugs[candidate, default: 0] += 1 }
+        return candidate
     }
 
     private func codeBlock(_ code: String, language: String) -> String {

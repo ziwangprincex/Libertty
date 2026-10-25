@@ -61,6 +61,10 @@ check snapshot-showcase $LIBERTTY --snapshot $OUT/showcase.png --cols 90 --rows 
 check snapshot-boxes $LIBERTTY --snapshot $OUT/boxes.png --cols 80 --rows 30 -- sh $ROOT/tests/fixtures/boxes.sh
 check snapshot-kitty $LIBERTTY --snapshot $OUT/kitty.png --cols 60 --rows 14 -- python3 $ROOT/tests/fixtures/kitty-image.py
 check snapshot-kitty-placeholder $LIBERTTY --snapshot $OUT/kitty-placeholder.png --cols 50 --rows 8 -- python3 $ROOT/tests/fixtures/kitty-placeholder.py
+# The block cursor on a wide (CJK) character covers both its cells, the character legible in it.
+check snapshot-cursor-wide $LIBERTTY --snapshot $OUT/cursor-wide.png --cols 20 --rows 3 -- 'printf "\033[2 q中文测试\033[1;4H"; sleep 1'
+# Underline styles (curly, dotted, dashed, double) in their own colors (SGR 58): Neovim's diagnostics.
+check snapshot-underlines $LIBERTTY --snapshot $OUT/underlines.png --cols 40 --rows 4 -- 'printf "\033[4:3m\033[58:2::255:0:0mcurly red\033[0m  \033[4:4m\033[58;5;3mdotted\033[0m\n\033[4:5mdashed\033[0m  \033[4mplain\033[0m  \033[4:2m\033[58:2::0:160:255mdouble\033[0m\n"; sleep 1'
 check snapshot-sprites $LIBERTTY --snapshot $OUT/sprites.png --cols 64 --rows 6 -- sh $ROOT/tests/fixtures/sprites.sh
 check snapshot-ligatures $LIBERTTY --snapshot $OUT/ligatures.png --cols 64 --rows 4 -- 'printf "a -> b => c != d === e !== f <= g |> h <!-- -->\nplain words (just text)\n"'
 expect padding-color 'padding-color: all passed' zsh $ROOT/tests/padding-color-test.sh $LIBERTTY $OUT
@@ -72,6 +76,14 @@ check snapshot-smooth-scroll $LIBERTTY --snapshot $OUT/smooth-scroll.png --cols 
 expect markdown '<table>' $LIBERTTY +render-markdown $ROOT/tests/fixtures/markdown.md
 # Two files, each once, with their counts.
 expect diff-render '^(.*main\.swift.*\+4</span> <span class="del">−3.*notes\.md.*\+1</span> <span class="del">−0)' $LIBERTTY +render-diff $ROOT/tests/fixtures/sample.diff
+# A removed `-- comment` (SQL, Lua) is a removed line, not a file; format-patch's `-- ` trailer is no change.
+expect diff-render-dashes '^(.*q\.sql.*\+0</span> <span class="del">−1.*z\.txt.*\+1</span> <span class="del">−0)' $LIBERTTY +render-diff $ROOT/tests/fixtures/sql-comment.patch
+# A merge's combined diff (`@@@`, a column per parent): every line, read by its first character.
+expect diff-render-merge 'f\.txt.*\+4</span> <span class="del">−0.*&gt;&gt;&gt;&gt;&gt;&gt;&gt; other' $LIBERTTY +render-diff $ROOT/tests/fixtures/merge.diff
+# A format-patch series: each commit's header before its files, no `-- ` trailer as a change (a binary or renamed file last too).
+expect diff-render-series-sql 'q\.sql</span><span class="stat"><span class="add">\+0</span> <span class="del">−1<' $LIBERTTY +render-diff $ROOT/tests/fixtures/series.patch
+expect diff-render-series-bin 'zz\.bin</span><span class="stat"><span class="add">\+0</span> <span class="del">−0<' $LIBERTTY +render-diff $ROOT/tests/fixtures/series.patch
+expect diff-render-series-rename 'zz-new\.txt</span><span class="stat"><span class="add">\+0</span> <span class="del">−0<' $LIBERTTY +render-diff $ROOT/tests/fixtures/series.patch
 expect config-validates 'ok$' $LIBERTTY +validate-config --config-file /dev/null
 expect config-get 'false|true' $LIBERTTY +get window-vsync
 expect ligature-config 'all 8 right' $LIBERTTY --ligature-config-probe
@@ -81,6 +93,11 @@ expect update-notes 'notes box: 440x300' $LIBERTTY --update-notes-probe $ROOT/te
 # Links, selection, shell integration
 expect links-url 'text https://example.com/a_\(b\) 0:4-28' $LIBERTTY --link-probe 'printf "see https://example.com/a_(b), ok.\n"'
 expect links-osc8 'osc8 https://libertty.dev/docs' $LIBERTTY --link-probe 'printf "\033]8;;https://libertty.dev/docs\033\\\\here\033]8;;\033\\\\\n"'
+# Chinese punctuation ends a URL; a URL's own Chinese doesn't.
+expect links-cjk-punct 'text https://github.com/foo/bar 0:' $LIBERTTY --link-probe 'printf "详见 https://github.com/foo/bar，然后运行\n"'
+expect links-cjk-quote 'text https://github.com/foo/bar 0:' $LIBERTTY --link-probe 'printf "访问“https://github.com/foo/bar”获取\n"'
+expect links-kana 'text https://ja.wikipedia.org/wiki/佐々木小次郎 0:' $LIBERTTY --link-probe 'printf "https://ja.wikipedia.org/wiki/佐々木小次郎 です\n"'
+expect links-cjk-path 'text https://zh.wikipedia.org/wiki/中文 0:' $LIBERTTY --link-probe 'printf "看 https://zh.wikipedia.org/wiki/中文。\n"'
 expect links-path 'CLI.swift line 42 col 7' $LIBERTTY --link-probe 'printf "Sources/Libertty/App/CLI.swift:42:7: error\n"'
 expect selection-autoscroll 'drag up \+ 3 ticks: line2' $LIBERTTY --selection-probe
 expect selection-extend 'shift-click extend: line28 \| line29 \| line' $LIBERTTY --selection-probe
@@ -90,6 +107,8 @@ expect bash-command-finished 'finished: sleep 0.3; echo .a;b. >/dev/null exit=0'
 # Last command's output (OSC 133 marks) and the scrollbar model
 expect output-zsh '^\[out one' $LIBERTTY --output-probe zsh
 expect output-bash '^out three\]' $LIBERTTY --output-probe bash
+expect output-silent-zsh '^after a silent command: nothing$' $LIBERTTY --output-probe zsh
+expect output-silent-bash '^after a silent command: nothing$' $LIBERTTY --output-probe bash
 expect scrollbar 'scrolled to 200: total 401 offset 200 length 10' $LIBERTTY --scrollbar-probe
 
 # Git: without developer tools /usr/bin/git is Apple's stub, which asks to install
@@ -260,11 +279,17 @@ printf '# Notes\n\nSome *text*.\n' > $ED/notes.md
 printf '\n# Please enter the commit message\n' > $ED/COMMIT_EDITMSG
 printf 'caf\351\n' > $ED/latin1.txt
 printf '\377\376h\000i\000' > $ED/utf16.txt
+printf '\357\273\277hi\n' > $ED/bom.txt
+printf 'target\n' > $ED/target.txt
+ln -s target.txt $ED/linked.txt
+printf 'start\n' > $ED/wq.txt
+{ print '[Far](#far-below) [Café](#café)\n'; for i in {1..200}; print "line $i\n"; print '## Far below\n\n## Café\n'; for i in {1..60}; print "more $i\n" } > $ED/toc.md
 expect editor 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@DIR@|$ED|g" $ROOT/tests/fixtures/editor.txt)" $OUT
 # The Git block: stage a hunk, commit, history, a branch, a stash — through its page.
 GB=$PRIVATE/gitblock
 mkdir -p $GB
 ( cd $GB && git init -q -b main && git config user.email t@example.com && git config user.name t \
+  && git config diff.noprefix true \
   && printf 'struct App {\n    let name = "x"\n}\n' > app.swift && git add -A && git commit -qm First \
   && printf 'struct App {\n    let name = "x"\n    let size = 1\n}\n' > app.swift && git commit -qam Second \
   && printf 'struct App {\n    let name = "x"\n    let size = 1\n    let answer = 42\n}\n' > app.swift && printf 'new\n' > notes.txt )
@@ -325,6 +350,9 @@ kill $SITE_PID 2>/dev/null
 expect park 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/park.txt)" $OUT
 # Workspaces: named sets of tabs in a window.
 expect workspaces 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/workspaces.txt)" $OUT
+# Panes: zoomed navigation, Redo of a close, two siblings ending at once.
+expect splits 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/splits.txt)" $OUT
 # Float Pane: a live card in the split's corner.
 expect float 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/float.txt)" $OUT
 # liberttyd keeps the window layout the app gives it, across a takeover.

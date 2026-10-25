@@ -32,6 +32,9 @@ final class TerminalRenderer {
         var glyphs: [GlyphInstance] = []
         /// Column of each glyph, to find the one under the cursor.
         var glyphColumns: [UInt16] = []
+        /// Columns where a wide character (CJK, emoji) starts: the cursor
+        /// there covers both its cells.
+        var wideColumns: Set<UInt16> = []
         /// Kitty Unicode placeholder cells (an image shows there instead).
         var placeholders: [KittyPlaceholders.Cell] = []
         /// Its cells' own backgrounds, as runs of one color (columns
@@ -167,6 +170,7 @@ final class TerminalRenderer {
         self.fonts = fonts
         atlas = GlyphAtlas(device: device, fonts: fonts)
         rows.removeAll()
+        rowsGeneration = -1
     }
 
     // MARK: Frame
@@ -244,7 +248,13 @@ final class TerminalRenderer {
         _ = ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_DIRTY, &dirty)
         let offsetChanged = pixelOffset != drawnOffset
         drawnOffset = pixelOffset
-        let changed = dirty != GHOSTTY_RENDER_STATE_DIRTY_FALSE || force || highlightsChanged || imagesChanged
+        // The composition's glyphs go into the atlas before the rows are
+        // placed: one that fills it then wipes it before them, not after.
+        warmPreedit()
+        // Wiped since the rows were placed (by a composition, last frame):
+        // they point at overwritten space, every one of them.
+        let atlasMoved = atlas.generation != rowsGeneration
+        let changed = dirty != GHOSTTY_RENDER_STATE_DIRTY_FALSE || force || highlightsChanged || imagesChanged || atlasMoved
         guard changed || offsetChanged else { return false }
         // Only the offset moved: the instances stand; the shader shifts them.
         if !changed, pixelOffset == 0 || belowRow != nil {
@@ -263,7 +273,7 @@ final class TerminalRenderer {
         background = colors.background
         alternateScreen = session.renderedAlternateScreen
 
-        let rebuildAll = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL || rows.count != Int(rowCount) || force
+        let rebuildAll = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL || rows.count != Int(rowCount) || force || atlasMoved
         if rows.count != Int(rowCount) { rows = Array(repeating: Row(), count: Int(rowCount)) }
 
         // Ligatures break at the cursor: the rows it left and entered are rebuilt.
@@ -278,14 +288,19 @@ final class TerminalRenderer {
         }
         shapingCursor = now
 
-        let generation = atlas.generation
+        var generation = atlas.generation
         rebuildRows(all: rebuildAll, colors: colors, also: extra)
-        if atlas.generation != generation {
-            // The atlas was wiped mid-frame; every cached glyph is stale.
-            rebuildRows(all: true, colors: colors, also: [])
-        }
-        _ = ghostty_render_state_clean(state)
         updateBelowRow(session, colors: colors)
+        // The atlas was wiped mid-frame (full: a long run of new CJK, a big
+        // font): every glyph placed before it points at overwritten space.
+        // Again until a pass fits (a few at most: one pass is one screen).
+        for _ in 0..<3 where atlas.generation != generation {
+            generation = atlas.generation
+            rebuildRows(all: true, colors: colors, also: [])
+            updateBelowRow(session, colors: colors)
+        }
+        rowsGeneration = atlas.generation
+        _ = ghostty_render_state_clean(state)
         updatePlaceholderDraws()
 
         assembleInstances(colors: colors, focused: focused)
@@ -303,6 +318,23 @@ final class TerminalRenderer {
         placeholderDraws = rows.enumerated().flatMap { y, row in
             row.placeholders.isEmpty ? [] : KittyPlaceholders.draws(row.placeholders, y: y, virtuals: virtualPlacements,
                                                                      cellWidth: fonts.cellWidth, cellHeight: fonts.cellHeight)
+        }
+    }
+
+    /// This frame's 256 colors (underline colors may name one).
+    private var framePalette = [GhosttyColorRgb](repeating: GhosttyColorRgb(), count: 256)
+
+    /// SGR 58: the underline's own color, when a program set one (Neovim's diagnostics).
+    private func underlineColor(_ style: GhosttyStyle) -> UInt32? {
+        let c = style.underline_color
+        switch c.tag {
+        case GHOSTTY_STYLE_COLOR_PALETTE:
+            let p = framePalette[Int(c.value.palette)]
+            return RGB(p.r, p.g, p.b).packed()
+        case GHOSTTY_STYLE_COLOR_RGB:
+            return RGB(c.value.rgb.r, c.value.rgb.g, c.value.rgb.b).packed()
+        default:
+            return nil
         }
     }
 
@@ -367,6 +399,10 @@ final class TerminalRenderer {
     private func rebuildRows(all: Bool, colors: Colors, also extra: Set<Int>) {
         guard ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR, &rowIterator) == GHOSTTY_SUCCESS
         else { return }
+        // For underline colors given as palette entries (SGR 58:5).
+        _ = framePalette.withUnsafeMutableBufferPointer {
+            ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_COLOR_PALETTE, $0.baseAddress)
+        }
         var y = 0
         while ghostty_render_state_row_iterator_next(rowIterator), y < rows.count {
             defer { y += 1 }
@@ -507,6 +543,7 @@ final class TerminalRenderer {
             }
 
             let span = graphemes > 0 && cells.isWide ? 2 : 1
+            if span == 2 { row.wideColumns.insert(UInt16(x)) }
 
             if let bg {
                 let color = bg.packed()
@@ -585,9 +622,33 @@ final class TerminalRenderer {
         let thickness = Float(fonts.underlineThickness)
         if style.underline != Int32(GHOSTTY_SGR_UNDERLINE_NONE.rawValue) {
             let y = top + Float(fonts.underlinePosition)
-            row.rects.append(RectInstance(rect: SIMD4(left, y, width, thickness), color: color))
-            if style.underline == Int32(GHOSTTY_SGR_UNDERLINE_DOUBLE.rawValue) {
-                row.rects.append(RectInstance(rect: SIMD4(left, y - thickness * 2, width, thickness), color: color))
+            let line = underlineColor(style) ?? color
+            switch style.underline {
+            case Int32(GHOSTTY_SGR_UNDERLINE_DOUBLE.rawValue):
+                row.rects.append(RectInstance(rect: SIMD4(left, y, width, thickness), color: line))
+                row.rects.append(RectInstance(rect: SIMD4(left, y - thickness * 2, width, thickness), color: line))
+            case Int32(GHOSTTY_SGR_UNDERLINE_CURLY.rawValue):
+                // A wave, one period per cell, in steps a pixel or two wide.
+                let step = max(1, Float(fonts.scale)), amplitude = max(thickness, Float(fonts.cellHeight) / 16)
+                let period = Float(fonts.cellWidth)
+                var x: Float = 0
+                while x < width {
+                    let phase = (left + x - origin.x).truncatingRemainder(dividingBy: period) / period
+                    let dy = amplitude * sin(phase * 2 * .pi)
+                    row.rects.append(RectInstance(rect: SIMD4(left + x, y - dy, min(step, width - x), thickness), color: line))
+                    x += step
+                }
+            case Int32(GHOSTTY_SGR_UNDERLINE_DOTTED.rawValue), Int32(GHOSTTY_SGR_UNDERLINE_DASHED.rawValue):
+                let dotted = style.underline == Int32(GHOSTTY_SGR_UNDERLINE_DOTTED.rawValue)
+                let on = dotted ? max(thickness, Float(fonts.scale)) : Float(fonts.cellWidth) / 2
+                let gap = dotted ? on : Float(fonts.cellWidth) / 4
+                var x: Float = 0
+                while x < width {
+                    row.rects.append(RectInstance(rect: SIMD4(left + x, y, min(on, width - x), thickness), color: line))
+                    x += on + gap
+                }
+            default:
+                row.rects.append(RectInstance(rect: SIMD4(left, y, width, thickness), color: line))
             }
         }
         if style.strikethrough {
@@ -661,9 +722,16 @@ final class TerminalRenderer {
         } else if cursorBlinks, !blinkOn {
             // The off half of a blink: no cursor this frame.
         } else if cursor.visible, cursor.viewport_has_value, Int(cursor.viewport_y) < rows.count {
+            let row = rows[Int(cursor.viewport_y)]
+            // On a wide character's second cell: the character's first. On a
+            // wide character: both its cells (Ghostty's way), so the block
+            // doesn't cut it in half and hide the rest.
+            let column = cursor.wide_tail && cursor.viewport_x > 0 ? cursor.viewport_x - 1 : cursor.viewport_x
+            let cells: Float = row.wideColumns.contains(column) ? 2 : 1
             let cw = Float(fonts.cellWidth), ch = Float(fonts.cellHeight)
-            let left = origin.x + Float(cursor.viewport_x) * cw
+            let left = origin.x + Float(column) * cw
             let top = origin.y + Float(cursor.viewport_y) * ch
+            let width = cw * cells
             let color = colors.cursor.packed()
             let thin = max(1, Float(fonts.scale * 1.5).rounded())
 
@@ -671,10 +739,9 @@ final class TerminalRenderer {
             if !focused { style = GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW }
             switch style {
             case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK:
-                scratchRects.append(RectInstance(rect: SIMD4(left, top, cw, ch), color: color))
+                scratchRects.append(RectInstance(rect: SIMD4(left, top, width, ch), color: color))
                 // Redraw the glyph under the block in the background color so it stays legible.
-                let row = rows[Int(cursor.viewport_y)]
-                if let i = row.glyphColumns.firstIndex(of: cursor.viewport_x) {
+                if let i = row.glyphColumns.firstIndex(of: column) {
                     var g = row.glyphs[i]
                     if g.flags & 1 == 0 { g.color = colors.background.packed() }
                     cursorGlyph = g
@@ -682,12 +749,12 @@ final class TerminalRenderer {
             case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR:
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, thin, ch), color: color))
             case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE:
-                scratchRects.append(RectInstance(rect: SIMD4(left, top + ch - thin, cw, thin), color: color))
+                scratchRects.append(RectInstance(rect: SIMD4(left, top + ch - thin, width, thin), color: color))
             default:  // hollow block
-                scratchRects.append(RectInstance(rect: SIMD4(left, top, cw, thin), color: color))
-                scratchRects.append(RectInstance(rect: SIMD4(left, top + ch - thin, cw, thin), color: color))
+                scratchRects.append(RectInstance(rect: SIMD4(left, top, width, thin), color: color))
+                scratchRects.append(RectInstance(rect: SIMD4(left, top + ch - thin, width, thin), color: color))
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, thin, ch), color: color))
-                scratchRects.append(RectInstance(rect: SIMD4(left + cw - thin, top, thin, ch), color: color))
+                scratchRects.append(RectInstance(rect: SIMD4(left + width - thin, top, thin, ch), color: color))
             }
         }
 
@@ -703,6 +770,20 @@ final class TerminalRenderer {
 
     /// Lay the composition out cell by cell from the cursor: an opaque backing
     /// so the grid underneath doesn't show through, the text, and an underline.
+    /// The atlas generation the rows' glyphs were placed in.
+    private var rowsGeneration = -1
+
+    /// The composition's glyphs, rasterized ahead (appendPreedit then finds them).
+    private func warmPreedit() {
+        for character in preedit {
+            let span = character.unicodeScalars.first.map(Self.isWide) == true ? 2 : 1
+            let scalars = character.unicodeScalars
+            _ = scalars.count == 1
+                ? atlas.entry(scalar: scalars.first!.value, style: [], span: span)
+                : atlas.entry(cluster: String(character), style: [], span: span)
+        }
+    }
+
     private func appendPreedit(at cursor: GhosttyRenderStateCursor, colors: Colors) {
         let cw = Float(fonts.cellWidth), ch = Float(fonts.cellHeight)
         let top = origin.y + Float(cursor.viewport_y) * ch

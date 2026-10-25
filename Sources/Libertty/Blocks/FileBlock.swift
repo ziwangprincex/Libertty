@@ -18,6 +18,8 @@ class FileBlock: BlockService {
 
     /// The file's bytes as last read or written here (nil: it wasn't there).
     private var known: SHA256.Digest?
+    /// The file began with UTF-8's byte-order mark (kept when it's saved).
+    private var hasBOM = false
     private let lock = NSLock()
     private var watcher: DispatchSourceFileSystemObject?
     private var retry: DispatchWorkItem?
@@ -52,7 +54,11 @@ class FileBlock: BlockService {
             guard let text = params["text"] as? String else { return reply(.failure(BlockError("nothing to write"))) }
             let force = params["force"] as? Bool ?? false
             let base = params["base"] as? String
-            blockWork(reply) { try self.write(Data(text.utf8), base: base, force: force) }
+            // The file's UTF-8 mark goes back with it (Windows' editors write one).
+            blockWork(reply) {
+                self.lock.lock(); let mark = self.hasBOM; self.lock.unlock()
+                return try self.write((mark ? Data([0xEF, 0xBB, 0xBF]) : Data()) + Data(text.utf8), base: base, force: force)
+            }
         case "dirty":
             let on = params["dirty"] as? Bool ?? false
             DispatchQueue.main.async { self.setUnsaved(on) }
@@ -104,8 +110,13 @@ class FileBlock: BlockService {
         known = digest
         lock.unlock()
         var text = ""
+        if data == nil { lock.lock(); hasBOM = false; lock.unlock() }  // a new file: none
         if let data {
-            guard let decoded = String(data: data, encoding: .utf8) else { throw BlockError("\(file.lastPathComponent) isn't UTF-8 text") }
+            let mark = data.starts(with: [0xEF, 0xBB, 0xBF])
+            guard let decoded = String(data: mark ? data.dropFirst(3) : data[...], encoding: .utf8) else {
+                throw BlockError("\(file.lastPathComponent) isn't UTF-8 text")
+            }
+            lock.lock(); hasBOM = mark; lock.unlock()
             text = decoded
         }
         // Written in place when its folder won't take a replacement: the file's own permission decides.
