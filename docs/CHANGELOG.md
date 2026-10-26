@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.6
+
+> The terminal's text no longer shows squeezed for a moment (after Shift+Tab, the sidebar's button and others): fixed at its cause.
 
 - Fixed, at its cause: the terminal's text still showed squeezed (to about 90% wide and 80% tall) for a moment, after Shift+Tab among others. The terminal's layer is AppKit's, and AppKit sets its contents' gravity from the view's placement at times of its own; the default stretches the contents to the view, and the terminal's drawable is larger than the view (it grows in 256-pixel steps). The view's placement is top-left now, which AppKit turns into the gravity the terminal already used, and each frame checks the gravity before it's drawn. 0.3.5 only took away one of the times it happened (the sidebar's button).
 

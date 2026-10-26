@@ -12,7 +12,7 @@ Libertty 是一个 macOS 终端模拟器。VT 解析和终端状态由
 
 ## 状态
 
-- 版本 0.3.5。需要 macOS 14 或更高版本；构建脚本产出 Apple silicon（arm64）二进制。
+- 版本 0.3.6。需要 macOS 14 或更高版本；构建脚本产出 Apple silicon（arm64）二进制。
 - 未经过 Apple 公证。更新包改用 Ed25519 签名校验（见[更新与发布](#更新与发布)）。
 - 已在 [GitHub Releases](https://github.com/ziwangprincex/Libertty/releases) 发布（DMG 和 zip），也可以用 Homebrew 安装（[ziwangprincex/homebrew-libertty](https://github.com/ziwangprincex/homebrew-libertty)）。
 - 已知缺口：屏幕共享只能在本机查看，不能传到远程主机；陷入死循环的插件会一直占用它自己的线程，直到 Libertty 重启；Notebook 不渲染交互组件（ipywidgets）。
