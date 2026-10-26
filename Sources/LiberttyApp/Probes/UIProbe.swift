@@ -1,3 +1,4 @@
+#if LIBERTTY_PROBES
 import AppKit
 import WebKit
 import CoreGraphics
@@ -1307,3 +1308,4 @@ enum UIProbe {
         }
     }
 }
+#endif

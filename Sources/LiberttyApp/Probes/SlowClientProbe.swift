@@ -1,3 +1,4 @@
+#if LIBERTTY_PROBES
 import CGhosttyVt
 import Foundation
 import LiberttyCore
@@ -172,3 +173,4 @@ enum SlowClientProbe {
 
     private static func seconds(_ t: Double) -> String { String(format: "%.2f s", t) }
 }
+#endif

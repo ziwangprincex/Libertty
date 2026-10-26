@@ -13,6 +13,24 @@ let vtHeaders = "\(root)/Sources/CGhosttyVt/include"
 // scripts/build-linux-liberttyd.sh points this at a Linux build of the library.
 let vtLibrary = ProcessInfo.processInfo.environment["LIBERTTY_VT_LIBRARY"] ?? "\(ghostty)/zig-out/lib/libghostty-vt.a"
 let vtSwift: [SwiftSetting] = [.unsafeFlags(["-Xcc", "-I\(vtHeaders)"])]
+// Sources/Libertty/Probes (the UI probe, benches, snapshots) is in debug
+// builds only; a release build that needs it (a bench, tests/run.sh release)
+// adds -Xswiftc -DLIBERTTY_PROBES, in a scratch path of its own.
+// swift-testing's macros, from the toolchain in use (Xcode's or the Command Line Tools').
+let toolchain: String = {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+    p.arguments = ["--find", "swift"]
+    let out = Pipe()
+    p.standardOutput = out
+    try? p.run()
+    p.waitUntilExit()
+    let swift = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return URL(fileURLWithPath: swift).deletingLastPathComponent().deletingLastPathComponent().path
+}()
+let testingPlugin = ["-plugin-path", "\(toolchain)/lib/swift/host/plugins/testing"]
+let probes: [SwiftSetting] = [.define("LIBERTTY_PROBES", .when(configuration: .debug))]
 let vtLink: [LinkerSetting] = [
     .unsafeFlags([vtLibrary]),
     .linkedLibrary("c++"),
@@ -45,17 +63,36 @@ let package = Package(
                               "-Xlinker", "\(root)/Sources/liberttyd/Info.plist"], .when(platforms: [.macOS])),
             ]
         ),
+        // The app, as a library (unit tests import it), and the executable
+        // that starts it.
+        .target(
+            name: "LiberttyApp",
+            dependencies: ["CGhosttyVt", "CPty", "LiberttyCore"],
+            path: "Sources/LiberttyApp",
+            swiftSettings: vtSwift + probes
+        ),
         .executableTarget(
             name: "Libertty",
-            dependencies: ["CGhosttyVt", "CPty", "LiberttyCore"],
+            dependencies: ["LiberttyApp"],
             path: "Sources/Libertty",
-            swiftSettings: vtSwift,
+            swiftSettings: vtSwift + probes,
             linkerSettings: vtLink + [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Metal"),
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("CoreText"),
             ]
+        ),
+        // Unit tests: pure logic, seconds to run (`swift test`). What needs
+        // a window or a shell is tests/run.sh's.
+        .testTarget(
+            name: "LiberttyTests",
+            dependencies: ["LiberttyApp", "LiberttyCore"],
+            path: "Tests/LiberttyTests",
+            // (Unsafe flags hide the toolchain's plugin for @Test from the
+            // compiler: it's named again, where the toolchain keeps it.)
+            swiftSettings: vtSwift + [.unsafeFlags(testingPlugin)],
+            linkerSettings: vtLink
         ),
     ]
 )

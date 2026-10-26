@@ -1,3 +1,4 @@
+#if LIBERTTY_PROBES
 import AppKit
 import Carbon.HIToolbox
 import QuartzCore
@@ -104,3 +105,4 @@ final class LatencyTrace {
         NSApp.terminate(nil)
     }
 }
+#endif

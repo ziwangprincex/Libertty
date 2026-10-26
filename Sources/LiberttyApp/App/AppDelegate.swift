@@ -25,7 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }()
 
     /// One command (`-e`) or a measurement: nothing to keep or bring back.
-    private var oneShot: Bool { launch.command != nil || ResizeTrace.requested || LatencyTrace.requested }
+    private var oneShot: Bool { launch.command != nil || Self.traceRequested }
+
+    /// `--resize-trace`, `--latency-trace` (debug builds: Probes/).
+    private static var traceRequested: Bool {
+        #if LIBERTTY_PROBES
+        ResizeTrace.requested || LatencyTrace.requested
+        #else
+        false
+        #endif
+    }
     private var saveTimer: Timer?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -299,8 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// Stay running without windows (the global hotkeys keep working), unless
     /// configured otherwise or launched for one command (`-e`, benchmarks).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        ConfigStore.shared.config.quitAfterLastWindowClosed || launch.command != nil || ResizeTrace.requested
-            || LatencyTrace.requested
+        ConfigStore.shared.config.quitAfterLastWindowClosed || launch.command != nil || Self.traceRequested
     }
 
     /// Clicking the Dock icon with no windows open opens one.
@@ -409,10 +417,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
             controller.showWindow(nil)
             try controller.start(command: command, workingDirectory: workingDirectory, inherited: source?.focusedWorkingDirectory)
+            #if LIBERTTY_PROBES
             if ResizeTrace.requested, controllers.count == 1, let window = controller.window {
                 ResizeTrace.start(window: window, controller: controller)
             }
             if LatencyTrace.requested, controllers.count == 1 { LatencyTrace.start(controller: controller) }
+            #endif
             return controller
         } catch {
             NSAlert(error: error).runModal()

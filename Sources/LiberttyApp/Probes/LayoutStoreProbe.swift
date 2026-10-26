@@ -1,3 +1,4 @@
+#if LIBERTTY_PROBES
 import Foundation
 import LiberttyCore
 
@@ -128,3 +129,4 @@ enum LayoutStoreProbe {
         exit(failures == 0 ? 0 : 1)
     }
 }
+#endif

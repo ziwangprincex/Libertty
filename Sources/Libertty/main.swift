@@ -1,0 +1,3 @@
+import LiberttyApp
+
+Launch.run()

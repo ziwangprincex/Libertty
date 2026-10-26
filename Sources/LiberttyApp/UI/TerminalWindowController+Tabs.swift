@@ -101,7 +101,7 @@ extension TerminalWindowController {
         guard let content = window?.contentView?.superview ?? window?.contentView else { return }
         func visit(_ view: NSView) {
             // Libertty's own views (AppKit's follow the system's accent).
-            if Bundle(for: type(of: view)) == Bundle.main { view.viewDidChangeEffectiveAppearance() }
+            if String(reflecting: type(of: view)).hasPrefix("LiberttyApp.") { view.viewDidChangeEffectiveAppearance() }
             view.needsLayout = true
             view.needsDisplay = true
             view.subviews.forEach(visit)

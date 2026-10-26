@@ -1,3 +1,4 @@
+#if LIBERTTY_PROBES
 import AppKit
 import QuartzCore
 
@@ -111,3 +112,4 @@ final class ResizeTrace: NSObject {
 
     private func controllerPaneCount() -> Int { splitContainer?.panes.count ?? 0 }
 }
+#endif

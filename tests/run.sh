@@ -8,11 +8,15 @@ set -u
 ROOT=${0:A:h:h}
 cd $ROOT
 CONFIG=${1:-debug}
+# The probes are in debug builds; a release run builds them in (apart from
+# the release that ships: a scratch path of its own).
+BUILD=(-c $CONFIG)
+[[ $CONFIG == release ]] && BUILD+=(-Xswiftc -DLIBERTTY_PROBES --scratch-path $ROOT/.build-probes)
 # liberttyd embeds its Info.plist at link time, a file SwiftPM doesn't watch.
-[[ ! $ROOT/Sources/liberttyd/Info.plist -nt $(swift build -c $CONFIG --show-bin-path)/liberttyd ]] || touch $ROOT/Sources/liberttyd/main.swift
+[[ ! $ROOT/Sources/liberttyd/Info.plist -nt $(swift build $BUILD --show-bin-path)/liberttyd ]] || touch $ROOT/Sources/liberttyd/main.swift
 # A failed build must stop here: an old binary wouldn't know the probe flags.
-swift build -c $CONFIG > $ROOT/build/test-build.log 2>&1 || { grep -E "error:" $ROOT/build/test-build.log; exit 1; }
-BIN=$(swift build -c $CONFIG --show-bin-path)
+swift build $BUILD > $ROOT/build/test-build.log 2>&1 || { grep -E "error:" $ROOT/build/test-build.log; exit 1; }
+BIN=$(swift build $BUILD --show-bin-path)
 LIBERTTY=$BIN/Libertty
 OUT=$ROOT/build/test-output
 mkdir -p $OUT
@@ -130,7 +134,7 @@ check git-without-tools sh -c 'out=$(env DEVELOPER_DIR=$1 PATH=/usr/bin:/bin "$0
 TESTAPP=$ROOT/build/test.noindex/Libertty.app  # .noindex: Spotlight doesn't list it as another Libertty
 APPBIN=$TESTAPP/Contents/MacOS/Libertty
 if [[ ! -x $APPBIN || $APPBIN -ot $LIBERTTY ]]; then
-  if ! LIBERTTY_APP=$TESTAPP scripts/bundle.sh $CONFIG > $OUT/bundle.log 2>&1; then
+  if ! LIBERTTY_PROBES=1 LIBERTTY_APP=$TESTAPP scripts/bundle.sh $CONFIG > $OUT/bundle.log 2>&1; then
     echo "FAIL  bundle (see $OUT/bundle.log)"
     (( failures++ ))
   fi

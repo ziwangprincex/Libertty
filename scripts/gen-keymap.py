@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Sources/Libertty/Input/KeyMap.swift: macOS virtual keycode -> GhosttyKey.
+"""Generate Sources/LiberttyApp/Input/KeyMap.swift: macOS virtual keycode -> GhosttyKey.
 
 Source of truth is Ghostty's own table (src/input/keycodes.zig, columns
 usb, evdev, xkb, win, mac, code), so our physical-key mapping matches
@@ -42,7 +42,7 @@ lines = [
 lines += [f"    0x{mac:02x}: {name}," for mac, name in sorted(entries.items())]
 lines += ["]", ""]
 
-out = root / "Sources/Libertty/Input/KeyMap.swift"
+out = root / "Sources/LiberttyApp/Input/KeyMap.swift"
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text("\n".join(lines))
 print(f"wrote {out.relative_to(root)} ({len(entries)} keys)")

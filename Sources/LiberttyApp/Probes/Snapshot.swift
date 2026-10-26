@@ -1,3 +1,4 @@
+#if LIBERTTY_PROBES
 import AppKit
 import LiberttyCore
 import ImageIO
@@ -189,3 +190,4 @@ enum Snapshot {
         guard CGImageDestinationFinalize(dest) else { throw TerminalError.libghostty("png write") }
     }
 }
+#endif

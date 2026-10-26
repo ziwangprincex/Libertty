@@ -123,7 +123,7 @@ open build/Libertty.app
 | `scripts/build-canvas.sh` | 由 `frontend/canvas/` 生成 `blocks/canvas/lib/` |
 | `scripts/build-speedscope.sh` | `blocks/profile/lib/`（speedscope 发布版） |
 | `scripts/build-linux-liberttyd.sh` | 供 Linux 主机使用的静态 liberttyd（依赖见脚本开头） |
-| `scripts/gen-keymap.py` | 由 Ghostty 的按键表生成 `Sources/Libertty/Input/KeyMap.swift` |
+| `scripts/gen-keymap.py` | 由 Ghostty 的按键表生成 `Sources/LiberttyApp/Input/KeyMap.swift` |
 
 ## 配置
 
@@ -191,7 +191,9 @@ Libertty --git-probe                             # 在当前目录下 Libertty �
 
 | 路径 | 内容 |
 |---|---|
-| `Sources/Libertty/` | 应用：`App`（入口、命令行、探测）、`UI`、`Terminal`、`Renderer`、`Document`、`Blocks`、`Config`、`Remote`、`Web`、`Input`、`Design`、`Util` |
+| `Sources/LiberttyApp/` | 应用（库）：`App`（启动、命令行）、`UI`、`Terminal`、`Renderer`、`Document`、`Blocks`、`Config`、`Remote`、`Web`、`Input`、`Design`、`Probes`（只在 debug 构建里） |
+| `Sources/Libertty/` | 可执行文件：启动 LiberttyApp |
+| `Tests/LiberttyTests/` | 单元测试（`swift test`）：配置、颜色、agent 设置、解析、分屏树、通信协议 |
 | `Sources/LiberttyCore/` | 应用与守护进程共用：PTY 读取、通信协议、守护进程服务端、远程 PTY |
 | `Sources/liberttyd/` | 会话守护进程入口 |
 | `Sources/CPty/` | C 辅助代码：`openpty` 与进程创建、Unix socket、libproc 查询 |

@@ -2,6 +2,7 @@
 
 # Build output
 /.build/
+/.build-probes/
 /build/
 
 # Local tool settings

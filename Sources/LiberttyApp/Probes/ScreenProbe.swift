@@ -1,3 +1,4 @@
+#if LIBERTTY_PROBES
 import AppKit
 import CoreMedia
 import ScreenCaptureKit
@@ -479,3 +480,4 @@ import VideoToolbox
 private func VTCreateCGImage(_ buffer: CVPixelBuffer, _ image: inout CGImage?) {
     VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)
 }
+#endif

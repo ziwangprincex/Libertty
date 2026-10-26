@@ -47,7 +47,7 @@ $APP +update > /dev/null && ok "genuine zip installed" || bad "install"
 codesign -v $T/Libertty.app && ok "code signature intact" || bad "code signature"
 
 # The dialog's way, in another copy of the current app.
-LIBERTTY_APP=$T/gui/Libertty.app scripts/bundle.sh release > /dev/null 2>&1
+LIBERTTY_PROBES=1 LIBERTTY_APP=$T/gui/Libertty.app scripts/bundle.sh release > /dev/null 2>&1
 out=$($T/gui/Libertty.app/Contents/MacOS/Libertty --ui-probe $'update:install\nexpect-app-version:99.0.0' $T/probe 2>&1)
 [[ $out == *"ok    ui-probe app is 99.0.0"* ]] && ok "Check for Updates, Install and Restart installs it" \
   || bad "the dialog's install: $(print -r -- $out | grep -v '^(no LIBERTTY')"

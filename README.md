@@ -194,7 +194,7 @@ Other build scripts:
 | `scripts/build-canvas.sh` | `blocks/canvas/lib/` from `frontend/canvas/` |
 | `scripts/build-speedscope.sh` | `blocks/profile/lib/` (speedscope release build) |
 | `scripts/build-linux-liberttyd.sh` | static liberttyd binaries for Linux hosts (requirements in the script's header) |
-| `scripts/gen-keymap.py` | `Sources/Libertty/Input/KeyMap.swift` from Ghostty's key table |
+| `scripts/gen-keymap.py` | `Sources/LiberttyApp/Input/KeyMap.swift` from Ghostty's key table |
 
 ## Configuration
 
@@ -294,7 +294,9 @@ Benchmarks against other terminals are in `bench/` (`bench/RESULTS.md`).
 
 | Path | Contents |
 |---|---|
-| `Sources/Libertty/` | The app: `App` (entry, CLI, probes), `UI`, `Terminal`, `Renderer`, `Document`, `Blocks`, `Config`, `Remote`, `Web`, `Input`, `Design`, `Util` |
+| `Sources/LiberttyApp/` | The app, as a library: `App` (launch, CLI), `UI`, `Terminal`, `Renderer`, `Document`, `Blocks`, `Config`, `Remote`, `Web`, `Input`, `Design`, `Probes` (debug builds only) |
+| `Sources/Libertty/` | The executable: starts LiberttyApp |
+| `Tests/LiberttyTests/` | Unit tests (`swift test`): config, colors, agent setup, parsing, the split tree, the wire protocol |
 | `Sources/LiberttyCore/` | Shared by app and daemon: PTY reader, wire protocol, daemon server, remote PTY |
 | `Sources/liberttyd/` | The session daemon's entry point |
 | `Sources/CPty/` | C helpers: `openpty` and spawn, Unix sockets, libproc queries |
