@@ -276,7 +276,9 @@
     function changed() {
       mark(true);
       clearTimeout(timer);
-      timer = setTimeout(() => save(), delay);
+      // (A test holds the save back with window.libertty_save_delay, so a
+      // change elsewhere surely finds this one unsaved.)
+      timer = setTimeout(() => save(), window.libertty_save_delay ?? delay);
     }
     async function reload(fromDisk) {
       const f = await window.block.call("read");
