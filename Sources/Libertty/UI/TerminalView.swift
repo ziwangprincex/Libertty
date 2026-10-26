@@ -3,6 +3,7 @@ import LiberttyCore
 import CGhosttyVt
 import Metal
 import QuartzCore
+import UniformTypeIdentifiers
 
 /// The terminal surface: owns the Metal layer, paces frames to the display,
 /// and turns AppKit input (keys, IME, scroll, paste) into terminal input.
@@ -1492,8 +1493,23 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         linkPreview.isHidden = false
     }
 
+    /// Opening the file would run code rather than show a document: an app,
+    /// an installer, a script Terminal runs, or any other executable file.
+    static func wouldRun(_ url: URL) -> Bool {
+        let path = url.path
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return false }
+        let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+        let running: [UTType] = [.application, .applicationBundle, .executable, .unixExecutable, .shellScript]
+        if let type, running.contains(where: { type.conforms(to: $0) }) { return true }
+        if ["command", "tool", "terminal", "pkg", "mpkg", "workflow", "action", "prefpane", "jar", "scpt", "dmg"]
+            .contains(url.pathExtension.lowercased()) { return true }
+        return !isDirectory.boolValue && FileManager.default.isExecutableFile(atPath: path)
+    }
+
     /// Web and mail links go to their apps; text files open in Libertty; a
-    /// program's link with any other scheme asks first.
+    /// program's link with any other scheme, or to a file that would run
+    /// (an app, an installer, an executable), asks first.
     private func open(_ link: TerminalLink) {
         hoveredLink = nil
         renderer.linkSpans = []
@@ -1509,8 +1525,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             if DocumentView.canShow(url), let onOpenDocument {
                 return onOpenDocument(url, link.line, NSApp.currentEvent?.modifierFlags.contains(.option) == true)
             }
-            NSWorkspace.shared.open(url)
-            return
+            if !Self.wouldRun(url) {
+                NSWorkspace.shared.open(url)
+                return
+            }
         }
         if ["http", "https"].contains(scheme), NSApp.currentEvent?.modifierFlags.contains(.option) == true, let onOpenDocument {
             // ⌥⌘-click: the page beside the terminal (a dev server next to its log).
@@ -1522,8 +1540,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         }
         guard let window else { return }
         let alert = NSAlert()
-        alert.messageText = "Open this link?"
-        alert.informativeText = link.url
+        alert.messageText = scheme == "file" ? "Run this?" : "Open this link?"
+        alert.informativeText = scheme == "file"
+            ? "\(url.path)\n\nA program's output linked to it; opening it would run it." : link.url
         alert.addButton(withTitle: "Open")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { response in

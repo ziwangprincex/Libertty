@@ -4,6 +4,7 @@
 
 - `minimum-contrast` (as in Ghostty): text that reads worse against its background than this WCAG ratio is drawn white or black; dark-gray output on a dark theme, or a program's colors that clash with the theme's, stay readable. Box drawing, blocks and powerline glyphs keep their colors.
 - `adjust-cell-height` (as in Ghostty; Rex's line height): taller or shorter rows, in pixels (`2`) or a percentage (`20%`), the text centered in them; box drawing and powerline glyphs follow the cell.
+- ⌘-clicking a program's link to a file that would run (an app, an installer, a `.command`, any executable) asks first, showing its path; documents, source files and folders open as before. A link's text needn't say where it goes.
 
 ## 0.3.7
 

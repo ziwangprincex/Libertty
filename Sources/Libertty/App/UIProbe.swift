@@ -49,6 +49,7 @@ import LiberttyCore
 ///   expect-no-open-animation:go  the window appears as it is (no zoom: its text would seem to change size)
 ///   expect-resize-frames:N the focused pane drew N frames inside a resize since the last of these
 ///   expect-pinned:go      every pane's drawable is its view's size and pinned top-left, also once AppKit sets its gravity again
+///   expect-runs:PATH=yes|no  whether ⌘-clicking a link to PATH asks first (opening it would run it)
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -541,6 +542,12 @@ enum UIProbe {
                     print("FAIL  ui-probe pinned: \(wrong.joined(separator: "; ")) (its drawable would be stretched to the view)")
                     failures += 1
                 }
+            case .expectRuns(let path, let runs):
+                let found = TerminalView.wouldRun(URL(fileURLWithPath: path))
+                if found == runs { print("ok    ui-probe \(path) \(runs ? "asks first" : "opens")") } else {
+                    print("FAIL  ui-probe \(path): \(found ? "asks first" : "opens"), not \(runs ? "asks first" : "opens")")
+                    failures += 1
+                }
             case .expectResizeFrames(let n):
                 // Frames drawn inside a resize's transaction since the last of these (for the pane).
                 let pane = controller.focusedTerminal
@@ -834,7 +841,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -943,6 +950,9 @@ enum UIProbe {
             case "expect-no-open-animation": steps.append(.expectNoOpenAnimation)
             case "expect-resize-frames": steps.append(.expectResizeFrames(Int(arg) ?? -1))
             case "expect-pinned": steps.append(.expectPinned)
+            case "expect-runs":
+                let parts = arg.split(separator: "=", maxSplits: 1).map(String.init)
+                if parts.count == 2 { steps.append(.expectRuns(parts[0], parts[1] == "yes")) }
             case "open", "edit":
                 var path = arg, line: Int?
                 if let colon = arg.lastIndex(of: ":"), let n = Int(arg[arg.index(after: colon)...]) {

@@ -25,3 +25,10 @@ key:enter
 wait:1.0
 expect:AFTER-CTRL-C
 shot:ui-probe.png
+# ⌘-clicking a program's link to a file that would run (an app, an
+# executable) asks first; documents and folders open.
+expect-runs:/bin/ls=yes
+expect-runs:/System/Applications/Calculator.app=yes
+expect-runs:/etc/hosts=no
+expect-runs:/usr/share/dict/words=no
+expect-runs:/tmp=no
