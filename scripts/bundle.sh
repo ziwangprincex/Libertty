@@ -52,7 +52,7 @@ cp $ROOT/assets/icon/favicon.ico $APP/Contents/Resources/favicon.ico
 mkdir -p $APP/Contents/Resources/terminfo
 tic -x -o $APP/Contents/Resources/terminfo $ROOT/Resources/terminfo-src/ghostty.terminfo
 
-VERSION=${LIBERTTY_VERSION:-0.3.4}
+VERSION=${LIBERTTY_VERSION:-0.3.5}
 # Update feed and the key updates must be signed with (scripts/release.sh).
 source $ROOT/scripts/release.conf
 FEED=https://github.com/$REPO/releases/latest/download/appcast.json
