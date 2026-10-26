@@ -74,7 +74,7 @@ Shell 运行在 `liberttyd` 中，由 Libertty 按需启动。应用退出、崩
 
 ### 网页访问
 
-`web-access = local | network` 把本机的面板提供给浏览器：显示面板的屏幕内容，并通过与键盘相同的按键编码器输入。每个页面都需要链接中的密钥。`local` 只监听本机；`network` 在局域网上使用明文 HTTP。`web-access-input = false` 时只读。
+`web-access = local | network | tailscale` 把本机的面板提供给浏览器：显示面板的屏幕内容，并通过与键盘相同的按键编码器输入。每个页面都需要链接中的密钥。`local` 只监听本机；`network` 在局域网上使用明文 HTTP；`tailscale` 只监听本机，由 `tailscale serve` 通过 HTTPS 提供给你的 tailnet，地址是本机在 tailnet 里的名字。`web-access-input = false` 时只读。
 
 ### 文档与块
 
@@ -99,7 +99,7 @@ Shell 运行在 `liberttyd` 中，由 Libertty 按需启动。应用退出、崩
 
 ### 编程 Agent
 
-- `libertty +agent-setup` 给 Claude Code 的配置（`$CLAUDE_CONFIG_DIR`，没有就是 `~/.claude`；`--claude-dir` 指定其他目录）加上 hook，并安装一个介绍 Libertty 命令行的 skill。它会先列出要改的内容并询问，`--remove` 可以撤掉。之后在 Libertty 里运行 Claude Code，标签上会显示它在工作、等你处理（需要批准）还是已完成；它会知道自己在哪个 pane，并按任务给会话起名（`agent-session-names = false` 关闭起名）。在其他终端里这些 hook 什么都不做。
+- `libertty +agent-setup` 给 Claude Code 的配置（`$CLAUDE_CONFIG_DIR`，没有就是 `~/.claude`；`--claude-dir` 指定其他目录）加上 hook，并安装一个介绍 Libertty 命令行的 skill。它会先列出要改的内容并询问，`--remove` 可以撤掉。之后在 Libertty 里运行 Claude Code，标签上会显示它在工作、等你处理（需要批准）还是已完成；它会知道自己在哪个 pane，并按任务给会话起名（`agent-session-names = false` 关闭起名）。在其他终端里这些 hook 什么都不做。Codex（`--agent codex`；有 `~/.codex` 时默认包括）会在 `config.toml` 里加一个 `notify`（完成、等待批准）和同一个 skill；别人已经设置的 `notify` 不会被覆盖。
 - `libertty +status STATE`：任何脚本都能向终端报告程序状态（OSC 7501）。
 - `libertty +rename-session [ID] NAME`：给会话起名，标签和 `+list-sessions` 都会显示这个名字。
 
@@ -127,7 +127,7 @@ open build/Libertty.app
 
 ## 配置
 
-配置文件为 `~/.config/libertty/config`，格式与 Ghostty 相同（`key = value`、`keybind = cmd+d=new_split:right`、`theme = light:X,dark:Y`、`config-file = ...`）。Libertty ▸ 设置…（⌘,）打开该文件，保存后立即生效；配置错误会在 Configuration Errors 窗口中列出。可直接使用 Ghostty 的主题文件，来源包括 `~/.config/libertty/themes` 和已安装的 Ghostty.app。
+配置文件为 `~/.config/libertty/config`，格式与 Ghostty 相同（`key = value`、`keybind = cmd+d=new_split:right`、`theme = light:X,dark:Y`、`config-file = ...`）。Libertty ▸ 设置…（⌘,）打开该文件，保存后立即生效；配置错误会在 Configuration Errors 窗口中列出。可直接使用 Ghostty 的主题文件，来源包括 `~/.config/libertty/themes` 和已安装的 Ghostty.app。命令面板的 Settings 可以直接修改常用设置，选中某个选项时所有窗口立即试用（回车写入那一行，Esc 复原）；Libertty ▸ Theme Editor… 可以实时编辑并保存自己的主题。
 
 ```sh
 libertty +set theme="Tokyo Night" font-size=14
@@ -160,14 +160,15 @@ libertty +wait ID --until exit|prompt|idle=MS [--timeout S]
 libertty +events [--filter KIND,...]
 libertty +attach ID [--window] ; libertty +kill-session ID
 libertty +split [ID] [--down] [--ratio 30] [--no-focus] [-e COMMAND]   # 在会话 ID 的 pane 旁边开一个新 pane，输出新会话的 ID
-libertty +move-pane [ID] --new-tab | --tab N | --new-window
+libertty +move-pane [ID] --new-tab | --tab N | --new-window | --beside OTHER [--down]
+libertty +swap-pane [ID] OTHER ; libertty +resize-pane [ID] --left 40 | --equalize
 ```
 
 会话相关命令支持 `--host HOST`。`$LIBERTTY_SESSION` 是当前面板的会话 ID。
 
 ## 测试与诊断
 
-`tests/run.sh [release]` 运行无界面测试套件，使用独立的 liberttyd、配置目录和数据目录，不打开可见窗口，也不抢占焦点。覆盖范围包括渲染快照（输出到 `build/test-output/`）、解析、配置、链接、选区、shell 集成、会话、粘贴、吞吐量，以及窗口功能和每个块的 UI 脚本（`tests/fixtures/*.txt`，由 `Libertty --ui-probe SCRIPT OUTDIR` 执行）。找不到 `jupyter server` 时跳过 Notebook 测试（`LIBERTTY_TEST_JUPYTER` 可指定路径）。`tests/update-test.sh` 离线检查更新流程。
+`tests/run.sh [release]` 运行无界面测试套件，使用独立的 liberttyd、配置目录和数据目录，不打开可见窗口，也不抢占焦点。覆盖范围包括渲染快照（输出到 `build/test-output/`）、解析、配置、链接、选区、shell 集成、会话、粘贴、吞吐量，以及窗口功能和每个块的 UI 脚本（`tests/fixtures/*.txt`，由 `Libertty --ui-probe SCRIPT OUTDIR` 执行）。找不到 `jupyter server` 时跳过 Notebook 测试（`LIBERTTY_TEST_JUPYTER` 可指定路径）。`tests/update-test.sh` 离线检查更新流程。另有两项需要手动运行的检查：`tests/screen.sh` 录下窗口服务器实际显示的画面（会显示一个真实窗口约 40 秒，需要屏幕录制权限）；`tests/linux.sh` 在 Docker 容器里的 Linux（aarch64、x86_64；bash 和 fish）上运行 liberttyd。
 
 ```sh
 # 不开窗口，把命令的最终屏幕输出为 PNG

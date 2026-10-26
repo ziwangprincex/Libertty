@@ -28,10 +28,10 @@
 | 全局显示 / 隐藏（Tern `global_hotkey`，默认空） | ✓ | — | ✅ 窗口在别的桌面时挪到当前桌面，而不是把你切走 |
 | 关掉最后一个窗口后继续运行；点 Dock 图标重新开窗；Dock 菜单 New Window | ✓ | ✓ | ✅ |
 | 新窗口、新标签、分屏继承当前 pane 的目录（OSC 7） | ✓ | ✓ | ✅ 真机验证过 |
-| 移动 pane / 标签（Rex：Move Pane to Tab / New Tab、Move Tab to New Window、拖出成窗口） | — | ✓ | ✅ `move_surface_to_new_tab`、`move_surface_to_tab:N`、`move_surface_to_new_window`、`move_tab_to_new_window`；窗口菜单、命令面板、右键菜单；侧栏标签拖到别的窗口就移过去（窗口唯一的标签也行，那个窗口随之关闭），拖出所有窗口就成新窗口；顶部标签栏也能拖出成窗口。程序全程不断。⬜ 拖动 pane 本身（目前只能用命令） |
+| 移动 pane / 标签（Rex：Move Pane to Tab / New Tab、Move Tab to New Window、拖出成窗口） | — | ✓ | ✅ `move_surface_to_new_tab`、`move_surface_to_tab:N`、`move_surface_to_new_window`、`move_tab_to_new_window`；窗口菜单、命令面板、右键菜单；侧栏标签拖到别的窗口就移过去（窗口唯一的标签也行，那个窗口随之关闭），拖出所有窗口就成新窗口；顶部标签栏也能拖出成窗口。程序全程不断。✅ 拖动 pane 本身：悬停时 × 旁的抓手或 pane 标题栏，拖到另一个 pane 的一侧放在它旁边、拖到中间互换位置、拖出窗口成新窗口（`tests/fixtures/arrange.txt`） |
 | 鼠标悬停即聚焦（Rex "Focus follows mouse"、Ghostty `focus-follows-mouse`） | — | ✓ | ✅ 只在终端 pane 之间切换，不抢查找框、改名框、文档和编辑器的焦点；拖动时不切 |
 | 侧栏按状态过滤（Rex：activity filter） | — | ✓ | ✅ 过滤框末尾的按钮（选中时实心）、命令面板、`show_tabs:working|waiting|attention|all`（再按一次回到全部）：只列程序在工作 / 等你 / 完成或失败的标签，状态变了行就跟着出现或消失；和名字过滤叠加；计数显示 "1/4"。`tests/fixtures/sidebar-activity.txt` |
-| 跳转目录（Rex：Go to Directory 面板页） | — | ✓ | ✅ 命令面板的 Folders：pane 所在目录、shell 最近去过的目录（存在数据目录）、输入 / 或 ~ 开头的路径时列出子目录；回车在那里开新标签；`go_to_directory`、文件菜单。⬜ 在当前 pane 里 cd |
+| 跳转目录（Rex：Go to Directory 面板页） | — | ✓ | ✅ 命令面板的 Folders：pane 所在目录、shell 最近去过的目录（存在数据目录）、输入 / 或 ~ 开头的路径时列出子目录；回车在那里开新标签；`go_to_directory`、文件菜单。✅ ⌥↵ 在当前 pane 里 cd（有程序在前台时改开新标签；侧栏的 cd Here 同一逻辑） |
 
 ## 2. 会话持久化与多路复用（Tern 和 Rex 的核心）
 
@@ -41,7 +41,7 @@
 | 重新连接时恢复屏幕：libghostty-vt `snapshot` | ✓ | ✓ 二进制快照 | ✅ 用 libghostty-vt 的二进制快照（屏幕、scrollback、模式，连没写完的转义序列都在），之后接实时输出；窗口那边是副本，负责渲染和回答程序的查询 |
 | 多个窗口同时镜像同一个 pane | ✓ | ✓ 状态机副本 | ✅ `libertty +attach ID`；关掉其中一个只断开它，最后一个关掉才结束程序 |
 | daemon 升级不断会话 | — | — | ✅ 新版 liberttyd 通过 SCM_RIGHTS 接过旧版的 PTY 描述符和快照，旧版退出；已连接的窗口自动重连并用新快照追上（实测） |
-| 远程主机 | ✓ `tern remote` | ✓ | ✅ File ▸ Connect to Host…（⇧⌘K）/ `libertty +connect HOST`：窗口里的标签和分屏都跑在那台机器上，走用户自己的 ssh（配置、密钥、agent、跳板机都生效；密码和新主机指纹弹窗问，一个 ControlMaster 只问一次）。主机上有自己的 liberttyd：断网、合盖、退出 Libertty 程序都不停，pane 显示"正在重新连接"，连上后用快照追上；下次启动自动重连。第一次连接时把 liberttyd、shell 集成和 terminfo 装到主机的 `~/.libertty`（用主机的 tic 编译），不需要 root。会话命令支持 `--host`。测试用假 ssh（`tests/fixtures/fake-ssh`）跑完整流程：安装、远程 shell 集成、断网重连、重启后重连、结束会话。Linux 主机（x86_64、aarch64）：App 里带静态链接的 liberttyd（`scripts/build-linux-liberttyd.sh`，Zig 交叉编 libghostty-vt + swift.org 的静态 Linux SDK）；daemon 在 Linux 上只用 FoundationEssentials（完整 Foundation 会带进 45 MB 的 ICU），每个 12–13 MB，首次安装经 ssh 传约 5 MB。⚠️ 还没在真的 Linux 机器上跑过 |
+| 远程主机 | ✓ `tern remote` | ✓ | ✅ File ▸ Connect to Host…（⇧⌘K）/ `libertty +connect HOST`：窗口里的标签和分屏都跑在那台机器上，走用户自己的 ssh（配置、密钥、agent、跳板机都生效；密码和新主机指纹弹窗问，一个 ControlMaster 只问一次）。主机上有自己的 liberttyd：断网、合盖、退出 Libertty 程序都不停，pane 显示"正在重新连接"，连上后用快照追上；下次启动自动重连。第一次连接时把 liberttyd、shell 集成和 terminfo 装到主机的 `~/.libertty`（用主机的 tic 编译），不需要 root。会话命令支持 `--host`。测试用假 ssh（`tests/fixtures/fake-ssh`）跑完整流程：安装、远程 shell 集成、断网重连、重启后重连、结束会话。Linux 主机（x86_64、aarch64）：App 里带静态链接的 liberttyd（`scripts/build-linux-liberttyd.sh`，Zig 交叉编 libghostty-vt + swift.org 的静态 Linux SDK）；daemon 在 Linux 上只用 FoundationEssentials（完整 Foundation 会带进 45 MB 的 ICU），每个 12–13 MB，首次安装经 ssh 传约 5 MB。✅ `tests/linux.sh` 在真 Linux（Docker 容器，aarch64 和 x86_64，bash 和 fish）上跑远程探针：除“布局存在主机上”外都通过。⚠️ 内置的 Linux liberttyd 是 10-16 编的，比 Mac 端旧，不支持布局存储，需要用 swift.org 工具链和静态 Linux SDK 重编 |
 | Web 客户端 | ✓ `tern web` | ✓ | ✅ Libertty ▸ Web Access…（`web-access = off/local/network`，默认关）：在浏览器（手机也行，有二维码）里看这台 Mac 上任意 pane 的实时画面并打字。画面由 libghostty-vt 的 HTML 格式化器生成（颜色、粗体、链接都对），按键走和本机一样的键盘编码器（方向键、Ctrl 组合、kitty 键盘协议都按程序要的模式编码），手机有 Esc/Tab/Ctrl/方向键工具条，可以看完整 scrollback。安全：每个连接都要链接里的 256 位密钥（常数时间比较，错多了限流），拒绝别的网站来源，页面脚本只靠每次响应的 nonce 运行，程序写的 OSC 8 链接只保留 http/https/mailto；`local` 只监听本机（配合 ssh -L 或 Tailscale），`network` 是明文 HTTP 会明确提示；`web-access-input = false` 只看不能打字。无窗口测试走真实 WebSocket（页面、密钥、外站来源、画面、打字、Ctrl-C），另外在无头 Chrome 里跑过页面本身（渲染、光标、打字回显） |
 
 实现说明：
@@ -59,14 +59,14 @@
 | `libertty +new-window / +new-tab [--cwd] [-e CMD]`、`libertty +action`、`libertty +open` | ✓ | ✅（发给正在运行的 Libertty，没在运行就先启动） |
 | `ls / new / send / capture / kill / attach` | ✓ | ✅ `libertty +list-sessions / +new-session / +send / +capture / +kill-session / +attach`，`$LIBERTTY_SESSION` |
 | `split / run / focus / wait` | ✓ | ✅ `+action new_split:…`、`+new-session -e`、`+focus ID`、`+wait ID`（退出码原样返回） |
-| 按 pane ID 操作布局（Rex：`rex split -b BLOCK --split=below --ratio 30`、`move`） | — | ✅ `+split [ID] [--down] [--ratio 30] [--cwd] [--no-focus] [-e CMD]`（输出新会话 ID）、`+move-pane [ID] --new-tab / --tab N / --new-window`。App 用回复通知告诉 CLI 结果：成功、找不到、被拒（附原因）或出错；被拒时不抢焦点。⬜ swap、resize |
+| 按 pane ID 操作布局（Rex：`rex split -b BLOCK --split=below --ratio 30`、`move`） | — | ✅ `+split [ID] [--down] [--ratio 30] [--cwd] [--no-focus] [-e CMD]`（输出新会话 ID）、`+move-pane [ID] --new-tab / --tab N / --new-window`。App 用回复通知告诉 CLI 结果：成功、找不到、被拒（附原因）或出错；被拒时不抢焦点。✅ `+swap-pane`、`+resize-pane`（含 `--equalize`）、`+move-pane --beside`（`tests/fixtures/arrange-cli.txt`） |
 | 发送按键（Rex：`rex send-key`） | — | ✅ `+send-key ID ctrl+c enter up …`：liberttyd 用自己那份终端状态按程序当前模式编码（光标键模式、kitty 键盘协议）；`tests/send-key-test.sh` 验证实际字节 |
 | 从 Ghostty 导入配置（Rex："Migrate from Ghostty"） | — | ✅ `+import-ghostty`：读 Ghostty 的配置文件和它引入的文件，只加 Libertty 认识、自己还没设的项；列出不认识和不接受的；先问、备份 |
 | 快速失败时保留 pane（Rex："stays open after a quick failure"、`--keep-open`） | — | ✅ `abnormal-command-exit-runtime`（默认 250 ms，Ghostty 同名）内非 0 退出就保留，显示退出码，按键关闭；`wait-after-command`（Ghostty 同名）、`+split --keep-open`；可以重启 Shell；`libertty -e` 一次性运行不保留 |
 | `wait --until prompt|idle`、`capture --ansi/--html`、`events` | ✓ | ✅ `+wait ID --until exit|prompt|idle=MS --timeout S`（超时退出 124；提示符靠 OSC 133，idle 由 liberttyd 计时，值上限一天）、`+capture --ansi / --html`（带颜色的文本、带样式的网页）、`+events [--filter …]`（JSON 行：session-started / prompt / command-started / command-finished / directory / session-ended，每个监听者自己的队列，慢的监听者不拖累别人）；`tests/cli-wait-test.sh`（17 项） |
 | ssh 到没有这份 terminfo 的主机 | ✓ | ✅ shell 集成给 ssh 包一层，远端用 `TERM=xterm-256color`（Ghostty 的 ssh-env 做法，`ssh-env = false` 关掉）；用户自己定义的 ssh 函数或别名优先 |
 | 自带 terminfo | ✓ | ✅ `TERM=xterm-ghostty`：Libertty 的终端就是 libghostty-vt，Ghostty 的 terminfo（MIT）描述得一字不差；App 里带编译好的版本，`TERMINFO` 指过去。程序因此知道支持 undercurl、同步输出等。`term = …` 可以改 |
-| 会话命名、agent 集成（Rex：`rex skill setup`、"Let agents name sessions"） | — | ✅ `+rename-session [ID] NAME`（名字存在 liberttyd，升级接管时也带着，标签按名字显示，`+list-sessions`、`+events label` 能看到）；`+status STATE` 任何脚本都能上报 OSC 7501；`+agent-setup` 给 Claude Code 装 hook 和 skill（先列出改动并询问，保留别人的 hook、备份、跟随符号链接、保持文件权限，`--remove` 撤掉）：标签显示工作中 / 等你批准 / 完成，agent 知道自己在哪个 pane，并按任务给会话起名（`agent-session-names`）。真实 Claude Code 跑过一遍。⬜ Codex 等其他 agent |
+| 会话命名、agent 集成（Rex：`rex skill setup`、"Let agents name sessions"） | — | ✅ `+rename-session [ID] NAME`（名字存在 liberttyd，升级接管时也带着，标签按名字显示，`+list-sessions`、`+events label` 能看到）；`+status STATE` 任何脚本都能上报 OSC 7501；`+agent-setup` 给 Claude Code 装 hook 和 skill（先列出改动并询问，保留别人的 hook、备份、跟随符号链接、保持文件权限，`--remove` 撤掉）：标签显示工作中 / 等你批准 / 完成，agent 知道自己在哪个 pane，并按任务给会话起名（`agent-session-names`）。真实 Claude Code 跑过一遍。✅ Codex：`config.toml` 的 `notify`（完成、等待批准）和 skill，不覆盖别人的 notify；⚠️ 本机没装 Codex，只按它写入的那行验证了 hook。其他 agent 用 `+status` |
 
 ## 4. 程序状态与通知
 
@@ -74,7 +74,7 @@
 |---|---|---|---|
 | OSC 7501 记录，严格按规范实现 | ✓ | ✓（规范是 Rex 定的） | ✅ 存储、标题和标签显示，新提示符出现时清记录（都在真机上验证过） |
 | pane 图标、标签上的状态徽标（工作中 / 等待中 / 完成 / 失败） | ✓ | ✓ | ✅ 侧栏标签上：进度环（OSC 9;4 或 7501 的进度，未知进度时转圈）、等你处理（橙色 !）、完成（绿 ✓）、失败（红 ✗）；Dock 图标数字 = 等你处理的程序数 |
-| **自动注入 shell 集成脚本**（OSC 133 提示符标记、OSC 7 当前目录） | ✓ | ✓ | ✅ 三个 shell 的脚本都是自己写的，没用 Ghostty/kitty 的 GPL 脚本，用户的 dotfiles 照常加载：zsh（ZDOTDIR，真机验证过）；bash（`--rcfile` 加上模拟登录加载，DEBUG trap 标记命令边界，在 macOS 自带的 3.2 上用 pty 验证过）；fish（XDG_DATA_DIRS 的 vendor_conf.d，**本机没装 fish，未实测**） |
+| **自动注入 shell 集成脚本**（OSC 133 提示符标记、OSC 7 当前目录） | ✓ | ✓ | ✅ 三个 shell 的脚本都是自己写的，没用 Ghostty/kitty 的 GPL 脚本，用户的 dotfiles 照常加载：zsh（ZDOTDIR，真机验证过）；bash（`--rcfile` 加上模拟登录加载，DEBUG trap 标记命令边界，在 macOS 自带的 3.2 上用 pty 验证过）；fish（XDG_DATA_DIRS 的 vendor_conf.d；在 Linux 容器里用真 fish 跑过远程探针：提示符、忙/闲、会话变量、目录都对） |
 | 横幅通知（agent 需要人处理、长命令完成） | ✓ | — | ✅ 你不在看那个 pane 时才通知；点通知跳到那个 pane；`notify-on-command-finish(-after)`（Ghostty 同名项），命令名来自 shell 集成发的 `133;C;cmdline_url` |
 | 通知收件箱 | ✓ | — | ✅ 工具栏的铃铛：所有通知按时间倒序，有新的时显示角标，点一条跳到对应的 pane |
 | agent 完成 / 等你处理时，pane 边缘光环合拢 | ✓ | — | ✅ 颜色跟状态走（完成绿、等待橙、失败红）；正在打字的 pane 不闪 |
@@ -114,14 +114,14 @@
 | 跟随显示刷新（最高 120Hz），空闲时暂停 | ✅ |
 | 只重建脏行 | ✅ |
 | 输入延迟：`--latency-trace` 实测，按键到上屏中位数 120Hz 下 8.5–10.6ms（原来 30ms）、60Hz 下 17–21ms（原来 44ms）；默认 `window-vsync = false`，全屏时自动打开同步 | ✅ |
-| 拖动缩放时同步呈现，PTY 尺寸更新去抖 50ms | ✅ 修好了缩放卡顿：原来窗口缩放时每帧主线程卡约 900ms（display link 在 `presentsWithTransaction` 打开时还走 command buffer 的 present，drawable 一直不释放，`nextDrawable` 要等满 1 秒超时）。现在所有尺寸变化（窗口边缘、分隔条、分屏动画）都在 CA 事务里同步呈现，一帧只画一次，3 个 drawable，drawable 按 256px 分档复用，内容钉在左上角、不拉伸。`Libertty --resize-trace [--divider] [--splits N]` 实测 240 帧丢 0 帧，分隔条拖动每帧 2.6ms |
+| 拖动缩放时同步呈现，PTY 尺寸更新去抖 50ms | ✅ 修好了缩放卡顿：原来窗口缩放时每帧主线程卡约 900ms（display link 在 `presentsWithTransaction` 打开时还走 command buffer 的 present，drawable 一直不释放，`nextDrawable` 要等满 1 秒超时）。现在所有尺寸变化（窗口边缘、分隔条、分屏动画）都在 CA 事务里同步呈现，一帧只画一次，3 个 drawable，drawable 与视图像素同尺寸（0.3.7 起；原来按 256px 分档，窗口重新显示时会被窗口服务器挤压一帧），内容钉在左上角、不拉伸。`Libertty --resize-trace [--divider] [--splits N]` 实测 240 帧丢 0 帧，分隔条拖动每帧 2.6ms |
 | 触控板按像素滚动 | ✅ 触控板跟手按点滚动（`scroll-smooth`，默认开）：整行交给 libghostty-vt 滚，余下的不到一行用 GPU 偏移，下方那一行用网格引用读出来补上；到顶/到底、有新输出跟到底部、改尺寸时回到行边界；鼠标点击和选择按偏移换算。快照测试半行偏移 |
 | 减少动态效果开关 | ✅ token 已就位 |
 | Secure Keyboard Entry | ✅ |
 | Quick Terminal（下拉式终端） | ✅ 见 §1 |
 | 基准测试：vtebench 吞吐、输入延迟 | ✅ 吞吐：上一轮 vtebench 12 项都第一，但那轮 Libertty 实际只留了约 500 行 scrollback、网格也比 Tern 小，成绩偏高，修好后还没重跑（`bench/RESULTS.md`）；输入延迟用外部测法（`bench/keylat.swift`）和 kitty、Ghostty、Terminal.app 比过一轮：出厂默认下 Libertty 中位数最低（20 ms，kitty 25、Ghostty 28–34、Terminal 40），但领先不到一帧，设置对齐的比较和更多轮次还没做 |
 | **PTY 读线程改造**（照搬 Tern 的做法）：专用线程 + 非阻塞自旋读；数据不足 1 KiB 立刻交出，否则攒到 64 KiB 或 3 ms；读和解析分开，中间有 1 MiB 背压；从端开启 IUTF8 | ✅ 无窗口实测：200 MB 端到端从 112–128 MB/s 提升到 **303–345 MB/s**，快照渲染回归测试通过。大段粘贴（非阻塞写入遇到 EAGAIN 的分支）已验证：2 MB 粘贴进 raw 模式的程序一个字节不少，直连和经 liberttyd 都是约 0.25 s（`--paste-probe`，在 `tests/run.sh` 里）。⬜ 共享 poller（安静的 pane 让出读线程）还没做 |
-| 拖分隔条：网格和 drawable 尺寸都没变时不重画；drawable 按 256px 分档。120Hz 下 2 个、4 个 pane 拖分隔条都是 240 帧丢 0 帧（原来分别丢 14、34 帧） | ✅ |
+| 拖分隔条：网格和 drawable 尺寸都没变时不重画。120Hz 下 2 个、4 个 pane 拖分隔条都是 240 帧丢 0 帧（原来分别丢 14、34 帧） | ✅ |
 | NSAccessibility 文本接口，让 VoiceOver 能逐行朗读（Otty 已经做了） | ✅ 终端是只读文本区：按行 / 词 / 字读，光标即插入点，新输出会通知 VoiceOver（每秒最多 4 次） |
 | pane 内容通用化：不只放终端，还能放文本、图片、网页、diff（Otty 和 Tern 都有） | ✅ 文档（Markdown 渲染、源码）既能开成标签，也能开成终端旁边的 pane：侧栏 ⌥ 单击或右键 Open Beside Terminal、⌥⌘ 单击路径、`libertty +open --split FILE[:LINE]`；分屏导航、缩放、⌘W、布局恢复都支持。图片（棋盘格透明底，文件变了自动刷新）、PDF、网页（开发服务器放在它的终端旁边：⌥⌘ 单击网址、Inspector 里点端口、`libertty +open --split http://localhost:3000`；页面标题当标签名，外链交给浏览器）、diff（`libertty +diff`、Inspector ▸ Show Changes：按文件分块、新旧行号、加删着色、代码高亮，再次打开就刷新；.diff/.patch 文件也这样显示）也都能放 |
 | **Markdown 渲染**（Tern `markdown_rendered`）：在侧栏里单击 `.md` 就在标签页里打开渲染结果。支持 GFM：表格、任务列表、嵌套列表、代码块高亮（用终端主题的配色）、引用、图片、引用式链接、自动链接、原始 HTML（页面 JS 关闭）。样式取自 Tern 的 CSS 和设计 token；文件保存后自动刷新，阅读位置保持不变；支持 ⌘F、⌘+/⌘−，可以切换成看源码。`libertty +open FILE`、`libertty +render-markdown FILE` | ✅ |
@@ -210,3 +210,16 @@ Tern 的三项终端功能，加上 11 个 workspace block（编号 11 的 AI �
 | 11. 屏幕共享 | ScreenCaptureKit 抓一个显示器或一个窗口，按帧发给块显示（本机；远程共享走 liberttyd 的连接尚未做）；探测只允许 Libertty 自己的窗口 | ✅ `Blocks/ScreenShareBlock.swift` |
 
 测试：`tests/run.sh` 里的 `tab-strip`、`park`、`float`、`workspaces`、`editor`、`git-block`、`tasks`、`canvas`、`profiler`、`board`、`sqlite`、`plugins`、`notebook`（没有 jupyter 时跳过）、`screen`、`browser`、`browser-automation`。
+
+## 13. 对齐 Rex Beta 0.1.0（2026-10-26，按它界面里的文字）
+
+| 功能 | Rex | Libertty |
+|---|---|---|
+| 文字渲染：最小对比度、行高 | Text Contrast Correction、Line height adjustment | ✅ `minimum-contrast`、`adjust-cell-height`（Ghostty 同名），快照像素测试 `tests/text-render-test.sh` |
+| 在命令面板里改设置，选中即在所有窗口试用 | Change Terminal Font / Cursor Style / Padding Color / Option Key Behavior… | ✅ 面板的 Settings：主题、字体（每个字体用自己的字形列出）、字号、行高、对比度、光标、内边距颜色、透明度、失焦变暗、Option 键、标签样式、pane 标题栏、pane 风格、玻璃、强调色、标签图标颜色、自动均分；回车写进配置那一行，Esc 复原（`ConfigStore.preview`）。主题范围同样实时预览 |
+| 自定义主题 | Import Theme File、Regenerate Palette、Delete Custom Theme… | ✅ Libertty ▸ Theme Editor…：色板、对比度、实时预览、保存为 Ghostty 格式主题并启用、导入 Ghostty 主题和 `.itermcolors`、删除自己的主题；`palette-generate` / `palette-harmonious`（Ghostty 同名，CIELAB） |
+| 分屏 | Autobalance splits、Split Pane Best Fit | ✅ `split-autobalance`、`new_split:auto`（Split Best Fit）；拖动 pane |
+| 界面风格 | Compact/Comfortable Pane Style、Use glass for panes、Use theme accent、Use color for tab icons | ✅ `pane-style`、`pane-glass`、`accent-color`、`tab-icon-color` |
+| Web 访问走 Tailscale | Serve over Tailscale | ✅ `web-access = tailscale`：`tailscale serve` HTTPS，链接是本机的 tailnet 名字；⚠️ 本机没装 Tailscale，用替身命令行验证 |
+| 屏幕上的视觉检查 | — | ✅ `tests/screen.sh`（`--screen-probe`）：ScreenCaptureKit 只录本进程的窗口，按 AppKit 画的标尺判断终端有没有被挤压；手动跑。⚠️ 在本机没能复现 0.3.7 修掉的那次挤压（去掉修复也没复现） |
+

@@ -128,10 +128,12 @@ silicon) and Linux (x86_64, aarch64).
 
 ### Web access
 
-`web-access = local | network` serves the Mac's panes to a browser: a pane's screen
-and keyboard input through the same key encoder. Every page requires a secret token
-from the link. `local` listens on localhost only; `network` uses plain HTTP on the
-local network. `web-access-input = false` makes it read-only.
+`web-access = local | network | tailscale` serves the Mac's panes to a browser: a
+pane's screen and keyboard input through the same key encoder. Every page requires a
+secret token from the link. `local` listens on localhost only; `network` uses plain
+HTTP on the local network; `tailscale` listens on localhost and has `tailscale serve`
+publish it to your tailnet over HTTPS, at the Mac's tailnet name. `web-access-input =
+false` makes it read-only.
 
 ### Documents and blocks
 
@@ -164,6 +166,9 @@ have no unsaved edits.
   session then shows on its tab whether it is working, waiting for you (approval) or done,
   is told which pane it runs in, and names its session after its task
   (`agent-session-names = false` turns naming off). Outside Libertty the hooks do nothing.
+  For Codex (`--agent codex`, and by default when `~/.codex` exists) it adds a `notify`
+  to `config.toml` (done, waiting for approval) and the same skill; a `notify` of someone
+  else's is left alone.
 - `libertty +status STATE` reports a program's state to the terminal from any script (OSC 7501).
 - `libertty +rename-session [ID] NAME` names a session; its tab and `+list-sessions` show the name.
 
@@ -197,7 +202,10 @@ The config file is `~/.config/libertty/config` in Ghostty's format (`key = value
 `keybind = cmd+d=new_split:right`, `theme = light:X,dark:Y`, `config-file = ...`).
 Libertty ▸ Settings… (⌘,) opens it; changes apply when the file is saved. Errors are
 listed in a Configuration Errors window. Ghostty theme files are accepted, from
-`~/.config/libertty/themes` and from an installed Ghostty.app.
+`~/.config/libertty/themes` and from an installed Ghostty.app. The command palette's
+Settings change the common keys in place, each choice tried in every window as it's
+selected (Return writes the line, Esc puts it back), and Libertty ▸ Theme Editor… makes
+themes of your own, live.
 
 ```sh
 libertty +set theme="Tokyo Night" font-size=14
@@ -231,7 +239,8 @@ libertty +wait ID --until exit|prompt|idle=MS [--timeout S]
 libertty +events [--filter KIND,...]
 libertty +attach ID [--window] ; libertty +kill-session ID
 libertty +split [ID] [--down] [--ratio 30] [--no-focus] [-e COMMAND]   # a pane beside session ID's; prints its ID
-libertty +move-pane [ID] --new-tab | --tab N | --new-window
+libertty +move-pane [ID] --new-tab | --tab N | --new-window | --beside OTHER [--down]
+libertty +swap-pane [ID] OTHER ; libertty +resize-pane [ID] --left 40 | --equalize
 ```
 
 Session commands accept `--host HOST`. `$LIBERTTY_SESSION` holds the current pane's
@@ -246,7 +255,10 @@ selection, shell integration, sessions, paste, throughput, and UI scripts for th
 window features and every block (`tests/fixtures/*.txt`, run with
 `Libertty --ui-probe SCRIPT OUTDIR`). The notebook test is skipped when no
 `jupyter server` is available (`LIBERTTY_TEST_JUPYTER` selects one).
-`tests/update-test.sh` checks the update path offline.
+`tests/update-test.sh` checks the update path offline. Two checks run by hand:
+`tests/screen.sh` records what the window server shows (a real window for about 40 s,
+needs Screen Recording permission), and `tests/linux.sh` runs liberttyd on Linux in
+Docker containers (aarch64, x86_64; bash and fish).
 
 ```sh
 # A command's final screen as PNG, without a window
