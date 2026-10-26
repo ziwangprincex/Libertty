@@ -38,6 +38,11 @@ jobs:
       - name: Unit tests
         run: swift test
       - name: Headless suite
+        # A runner has three cores: fewer checks at once, more patience.
+        env:
+          LIBERTTY_TEST_JOBS: 3
+          LIBERTTY_TEST_UI_JOBS: 2
+          LIBERTTY_PROBE_PATIENCE: 10
         run: zsh tests/run.sh
       - name: Test output
         if: failure()
@@ -81,7 +86,7 @@ jobs:
           out/liberttyd-linux-x86_64 --version
           LIBERTTY_DAEMON_SOCKET=/tmp/l.sock LIBERTTY_DAEMON_LOG=/tmp/l.log out/liberttyd-linux-x86_64 &
           for i in $(seq 50); do [ -S /tmp/l.sock ] && break; sleep 0.1; done
-          test -S /tmp/l.sock && cat /tmp/l.log
+          test -S /tmp/l.sock && echo "listening on /tmp/l.sock"
       - uses: actions/upload-artifact@v4
         with:
           name: liberttyd-linux
@@ -101,4 +106,4 @@ jobs:
           out/liberttyd-linux-aarch64 --version
           LIBERTTY_DAEMON_SOCKET=/tmp/l.sock LIBERTTY_DAEMON_LOG=/tmp/l.log out/liberttyd-linux-aarch64 &
           for i in $(seq 50); do [ -S /tmp/l.sock ] && break; sleep 0.1; done
-          test -S /tmp/l.sock && cat /tmp/l.log
+          test -S /tmp/l.sock && echo "listening on /tmp/l.sock"

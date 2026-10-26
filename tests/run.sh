@@ -319,6 +319,10 @@ expect focus-follows-mouse 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/f
   $LIBERTTY --ui-probe "$(sed 's/@FIRST@/1/' $ROOT/tests/fixtures/focus-follows-mouse.txt)" $OUT
 expect focus-follows-mouse-off 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed 's/@FIRST@/2/' $ROOT/tests/fixtures/focus-follows-mouse.txt)" $OUT
+# bash's integration: a folder changed earlier on the line is the pane's before the program starts.
+mkdir -p $PRIVATE/bash-cwd/deep/a/b/c/proj
+expect bash-cwd 'ui-probe: all passed' env LIBERTTY_SHELL=/bin/bash XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/bash-cwd|g" $ROOT/tests/fixtures/bash-cwd.txt)" $OUT
 # Go to Directory: the palette's Folders, a typed path, where shells have been.
 mkdir -p $PRIVATE/folders
 expect go-to-directory 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \

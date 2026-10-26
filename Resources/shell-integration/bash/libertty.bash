@@ -73,6 +73,9 @@ if [[ -z "${_LIBERTTY_BASH_INTEGRATED-}" ]]; then
     # is the start of the user's command line (one mark per line, even for
     # pipelines and lists). Works on every bash, including macOS's 3.2.
     _libertty_preexec() {
+        # A `cd` earlier on the line (`cd proj && vim`): the folder now,
+        # before the next command starts — zsh says it on chpwd.
+        _libertty_report_pwd
         (( _libertty_at_prompt )) || return 0
         _libertty_at_prompt=0
         # An empty command line goes straight back to PROMPT_COMMAND: that's

@@ -1,0 +1,7 @@
+# bash's integration (run with LIBERTTY_SHELL=/bin/bash): a folder changed
+# earlier on the line (`cd proj && program`) is the pane's before the
+# program starts, as zsh's chpwd says it — the tab names it.
+type:cd @DIR@/deep/a/b/c/proj && sleep 6
+key:enter
+wait:1.0
+expect-tab:…/c/proj

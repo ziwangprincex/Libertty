@@ -1248,6 +1248,9 @@ public enum Snapshots {
             options.extra.screen.style = true
             options.extra.screen.hyperlink = true
         }
+        // A page's palette colors are CSS variables (var(--vt-palette-1)): the
+        // page must define them, or they're no color at all.
+        if format == .html { options.extra.palette = true }
         var formatter: GhosttyFormatter?
         var selection = GhosttySelection()
         selection.size = MemoryLayout<GhosttySelection>.size

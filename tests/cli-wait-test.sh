@@ -45,8 +45,9 @@ $L +send $ID 'printf "\\033[31mRED\\033[0m\\n"\n'
 $L +wait $ID --until prompt --timeout 5
 $L +capture $ID --ansi | grep -q $'\e\\[' && ok "capture --ansi keeps the colors" || bad "capture --ansi"
 $L +capture $ID --html > $T/page.html
-grep -q '<!doctype html>' $T/page.html && grep -q 'rgb(' $T/page.html && ok "capture --html is a page with colors" \
-  || bad "capture --html"
+# Palette colors are CSS variables the page defines (red: palette 1).
+grep -q '<!doctype html>' $T/page.html && grep -q 'var(--vt-palette-1)' $T/page.html && grep -q -- '--vt-palette-1: #' $T/page.html \
+  && ok "capture --html is a page with its colors" || bad "capture --html"
 $L +capture $ID --html --ansi > /dev/null 2>&1; [[ $? == 2 ]] && ok "--html and --ansi together: refused" || bad "both formats"
 
 ( $L +wait $ID --timeout 10; echo $? > $T/exit ) &
