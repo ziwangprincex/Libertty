@@ -465,6 +465,7 @@ enum UIProbe {
                         while !ready, Date() < deadline {
                             pump(0.2)
                             ready = (pageEvaluate(controller, "document.readyState === 'complete' && document.body.innerText.trim().length > 0 && !document.body.innerText.includes('Reading…')") as? Bool) == true
+                                || controller.selectedDocument?.pageLoaded == true
                         }
                         if ready { print("ok    ui-probe page up"); pump(0.3) } else { print("FAIL  ui-probe page: never drew"); failures += 1 }
                     case .expectPage(let text, let want):

@@ -742,6 +742,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     func editorText(_ completion: @escaping (String?) -> Void) { runEditor("libertty.text()") { completion($0 as? String) } }
     var isEditorReady: Bool { editorReady }
     func editorEvaluate(_ script: String, _ completion: @escaping (Any?) -> Void) { runEditor(script, completion: completion) }
+    /// A web page done loading, as WebKit itself says (`--ui-probe`'s page-wait,
+    /// when the page's own script can't be asked yet).
+    var pageLoaded: Bool { browserBar != nil && !web.isLoading && web.estimatedProgress >= 1 && !(web.title ?? "").isEmpty }
     /// Run a function body in the page, awaited (the probe's `page-js`); an error comes back as its text.
     func pageCall(_ body: String, _ completion: @escaping (Any?) -> Void) {
         web.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
