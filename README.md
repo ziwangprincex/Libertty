@@ -13,7 +13,7 @@ an editor, a Git client, a browser, a task manager and others.
 
 ## Status
 
-- Version 0.3.7. macOS 14 or later; the build script produces an Apple silicon (arm64) binary.
+- Version 0.3.8. macOS 14 or later; the build script produces an Apple silicon (arm64) binary.
 - Not notarized by Apple. Updates are verified with an Ed25519 signature instead (see
   [Updates and releases](#updates-and-releases)).
 - Published on [GitHub Releases](https://github.com/ziwangprincex/Libertty/releases)

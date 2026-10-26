@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.8
+
+> Settings from the command palette, tried out live; a Theme Editor; panes moved by dragging; compact and glass panes, a theme accent and colored tab icons; minimum contrast and line height; Codex in agent setup; Web Access over Tailscale.
 
 - `minimum-contrast` (as in Ghostty): text that reads worse against its background than this WCAG ratio is drawn white or black; dark-gray output on a dark theme, or a program's colors that clash with the theme's, stay readable. Box drawing, blocks and powerline glyphs keep their colors.
 - `adjust-cell-height` (as in Ghostty; Rex's line height): taller or shorter rows, in pixels (`2`) or a percentage (`20%`), the text centered in them; box drawing and powerline glyphs follow the cell.
