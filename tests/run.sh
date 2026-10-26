@@ -152,7 +152,8 @@ expect remote-host 'remote-probe: all passed' env LIBERTTY_SSH=$ROOT/tests/fixtu
 
 # Web Access: the page, its secret, a pane's screen and typing, over a
 # real WebSocket on a private port (this Mac only).
-expect web-access 'web-probe: all passed' env LIBERTTY_WEB_PORT=$(( 17000 + RANDOM % 900 )) $LIBERTTY --web-probe
+expect web-access 'web-probe: all passed' env LIBERTTY_WEB_PORT=$(( 17000 + RANDOM % 900 )) \
+  LIBERTTY_TAILSCALE=$ROOT/tests/fixtures/fake-tailscale FAKE_TAILSCALE_LOG=$PRIVATE/tailscale.log $LIBERTTY --web-probe
 
 # Sessions (liberttyd)
 ID=$($LIBERTTY +new-session -e 'printf "persisted\n"; sleep 30')

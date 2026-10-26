@@ -527,6 +527,28 @@ enum ParseBench {
             send(task, ["t": "key", "code": "KeyC", "key": "c", "ctrl": true])
             check("ctrl-c through the encoder", wait(5) { session.hasExited })
             task.cancel()
+
+            // My tailnet (a stand-in Tailscale, LIBERTTY_TAILSCALE): tailscale
+            // serve takes the port, the link is the Mac's tailnet name over
+            // HTTPS, and a page from there may connect (served as 127.0.0.1).
+            if let log = ProcessInfo.processInfo.environment["FAKE_TAILSCALE_LOG"] {
+                config.webAccess = "tailscale"
+                web.apply(config)
+                let name = "probe-mac.tail1234.ts.net"
+                check("tailscale: listening, named", wait(5) { web.listening && web.tailnetName == name })
+                if !web.listening { print("  (not listening: \(web.lastError ?? "no error"))") }
+                check("tailscale: the link", web.links == ["https://\(name):\(web.port)/#\(web.token)"])
+                let asked = { (try? String(contentsOfFile: log, encoding: .utf8)) ?? "" }
+                check("tailscale: serve took the port", asked().contains("serve --bg --https=\(web.port) http://127.0.0.1:\(web.port)"))
+                let (tailnet, tailnetInbox) = open(web.token, origin: "https://\(name):\(web.port)")
+                check("tailscale: a page from the tailnet name connects", wait(5) { tailnetInbox.all().contains { $0["t"] as? String == "hello" } })
+                tailnet.cancel()
+                let (other, otherInbox) = open(web.token, origin: "https://evil.example")
+                check("tailscale: other sites still refused", wait(5) { otherInbox.lock.withLock { otherInbox.closed } } && otherInbox.all().isEmpty)
+                other.cancel()
+                web.stop()
+                check("tailscale: serve let go of the port", wait(5) { asked().contains("serve --https=\(web.port) off") })
+            }
             web.stop()
             print(failed.isEmpty ? "web-probe: all passed" : "web-probe failed: \(failed)")
             exit(failed.isEmpty ? 0 : 1)

@@ -302,7 +302,7 @@ struct Config: Equatable {
         ("wait-after-command", "Keep a pane open when its program ends, until a key is pressed in it (as in Ghostty). Off: only a program that fails at once keeps it (abnormal-command-exit-runtime)."),
         ("abnormal-command-exit-runtime", "Milliseconds: a program that fails (exits non-zero) sooner keeps its pane open with its error, until a key is pressed in it. 0 turns that off. Default 250."),
         ("undo-timeout", "How long Edit ▸ Undo (⌘Z) can bring back a closed pane, tab or window, programs still running: seconds or e.g. 30s; 0 ends them on close."),
-        ("web-access", "Show this Mac's panes in a browser (Libertty ▸ Web Access…): off, local (this Mac only; reach it through ssh -L or Tailscale) or network (the local network too, plain HTTP). Every page needs the link's secret."),
+        ("web-access", "Show this Mac's panes in a browser (Libertty ▸ Web Access…): off, local (this Mac only; reach it through ssh -L), network (the local network too, plain HTTP) or tailscale (your tailnet, over HTTPS, by tailscale serve at this Mac's tailnet name). Every page needs the link's secret."),
         ("web-access-port", "The port Web Access listens on."),
         ("web-access-input", "Whether a browser may type into panes (false: watch only)."),
         ("mouse-hide-while-typing", "Hide the mouse pointer while you type; moving it brings it back."),
@@ -733,7 +733,7 @@ struct Config: Equatable {
             guard let x = Self.duration(v) else { return "a duration like 5, 5s or 1m" }; undoTimeout = min(x, 3600)
         case "web-access":
             if reset { webAccess = defaults.webAccess; return nil }
-            guard ["off", "local", "network"].contains(v) else { return "off, local or network" }; webAccess = v
+            guard ["off", "local", "network", "tailscale"].contains(v) else { return "off, local, network or tailscale" }; webAccess = v
         case "web-access-port":
             if reset { webAccessPort = defaults.webAccessPort; return nil }
             guard let x = Int(v), (1024...65535).contains(x) else { return "a port from 1024 to 65535" }; webAccessPort = x

@@ -1,0 +1,10 @@
+#!/bin/sh
+# A stand-in for Tailscale's command line (tests/run.sh's web-access): it
+# logs what it's asked and answers `status --json` as a Mac signed in to a
+# tailnet would.
+echo "$*" >> "${FAKE_TAILSCALE_LOG:-/dev/null}"
+case "$1" in
+  status) echo '{"BackendState":"Running","Self":{"DNSName":"probe-mac.tail1234.ts.net.","Online":true}}' ;;
+  serve) exit 0 ;;
+  *) exit 1 ;;
+esac

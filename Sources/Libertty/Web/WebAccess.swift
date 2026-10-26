@@ -19,7 +19,9 @@ struct WebPane {
 /// encoder as typing here.
 ///
 /// Off by default. `local` listens on this Mac only (use it through an ssh
-/// tunnel or Tailscale); `network` on the local network too, in plain HTTP.
+/// tunnel); `network` on the local network too, in plain HTTP; `tailscale`
+/// (Rex's Serve over Tailscale) on this Mac only, served to your tailnet
+/// over HTTPS by `tailscale serve`, at the Mac's tailnet name.
 /// Every connection needs the secret in the link (256 random bits, kept
 /// until New Link replaces it), so nobody without it can see or type
 /// anything; a page from another site can't connect either.
@@ -27,7 +29,7 @@ struct WebPane {
 final class WebAccess {
     static let shared = WebAccess()
 
-    enum Mode: String { case off, local, network }
+    enum Mode: String { case off, local, network, tailscale }
 
     private var listener: NWListener?
     private var clients: [ObjectIdentifier: WebClient] = [:]
@@ -36,6 +38,10 @@ final class WebAccess {
     private(set) var listening = false
     private(set) var lastError: String?
     var allowsInput = true
+    /// `tailscale`: this Mac's name in the tailnet once `tailscale serve` took
+    /// the port (`mac.tail1234.ts.net`), and whether it did.
+    private(set) var tailnetName: String?
+    private(set) var tailscaleServing = false
 
     /// What the page can show; the app's windows unless a probe replaces it.
     var panes: () -> [WebPane] = {
@@ -72,20 +78,41 @@ final class WebAccess {
         let wanted = Mode(rawValue: config.webAccess) ?? .off
         let wantedPort = UInt16(clamping: config.webAccessPort)
         guard wanted != mode || wantedPort != port || (wanted != .off && listener == nil) else { return }
+        // This Mac only, served to the tailnet or not: the same listener.
+        let loopback: Set<Mode> = [.local, .tailscale]
+        if listener != nil, wantedPort == port, loopback.contains(mode), loopback.contains(wanted) {
+            if mode == .tailscale, tailscaleServing { Self.tailscale(["serve", "--https=\(port)", "off"]) { _, _ in } }
+            tailscaleServing = false
+            tailnetName = nil
+            lastError = nil
+            mode = wanted
+            if wanted == .tailscale { serveOverTailscale() }
+            NotificationCenter.default.post(name: Self.changed, object: nil)
+            return
+        }
         stop()
         mode = wanted
         port = wantedPort
         if wanted != .off { start() }
     }
 
+    private var bindRetries = 0
+
     private func start() {
+        bindRetries = 0
+        if mode == .tailscale { serveOverTailscale() }
+        startListening()
+    }
+
+    private func startListening() {
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
-        if mode == .local {
+        let loopback = mode == .local || mode == .tailscale
+        if loopback {
             parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
         }
         do {
-            let listener = mode == .local ? try NWListener(using: parameters)
+            let listener = loopback ? try NWListener(using: parameters)
                 : try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
             listener.stateUpdateHandler = { [weak self] state in
                 MainActor.assumeIsolated { self?.listenerChanged(state) }
@@ -102,6 +129,9 @@ final class WebAccess {
     }
 
     func stop() {
+        if tailscaleServing { Self.tailscale(["serve", "--https=\(port)", "off"]) { _, _ in } }
+        tailscaleServing = false
+        tailnetName = nil
         listener?.cancel()
         listener = nil
         listening = false
@@ -115,11 +145,22 @@ final class WebAccess {
         case .ready:
             listening = true
             lastError = nil
+            bindRetries = 0
         case .failed(let error):
             listening = false
             lastError = error.localizedDescription
             listener?.cancel()
             listener = nil
+            // The port still held by the listener just let go of: again, shortly.
+            if case .posix(.EADDRINUSE) = error, bindRetries < 5, mode != .off {
+                bindRetries += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self, self.listener == nil, self.mode != .off else { return }
+                        self.startListening()
+                    }
+                }
+            }
         case .cancelled:
             listening = false
         default:
@@ -135,6 +176,75 @@ final class WebAccess {
     }
 
     func forget(_ client: WebClient) { clients[ObjectIdentifier(client)] = nil }
+
+    // MARK: Tailscale
+
+    /// The Tailscale command line: `LIBERTTY_TAILSCALE` (tests), the app's,
+    /// or one on the usual paths.
+    static var tailscaleCLI: String? {
+        if let given = ProcessInfo.processInfo.environment["LIBERTTY_TAILSCALE"], !given.isEmpty { return given }
+        return ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale",
+                "/usr/bin/tailscale"].first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Run it off the main thread; `done` hears its exit status and output.
+    private static func tailscale(_ args: [String], done: @escaping @MainActor (Int32, String) -> Void) {
+        guard let cli = tailscaleCLI else {
+            return DispatchQueue.main.async { MainActor.assumeIsolated { done(-1, "") } }
+        }
+        DispatchQueue.global().async {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: cli)
+            p.arguments = args
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = out
+            var status: Int32 = -1
+            var text = ""
+            if (try? p.run()) != nil {
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                status = p.terminationStatus
+                text = String(decoding: data, as: UTF8.self)
+            }
+            DispatchQueue.main.async { MainActor.assumeIsolated { done(status, text) } }
+        }
+    }
+
+    /// `tailscale serve` takes the port (HTTPS, to the tailnet only) and
+    /// hands it on to the listener here; then the Mac's tailnet name.
+    private func serveOverTailscale() {
+        let port = self.port
+        guard Self.tailscaleCLI != nil else {
+            lastError = "Tailscale isn't installed (tailscale.com/download), or its command line isn't on this Mac."
+            return
+        }
+        Self.tailscale(["serve", "--bg", "--https=\(port)", "http://127.0.0.1:\(port)"]) { [weak self] status, output in
+            guard let self, self.mode == .tailscale, self.port == port else { return }
+            guard status == 0 else {
+                let said = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.lastError = "tailscale serve didn't take the port" + (said.isEmpty ? "." : ": " + said)
+                return NotificationCenter.default.post(name: Self.changed, object: nil)
+            }
+            self.tailscaleServing = true
+            Self.tailscale(["status", "--json"]) { [weak self] _, json in
+                guard let self, self.mode == .tailscale else { return }
+                let status = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]
+                let name = ((status?["Self"] as? [String: Any])?["DNSName"] as? String)?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                self.tailnetName = name.flatMap { $0.isEmpty ? nil : $0 }
+                if self.tailnetName == nil { self.lastError = "Tailscale serves the port, but didn't say this Mac's name: is it signed in?" }
+                NotificationCenter.default.post(name: Self.changed, object: nil)
+            }
+        }
+    }
+
+    /// Pages from these may open a WebSocket besides the server's own host:
+    /// the tailnet address, which `tailscale serve` hands on as 127.0.0.1.
+    var trustedOrigins: Set<String> {
+        guard mode == .tailscale, let name = tailnetName else { return [] }
+        return ["https://\(name):\(port)", port == 443 ? "https://\(name)" : ""].reduce(into: Set<String>()) { if !$1.isEmpty { $0.insert($1) } }
+    }
 
     // MARK: Who may connect
 
@@ -162,6 +272,7 @@ final class WebAccess {
         guard mode != .off else { return [] }
         let fragment = ":\(port)/#\(token)"
         if mode == .local { return ["http://127.0.0.1" + fragment] }
+        if mode == .tailscale { return tailnetName.map { ["https://" + $0 + fragment] } ?? [] }
         var hosts: [String] = []
         if let name = Host.current().localizedName?.replacingOccurrences(of: " ", with: "-"), !name.isEmpty {
             hosts.append(name + ".local")
@@ -301,7 +412,9 @@ final class WebClient {
             return respond(400, "Bad Request")
         }
         // Only the page Libertty served (same host and port) may open it.
-        if let origin = headers["origin"], let host = headers["host"], URL(string: origin)?.hostAndPort != host {
+        // Or (Tailscale) the tailnet address it was served at.
+        if let origin = headers["origin"], let host = headers["host"], URL(string: origin)?.hostAndPort != host,
+           !server.trustedOrigins.contains(origin.lowercased()) {
             return respond(403, "Forbidden")
         }
         guard !server.throttled else { return respond(429, "Too Many Requests") }

@@ -29,7 +29,7 @@ final class WebAccessPanel: NSObject {
         panel.title = "Web Access"
         panel.isReleasedWhenClosed = false
 
-        mode.addItems(withTitles: ["Off", "This Mac only", "This Mac and the local network"])
+        mode.addItems(withTitles: ["Off", "This Mac only", "This Mac and the local network", "My tailnet (Tailscale, HTTPS)"])
         mode.target = self
         mode.action = #selector(modeChanged(_:))
         link.isSelectable = true
@@ -76,17 +76,19 @@ final class WebAccessPanel: NSObject {
 
     private func refresh() {
         let web = WebAccess.shared
-        mode.selectItem(at: web.mode == .off ? 0 : web.mode == .local ? 1 : 2)
+        mode.selectItem(at: [.off: 0, .local: 1, .network: 2, .tailscale: 3][web.mode] ?? 0)
         input.state = web.allowsInput ? .on : .off
         let links = web.links
-        link.stringValue = links.first ?? "Turn it on to get a link."
+        link.stringValue = links.first ?? (web.mode == .tailscale && web.lastError == nil ? "Asking Tailscale…" : "Turn it on to get a link.")
         qr.image = links.first.flatMap(Self.qrCode)
         qr.isHidden = links.isEmpty
         var notes: [String] = []
-        if let error = web.lastError { notes.append("Can't listen on port \(web.port): \(error)") }
+        if let error = web.lastError { notes.append(web.mode == .tailscale ? error : "Can't listen on port \(web.port): \(error)") }
         switch web.mode {
         case .off: notes.append("Shows the panes of Libertty's windows in a browser, live, and lets you type into them.")
-        case .local: notes.append("Only this Mac can connect: from elsewhere, use ssh -L \(web.port):127.0.0.1:\(web.port) or Tailscale.")
+        case .local: notes.append("Only this Mac can connect: from elsewhere, use ssh -L \(web.port):127.0.0.1:\(web.port), or My tailnet.")
+        case .tailscale:
+            notes.append("Devices signed in to your tailnet can open it, over HTTPS (tailscale serve); they still need the link's secret. Nothing listens on the local network.")
         case .network:
             notes.append("Anyone on this network who has the link can see and type into your panes. It's plain HTTP: use it on networks you trust.")
             if links.count > 1 { notes.append("Also: " + links.dropFirst().map { $0.components(separatedBy: "/#").first ?? $0 }.joined(separator: ", ")) }
@@ -95,7 +97,7 @@ final class WebAccessPanel: NSObject {
     }
 
     @objc private func modeChanged(_ sender: Any?) {
-        ConfigStore.shared.set("web-access", ["off", "local", "network"][max(0, mode.indexOfSelectedItem)])
+        ConfigStore.shared.set("web-access", ["off", "local", "network", "tailscale"][max(0, mode.indexOfSelectedItem)])
     }
 
     @objc private func inputChanged(_ sender: Any?) {
