@@ -6,7 +6,7 @@ import LiberttyCore
 /// runs it. ⌘P opens it on the panes alone (Go to Pane, after GoRex).
 final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
     /// What an item is: the scope chips and the section headings follow it.
-    enum Kind: Equatable { case pane, folder, workspace, session, command, theme }
+    enum Kind: Equatable { case pane, folder, workspace, session, command, theme, setting, option }
 
     struct Item {
         var title: String
@@ -14,12 +14,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var symbol: String
         var shortcut: String = ""
         var kind: Kind = .command
+        /// Settings tried out in every window while the item is selected
+        /// (themes, a picker's options); running it keeps them.
+        var preview: [(key: String, value: String)] = []
+        /// A setting's choices, listed in place of everything when it runs.
+        var picker: SettingPicker?
+        /// The title in its own font (the font picker's rows).
+        var font: NSFont?
         var run: () -> Void
     }
 
     /// The chips under the field (Tern's All / Commands / Files / Sessions…).
     enum Scope: CaseIterable {
-        case all, panes, folders, commands, workspaces, sessions, themes
+        case all, panes, folders, commands, workspaces, sessions, themes, settings
         var title: String {
             switch self {
             case .all: "All"
@@ -29,17 +36,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             case .workspaces: "Workspaces"
             case .sessions: "Sessions"
             case .themes: "Themes"
+            case .settings: "Settings"
             }
         }
         func admits(_ kind: Kind) -> Bool {
             switch self {
-            case .all: true
+            case .all: kind != .option
             case .panes: kind == .pane
             case .folders: kind == .folder
             case .commands: kind == .command
             case .workspaces: kind == .workspace
             case .sessions: kind == .session
             case .themes: kind == .theme
+            case .settings: kind == .setting
             }
         }
     }
@@ -194,6 +203,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Split Down", .newSplit(.down), "rectangle.split.1x2")
         command("Split Left", .newSplit(.left), "rectangle.leadinghalf.inset.filled")
         command("Split Up", .newSplit(.up), "rectangle.tophalf.inset.filled")
+        command("Split Best Fit", .newSplitAuto, "rectangle.split.2x2")
         command("Close Pane", .closeSurface, "xmark")
         command("Close Tab", .closeTab, "xmark.square")
         command("Close Window", .closeWindow, "xmark.rectangle")
@@ -286,6 +296,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Secure Keyboard Entry", .toggleSecureInput, "lock.display")
         command("Settings…", .openConfig, "gear")
         command("Reload Configuration", .reloadConfig, "arrow.clockwise")
+        command("Theme Editor…", .openThemeEditor, "paintbrush")
         command("Show/Hide All Terminals", .toggleVisibility, "eye")
 
         // Workspaces of this window: pick one to show it.
@@ -314,12 +325,88 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         let known = Set(names.map { $0.lowercased() })
         names += ThemeLibrary.shared.entries.map(\.name).filter { !known.contains($0.lowercased()) }
         for name in names {
-            out.append(Item(title: "Theme: \(name)", symbol: "paintpalette", kind: .theme) {
-                ConfigStore.shared.set("theme", name.contains(",") ? "\"\(name)\"" : name)
+            let value = name.contains(",") ? "\"\(name)\"" : name
+            out.append(Item(title: "Theme: \(name)", symbol: "paintpalette", kind: .theme, preview: [("theme", value)]) {
+                ConfigStore.shared.set("theme", value)
             })
+        }
+        // Settings changed in place, each tried out as it's picked (Rex's
+        // Change Terminal Font…, Change Cursor Style…).
+        for picker in SettingPicker.all {
+            let now = picker.options().first { Self.isCurrent($0, of: picker) }?.label ?? picker.current
+            out.append(Item(title: "Change \(picker.title)…", subtitle: now, symbol: picker.symbol, kind: .setting, picker: picker) {})
         }
         return out
     }
+
+    /// Whether the files' config has this option now (a default written or
+    /// left out alike).
+    private static func isCurrent(_ option: SettingPicker.Option, of picker: SettingPicker) -> Bool {
+        var c = Config()
+        _ = c.set(picker.key, option.value.replacingOccurrences(of: "\"", with: ""))
+        return c.values(of: picker.key) == ConfigStore.shared.savedConfig.values(of: picker.key)
+    }
+
+    // MARK: Pickers
+
+    /// The setting whose choices are listed now, and what was listed before.
+    private var picker: SettingPicker?
+    private var beforePicker: (all: [Item], scope: Scope, query: String)?
+
+    private func enterPicker(_ picker: SettingPicker) {
+        beforePicker = (all, scope, field.stringValue)
+        self.picker = picker
+        all = picker.options().map { option in
+            let current = Self.isCurrent(option, of: picker)
+            return Item(title: option.label, subtitle: option.detail, symbol: current ? "checkmark" : "",
+                        kind: .option, preview: [(picker.key, option.value)], font: option.font) {
+                ConfigStore.shared.set(picker.key, option.value.isEmpty ? nil : option.value)
+            }
+        }
+        field.stringValue = ""
+        field.placeholderString = "\(picker.title): ↑ ↓ to try one, ↵ to keep it"
+        for (_, chip) in chips { chip.isHidden = true }
+        // The window as it'll look, not dimmed behind the palette.
+        dim?.isHidden = true
+        updateFooter()
+        filter("")
+        if let row = rows.firstIndex(where: { if case .item(let item) = $0 { item.symbol == "checkmark" } else { false } }) {
+            table.selectRowIndexes([row], byExtendingSelection: false)
+            table.scrollRowToVisible(row)
+        }
+    }
+
+    /// Esc while picking: back to how it was, and to the list.
+    private func leavePicker() {
+        guard let before = beforePicker else { return }
+        ConfigStore.shared.endPreview()
+        picker = nil
+        beforePicker = nil
+        all = before.all
+        field.stringValue = before.query
+        field.placeholderString = Self.placeholder(panesOnly: panesOnly)
+        for (_, chip) in chips { chip.isHidden = false }
+        dim?.isHidden = false
+        scope = before.scope
+        for (s, button) in chips { button.isOn = s == scope }
+        updateFooter()
+        filter(before.query)
+    }
+
+    /// The selected item's settings, tried out; none for the others. Only
+    /// while picking one, or browsing themes: a search for a command that
+    /// happens to match a theme's name doesn't repaint every window.
+    private func previewSelected() {
+        let row = table.selectedRow
+        if picker != nil || scope == .themes, !noMatches, rows.indices.contains(row), case .item(let item) = rows[row],
+           !item.preview.isEmpty {
+            ConfigStore.shared.preview(item.preview)
+        } else {
+            ConfigStore.shared.endPreview()
+        }
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) { previewSelected() }
 
     // MARK: Folders (Go to Directory, after Rex)
 
@@ -419,22 +506,27 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private func filter(_ query: String) {
         let q = query.trimmingCharacters(in: .whitespaces)
-        let inScope = all.filter { scope.admits($0.kind) }
+        let inScope = picker != nil ? all : all.filter { scope.admits($0.kind) }
         if q.isEmpty {
-            // Themes and folders only when asked for (their chip, or a search): there are many.
-            shown = inScope.filter { (scope == .themes || $0.kind != .theme) && (scope == .folders || $0.kind != .folder) }
+            // Themes, folders and settings only when asked for (their chip,
+            // or a search): there are many. A picker lists its options.
+            shown = inScope.filter { (scope == .themes || $0.kind != .theme) && (scope == .folders || $0.kind != .folder)
+                && (scope == .settings || $0.kind != .setting) }
         } else {
             // A path being typed lists where it leads first (not in Go to Pane).
             let typed = scope.admits(.folder) && !panesOnly ? typedFolders(q) : []
             let typedTitles = Set(typed.map(\.title))
             shown = typed + inScope.filter { $0.kind != .folder || !typedTitles.contains($0.title) }
-                .compactMap { item in Self.score(q, item.title + " " + item.subtitle).map { (item, $0) } }
+                .compactMap { item in
+                    // A setting's subtitle is its value: what it's called is what's searched.
+                    Self.score(q, item.kind == .setting ? item.title : item.title + " " + item.subtitle).map { (item, $0) }
+                }
                 .sorted { $0.1 > $1.1 }.prefix(60).map(\.0)
         }
         // Sections (Panes, Sessions, Commands…) when browsing; a search
         // lists by how well things match, with no headings between.
         rows = []
-        let sectioned = q.isEmpty && !panesOnly && scope == .all
+        let sectioned = q.isEmpty && !panesOnly && scope == .all && picker == nil
         var last: Kind?
         for item in shown {
             if sectioned, item.kind != last { rows.append(.group(Self.heading(item.kind))) }
@@ -445,9 +537,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         noMatchesText = q.isEmpty ? "Nothing here" : "No matches"
         table.reloadData()
         // The quiet "No matches" row is never the one Return would run.
-        if let first = rows.firstIndex(where: { if case .item = $0 { true } else { false } }) {
+        // Browsing themes starts at the one in use (nothing changes yet).
+        let theme = ConfigStore.shared.savedConfig.values(of: "theme").first
+        let inUse = scope == .themes && q.isEmpty
+            ? rows.firstIndex { if case .item(let item) = $0 { item.preview.first?.value.replacingOccurrences(of: "\"", with: "") == theme } else { false } }
+            : nil
+        if let first = inUse ?? rows.firstIndex(where: { if case .item = $0 { true } else { false } }) {
             table.selectRowIndexes([first], byExtendingSelection: false)
-            table.scrollRowToVisible(0)
+            table.scrollRowToVisible(inUse ?? 0)
         } else {
             table.deselectAll(nil)
         }
@@ -462,6 +559,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         case .session: "Sessions"
         case .command: "Commands"
         case .theme: "Themes"
+        case .setting: "Settings"
+        case .option: "Options"
         }
     }
 
@@ -478,7 +577,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     }
 
     private func cycleScope(_ delta: Int) {
-        guard !panesOnly else { return }
+        guard !panesOnly, picker == nil else { return }
         let all = scopes
         let i = all.firstIndex(of: scope) ?? 0
         setScope(all[(i + delta + all.count) % all.count])
@@ -507,8 +606,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         searchIcon.contentTintColor = .secondaryLabelColor
         effect.addSubview(searchIcon)
 
-        field.placeholderString = panesOnly ? "Go to a pane: type its program, folder or tab"
-            : "Run a command or go to a pane…"
+        field.placeholderString = Self.placeholder(panesOnly: panesOnly)
         field.font = Typeface.ui(16)
         field.isBordered = false
         field.drawsBackground = false
@@ -567,6 +665,20 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         footer = (hints, close)
     }
 
+    private static func placeholder(panesOnly: Bool) -> String {
+        panesOnly ? "Go to a pane: type its program, folder or tab" : "Run a command or go to a pane…"
+    }
+
+    /// The footer's words: a picker's options are tried and kept, Esc goes back.
+    private func updateFooter() {
+        guard let (hints, close) = footer else { return }
+        let picking = picker != nil
+        (hints.views[2] as? NSTextField)?.stringValue = picking ? "try" : "navigate"
+        (hints.views[4] as? NSTextField)?.stringValue = picking ? "keep" : "run"
+        (close.views[1] as? NSTextField)?.stringValue = picking ? "back" : "close"
+        layout()
+    }
+
     private static func hint(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = Typeface.secondary
@@ -585,7 +697,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let parent else { return }
         let width = min(Self.width, parent.frame.width - 40)
         let list = listHeight
-        let chipsH = chips.isEmpty ? 0 : Self.chipsHeight
+        let chipsH = chips.isEmpty || picker != nil ? 0 : Self.chipsHeight
         let height = Self.topHeight + chipsH + (list > 0 ? list + 12 : 0) + Self.footerHeight
         let content = parent.contentLayoutRect
         let top = parent.frame.minY + content.maxY - 12
@@ -664,6 +776,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private func close(refocus: Bool = true) {
         guard Self.current === self else { return }
         Self.current = nil
+        ConfigStore.shared.endPreview()
         dim?.removeFromSuperview()
         dim = nil
         parent?.removeChildWindow(panel)
@@ -676,7 +789,13 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private func runSelected() { run(row: table.selectedRow) }
 
     private func run(row: Int) {
-        guard rows.indices.contains(row), case .item(let item) = rows[row] else { return }
+        guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] else { return }
+        if let picker = item.picker { return enterPicker(picker) }
+        if !item.preview.isEmpty {
+            // Written while it's still shown: no flash of the old setting between.
+            item.run()
+            return close()
+        }
         close()
         // After the palette is gone, so the action sees the real focus.
         DispatchQueue.main.async { item.run() }
@@ -715,7 +834,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         case #selector(NSResponder.moveDown(_:)): move(1)
         case #selector(NSResponder.moveUp(_:)): move(-1)
         case #selector(NSResponder.insertNewline(_:)): runSelected()
-        case #selector(NSResponder.cancelOperation(_:)): close()
+        case #selector(NSResponder.cancelOperation(_:)): if picker != nil { leavePicker() } else { close() }
         // Tab walks the chips: All, Panes, Commands…
         case #selector(NSResponder.insertTab(_:)): cycleScope(1)
         case #selector(NSResponder.insertBacktab(_:)): cycleScope(-1)
@@ -822,8 +941,8 @@ private final class ScopeChip: NSView {
     override var intrinsicContentSize: NSSize { NSSize(width: ceil(label.intrinsicContentSize.width) + 20, height: 24) }
 
     private func update() {
-        label.textColor = isOn ? .controlAccentColor : .secondaryLabelColor
-        layer?.backgroundColor = (isOn ? NSColor.controlAccentColor.withAlphaComponent(0.16) : .clear).cgColor
+        label.textColor = isOn ? Accent.color : .secondaryLabelColor
+        layer?.backgroundColor = (isOn ? Accent.color.withAlphaComponent(0.16) : .clear).cgColor
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -908,7 +1027,7 @@ private final class HoverRowView: NSTableRowView {
         bar.fill()
         // Tern's accent mark at the bar's left edge.
         let mark = NSBezierPath(roundedRect: NSRect(x: 8, y: bounds.midY - 8, width: 2.5, height: 16), xRadius: 1.25, yRadius: 1.25)
-        NSColor.controlAccentColor.setFill()
+        Accent.color.setFill()
         mark.fill()
     }
 
@@ -994,7 +1113,10 @@ private final class PaletteCell: NSTableCellView {
     }
 
     func show(_ item: CommandPalette.Item, dim: Bool = false) {
-        icon.image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
+        icon.image = item.symbol.isEmpty ? nil : NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
+        // A picker's options: a tile for the one in use (its check) only.
+        tile.isHidden = item.symbol.isEmpty
+        title.font = item.font ?? Typeface.row
         title.stringValue = item.title
         title.textColor = dim ? .secondaryLabelColor : .labelColor
         subtitle.stringValue = item.subtitle

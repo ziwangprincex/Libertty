@@ -986,8 +986,8 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
             switch progress.state {
             case .error: return .ring(percent: progress.percent ?? 100, color: .systemRed)
             case .paused: return .ring(percent: progress.percent, color: .systemYellow)
-            case .indeterminate: return .ring(percent: nil, color: .controlAccentColor)
-            case .normal: return .ring(percent: progress.percent, color: .controlAccentColor)
+            case .indeterminate: return .ring(percent: nil, color: Accent.color)
+            case .normal: return .ring(percent: progress.percent, color: Accent.color)
             }
         }
         switch status {
@@ -1086,7 +1086,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     }
 
     private func showNews(_ value: TabNews) {
-        let accent = NSColor.controlAccentColor.cgColor
+        let accent = Accent.color.cgColor
         switch value {
         case .none:
             newsView.isHidden = true
@@ -1108,8 +1108,8 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         if !newsView.isHidden {
-            if news.fillColor != nil { news.fillColor = NSColor.controlAccentColor.cgColor }
-            if news.strokeColor != nil { news.strokeColor = NSColor.controlAccentColor.cgColor }
+            if news.fillColor != nil { news.fillColor = Accent.color.cgColor }
+            if news.strokeColor != nil { news.strokeColor = Accent.color.cgColor }
         }
     }
 

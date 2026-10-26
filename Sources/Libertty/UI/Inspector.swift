@@ -307,7 +307,7 @@ final class InspectorViewController: NSViewController {
         b.imageHugsTitle = true
         b.isBordered = false
         b.font = .systemFont(ofSize: 13)
-        b.contentTintColor = .controlAccentColor
+        b.contentTintColor = Accent.color
         b.target = self
         b.action = action
     }

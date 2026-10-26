@@ -258,6 +258,31 @@ printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/reload-config/libertty
 printf 'background = #112233\n' > $PRIVATE/reload-config/libertty/themes/probe-theme
 expect config-reload 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/reload-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/reload-config/libertty|g" $ROOT/tests/fixtures/config-reload.txt)" $OUT
+# Settings from the palette, tried out live and kept or put back (a config of its own).
+mkdir -p $PRIVATE/picker-config/libertty/themes
+printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/picker-config/libertty/config
+printf 'background = #112233\n' > $PRIVATE/picker-config/libertty/themes/probe-theme
+expect settings-picker 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/picker-config \
+  $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/picker-config/libertty|g" $ROOT/tests/fixtures/settings-picker.txt)" $OUT
+# Libertty ▸ Theme Editor: colors tried in every window, Cancel, Save and Use (a config of its own).
+mkdir -p $PRIVATE/theme-config/libertty/themes
+printf 'theme = probe-theme\n' > $PRIVATE/theme-config/libertty/config
+printf 'background = #112233\n' > $PRIVATE/theme-config/libertty/themes/probe-theme
+expect theme-editor 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/theme-config \
+  $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/theme-config/libertty|g" $ROOT/tests/fixtures/theme-editor.txt)" $OUT
+# Panes rearranged by a drag's drop, Split Best Fit; split-autobalance evening them out.
+expect arrange 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/arrange.txt)" $OUT
+mkdir -p $PRIVATE/balance-config/libertty
+printf 'split-autobalance = true\nconfirm-close = false\n' > $PRIVATE/balance-config/libertty/config
+expect autobalance 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/balance-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/autobalance.txt)" $OUT
+# pane-style, accent-color, pane-glass from the config (a folder of its own).
+mkdir -p $PRIVATE/looks-config/libertty/themes
+: > $PRIVATE/looks-config/libertty/config
+printf 'background = #15171c\ncursor-color = #f2b45a\n' > $PRIVATE/looks-config/libertty/themes/probe-theme
+expect looks 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/looks-config \
+  $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/looks-config/libertty|g" $ROOT/tests/fixtures/looks.txt)" $OUT
 expect column-fit 'column-fit: all passed' $LIBERTTY --column-fit-probe
 # The sidebar and inspector come and go around the terminal: it stays put, its grid unchanged.
 expect sidebar-toggle 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \

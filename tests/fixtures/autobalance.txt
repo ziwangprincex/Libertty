@@ -1,0 +1,19 @@
+# split-autobalance (Rex's Autobalance splits; this config turns it on):
+# after a split, a close or a move the panes even out — three side by side
+# get a third each, not 50/25/25.
+expect-layout:a
+key:cmd+d
+wait:0.8
+key:cmd+d
+wait:0.8
+expect-layout:h33(a,h50(b,c))
+# c closes: two halves.
+key:cmd+w
+wait:1.0
+expect-layout:h50(a,b)
+# b moved below a: even again.
+key:cmd+d
+wait:0.8
+expect-layout:h33(a,h50(b,d))
+drop:1:down
+expect-layout:h50(v50(a,d),b)

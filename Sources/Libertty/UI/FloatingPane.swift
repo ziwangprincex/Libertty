@@ -32,7 +32,7 @@ final class FloatingPaneCard: NSView {
         self.pane = pane
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Radius.pane
+        layer?.cornerRadius = Radius.floating
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
         layer?.borderWidth = 0.5

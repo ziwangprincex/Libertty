@@ -104,7 +104,7 @@ final class BrowserBar: NSView, NSTextFieldDelegate {
 
     private func updateColors() {
         line.layer?.backgroundColor = NSColor.separatorColor.cgColor
-        progress.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        progress.layer?.backgroundColor = Accent.color.cgColor
         field.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06)
     }
 

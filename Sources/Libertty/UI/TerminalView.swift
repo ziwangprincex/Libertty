@@ -141,10 +141,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         let theme = config.resolvedTheme
         renderer.selectionColor = theme.selection
         renderer.ligatures = config.ligatures
-        renderer.backgroundOpacity = config.backgroundOpacity
+        renderer.backgroundOpacity = config.paneOpacity
         renderer.paddingColor = config.windowPaddingColor
         renderer.minimumContrast = config.minimumContrast
-        metalLayer.isOpaque = config.backgroundOpacity >= 1
+        metalLayer.isOpaque = config.paneOpacity >= 1
         padding = config.padding
         unfocusedOpacity = config.unfocusedSplitOpacity
         dimLayer.backgroundColor = theme.background.nsColor.cgColor
@@ -438,23 +438,47 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     private func updateCloseButton() {
         let show = showsCloseButton && hovering
+        let showGrip = show && onDragPane != nil
         if show {
             updateCloseButtonColor()
             closeButton.isHidden = false
         }
+        if showGrip { grip.isHidden = false }
         closeButton.frame = NSRect(x: bounds.width - 30, y: 8, width: 22, height: 22)
-        activityDot.frame = NSRect(x: bounds.width - (show ? 52 : 21), y: show ? 13 : 10, width: 11, height: 11)
+        grip.frame = NSRect(x: bounds.width - 54, y: 8, width: 22, height: 22)
+        activityDot.frame = NSRect(x: bounds.width - (showGrip ? 76 : show ? 52 : 21), y: show ? 13 : 10, width: 11, height: 11)
         updateNameTag(show: show)
         window?.invalidateCursorRects(for: self)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = Motion.duration(Motion.hover)
             closeButton.animator().alphaValue = show ? 1 : 0
+            grip.animator().alphaValue = showGrip ? 1 : 0
         }, completionHandler: { [weak self] in
-            if !show, self?.hovering == false || self?.showsCloseButton == false { self?.closeButton.isHidden = true }
+            if !show, self?.hovering == false || self?.showsCloseButton == false {
+                self?.closeButton.isHidden = true
+                self?.grip.isHidden = true
+            }
         })
     }
 
     @objc private func closeButtonClicked(_ sender: Any?) { onRequestClose?(self) }
+
+    /// The grip beside the ×: dragged, the window moves the pane (beside
+    /// another, in its place, or out to a window of its own).
+    var onDragPane: ((TerminalView, NSEvent) -> Void)?
+    private lazy var grip: PaneGrip = {
+        let g = PaneGrip()
+        g.toolTip = "Drag to move the pane: beside another, onto one to trade places, or out of the window"
+        g.onPress = { [weak self] event in
+            guard let self else { return }
+            self.onDragPane?(self, event)
+        }
+        g.isHidden = true
+        g.alphaValue = 0
+        addSubview(g)
+        g.layer?.zPosition = 2
+        return g
+    }()
 
     /// The pane's activity dot: its program printed just now (GoRex's). It
     /// fades in and out once — it never pulses; the frames that would cost
@@ -462,7 +486,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private lazy var activityDot: NSView = {
         let v = NSView()
         v.wantsLayer = true
-        let color = NSColor.controlAccentColor
+        let color = Accent.color
         let halo = CALayer(), core = CALayer()
         halo.backgroundColor = color.withAlphaComponent(0.22).cgColor
         core.backgroundColor = color.cgColor
@@ -718,7 +742,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     // A layer's color is resolved once: follow the accent and appearance.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        if showsFocusLine { focusLine.layer?.backgroundColor = NSColor.controlAccentColor.cgColor }
+        if showsFocusLine { focusLine.layer?.backgroundColor = Accent.color.cgColor }
         // (Asked only while it shows: asking makes the button.)
         if showsCloseButton && hovering { updateCloseButtonColor() }
     }
@@ -727,6 +751,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private func updateCloseButtonColor() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             closeButton.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85).cgColor
+            grip.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85).cgColor
         }
     }
 
@@ -735,7 +760,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private lazy var focusLine: NSView = {
         let line = NSView()
         line.wantsLayer = true
-        line.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        line.layer?.backgroundColor = Accent.color.cgColor
         line.layer?.zPosition = 2
         line.isHidden = true
         addSubview(line)
@@ -1744,4 +1769,35 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 /// takes them (focus, selection, a program's mouse), as if it weren't there.
 final class PassThroughLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// A pane's grip (beside its × on hover): pressing it starts the pane's drag
+/// at once — no click to wait for, as a button would.
+final class PaneGrip: NSView {
+    var onPress: ((NSEvent) -> Void)?
+    private let icon = NSImageView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 11
+        icon.image = NSImage(systemSymbolName: "arrow.up.and.down.and.arrow.left.and.right", accessibilityDescription: "Move Pane")
+        icon.symbolConfiguration = .init(pointSize: 9.5, weight: .semibold)
+        icon.contentTintColor = .secondaryLabelColor
+        addSubview(icon)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Move Pane")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        icon.frame = bounds
+    }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onPress?(event) }
 }

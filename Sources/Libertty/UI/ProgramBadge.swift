@@ -1,17 +1,42 @@
 import AppKit
 
 /// What a pane's program shows as: its name (for the tooltip) and a glyph.
-/// Monochrome on purpose — a row of colored squares in the sidebar reads
+/// Monochrome by default — a row of colored squares in the sidebar reads
 /// as decoration, not information; the glyph is what says which program
-/// it is.
+/// it is. `tab-icon-color` (Rex's Use color for tab icons) draws each in
+/// its program's color.
 struct ProgramBadge {
     let name: String
     /// An SF Symbol, or nil to draw the name's first letter.
     let symbol: String?
+    /// The program's color, for `tab-icon-color`.
+    let tint: Tint
 
-    init(name: String, symbol: String?) {
+    /// System colors, so a light or dark sidebar shows each as it should.
+    enum Tint: String { case none, orange, green, teal, blue, indigo, purple, pink, red, yellow, brown, gray, cyan
+        var color: NSColor? {
+            switch self {
+            case .none: nil
+            case .orange: .systemOrange
+            case .green: .systemGreen
+            case .teal: .systemTeal
+            case .blue: .systemBlue
+            case .indigo: .systemIndigo
+            case .purple: .systemPurple
+            case .pink: .systemPink
+            case .red: .systemRed
+            case .yellow: .systemYellow
+            case .brown: .systemBrown
+            case .gray: .systemGray
+            case .cyan: .systemCyan
+            }
+        }
+    }
+
+    init(name: String, symbol: String?, tint: Tint = .none) {
         self.name = name
         self.symbol = symbol
+        self.tint = tint
     }
 
     private static let shellNames: Set<String> = [
@@ -21,42 +46,42 @@ struct ProgramBadge {
     /// Known programs, by process name.
     private static let known: [String: ProgramBadge] = {
         var t: [String: ProgramBadge] = [
-            "claude": ProgramBadge(name: "Claude Code", symbol: "sparkles"),
-            "codex": ProgramBadge(name: "Codex", symbol: "wand.and.stars"),
-            "node": ProgramBadge(name: "Node", symbol: "hexagon"),
-            "bun": ProgramBadge(name: "Bun", symbol: "hare"),
-            "deno": ProgramBadge(name: "Deno", symbol: "diamond"),
-            "python": ProgramBadge(name: "Python", symbol: "chevron.left.forwardslash.chevron.right"),
-            "lazygit": ProgramBadge(name: "Git Changes", symbol: "plus.forwardslash.minus"),
-            "tig": ProgramBadge(name: "Git Log", symbol: "clock"),
-            "git": ProgramBadge(name: "Git", symbol: "arrow.triangle.branch"),
-            "vim": ProgramBadge(name: "Vim", symbol: "pencil"),
-            "nvim": ProgramBadge(name: "Neovim", symbol: "pencil"),
-            "hx": ProgramBadge(name: "Helix", symbol: "pencil"),
-            "emacs": ProgramBadge(name: "Emacs", symbol: "book"),
-            "htop": ProgramBadge(name: "Activity", symbol: "chart.bar"),
-            "btop": ProgramBadge(name: "Activity", symbol: "chart.bar"),
-            "top": ProgramBadge(name: "Activity", symbol: "chart.bar"),
-            "ssh": ProgramBadge(name: "SSH", symbol: "globe"),
-            "mosh": ProgramBadge(name: "Mosh", symbol: "globe"),
-            "docker": ProgramBadge(name: "Docker", symbol: "shippingbox"),
-            "go": ProgramBadge(name: "Go", symbol: "hammer"),
-            "cargo": ProgramBadge(name: "Cargo", symbol: "hammer"),
-            "rustc": ProgramBadge(name: "Rust", symbol: "hammer"),
-            "npm": ProgramBadge(name: "npm", symbol: "shippingbox"),
-            "pnpm": ProgramBadge(name: "pnpm", symbol: "shippingbox"),
-            "yarn": ProgramBadge(name: "Yarn", symbol: "shippingbox"),
-            "ruby": ProgramBadge(name: "Ruby", symbol: "diamond"),
-            "lua": ProgramBadge(name: "Lua", symbol: "moon"),
-            "php": ProgramBadge(name: "PHP", symbol: "chevron.left.forwardslash.chevron.right"),
-            "psql": ProgramBadge(name: "PostgreSQL", symbol: "cylinder"),
-            "mysql": ProgramBadge(name: "MySQL", symbol: "cylinder"),
-            "redis-cli": ProgramBadge(name: "Redis", symbol: "cylinder"),
-            "tmux": ProgramBadge(name: "tmux", symbol: "rectangle.split.2x1"),
-            "make": ProgramBadge(name: "Make", symbol: "hammer"),
-            "swift": ProgramBadge(name: "Swift", symbol: "swift"),
-            "less": ProgramBadge(name: "Pager", symbol: "doc.text"),
-            "tail": ProgramBadge(name: "Log", symbol: "doc.text"),
+            "claude": ProgramBadge(name: "Claude Code", symbol: "sparkles", tint: .orange),
+            "codex": ProgramBadge(name: "Codex", symbol: "wand.and.stars", tint: .teal),
+            "node": ProgramBadge(name: "Node", symbol: "hexagon", tint: .green),
+            "bun": ProgramBadge(name: "Bun", symbol: "hare", tint: .brown),
+            "deno": ProgramBadge(name: "Deno", symbol: "diamond", tint: .gray),
+            "python": ProgramBadge(name: "Python", symbol: "chevron.left.forwardslash.chevron.right", tint: .blue),
+            "lazygit": ProgramBadge(name: "Git Changes", symbol: "plus.forwardslash.minus", tint: .red),
+            "tig": ProgramBadge(name: "Git Log", symbol: "clock", tint: .red),
+            "git": ProgramBadge(name: "Git", symbol: "arrow.triangle.branch", tint: .red),
+            "vim": ProgramBadge(name: "Vim", symbol: "pencil", tint: .green),
+            "nvim": ProgramBadge(name: "Neovim", symbol: "pencil", tint: .green),
+            "hx": ProgramBadge(name: "Helix", symbol: "pencil", tint: .purple),
+            "emacs": ProgramBadge(name: "Emacs", symbol: "book", tint: .purple),
+            "htop": ProgramBadge(name: "Activity", symbol: "chart.bar", tint: .yellow),
+            "btop": ProgramBadge(name: "Activity", symbol: "chart.bar", tint: .yellow),
+            "top": ProgramBadge(name: "Activity", symbol: "chart.bar", tint: .yellow),
+            "ssh": ProgramBadge(name: "SSH", symbol: "globe", tint: .cyan),
+            "mosh": ProgramBadge(name: "Mosh", symbol: "globe", tint: .cyan),
+            "docker": ProgramBadge(name: "Docker", symbol: "shippingbox", tint: .blue),
+            "go": ProgramBadge(name: "Go", symbol: "hammer", tint: .cyan),
+            "cargo": ProgramBadge(name: "Cargo", symbol: "hammer", tint: .orange),
+            "rustc": ProgramBadge(name: "Rust", symbol: "hammer", tint: .orange),
+            "npm": ProgramBadge(name: "npm", symbol: "shippingbox", tint: .red),
+            "pnpm": ProgramBadge(name: "pnpm", symbol: "shippingbox", tint: .yellow),
+            "yarn": ProgramBadge(name: "Yarn", symbol: "shippingbox", tint: .blue),
+            "ruby": ProgramBadge(name: "Ruby", symbol: "diamond", tint: .red),
+            "lua": ProgramBadge(name: "Lua", symbol: "moon", tint: .indigo),
+            "php": ProgramBadge(name: "PHP", symbol: "chevron.left.forwardslash.chevron.right", tint: .indigo),
+            "psql": ProgramBadge(name: "PostgreSQL", symbol: "cylinder", tint: .blue),
+            "mysql": ProgramBadge(name: "MySQL", symbol: "cylinder", tint: .orange),
+            "redis-cli": ProgramBadge(name: "Redis", symbol: "cylinder", tint: .red),
+            "tmux": ProgramBadge(name: "tmux", symbol: "rectangle.split.2x1", tint: .green),
+            "make": ProgramBadge(name: "Make", symbol: "hammer", tint: .gray),
+            "swift": ProgramBadge(name: "Swift", symbol: "swift", tint: .orange),
+            "less": ProgramBadge(name: "Pager", symbol: "doc.text", tint: .gray),
+            "tail": ProgramBadge(name: "Log", symbol: "doc.text", tint: .gray),
         ]
         // Other names for the same programs. A typo here would quietly drop
         // the alias, so it stops a debug build instead.
@@ -70,7 +95,7 @@ struct ProgramBadge {
 
     /// A shell in the foreground (a nested one, started by hand).
     static func shell(_ name: String) -> ProgramBadge {
-        ProgramBadge(name: name.isEmpty ? "Shell" : name, symbol: "terminal")
+        ProgramBadge(name: name.isEmpty ? "Shell" : name, symbol: "terminal", tint: .gray)
     }
 
     /// Programs often started through something else — a wrapper (tclaude),
@@ -131,12 +156,14 @@ struct ProgramBadge {
 struct ProgramTile: Equatable {
     var name: String
     var symbol: String?
+    var tint: ProgramBadge.Tint = .none
     /// Where an ssh session went (its host), for the tab's label.
     var host: String?
 
     init(_ badge: ProgramBadge, host: String? = nil) {
         name = badge.name
         symbol = badge.symbol
+        tint = badge.tint
         self.host = host
     }
 
@@ -165,6 +192,8 @@ struct ProgramTile: Equatable {
 /// sit at their prompts has no glyphs: it draws `fallbackSymbol`, the
 /// tab's own, so an idle shell stays quiet.
 final class TileStack: NSView {
+    /// `tab-icon-color`: each glyph in its program's color.
+    static var colored = false
     static let size: CGFloat = 14
     static let step: CGFloat = 11
     /// How many glyphs before "+N" takes over.
@@ -202,11 +231,12 @@ final class TileStack: NSView {
         }
         for (i, tile) in shown.enumerated() {
             // Front to back: the last one is the focused pane's.
+            let color = Self.colored ? tile.tint.color : nil
             if let symbol = tile.symbol {
                 let rect = NSRect(x: CGFloat(i) * Self.step, y: 0, width: Self.size, height: Self.size)
-                Self.drawSymbol(symbol, in: rect, size: 11)
+                Self.drawSymbol(symbol, in: rect, size: 11, color: color)
             } else {
-                Self.drawLetter(tile.name, at: CGFloat(i) * Self.step)
+                Self.drawLetter(tile.name, at: CGFloat(i) * Self.step, color: color)
             }
         }
         if overflow > 0 {
@@ -220,8 +250,8 @@ final class TileStack: NSView {
 
     /// A symbol fades as it goes back in the stack, so the focused pane's
     /// is the one you read.
-    private static func drawSymbol(_ name: String, in rect: NSRect, size: CGFloat) {
-        let color = NSColor.secondaryLabelColor
+    private static func drawSymbol(_ name: String, in rect: NSRect, size: CGFloat, color: NSColor? = nil) {
+        let color = color ?? NSColor.secondaryLabelColor
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil),
               let tinted = image.withSymbolConfiguration(.init(pointSize: size, weight: .regular))?.tinting(color)
         else { return }
@@ -229,10 +259,10 @@ final class TileStack: NSView {
         tinted.draw(in: NSRect(x: rect.minX, y: rect.midY - box.height / 2, width: box.width, height: box.height))
     }
 
-    private static func drawLetter(_ name: String, at x: CGFloat) {
+    private static func drawLetter(_ name: String, at x: CGFloat, color: NSColor? = nil) {
         let letter = NSAttributedString(string: String(name.prefix(1)).uppercased(), attributes: [
             .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
-            .foregroundColor: NSColor.secondaryLabelColor,
+            .foregroundColor: color ?? NSColor.secondaryLabelColor,
         ])
         let box = letter.size()
         letter.draw(at: NSPoint(x: x + 2, y: (Self.size - box.height) / 2))

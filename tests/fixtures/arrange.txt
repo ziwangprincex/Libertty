@@ -1,0 +1,26 @@
+# Panes rearranged by dragging (here, the drop a drag ends with): beside
+# another pane, the side the pointer is nearest, or onto its middle to
+# trade places. Split Best Fit splits along the longer side. Without
+# split-autobalance a split halves its pane.
+expect-layout:a
+key:cmd+d
+wait:0.8
+expect-layout:h50(a,b)
+# b (focused) dropped on a's lower half: below it.
+drop:1:down
+expect-layout:v50(a,b)
+# Onto a's middle: they trade places.
+drop:1:swap
+expect-layout:v50(b,a)
+# b is wide now: Best Fit puts the new pane beside it…
+action:new_split:auto
+wait:0.8
+expect-layout:v50(h50(b,c),a)
+# …and so is c, a quarter of the window: beside it too…
+action:new_split:auto
+wait:0.8
+expect-layout:v50(h50(b,h50(c,d)),a)
+# …but d is tall: below it.
+action:new_split:auto
+wait:0.8
+expect-layout:v50(h50(b,h50(c,v50(d,e))),a)

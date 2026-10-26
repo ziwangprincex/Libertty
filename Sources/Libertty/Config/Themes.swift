@@ -36,6 +36,30 @@ struct Theme: Equatable {
         return p
     }
 
+    /// Ghostty's `palette-generate`: 16–255 from this theme's own colors
+    /// instead of xterm's fixed ones — the 6×6×6 cube interpolated in CIELAB
+    /// between the background, the six base hues and the foreground, and the
+    /// gray ramp from the background to the foreground. A light theme's cube
+    /// still runs dark to light unless `harmonious` (Ghostty's
+    /// `palette-harmonious`) keeps it background to foreground.
+    func generatedPalette256(harmonious: Bool) -> [RGB] {
+        var corners = [Lab(background)] + (1...6).map { Lab(ansi[$0]) } + [Lab(foreground)]
+        if corners[7].l < corners[0].l, !harmonious { corners.swapAt(0, 7) }
+        var p = ansi
+        for ri in 0..<6 {
+            let tr = Double(ri) / 5
+            let c0 = corners[0].mix(corners[1], tr), c1 = corners[2].mix(corners[3], tr)
+            let c2 = corners[4].mix(corners[5], tr), c3 = corners[6].mix(corners[7], tr)
+            for gi in 0..<6 {
+                let tg = Double(gi) / 5
+                let c4 = c0.mix(c1, tg), c5 = c2.mix(c3, tg)
+                for bi in 0..<6 { p.append(c4.mix(c5, Double(bi) / 5).rgb) }
+            }
+        }
+        for i in 0..<24 { p.append(corners[0].mix(corners[7], Double(i + 1) / 25).rgb) }
+        return p
+    }
+
     static let defaultName = "Libertty Dark"
 
     /// A built-in theme, or a theme file (see `ThemeLibrary`); the default
@@ -214,4 +238,41 @@ extension RGB {
     }
 
     var hexString: String { String(format: "#%02x%02x%02x", r, g, b) }
+}
+
+/// CIELAB (D65), for mixing colors evenly by eye (Ghostty's `LAB`).
+struct Lab {
+    var l: Double, a: Double, b: Double
+
+    init(l: Double, a: Double, b: Double) { (self.l, self.a, self.b) = (l, a, b) }
+
+    init(_ c: RGB) {
+        func linear(_ v: UInt8) -> Double {
+            let x = Double(v) / 255
+            return x > 0.04045 ? pow((x + 0.055) / 1.055, 2.4) : x / 12.92
+        }
+        let (r, g, b) = (linear(c.r), linear(c.g), linear(c.b))
+        func f(_ t: Double) -> Double { t > 0.008856 ? cbrt(t) : 7.787 * t + 16 / 116 }
+        let x = f((r * 0.4124564 + g * 0.3575761 + b * 0.1804375) / 0.95047)
+        let y = f(r * 0.2126729 + g * 0.7151522 + b * 0.0721750)
+        let z = f((r * 0.0193339 + g * 0.1191920 + b * 0.9503041) / 1.08883)
+        self.init(l: 116 * y - 16, a: 500 * (x - y), b: 200 * (y - z))
+    }
+
+    var rgb: RGB {
+        let y = (l + 16) / 116, x = a / 500 + y, z = y - b / 200
+        func inverse(_ t: Double) -> Double { t * t * t > 0.008856 ? t * t * t : (t - 16 / 116) / 7.787 }
+        let (xf, yf, zf) = (inverse(x) * 0.95047, inverse(y), inverse(z) * 1.08883)
+        func gamma(_ v: Double) -> UInt8 {
+            let c = v > 0.0031308 ? 1.055 * pow(v, 1 / 2.4) - 0.055 : 12.92 * v
+            return UInt8(min(max(c, 0), 1) * 255 + 0.5)
+        }
+        return RGB(gamma(xf * 3.2404542 - yf * 1.5371385 - zf * 0.4985314),
+                   gamma(-xf * 0.9692660 + yf * 1.8760108 + zf * 0.0415560),
+                   gamma(xf * 0.0556434 - yf * 0.2040259 + zf * 1.0572252))
+    }
+
+    func mix(_ other: Lab, _ t: Double) -> Lab {
+        Lab(l: l + t * (other.l - l), a: a + t * (other.a - a), b: b + t * (other.b - b))
+    }
 }

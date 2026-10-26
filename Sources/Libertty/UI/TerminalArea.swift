@@ -32,11 +32,17 @@ final class TerminalAreaView: NSView {
         needsLayout = true
     }
 
+    /// Glass panes (`pane-glass`): the frame has holes where the terminals
+    /// are, so the blur behind the window shows through them only.
+    private var glass = false
+
     /// `background`: the frame's color (a translucent window keeps the
     /// terminals' own: frame and cards blend into the one glass).
-    func apply(background: RGB, opacity: Double, blurred: Bool) {
+    func apply(background: RGB, opacity: Double, blurred: Bool, glass: Bool = false) {
         fill.layer?.backgroundColor = background.nsColor.withAlphaComponent(opacity).cgColor
-        if blurred, opacity < 1 {
+        self.glass = glass
+        updateHoles()
+        if blurred || glass, opacity < 1 || glass {
             if blur == nil {
                 let view = NSVisualEffectView()
                 view.material = .underWindowBackground
@@ -50,6 +56,49 @@ final class TerminalAreaView: NSView {
             blur = nil
         }
         needsLayout = true
+    }
+
+    /// Cut the terminals out of the frame (glass panes), or fill it whole.
+    /// The split calls this after every layout, so the holes follow its
+    /// animations.
+    func updateHoles() {
+        guard let layer = fill.layer else { return }
+        guard glass, let split = content.flatMap(Self.split(in:)) else {
+            if layer.mask != nil { layer.mask = nil }
+            return
+        }
+        let path = CGMutablePath()
+        path.addRect(fill.bounds)
+        for rect in split.terminalCards {
+            let r = fill.convert(rect, from: split)
+            if Radius.pane > 0, r.width > Radius.pane * 2, r.height > Radius.pane * 2 {
+                path.addRoundedRect(in: r, cornerWidth: Radius.pane, cornerHeight: Radius.pane)
+            } else {
+                path.addRect(r)
+            }
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let mask = layer.mask as? CAShapeLayer ?? CAShapeLayer()
+        mask.frame = fill.bounds
+        mask.fillRule = .evenOdd
+        mask.path = path
+        layer.mask = mask
+        CATransaction.commit()
+    }
+
+    /// How many terminals the frame lets through (`--ui-probe`).
+    var holeCount: Int {
+        guard let mask = fill.layer?.mask as? CAShapeLayer, let path = mask.path else { return 0 }
+        var subpaths = 0
+        path.applyWithBlock { element in if element.pointee.type == .moveToPoint { subpaths += 1 } }
+        return max(0, subpaths - 1)
+    }
+
+    private static func split(in view: NSView) -> SplitContainerView? {
+        if let split = view as? SplitContainerView { return split }
+        for sub in view.subviews { if let found = split(in: sub) { return found } }
+        return nil
     }
 
     /// The part below the toolbar, in this (unflipped) view's coordinates.
@@ -66,6 +115,7 @@ final class TerminalAreaView: NSView {
         let content = contentRect
         fill.frame = bounds
         blur?.frame = bounds
+        defer { updateHoles() }
         // Everything starts below the toolbar: the toolbar has no material
         // of its own, so text scrolling under it would collide with its
         // controls. Inset a little from the edges, as the cards are.

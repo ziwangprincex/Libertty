@@ -449,6 +449,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             if beside { self?.openDocumentInSplit(url, line: line) } else { self?.openDocument(url, line: line) }
         }
         pane.onRequestClose = { [weak self] pane in self?.closeTerminalPane(pane) }
+        pane.onDragPane = { [weak self] pane, event in self?.dragPane(pane, from: event) }
         pane.session.programStatus.onChange = { [weak self] in self?.updateTitle() }
         if pane.session.host != nil { pane.updateLinkBanner() }
         pane.onFocus = { [weak self] pane in self?.paneDidFocus(pane) }
@@ -479,6 +480,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     private func configDidChange(_ config: Config) {
         let old = self.config
         self.config = config
+        // The app's looks (every window sets them alike): the panes' style,
+        // the accent, the tab glyphs' colors.
+        let accent = config.accent(with: config.resolvedTheme)
+        let looksChanged = Layout.compact != (config.paneStyle == .compact) || Accent.custom != accent
+            || TileStack.colored != config.tabIconColor || config.paneGlass != old.paneGlass
+        Layout.compact = config.paneStyle == .compact
+        Accent.custom = accent
+        TileStack.colored = config.tabIconColor
         // The panes take it when it changed — or its theme did (the theme's
         // file, the system's appearance), or Reload Configuration asked.
         let theme = config.resolvedTheme
@@ -502,6 +511,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         applyWindowStyle()
         // Pane headers and dimmed documents are in the theme's colors.
         if themeChanged { updateDimming() }
+        if looksChanged { refreshLooks() }
         // The sidebar and inspector follow their settings when those change.
         if config.windowSidebar != old.windowSidebar {
             setCollapsed(sidebarItem, !config.windowSidebar)
@@ -538,20 +548,41 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     private func applyWindowStyle() {
         guard let window else { return }
         let theme = config.resolvedTheme
-        let opaque = config.backgroundOpacity >= 1
+        // Glass panes: the window lets the desktop through, the frame stays as it is.
+        let glass = config.paneGlass
+        let opaque = config.backgroundOpacity >= 1 && !glass
         window.isOpaque = opaque
         // One surface around the panes (toolbar, side columns, gaps), lit
         // below them in a dark theme (Tern's look).
-        let frame = opaque ? theme.chrome : theme.background
+        let frame = config.backgroundOpacity >= 1 ? theme.chrome : theme.background
         window.backgroundColor = opaque ? frame.nsColor : .clear
         // Controls follow the terminal's theme.
         window.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
-        area.apply(background: frame, opacity: config.backgroundOpacity, blurred: config.backgroundBlur)
+        area.apply(background: frame, opacity: config.backgroundOpacity, blurred: config.backgroundBlur, glass: glass)
         (splitController.splitView as? FrameSplitView)?.frameColor = frame.nsColor.withAlphaComponent(config.backgroundOpacity)
         sidebar.apply(frame: frame, opacity: config.backgroundOpacity)
         inspector.apply(frame: frame, opacity: config.backgroundOpacity)
         everyTab.forEach { $0.document?.apply(theme: theme, renderMarkdown: config.markdownRendered) }
         everyTab.flatMap(\.documentPanes).forEach { $0.apply(theme: theme, renderMarkdown: config.markdownRendered) }
+    }
+
+    /// After `pane-style`, `accent-color`, `tab-icon-color` or `pane-glass`
+    /// changed: everything laid out and colored again — views take their
+    /// colors when their appearance changes, so that's what they're told.
+    private func refreshLooks() {
+        guard let content = window?.contentView?.superview ?? window?.contentView else { return }
+        func visit(_ view: NSView) {
+            // Libertty's own views (AppKit's follow the system's accent).
+            if Bundle(for: type(of: view)) == Bundle.main { view.viewDidChangeEffectiveAppearance() }
+            view.needsLayout = true
+            view.needsDisplay = true
+            view.subviews.forEach(visit)
+        }
+        visit(content)
+        everyTab.forEach { $0.container?.layoutPanes() }
+        allPanes.forEach { $0.setNeedsRender(force: true) }
+        updateDimming()
+        updateSidebar(force: true)
     }
 
     // MARK: Tabs
@@ -775,6 +806,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         split(focused, toward: direction)
     }
 
+    /// Split Best Fit (Ghostty's `new_split:auto`): beside a wide pane,
+    /// below a tall one — by the space the text has, so the halves read alike.
+    func splitBestFit() {
+        if !selectedTab.isTerminal { select(terminalTab) }
+        guard let focused = selectedTab.focusedPane else { return }
+        let size = selectedTab.container?.slot(of: focused).size ?? focused.bounds.size
+        split(focused, toward: size.width >= size.height ? .right : .down)
+    }
+
     /// A new terminal beside `pane`, with `share` of its space, running
     /// `command` (else a shell) in `workingDirectory` (else `pane`'s).
     /// `focus`: the keyboard goes to it. An error shows on the window.
@@ -809,6 +849,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             // Its shell first: one that can't start leaves no dead pane behind.
             try startSession(of: new, command: command, workingDirectory: workingDirectory ?? pane.session.workingDirectory,
                              keepDirectory: workingDirectory != nil)
+            container.autobalance = config.splitAutobalance
             container.split(pane, with: new, toward: direction, share: share)
             if focus {
                 if tab !== selectedTab { reveal(new, in: tab) } else { window?.makeFirstResponder(new) }
@@ -1596,7 +1637,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         if let container = tab.container {
             container.headerSource = self
             container.headers = config.paneHeaders
-            container.cardColor = config.resolvedTheme.background.nsColor.withAlphaComponent(config.backgroundOpacity)
+            container.autobalance = config.splitAutobalance
+            container.cardColor = config.resolvedTheme.background.nsColor.withAlphaComponent(config.paneOpacity)
             container.updateHeaders()
         }
         guard (tab.container?.views.count ?? 0) > 1 else { return }
@@ -3193,6 +3235,85 @@ extension TerminalWindowController: PaneHeaderSource {
             guard let pane = leaf as? TerminalView else { return }
             closeTerminalPane(pane)
         }
+    }
+
+    /// Move `leaf` by dragging it (its grip or header; `event` started it):
+    /// onto another pane of its split, it goes beside that one, on the side
+    /// the pointer is nearest, or in its middle trades places with it;
+    /// dropped outside the window, a terminal gets a window of its own. The
+    /// place it would take is lit meanwhile; Esc lets go of it as it was.
+    func dragPane(_ leaf: NSView, from event: NSEvent) {
+        guard let window, let content = window.contentView,
+              let tab = everyTab.first(where: { $0.container?.views.contains { $0 === leaf } == true }),
+              let container = tab.container, container.views.count > 1 || leaf is TerminalView else { return }
+        reveal(leaf, in: tab)
+        let lit = NSView()
+        lit.wantsLayer = true
+        lit.layer?.cornerRadius = Radius.pane
+        lit.layer?.cornerCurve = .continuous
+        lit.layer?.backgroundColor = Accent.color.withAlphaComponent(0.18).cgColor
+        lit.layer?.borderColor = Accent.color.withAlphaComponent(0.8).cgColor
+        lit.layer?.borderWidth = 2
+        lit.isHidden = true
+        container.addSubview(lit, positioned: .above, relativeTo: nil)
+        defer { lit.removeFromSuperview() }
+        var drop: SplitContainerView.Drop?
+        var outside = false, cancelled = false
+        func follow(_ e: NSEvent) {
+            outside = !content.bounds.contains(content.convert(e.locationInWindow, from: nil))
+            drop = outside ? nil : container.drop(at: container.convert(e.locationInWindow, from: nil), dragging: leaf)
+            if let drop {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = lit.isHidden ? 0 : Motion.duration(Motion.hover)
+                    lit.animator().frame = container.area(of: drop)
+                }
+                lit.isHidden = false
+            } else {
+                lit.isHidden = true
+            }
+            (outside && leaf is TerminalView ? NSCursor.dragCopy : NSCursor.closedHand).set()
+        }
+        follow(event)
+        window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp, .keyDown], timeout: .infinity, mode: .eventTracking) { e, stop in
+            guard let e else { return }
+            switch e.type {
+            case .leftMouseUp: stop.pointee = true
+            case .keyDown where e.keyCode == 53:  // Esc
+                cancelled = true
+                stop.pointee = true
+            case .leftMouseDragged: follow(e)
+            default: break
+            }
+        }
+        NSCursor.arrow.set()
+        guard !cancelled else { return }
+        switch drop {
+        case .swap(let other)?: container.swap(leaf, with: other)
+        case .side(let target, let direction)?: container.move(leaf, beside: target, toward: direction)
+        case nil:
+            if outside, leaf is TerminalView, canMoveFocusedPaneOut { moveFocusedPaneToNewWindow() }
+            return
+        }
+        focusLeaf(leaf)
+        updateDimming()
+        updateSidebar()
+    }
+
+    /// `--ui-probe`: how many terminals glass panes let the desktop through.
+    var areaHoleCount: Int { area.holeCount }
+
+    /// `--ui-probe`: the drop of `leaf` on `target` (`side` left, right, up,
+    /// down, or swap), as a drag would end.
+    func probeDrop(_ leaf: NSView, on target: NSView, _ side: String) -> Bool {
+        guard let container = everyTab.first(where: { $0.container?.views.contains { $0 === leaf } == true })?.container,
+              container.views.contains(where: { $0 === target }) else { return false }
+        if side == "swap" { container.swap(leaf, with: target) }
+        else if let d = SplitContainerView.Direction(rawValue: side) { container.move(leaf, beside: target, toward: d) }
+        else { return false }
+        focusLeaf(leaf)
+        updateDimming()
+        updateSidebar()
+        return true
     }
 
 }

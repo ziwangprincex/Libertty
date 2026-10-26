@@ -1,0 +1,57 @@
+# Settings from the palette (Rex's Change Terminal Font…, Change Theme…):
+# a picker lists a setting's choices, each tried out in every window as
+# it's selected; Return writes it to the config, Esc puts it back. Runs
+# with a config folder of its own (@CFG@): font-size = 14, theme =
+# probe-theme (background #112233).
+expect-font:14
+expect-background:#112233
+key:cmd+shift+p
+wait:0.4
+type:change terminal font size
+wait:0.3
+expect-palette:Change Terminal Font Size… · 14 pt
+key:enter
+wait:0.4
+# It starts on the size in use; the next one down is tried at once.
+key:down
+wait:0.4
+expect-font:15
+key:down
+wait:0.4
+expect-font:16
+# Esc: back as it was, and to the list.
+key:escape
+wait:0.4
+expect-font:14
+expect-palette:Change Terminal Font Size…
+# Again, and Return keeps it: written to the config.
+key:enter
+wait:0.4
+key:down
+wait:0.3
+key:down
+wait:0.3
+key:enter
+wait:0.8
+expect-font:16
+type:grep -c '^font-size = 16$' @CFG@/config && echo KEPT-IN-FILE
+key:enter
+wait:0.6
+expect:KEPT-IN-FILE
+# A theme tried out: the windows take it; Esc and closing put it back.
+key:cmd+shift+p
+wait:0.4
+type:change theme
+wait:0.3
+key:enter
+wait:0.4
+# Typing narrows the themes; the first that's left is tried.
+type:libertty dark
+wait:0.5
+expect-palette:Libertty Dark
+expect-background:#1c1c1e
+key:escape
+wait:0.4
+expect-background:#112233
+key:escape
+wait:0.4

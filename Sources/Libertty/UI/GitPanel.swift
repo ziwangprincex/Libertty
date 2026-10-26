@@ -354,7 +354,7 @@ final class GitPanelView: NSView {
         b.imagePosition = .imageLeading
         b.isBordered = false
         b.font = .systemFont(ofSize: 12)
-        b.contentTintColor = .controlAccentColor
+        b.contentTintColor = Accent.color
         return b
     }
 

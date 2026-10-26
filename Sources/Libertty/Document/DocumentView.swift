@@ -806,7 +806,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     private lazy var focusLine: NSView = {
         let line = NSView()
         line.wantsLayer = true
-        line.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        line.layer?.backgroundColor = Accent.color.cgColor
         line.isHidden = true
         addSubview(line)
         return line
@@ -837,7 +837,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        if showsFocusLine { focusLine.layer?.backgroundColor = NSColor.controlAccentColor.cgColor }
+        if showsFocusLine { focusLine.layer?.backgroundColor = Accent.color.cgColor }
         // (Asked only while it shows: asking makes the button.)
         if showsCloseButton && hovering { updateCloseButtonColor() }
     }

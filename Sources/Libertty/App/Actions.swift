@@ -19,6 +19,7 @@ enum ActionDispatcher {
         case .newWindow: app?.newWindow(nil)
         case .newTab: app?.newTab(in: controller?.window)
         case .newSplit(let d): controller?.split(direction(d))
+        case .newSplitAuto: controller?.splitBestFit()
         case .closeSurface: controller?.closePane(nil)
         case .closeTab: controller?.closeSelectedTab()
         case .closeWindow: controller?.closeWindowAndTabs()
@@ -126,6 +127,7 @@ enum ActionDispatcher {
         case .writeSelectionFile(let then): controller?.writeTextFile(selection: true, then: then)
         case .openConfig: AppDelegate.openConfigFile()
         case .reloadConfig: ConfigStore.shared.reloadByRequest()
+        case .openThemeEditor: MainActor.assumeIsolated { ThemeEditor.shared.show(nil) }
         case .quit: NSApp.terminate(nil)
         case .ignore: break
         case .unbind: return false

@@ -26,6 +26,23 @@ enum Motion {
     static func duration(_ value: CFTimeInterval) -> CFTimeInterval { reduced ? 0 : value }
 }
 
+/// The interface's accent: the system's (default), or with `accent-color`
+/// the theme's own or a color of your choosing (Rex's Use theme accent) —
+/// the focused pane's line, selections in the sidebar and palette, rings.
+enum Accent {
+    static var custom: RGB?
+    static var color: NSColor { custom?.nsColor ?? .controlAccentColor }
+
+    /// `accent-color = theme`: the theme's cursor when it's a color of its
+    /// own (not a gray) and stands out from the background, else its blue.
+    static func of(_ theme: Theme) -> RGB {
+        let c = theme.cursor
+        let (r, g, b) = (Double(c.r), Double(c.g), Double(c.b))
+        let chroma = max(r, g, b) - min(r, g, b)
+        return chroma > 60 && c.contrast(with: theme.background) >= 2.5 ? c : theme.ansi[4]
+    }
+}
+
 /// `--ui-probe` drives a window that's off screen and never in front:
 /// nothing may bring Libertty forward then — not a palette, not a panel —
 /// or keystrokes meant for whatever the user is doing would land here.
@@ -42,17 +59,24 @@ enum Probe {
 enum Radius {
     static let panel: CGFloat = 16
     static let card: CGFloat = 12
-    /// A pane on the window's frame (Tern's: measured from its shots).
-    static let pane: CGFloat = 10
+    /// A pane on the window's frame (Tern's: measured from its shots);
+    /// square when compact (`pane-style`).
+    static var pane: CGFloat { Layout.compact ? 0 : floating }
+    /// A pane floating as a card or a picture in picture: rounded always.
+    static let floating: CGFloat = 10
     static let control: CGFloat = 8
     static let chip: CGFloat = 6
 }
 
 enum Layout {
+    /// `pane-style = compact` (Rex's Compact Pane Style): the panes meet
+    /// with a hairline of the frame between them, square, out to the
+    /// window's edges — every point for text. Comfortable (default): cards.
+    static var compact = false
     /// Between the window's edges and the panes' column, and around each
     /// pane inside it: cards 6 apart, 6 from the edges (3 below the toolbar).
-    static let stageInset: CGFloat = 3
-    static let paneInset: CGFloat = 3
+    static var stageInset: CGFloat { compact ? 0 : 3 }
+    static var paneInset: CGFloat { compact ? 0.5 : 3 }
     /// Gap between pane cards.
     static var paneGap: CGFloat { paneInset * 2 }
     /// A sidebar row (tabs).

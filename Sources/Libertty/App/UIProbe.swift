@@ -50,6 +50,14 @@ import LiberttyCore
 ///   expect-resize-frames:N the focused pane drew N frames inside a resize since the last of these
 ///   expect-pinned:go      every pane's drawable is its view's size and pinned top-left, also once AppKit sets its gravity again
 ///   expect-runs:PATH=yes|no  whether ⌘-clicking a link to PATH asks first (opening it would run it)
+///   expect-layout:TREE    the tab's split as h50(a,v50(b,c)): h side by side, v stacked, the first's share
+///                         in percent; panes named a, b, c… in the order the probe first saw them
+///   expect-looks:compact=yes|no,accent=#rrggbb|system,holes=N  the panes' style, the accent, and how many
+///                         terminals glass panes let the desktop through (each part optional)
+///   drop:N:SIDE           drop the focused pane on the tab's Nth pane (reading order) as a drag would:
+///                         left, right, up, down (beside it) or swap
+///   theme-editor:open|cancel|save|name:NAME|set:SLOT=#rrggbb  drive Libertty ▸ Theme Editor (SLOT: background,
+///                         foreground, cursor, selection or 0–15)
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -105,6 +113,9 @@ enum UIProbe {
 
     /// The focused pane's frame on the screen at the last `expect-unmoved`.
     private static var paneFrameMark: NSRect?
+
+    /// The panes' names in `expect-layout`, by when it first saw them.
+    private static var paneNames: [ObjectIdentifier: String] = [:]
 
     /// Each pane's grid changes at its last `expect-regrids`.
     private static var regridMarks: [ObjectIdentifier: Int] = [:]
@@ -229,6 +240,13 @@ enum UIProbe {
                 pump(0.5)
             case .shot(let name):
                 capture(window, to: output + "/" + name)
+                // The palette's own panel beside it, while one is open.
+                if let panel = CommandPalette.openPanel {
+                    capture(panel, to: output + "/" + (name as NSString).deletingPathExtension + "-palette.png")
+                }
+                if let editor = MainActor.assumeIsolated({ ThemeEditor.shared.openWindow }) {
+                    capture(editor, to: output + "/" + (name as NSString).deletingPathExtension + "-theme-editor.png")
+                }
             case .size(let width, let height):
                 var frame = window.frame
                 frame.size = NSSize(width: width, height: height)
@@ -542,6 +560,71 @@ enum UIProbe {
                     print("FAIL  ui-probe pinned: \(wrong.joined(separator: "; ")) (its drawable would be stretched to the view)")
                     failures += 1
                 }
+            case .expectLayout(let want):
+                pump(0.5)  // a balance under way settles
+                let shown = controller.selectedTab.container?.layoutDescription { view in
+                    let id = ObjectIdentifier(view)
+                    if let name = paneNames[id] { return name }
+                    let name = String(UnicodeScalar(UInt8(97 + paneNames.count)))
+                    paneNames[id] = name
+                    return name
+                } ?? "(no split)"
+                if shown == want { print("ok    ui-probe layout \(want)") } else {
+                    print("FAIL  ui-probe layout: \(shown), not \(want)")
+                    failures += 1
+                }
+            case .expectLooks(let want):
+                pump(0.3)
+                var wrong: [String] = []
+                for part in want.split(separator: ",") {
+                    let kv = part.split(separator: "=", maxSplits: 1).map(String.init)
+                    guard kv.count == 2 else { continue }
+                    switch kv[0] {
+                    case "compact":
+                        let first = controller.selectedTab.container?.views.first
+                        let inset = first?.frame.minX ?? -1
+                        let radius = first?.layer?.cornerRadius ?? -1
+                        let compact = inset < 1 && radius == 0
+                        if compact != (kv[1] == "yes") { wrong.append("pane at x \(inset), radius \(radius)") }
+                    case "accent":
+                        let shown = MainActor.assumeIsolated { Accent.custom?.hexString ?? "system" }
+                        if shown != kv[1] { wrong.append("accent \(shown)") }
+                    case "holes":
+                        let n = controller.areaHoleCount
+                        if String(n) != kv[1] { wrong.append("\(n) holes") }
+                    default: wrong.append("no \(kv[0])")
+                    }
+                }
+                if wrong.isEmpty { print("ok    ui-probe looks \(want)") } else {
+                    print("FAIL  ui-probe looks: \(wrong.joined(separator: ", ")), not \(want)")
+                    failures += 1
+                }
+            case .drop(let n, let side):
+                let views = controller.selectedTab.container?.views ?? []
+                guard views.indices.contains(n - 1), let pane = controller.selectedTab.focusedLeaf,
+                      controller.probeDrop(pane, on: views[n - 1], side) else {
+                    print("FAIL  ui-probe drop: no pane \(n) or no \(side)")
+                    failures += 1
+                    break
+                }
+                pump(0.6)
+            case .themeEditor(let command):
+                let done = MainActor.assumeIsolated { () -> Bool in
+                    let editor = ThemeEditor.shared
+                    if command == "open" { editor.show(nil) }
+                    else if command == "cancel" { editor.probeCancel() }
+                    else if command == "save" { editor.probeSave() }
+                    else if command.hasPrefix("name:") { editor.probeName(String(command.dropFirst(5))) }
+                    else if command.hasPrefix("set:"), case let parts = command.dropFirst(4).split(separator: "=", maxSplits: 1),
+                            parts.count == 2, editor.probeSet(String(parts[0]), String(parts[1])) {}
+                    else { return false }
+                    return true
+                }
+                if !done {
+                    print("FAIL  ui-probe theme-editor: can't \(command)")
+                    failures += 1
+                }
+                pump(0.4)
             case .expectRuns(let path, let runs):
                 let found = TerminalView.wouldRun(URL(fileURLWithPath: path))
                 if found == runs { print("ok    ui-probe \(path) \(runs ? "asks first" : "opens")") } else {
@@ -841,7 +924,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool)
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -950,6 +1033,12 @@ enum UIProbe {
             case "expect-no-open-animation": steps.append(.expectNoOpenAnimation)
             case "expect-resize-frames": steps.append(.expectResizeFrames(Int(arg) ?? -1))
             case "expect-pinned": steps.append(.expectPinned)
+            case "theme-editor": steps.append(.themeEditor(arg))
+            case "expect-layout": steps.append(.expectLayout(arg))
+            case "expect-looks": steps.append(.expectLooks(arg))
+            case "drop":
+                let parts = arg.split(separator: ":", maxSplits: 1).map(String.init)
+                if parts.count == 2, let n = Int(parts[0]) { steps.append(.drop(n, parts[1])) }
             case "expect-runs":
                 let parts = arg.split(separator: "=", maxSplits: 1).map(String.init)
                 if parts.count == 2 { steps.append(.expectRuns(parts[0], parts[1] == "yes")) }

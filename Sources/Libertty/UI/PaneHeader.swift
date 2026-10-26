@@ -5,6 +5,8 @@ import AppKit
 protocol PaneHeaderSource: AnyObject {
     func headerInfo(for leaf: NSView) -> PaneHeader.Info
     func header(_ action: PaneHeader.Action, for leaf: NSView)
+    /// The header was dragged: move its pane (`event`: the drag's first move).
+    func dragPane(_ leaf: NSView, from event: NSEvent)
 }
 
 /// A pane's header (Tern's `pane-headers`): what runs there and where, its
@@ -32,6 +34,9 @@ final class PaneHeader: NSView {
     static let height: CGFloat = 30
 
     var onAction: ((Action) -> Void)?
+    /// Dragged past a few points: the window moves the pane from here.
+    var onDrag: ((NSEvent) -> Void)?
+    private var pressedAt: NSPoint?
     var info: Info? {
         didSet { if info != oldValue { update() } }
     }
@@ -136,12 +141,21 @@ final class PaneHeader: NSView {
 
     private func updateColors() {
         line.layer?.backgroundColor = NSColor.separatorColor.cgColor
-        mark.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        mark.layer?.backgroundColor = Accent.color.cgColor
     }
 
     override func mouseDown(with event: NSEvent) {
+        pressedAt = event.locationInWindow
         onAction?(event.clickCount == 2 ? .zoom : .focus)
     }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = pressedAt, hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) > 4 else { return }
+        pressedAt = nil
+        onDrag?(event)
+    }
+
+    override func mouseUp(with event: NSEvent) { pressedAt = nil }
 
     @objc private func floatIt() { onAction?(.pictureInPicture) }
     @objc private func zoomIt() { onAction?(.zoom) }

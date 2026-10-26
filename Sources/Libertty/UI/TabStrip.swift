@@ -444,7 +444,7 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
     }
 
     private func showNews(_ value: TabNews) {
-        let accent = NSColor.controlAccentColor.cgColor
+        let accent = Accent.color.cgColor
         switch value {
         case .none:
             newsView.isHidden = true
@@ -461,8 +461,8 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        if news.fillColor != nil { news.fillColor = NSColor.controlAccentColor.cgColor }
-        if news.strokeColor != nil { news.strokeColor = NSColor.controlAccentColor.cgColor }
+        if news.fillColor != nil { news.fillColor = Accent.color.cgColor }
+        if news.strokeColor != nil { news.strokeColor = Accent.color.cgColor }
     }
 
     // MARK: Mouse

@@ -656,7 +656,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             // Its own panel: no window to bring forward (that would also take
             // the keyboard from it, so the next press could never put it away).
             QuickTerminal.shared.toggle()
-        case .openConfig, .reloadConfig, .connectToHost:
+        case .openConfig, .reloadConfig, .openThemeEditor, .connectToHost:
             // About the app, not a window.
             ActionDispatcher.perform(action)
         default:
@@ -870,7 +870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             let floating = controller?.hasFloatingPane == true
             item.title = floating ? "Bring Back Floating Pane" : "Float Pane"
             return floating || controller?.canParkFocusedPane == true
-        case .newWindow, .newTab, .closeAllWindows, .toggleVisibility, .openConfig, .reloadConfig, .quit:
+        case .newWindow, .newTab, .closeAllWindows, .toggleVisibility, .openConfig, .reloadConfig, .openThemeEditor, .quit:
             return true
         default:
             return controller != nil
@@ -915,6 +915,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         app.addItem(.separator())
         item("Settings…", .openConfig, symbol: "gear", in: app)
         item("Reload Configuration", .reloadConfig, symbol: "arrow.trianglehead.2.clockwise.rotate.90", in: app)
+        item("Theme Editor…", .openThemeEditor, symbol: "paintbrush", in: app)
         item("Secure Keyboard Entry", .toggleSecureInput, symbol: "lock.display", in: app)
         let web = item("Web Access…", selector: #selector(WebAccessPanel.show(_:)), symbol: "globe", in: app)
         web.target = MainActor.assumeIsolated { WebAccessPanel.shared }
@@ -949,6 +950,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         item("Split Left", .newSplit(.left), symbol: "rectangle.leadinghalf.inset.filled", in: file)
         item("Split Down", .newSplit(.down), symbol: "rectangle.bottomhalf.inset.filled", in: file)
         item("Split Up", .newSplit(.up), symbol: "rectangle.tophalf.inset.filled", in: file)
+        item("Split Best Fit", .newSplitAuto, symbol: "rectangle.split.2x2", in: file)
         file.addItem(.separator())
         item("Close", .closeSurface, symbol: "xmark", in: file)
         item("Close Tab", .closeTab, in: file)

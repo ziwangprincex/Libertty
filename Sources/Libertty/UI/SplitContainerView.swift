@@ -78,6 +78,9 @@ final class SplitContainerView: NSView {
     enum Direction: String { case left, right, up, down }
 
     private(set) var root: PaneNode
+    /// Rex's Autobalance splits (`split-autobalance`): after a split, a
+    /// close or a move, the panes even out (`equalize`).
+    var autobalance = false
     private var dividers: [DividerView] = []
     private var animator: FrameAnimator?
     /// The pane filling the whole container (toggle_split_zoom), if any.
@@ -147,6 +150,10 @@ final class SplitContainerView: NSView {
             guard let self, let leaf else { return }
             self.headerSource?.header(action, for: leaf)
         }
+        header.onDrag = { [weak self, weak leaf] event in
+            guard let self, let leaf else { return }
+            self.headerSource?.dragPane(leaf, from: event)
+        }
         addSubview(header, positioned: .below, relativeTo: dividers.first)
         headerViews[ObjectIdentifier(leaf)] = header
         return header
@@ -195,6 +202,8 @@ final class SplitContainerView: NSView {
         animator = FrameAnimator.run(on: self, duration: Motion.card, update: { [weak self, weak node] p in
             node?.ratio = newFirst ? share * CGFloat(p) : 1 - share * CGFloat(p)
             self?.layoutPanes()
+        }, completion: { [weak self] in
+            self?.balanceIfAsked()
         })
     }
 
@@ -270,28 +279,109 @@ final class SplitContainerView: NSView {
             parent.adopt(sibling)
             self?.layoutPanes()
             completion()
+            self?.balanceIfAsked()
         })
+    }
+
+    /// `pane` and `other` trade places; each place keeps its size.
+    func swap(_ pane: NSView, with other: NSView) {
+        animator?.finish()
+        guard pane !== other, let a = root.find(pane), let b = root.find(other) else { return }
+        a.replacePane(with: other)
+        b.replacePane(with: pane)
+        zoomed = nil
+        layoutPanes()
+    }
+
+    /// `pane` leaves its place (its sibling takes the space) and goes beside
+    /// `target`, toward `direction`, halving `target`'s place.
+    func move(_ pane: NSView, beside target: NSView, toward direction: Direction) {
+        animator?.finish()
+        guard pane !== target, let node = root.find(pane), let parent = node.parent,
+              let sibling = parent.children.first(where: { $0 !== node }), root.find(target) != nil else { return }
+        parent.adopt(sibling)
+        guard let anchor = root.find(target) else { return }
+        let axis: PaneNode.Axis = direction == .left || direction == .right ? .horizontal : .vertical
+        anchor.split(with: pane, axis: axis, ratio: 0.5, newFirst: direction == .left || direction == .up)
+        zoomed = nil
+        layoutPanes()
+        balanceIfAsked()
+    }
+
+    private func balanceIfAsked() {
+        guard autobalance, !root.isLeaf else { return }
+        equalize(animated: true)
     }
 
     /// Even out the panes: three side by side get a third each, not 50/25/25
     /// — a split's share follows how many panes lie along its axis on each
     /// side (GoRex).
-    func equalize() {
+    func equalize(animated: Bool = false) {
         /// How many panes a node lays side by side along `axis`.
         func span(_ node: PaneNode, _ axis: PaneNode.Axis) -> Int {
             guard !node.isLeaf else { return 1 }
             let spans = node.children.map { span($0, axis) }
             return node.axis == axis ? spans.reduce(0, +) : spans.max() ?? 1
         }
+        var targets: [(node: PaneNode, from: CGFloat, to: CGFloat)] = []
         func visit(_ node: PaneNode) {
             if !node.isLeaf, node.children.count == 2 {
                 let first = span(node.children[0], node.axis), second = span(node.children[1], node.axis)
-                node.ratio = CGFloat(first) / CGFloat(max(1, first + second))
+                targets.append((node, node.ratio, CGFloat(first) / CGFloat(max(1, first + second))))
             }
             node.children.forEach(visit)
         }
         visit(root)
-        layoutPanes()
+        guard animated, targets.contains(where: { abs($0.from - $0.to) > 0.001 }) else {
+            targets.forEach { $0.node.ratio = $0.to }
+            return layoutPanes()
+        }
+        animator?.finish()
+        animator = FrameAnimator.run(on: self, duration: Motion.small, curve: Motion.easeCurve, update: { [weak self] p in
+            for t in targets { t.node.ratio = t.from + (t.to - t.from) * CGFloat(p) }
+            self?.layoutPanes()
+        })
+    }
+
+    /// The tree in words (`--ui-probe`): `h50(a,v50(b,c))` — h side by side,
+    /// v stacked, the first child's share in percent, each leaf by `name`.
+    func layoutDescription(_ name: (NSView) -> String) -> String {
+        func describe(_ node: PaneNode) -> String {
+            if let pane = node.pane { return name(pane) }
+            let share = Int((node.ratio * 100).rounded())
+            return (node.axis == .horizontal ? "h" : "v") + "\(share)(" + node.children.map(describe).joined(separator: ",") + ")"
+        }
+        return describe(root)
+    }
+
+    /// Where a pane dragged to `point` would go (`TerminalWindowController`'s
+    /// pane drag): the pane under it, and which side — or the middle, a swap.
+    enum Drop: Equatable { case swap(NSView), side(NSView, Direction) }
+
+    func drop(at point: NSPoint, dragging pane: NSView) -> Drop? {
+        guard let target = views.first(where: { !$0.isHidden && slot(of: $0).contains(point) }), target !== pane else { return nil }
+        let r = slot(of: target)
+        let x = (point.x - r.minX) / max(1, r.width), y = (point.y - r.minY) / max(1, r.height)
+        // The middle third (both ways): trade places.
+        if (1.0 / 3...2.0 / 3).contains(x), (1.0 / 3...2.0 / 3).contains(y) { return .swap(target) }
+        // Else the nearest edge.
+        let edges: [(CGFloat, Direction)] = [(x, .left), (1 - x, .right), (y, .up), (1 - y, .down)]
+        return .side(target, edges.min { $0.0 < $1.0 }!.1)
+    }
+
+    /// The part of the window a drop would take, to light while dragging.
+    func area(of drop: Drop) -> CGRect {
+        switch drop {
+        case .swap(let target): return Self.card(in: slot(of: target))
+        case .side(let target, let direction):
+            let r = Self.card(in: slot(of: target))
+            switch direction {
+            case .left: return CGRect(x: r.minX, y: r.minY, width: r.width / 2, height: r.height)
+            case .right: return CGRect(x: r.midX, y: r.minY, width: r.width / 2, height: r.height)
+            case .up: return CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height / 2)
+            case .down: return CGRect(x: r.minX, y: r.midY, width: r.width, height: r.height / 2)
+            }
+        }
     }
 
     /// Where `view` sits in the split: its slot, whatever it shows now (a
@@ -350,6 +440,20 @@ final class SplitContainerView: NSView {
         updateHeaders()
         rebuildDividers()
         dividers.forEach { $0.isHidden = zoomed != nil }
+        // Glass panes: the frame's holes follow the cards.
+        var above = superview
+        while let view = above, !(view is TerminalAreaView) { above = view.superview }
+        (above as? TerminalAreaView)?.updateHoles()
+    }
+
+    /// The terminals' cards as they show now (headers too), in this view's
+    /// coordinates: where glass panes let the desktop through.
+    var terminalCards: [CGRect] {
+        views.compactMap { leaf -> CGRect? in
+            guard leaf is TerminalView, !leaf.isHidden, leaf.frame.width > 0 else { return nil }
+            guard let header = headerViews[ObjectIdentifier(leaf)], !header.isHidden else { return leaf.frame }
+            return leaf.frame.union(header.frame)
+        }
     }
 
     /// A card's frame in its slot. A slot smaller than the inset (a tab not

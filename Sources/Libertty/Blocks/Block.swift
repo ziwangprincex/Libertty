@@ -192,7 +192,7 @@ enum Blocks {
             "fontURL": EditorAssets.fontURL?.absoluteString ?? "",
             // The bundled fonts' folder (Geist for text), without its trailing slash.
             "fontDir": EditorAssets.fontURL.map { String($0.deletingLastPathComponent().absoluteString.dropLast()) } ?? "",
-            "accent": (NSColor.controlAccentColor.usingColorSpace(.sRGB)).map {
+            "accent": (Accent.color.usingColorSpace(.sRGB)).map {
                 String(format: "#%02x%02x%02x", Int($0.redComponent * 255), Int($0.greenComponent * 255), Int($0.blueComponent * 255))
             } ?? "#3d82f6",
         ]

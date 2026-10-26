@@ -15,6 +15,8 @@ struct Config: Equatable {
     /// Where the tabs are listed: the sidebar, or along the top (Tern's horizontal tabs).
     enum TabBar: String, CaseIterable { case sidebar, top }
     enum AutoUpdate: String, CaseIterable { case off, check, download }
+    /// Rex's pane styles: cards with room around them, or edge to edge.
+    enum PaneStyle: String, CaseIterable { case comfortable, compact }
 
     var theme = ThemeSpec(light: "Libertty Light", dark: Theme.defaultName)
     var fontFamily = ""  // empty: the bundled JetBrains Mono Nerd Font
@@ -50,6 +52,10 @@ struct Config: Equatable {
     var cursorColor: RGB?
     var selectionBackground: RGB?
     var palette: [Int: RGB] = [:]
+    /// Ghostty's `palette-generate` / `palette-harmonious`: colors 16–255
+    /// made from the theme's own (see `Theme.generatedPalette256`).
+    var paletteGenerate = false
+    var paletteHarmonious = false
     var cursorStyle = CursorStyle.block
     var backgroundOpacity: Double = 1
     var backgroundBlur = true
@@ -61,6 +67,16 @@ struct Config: Equatable {
     var windowRows = 30
     var unfocusedSplitOpacity: Double = 0.65
     var paneHeaders = PaneHeaders.never
+    /// Rex's Autobalance splits: the panes even out after every split, close and move.
+    var splitAutobalance = false
+    var paneStyle = PaneStyle.comfortable
+    /// Rex's Use glass for panes: the terminals let the desktop through,
+    /// blurred, while the frame around them stays solid.
+    var paneGlass = false
+    /// `system`, `theme` (Rex's Use theme accent) or a color.
+    var accentColor = "system"
+    /// Rex's Use color for tab icons: each program's glyph in its color.
+    var tabIconColor = false
     var tabBar = TabBar.sidebar
     /// Ghostty's `scrollback-limit`: bytes of history per terminal.
     var scrollbackLimit = 10_000_000
@@ -197,6 +213,19 @@ struct Config: Equatable {
         return t
     }
 
+    /// The accent `accent-color` asks for with this theme; nil for the system's.
+    func accent(with theme: Theme) -> RGB? {
+        switch accentColor {
+        case "system": nil
+        case "theme": Accent.of(theme)
+        default: RGB(string: accentColor)
+        }
+    }
+
+    /// How opaque the terminals' own background is: `background-opacity`,
+    /// or with glass panes at most 0.7 (they're glass whatever the window).
+    var paneOpacity: Double { paneGlass ? min(backgroundOpacity, 0.7) : backgroundOpacity }
+
     var padding: NSEdgeInsets {
         NSEdgeInsets(top: windowPaddingY, left: windowPaddingX, bottom: windowPaddingY + 2, right: windowPaddingX)
     }
@@ -218,6 +247,8 @@ struct Config: Equatable {
         ("cursor-color", "Override the theme's cursor color."),
         ("selection-background", "Override the theme's selection color."),
         ("palette", "Override one palette entry: palette = N=#rrggbb, N in 0–255. Repeatable."),
+        ("palette-generate", "Make the 256-color palette's colors 16–255 from the theme's own (as in Ghostty): its cube blends the background, the six base hues and the foreground, its grays run from the background to the foreground. Entries set with palette stay as set. Off by default: some programs expect xterm's fixed colors."),
+        ("palette-harmonious", "With palette-generate, keep a light theme's cube in its own order (background to foreground) instead of dark to light, as in Ghostty."),
         ("cursor-style", "block, bar, underline or block_hollow. Programs may still change it."),
         ("background-opacity", "0.1–1. Below 1 the window is translucent."),
         ("background-blur", "Blur what shows through a translucent window."),
@@ -229,6 +260,11 @@ struct Config: Equatable {
         ("unfocused-split-opacity", "Opacity of the panes you're not typing in, 0.3–1."),
         ("tab-bar", "sidebar or top: list the tabs in the sidebar, or along the top of the window (the sidebar then shows the files)."),
         ("pane-headers", "never, split or always: when a pane shows a header with its program, folder and size, and buttons to float, zoom and close it."),
+        ("split-autobalance", "Even out the panes after every split, close and move (Rex's Autobalance splits): three side by side get a third each."),
+        ("pane-style", "comfortable (cards with room around them, default) or compact (panes edge to edge with a hairline between them, square, out to the window's edges), as Rex's pane styles."),
+        ("pane-glass", "Let the desktop show through the terminals, blurred, while the frame around them (toolbar, sidebar, gaps) stays solid — Rex's glass panes. How much shows: background-opacity below 1, else 0.7."),
+        ("accent-color", "The interface's accent (the focused pane's line, selections, rings): system (default), theme (the theme's cursor color when it's a color, else its blue; Rex's Use theme accent) or #rrggbb."),
+        ("tab-icon-color", "Draw each program's glyph on the tabs in its color (Rex's Use color for tab icons); off, they're all the label's gray."),
         ("scrollback-limit", "Bytes of scrollback per terminal, as in Ghostty (10000000 ≈ 10 MB, about 10 000 lines of 120 columns; idle history is compressed). Values under 100000 are taken as lines."),
         ("macos-option-as-alt", "false, true, left or right: which Option keys act as Alt (Meta) instead of typing characters."),
         ("copy-on-select", "Copy text to the clipboard as soon as it is selected."),
@@ -302,6 +338,8 @@ struct Config: Equatable {
         case "cursor-color": return color(cursorColor)
         case "selection-background": return color(selectionBackground)
         case "palette": return palette.keys.sorted().map { "\($0)=\(palette[$0]!.hexString)" }
+        case "palette-generate": return [String(paletteGenerate)]
+        case "palette-harmonious": return [String(paletteHarmonious)]
         case "cursor-style": return [cursorStyle.rawValue]
         case "background-opacity": return [num(backgroundOpacity)]
         case "background-blur": return [String(backgroundBlur)]
@@ -312,6 +350,11 @@ struct Config: Equatable {
         case "window-rows": return [String(windowRows)]
         case "unfocused-split-opacity": return [num(unfocusedSplitOpacity)]
         case "pane-headers": return [paneHeaders.rawValue]
+        case "split-autobalance": return [String(splitAutobalance)]
+        case "pane-style": return [paneStyle.rawValue]
+        case "pane-glass": return [String(paneGlass)]
+        case "accent-color": return [accentColor]
+        case "tab-icon-color": return [String(tabIconColor)]
         case "tab-bar": return [tabBar.rawValue]
         case "scrollback-limit": return [String(scrollbackLimit)]
         case "macos-option-as-alt": return [optionAsAlt.rawValue]
@@ -531,6 +574,12 @@ struct Config: Equatable {
                 return "expected N=#rrggbb"
             }
             palette[i] = c
+        case "palette-generate":
+            if reset { paletteGenerate = defaults.paletteGenerate; return nil }
+            guard let x = bool() else { return "true or false" }; paletteGenerate = x
+        case "palette-harmonious":
+            if reset { paletteHarmonious = defaults.paletteHarmonious; return nil }
+            guard let x = bool() else { return "true or false" }; paletteHarmonious = x
         case "cursor-style":
             if reset { cursorStyle = defaults.cursorStyle; return nil }
             guard let x = CursorStyle(rawValue: v) else { return "block, bar, underline or block_hollow" }; cursorStyle = x
@@ -555,6 +604,22 @@ struct Config: Equatable {
         case "pane-headers":
             if reset { paneHeaders = defaults.paneHeaders; return nil }
             guard let x = PaneHeaders(rawValue: v) else { return "never, split or always" }; paneHeaders = x
+        case "split-autobalance":
+            if reset { splitAutobalance = defaults.splitAutobalance; return nil }
+            guard let x = bool() else { return "true or false" }; splitAutobalance = x
+        case "pane-style":
+            if reset { paneStyle = defaults.paneStyle; return nil }
+            guard let x = PaneStyle(rawValue: v) else { return "comfortable or compact" }; paneStyle = x
+        case "pane-glass":
+            if reset { paneGlass = defaults.paneGlass; return nil }
+            guard let x = bool() else { return "true or false" }; paneGlass = x
+        case "accent-color":
+            if reset { accentColor = defaults.accentColor; return nil }
+            guard ["system", "theme"].contains(v.lowercased()) || RGB(string: v) != nil else { return "system, theme or #rrggbb" }
+            accentColor = RGB(string: v)?.hexString ?? v.lowercased()
+        case "tab-icon-color":
+            if reset { tabIconColor = defaults.tabIconColor; return nil }
+            guard let x = bool() else { return "true or false" }; tabIconColor = x
         case "tab-bar":
             if reset { tabBar = defaults.tabBar; return nil }
             guard let x = TabBar(rawValue: v) else { return "sidebar or top" }; tabBar = x
@@ -846,6 +911,11 @@ final class ConfigStore {
     }
 
     private(set) var config = Config()
+    /// The config as its files say, without what's being tried out.
+    private(set) var savedConfig = Config()
+    /// Settings tried out, not written (the command palette's pickers, the
+    /// theme editor): observers see them over the files' until `endPreview`.
+    private var previews: [(key: String, value: String)] = []
     private(set) var keybinds = Keybinds(entries: [])
     private(set) var warnings: [String] = []
     let url: URL
@@ -901,7 +971,7 @@ final class ConfigStore {
         var contents: [String: String] = [:]
         for f in files { contents[f.path] = (try? String(contentsOf: f, encoding: .utf8)) ?? "" }
         let themes = [parsed.resolvedTheme(dark: false), parsed.resolvedTheme(dark: true)]
-        let changed = contents != lastFiles || parsed != config || problems != warnings || themes != lastThemes
+        let changed = contents != lastFiles || parsed != savedConfig || problems != warnings || themes != lastThemes
         lastFiles = contents
         lastThemes = themes
         // What to watch follows what was read, every time (a file written
@@ -909,9 +979,44 @@ final class ConfigStore {
         if watching { watchFiles(themes: Self.requestedTheme(in: files, contents) ?? parsed.theme) }
         guard force || changed else { return }
         warnings = problems
-        config = parsed
+        savedConfig = parsed
+        config = previewed(parsed)
         keybinds = parsed.keybindTable
         notify()
+    }
+
+    // MARK: Trying settings out
+
+    /// Show every window `settings` (a key may repeat: `palette`) over the
+    /// files' own, without writing them; replaces what was tried before.
+    func preview(_ settings: [(key: String, value: String)]) {
+        previews = settings
+        let next = previewed(savedConfig)
+        guard next != config else { return }
+        config = next
+        notify()
+    }
+
+    func preview(_ key: String, _ value: String) { preview([(key, value)]) }
+
+    /// Back to the files' settings.
+    func endPreview() {
+        guard !previews.isEmpty else { return }
+        previews = []
+        guard config != savedConfig else { return }
+        config = savedConfig
+        notify()
+    }
+
+    var isPreviewing: Bool { !previews.isEmpty }
+
+    private func previewed(_ base: Config) -> Config {
+        guard !previews.isEmpty else { return base }
+        var c = base
+        // A repeatable key tried out replaces the files' lines of it.
+        for key in Set(previews.map(\.key)) where Config.repeatable.contains(key) { _ = c.set(key, "") }
+        for (key, value) in previews { _ = c.set(key, value) }
+        return c
     }
 
     func notify() {
@@ -1084,7 +1189,7 @@ final class ConfigStore {
             let fd = open(path, O_EVTONLY)
             guard fd >= 0 else { continue }
             let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd,
-                                                                   eventMask: [.write, .extend, .delete, .rename], queue: .main)
+                                                                   eventMask: [.write, .extend, .attrib, .delete, .rename], queue: .main)
             source.setEventHandler { [weak self] in self?.reloadSoon() }
             source.setCancelHandler { close(fd) }
             source.resume()

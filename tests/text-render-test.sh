@@ -1,7 +1,9 @@
 #!/bin/zsh
-# minimum-contrast and adjust-cell-height in snapshots' pixels: dark text on
-# the dark background comes out white once a contrast is asked for, box
-# drawing keeps its color; the cells grow by the pixels or the percentage.
+# minimum-contrast, adjust-cell-height and palette-generate in snapshots'
+# pixels: dark text on the dark background comes out white once a contrast
+# is asked for, box drawing keeps its color; the cells grow by the pixels or
+# the percentage; the 256 colors' cube runs from the theme's background to
+# its text color.
 # Prints "text-render: all passed".
 #   tests/text-render-test.sh LIBERTTY_BINARY OUTDIR
 set -u
@@ -31,4 +33,13 @@ base=$(height "") plus=$(height 10) half=$(height 50%) less=$(height -4)
 cell=$(( (base - 28) / 4 ))
 (( half == 28 + 4 * ((cell * 3 + 1) / 2) )) && ok "adjust-cell-height 50%: half again, rounded" || bad "adjust-cell-height 50%: $base → $half"
 (( less == base - 16 )) && ok "adjust-cell-height -4: 4 px less a row" || bad "adjust-cell-height -4: $base → $less"
+# palette-generate: color 231 (the cube's far corner) is the theme's text
+# color, 16 its background, instead of xterm's white and black.
+cube() {  # GENERATE INDEX → the color of a cell in palette INDEX
+  $L --snapshot $OUT/palette-$1-$2.png --cols 10 --rows 2 --font-size 13 --set window-padding-x=10 \
+    --set window-padding-y=6 --set palette-generate=$1 --pixels 28,29 -- "printf '\033[?25l\033[48;5;$2m    '; sleep 0.2" \
+    | awk '/^pixel/ { print $3 }'
+}
+[[ $(cube false 231) == "#ffffff" && $(cube false 16) == "#000000" ]] && ok "palette-generate off: xterm's cube" || bad "palette-generate off: $(cube false 231) $(cube false 16)"
+[[ $(cube true 231) == "#e6e6e6" && $(cube true 16) == "#1c1c1e" ]] && ok "palette-generate: the cube from the theme's colors" || bad "palette-generate: $(cube true 231) $(cube true 16)"
 (( fails == 0 )) && echo "text-render: all passed"

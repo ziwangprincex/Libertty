@@ -195,7 +195,7 @@ enum Action: Equatable {
     enum Direction: String, CaseIterable { case left, right, up, down }
     enum SplitTarget: Equatable { case direction(Direction), previous, next }
 
-    case newWindow, newTab, newSplit(Direction)
+    case newWindow, newTab, newSplit(Direction), newSplitAuto
     case closeSurface, closeTab, closeWindow, closeAllWindows
     case previousTab, nextTab, gotoTab(Int), lastTab
     case gotoSplit(SplitTarget), resizeSplit(Direction, Int), equalizeSplits, toggleSplitZoom
@@ -214,7 +214,7 @@ enum Action: Equatable {
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
     case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
     case undo, redo
-    case openConfig, reloadConfig, quit
+    case openConfig, reloadConfig, openThemeEditor, quit
     case ignore, unbind
 
     /// Actions without an argument, by Ghostty name.
@@ -249,7 +249,7 @@ enum Action: Equatable {
         ("toggle_picture_in_picture", .togglePictureInPicture),
         ("toggle_broadcast_input", .toggleBroadcastInput), ("copy_command_output", .copyCommandOutput),
         ("undo", .undo), ("redo", .redo),
-        ("open_config", .openConfig), ("reload_config", .reloadConfig), ("quit", .quit),
+        ("open_config", .openConfig), ("reload_config", .reloadConfig), ("open_theme_editor", .openThemeEditor), ("quit", .quit),
         ("ignore", .ignore), ("unbind", .unbind),
     ]
 
@@ -269,7 +269,10 @@ enum Action: Equatable {
         func number(_ fallback: Double) -> Double? { arg.map { Double($0.trimmingCharacters(in: .whitespaces)) } ?? fallback }
         func integer() -> Int? { arg.flatMap { Int($0.trimmingCharacters(in: .whitespaces)) } }
         switch name {
-        case "new_split": guard let d = arg == nil ? .right : direction() else { return nil }; self = .newSplit(d)
+        case "new_split":
+            // Ghostty's `auto`: along the pane's longer side (Rex's Split Pane Best Fit).
+            if arg?.trimmingCharacters(in: .whitespaces).lowercased() == "auto" { self = .newSplitAuto; return }
+            guard let d = arg == nil ? .right : direction() else { return nil }; self = .newSplit(d)
         case "goto_tab": guard let n = integer(), n > 0 else { return nil }; self = .gotoTab(n)
         case "goto_workspace": guard let n = integer(), n > 0 else { return nil }; self = .gotoWorkspace(n)
         case "show_tabs":
@@ -314,6 +317,7 @@ enum Action: Equatable {
         if let (name, _) = Self.simple.first(where: { $0.1 == self }) { return name }
         switch self {
         case .newSplit(let d): return "new_split:\(d.rawValue)"
+        case .newSplitAuto: return "new_split:auto"
         case .gotoTab(let n): return "goto_tab:\(n)"
         case .gotoWorkspace(let n): return "goto_workspace:\(n)"
         case .showTabs(let activity): return "show_tabs:\(activity.rawValue)"
@@ -344,7 +348,7 @@ enum Action: Equatable {
     /// For `libertty +list-actions`.
     static let catalog: [(String, String)] = [
         ("new_window", "Open a new window"), ("new_tab", "Open a new tab"),
-        ("new_split:right|down|left|up", "Split the focused pane"),
+        ("new_split:right|down|left|up|auto", "Split the focused pane (auto: along its longer side)"),
         ("close_surface", "Close the focused pane (the tab, if it's the last)"), ("close_tab", "Close the tab"),
         ("close_window", "Close the window and all its tabs"), ("close_all_windows", "Close every window"),
         ("previous_tab", "Select the tab to the left"), ("next_tab", "Select the tab to the right"),
@@ -412,6 +416,7 @@ enum Action: Equatable {
         ("write_selection_file:open|copy|paste|save", "The same for the selection"),
         ("toggle_quick_terminal", "Drop a terminal down from the top of the screen, or put it away (good as a global: key)"),
         ("open_config", "Open the config file in your text editor"), ("reload_config", "Reload the config file"),
+        ("open_theme_editor", "Edit a theme's colors, every window showing each change, and save it as a theme of your own"),
         ("quit", "Quit Libertty"),
         ("ignore", "Swallow the key so nothing happens"), ("unbind", "Remove a binding, so the key reaches the program"),
     ]

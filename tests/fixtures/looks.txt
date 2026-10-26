@@ -1,0 +1,27 @@
+# The interface's looks, from the config (a folder of its own, @CFG@):
+# pane-style (cards or edge to edge), accent-color (the system's, the
+# theme's, a color), pane-glass (the frame lets the desktop through where
+# the terminals are, and only there). Starts with none of them set.
+expect-looks:compact=no,accent=system,holes=0
+key:cmd+d
+wait:0.8
+shell:printf 'pane-style = compact\naccent-color = theme\ntheme = probe-theme\n' > @CFG@/config
+wait:0.8
+# probe-theme's cursor is amber: the accent.
+expect-looks:compact=yes,accent=#f2b45a,holes=0
+shell:printf 'accent-color = #30d158\npane-glass = true\n' > @CFG@/config
+wait:0.8
+expect-looks:compact=no,accent=#30d158,holes=2
+# A third pane: a third hole; zoomed, only it.
+key:cmd+d
+wait:0.8
+expect-looks:holes=3
+key:cmd+shift+enter
+wait:0.5
+expect-looks:holes=1
+key:cmd+shift+enter
+wait:0.5
+# Emptied (truncated, as `: > config` does): back to the defaults.
+shell:: > @CFG@/config
+wait:0.8
+expect-looks:compact=no,accent=system,holes=0

@@ -211,7 +211,7 @@ private final class CardView: NSView {
         addSubview(title)
         frameLayer.cornerRadius = Radius.card + 3
         frameLayer.borderWidth = 3
-        frameLayer.borderColor = NSColor.controlAccentColor.cgColor
+        frameLayer.borderColor = Accent.color.cgColor
         frameLayer.opacity = 0
         layer?.addSublayer(frameLayer)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
