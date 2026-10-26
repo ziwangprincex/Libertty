@@ -1,0 +1,98 @@
+# Every push and pull request: the Mac build with its unit tests and the
+# headless suite (tests/run.sh), and liberttyd for Linux (x86_64, aarch64),
+# built with Swift's static Linux SDK and started on Linux. The Linux
+# binaries are kept as the run's artifact: scripts/fetch-linux-liberttyd.sh
+# takes them into Resources/remote for a release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  ZIG_VERSION: 0.16.0
+  SWIFT_VERSION: 6.4.1
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Zig
+        run: |
+          curl -fsSL https://ziglang.org/download/$ZIG_VERSION/zig-aarch64-macos-$ZIG_VERSION.tar.xz | tar xJ -C $RUNNER_TEMP
+          echo "$RUNNER_TEMP/zig-aarch64-macos-$ZIG_VERSION" >> $GITHUB_PATH
+      - name: libghostty-vt
+        run: ZIG=zig scripts/build-libghostty-vt.sh
+      - name: Unit tests
+        run: swift test
+      - name: Headless suite
+        run: zsh tests/run.sh
+      - name: Test output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: build/test-output
+
+  linux-liberttyd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container: swift:6.4.1-noble
+    steps:
+      - name: Tools
+        run: apt-get update -q && apt-get install -yq git curl xz-utils zsh
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Zig and the static Linux SDK
+        run: |
+          curl -fsSL https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz | tar xJ -C /opt
+          echo "/opt/zig-x86_64-linux-$ZIG_VERSION" >> $GITHUB_PATH
+          swift sdk install https://download.swift.org/swift-$SWIFT_VERSION-release/static-sdk/swift-$SWIFT_VERSION-RELEASE/swift-$SWIFT_VERSION-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz \
+            --checksum cef5592d7430ed3c5ae1ddda479849c6f5252bd94a5723db1559f984caf38a7c
+      - name: Build
+        run: |
+          git config --global --add safe.directory '*'
+          mkdir -p out
+          for arch in x86_64 aarch64; do
+            (cd vendor/ghostty && zig build -Demit-lib-vt=true -Demit-xcframework=false -Doptimize=ReleaseFast \
+              -Dtarget=$arch-linux-musl --prefix $PWD/../../build/linux/$arch)
+            LIBERTTY_VT_LIBRARY=$PWD/build/linux/$arch/lib/libghostty-vt.a swift build -c release --product liberttyd \
+              --swift-sdk $arch-swift-linux-musl --scratch-path build/linux/swiftpm-$arch --static-swift-stdlib -Xlinker -s
+            cp $(LIBERTTY_VT_LIBRARY=$PWD/build/linux/$arch/lib/libghostty-vt.a swift build -c release --product liberttyd \
+              --swift-sdk $arch-swift-linux-musl --scratch-path build/linux/swiftpm-$arch --show-bin-path)/liberttyd out/liberttyd-linux-$arch
+          done
+          zsh scripts/daemon-fingerprint.sh > out/liberttyd-linux.source
+          ls -la out
+      - name: Starts and listens (x86_64)
+        run: |
+          out/liberttyd-linux-x86_64 --version
+          LIBERTTY_DAEMON_SOCKET=/tmp/l.sock LIBERTTY_DAEMON_LOG=/tmp/l.log out/liberttyd-linux-x86_64 &
+          for i in $(seq 50); do [ -S /tmp/l.sock ] && break; sleep 0.1; done
+          test -S /tmp/l.sock && cat /tmp/l.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: liberttyd-linux
+          path: out/
+
+  linux-liberttyd-arm:
+    needs: linux-liberttyd
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: liberttyd-linux
+          path: out
+      - name: Starts and listens (aarch64)
+        run: |
+          chmod +x out/liberttyd-linux-aarch64
+          out/liberttyd-linux-aarch64 --version
+          LIBERTTY_DAEMON_SOCKET=/tmp/l.sock LIBERTTY_DAEMON_LOG=/tmp/l.log out/liberttyd-linux-aarch64 &
+          for i in $(seq 50); do [ -S /tmp/l.sock ] && break; sleep 0.1; done
+          test -S /tmp/l.sock && cat /tmp/l.log

@@ -6,6 +6,12 @@
 #                                         again (changelog or script changes), from the same zip
 #   scripts/release.sh VERSION --refresh  …and upload them over the published ones
 #
+# Before it builds anything new it checks: the unit tests and the headless
+# suite pass (--skip-tests skips them, saying so), and the Linux liberttyd
+# in Resources/remote was built from this commit's daemon sources
+# (Resources/remote/liberttyd-linux.source; scripts/fetch-linux-liberttyd.sh
+# takes CI's) — --allow-stale-linux ships older ones anyway, saying so.
+#
 # Staged: Libertty-VERSION.zip (what updates install), Libertty-VERSION.dmg,
 # appcast.json (the update feed: version, URL, SHA-256, Ed25519 signature,
 # notes from docs/CHANGELOG.md), libertty.rb (the Homebrew cask) and
@@ -15,10 +21,17 @@
 set -euo pipefail
 ROOT=${0:A:h:h}
 cd $ROOT
-USAGE="usage: scripts/release.sh VERSION [--publish | --restage | --refresh]"
+USAGE="usage: scripts/release.sh VERSION [--publish | --restage | --refresh] [--skip-tests] [--allow-stale-linux]"
 VERSION=${1:?$USAGE}
-MODE=${2:-}
-[[ -z $MODE || $MODE == --publish || $MODE == --restage || $MODE == --refresh ]] || { echo $USAGE; exit 2; }
+MODE= SKIP_TESTS=0 STALE_LINUX=0
+for a in ${@:2}; do
+  case $a in
+    --publish|--restage|--refresh) MODE=$a ;;
+    --skip-tests) SKIP_TESTS=1 ;;
+    --allow-stale-linux) STALE_LINUX=1 ;;
+    *) echo $USAGE; exit 2 ;;
+  esac
+done
 source scripts/release.conf
 KEY=${LIBERTTY_UPDATE_KEY:-$HOME/.config/libertty-release/update.key}
 [[ -f $KEY ]] || { echo "no signing key at $KEY"; exit 1; }
@@ -45,6 +58,36 @@ if [[ $MODE == --restage || $MODE == --refresh ]]; then
       || { echo "$ZIP isn't the zip published for v$VERSION ($PUBLISHED): its feed and cask would fail to verify"; exit 1; }
   fi
 else
+  # What goes out was checked: the Linux daemon is this commit's, the tests pass.
+  want=$(scripts/daemon-fingerprint.sh)
+  have=$(cat Resources/remote/liberttyd-linux.source 2>/dev/null || echo "unknown")
+  if [[ $have != $want ]]; then
+    if (( STALE_LINUX )); then
+      echo "warning: shipping a Linux liberttyd built from other sources ($have, not $want): --allow-stale-linux"
+    else
+      echo "Resources/remote's Linux liberttyd isn't this commit's ($have, not $want):"
+      echo "  push, let CI build it, then scripts/fetch-linux-liberttyd.sh and commit Resources/remote"
+      echo "  (or scripts/build-linux-liberttyd.sh here; --allow-stale-linux ships the old one)"
+      exit 1
+    fi
+  fi
+  # Tested already (staging, then --publish after the version commit) with
+  # no code changed since: not again.
+  CODE=(Sources Tests Package.swift tests Resources vendor/codemirror blocks)
+  TESTED=$(cat build/release-tested 2>/dev/null || true)
+  if (( SKIP_TESTS )); then
+    echo "warning: not testing (--skip-tests)"
+  elif [[ -n $TESTED ]] && git cat-file -e $TESTED 2>/dev/null && git diff --quiet $TESTED -- $CODE \
+       && [[ -z $(git status --porcelain -- $CODE) ]]; then
+    echo "tested at ${TESTED:0:7}; no code changed since"
+  else
+    echo "== swift test"
+    swift test > build/release-unit-tests.log 2>&1 || { tail -20 build/release-unit-tests.log; echo "unit tests failed: nothing released"; exit 1; }
+    echo "== tests/run.sh"
+    zsh tests/run.sh > build/release-suite.log 2>&1 || { grep -E "^FAIL" build/release-suite.log; echo "the suite failed: nothing released"; exit 1; }
+    tail -1 build/release-suite.log
+    [[ -z $(git status --porcelain -- $CODE) ]] && git rev-parse HEAD > build/release-tested
+  fi
   # The version lives in bundle.sh; set it so every later build agrees.
   sed -i '' "s/^VERSION=.*/VERSION=\${LIBERTTY_VERSION:-$VERSION}/" scripts/bundle.sh
   scripts/package.sh

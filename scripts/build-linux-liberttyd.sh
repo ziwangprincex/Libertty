@@ -34,3 +34,11 @@ for arch in ${=ARCHS:-x86_64 aarch64}; do  # ${=…}: zsh splits it into words
   cp $BIN/liberttyd $ROOT/Resources/remote/liberttyd-linux-$arch
   ls -la $ROOT/Resources/remote/liberttyd-linux-$arch
 done
+# What they're built from (scripts/release.sh checks it): this commit's
+# daemon sources — uncommitted changes would make it a lie.
+if git -C $ROOT diff --quiet HEAD -- Sources/LiberttyCore Sources/liberttyd Sources/CPty Sources/CGhosttyVt; then
+  $ROOT/scripts/daemon-fingerprint.sh > $ROOT/Resources/remote/liberttyd-linux.source
+else
+  echo "build-linux-liberttyd: the daemon's sources have uncommitted changes: no liberttyd-linux.source written" >&2
+  rm -f $ROOT/Resources/remote/liberttyd-linux.source
+fi

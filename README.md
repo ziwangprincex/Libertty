@@ -248,7 +248,8 @@ session ID.
 
 ## Tests and diagnostics
 
-`tests/run.sh [release]` runs the headless test suite against a private liberttyd,
+`swift test` runs the unit tests (well under a second). `tests/run.sh [release]` runs the
+headless test suite, four checks at a time (about 4 minutes), each against a private liberttyd,
 config and data folder; it opens no visible window and does not take focus. It covers
 renderer snapshots (written to `build/test-output/`), parsing, config, links,
 selection, shell integration, sessions, paste, throughput, and UI scripts for the
@@ -258,7 +259,9 @@ window features and every block (`tests/fixtures/*.txt`, run with
 `tests/update-test.sh` checks the update path offline. Two checks run by hand:
 `tests/screen.sh` records what the window server shows (a real window for about 40 s,
 needs Screen Recording permission), and `tests/linux.sh` runs liberttyd on Linux in
-Docker containers (aarch64, x86_64; bash and fish).
+Docker containers (aarch64, x86_64; bash and fish). CI runs the unit tests and the suite on
+every push and builds liberttyd for Linux. `docs/DEVELOPMENT.md` has the layout, how a bug is
+fixed (a failing test first) and the release steps.
 
 ```sh
 # A command's final screen as PNG, without a window

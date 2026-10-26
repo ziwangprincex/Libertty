@@ -18,6 +18,8 @@ let vtSwift: [SwiftSetting] = [.unsafeFlags(["-Xcc", "-I\(vtHeaders)"])]
 // adds -Xswiftc -DLIBERTTY_PROBES, in a scratch path of its own.
 // swift-testing's macros, from the toolchain in use (Xcode's or the Command Line Tools').
 let toolchain: String = {
+    // (Linux has no xcrun: liberttyd's build there doesn't build the tests.)
+    guard FileManager.default.isExecutableFile(atPath: "/usr/bin/xcrun") else { return "/usr" }
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
     p.arguments = ["--find", "swift"]

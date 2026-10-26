@@ -168,7 +168,7 @@ libertty +swap-pane [ID] OTHER ; libertty +resize-pane [ID] --left 40 | --equali
 
 ## 测试与诊断
 
-`tests/run.sh [release]` 运行无界面测试套件，使用独立的 liberttyd、配置目录和数据目录，不打开可见窗口，也不抢占焦点。覆盖范围包括渲染快照（输出到 `build/test-output/`）、解析、配置、链接、选区、shell 集成、会话、粘贴、吞吐量，以及窗口功能和每个块的 UI 脚本（`tests/fixtures/*.txt`，由 `Libertty --ui-probe SCRIPT OUTDIR` 执行）。找不到 `jupyter server` 时跳过 Notebook 测试（`LIBERTTY_TEST_JUPYTER` 可指定路径）。`tests/update-test.sh` 离线检查更新流程。另有两项需要手动运行的检查：`tests/screen.sh` 录下窗口服务器实际显示的画面（会显示一个真实窗口约 40 秒，需要屏幕录制权限）；`tests/linux.sh` 在 Docker 容器里的 Linux（aarch64、x86_64；bash 和 fish）上运行 liberttyd。
+`swift test` 运行单元测试（不到一秒）。`tests/run.sh [release]` 运行无界面测试套件（每次并行 4 项，约 4 分钟），使用独立的 liberttyd、配置目录和数据目录，不打开可见窗口，也不抢占焦点。覆盖范围包括渲染快照（输出到 `build/test-output/`）、解析、配置、链接、选区、shell 集成、会话、粘贴、吞吐量，以及窗口功能和每个块的 UI 脚本（`tests/fixtures/*.txt`，由 `Libertty --ui-probe SCRIPT OUTDIR` 执行）。找不到 `jupyter server` 时跳过 Notebook 测试（`LIBERTTY_TEST_JUPYTER` 可指定路径）。`tests/update-test.sh` 离线检查更新流程。另有两项需要手动运行的检查：`tests/screen.sh` 录下窗口服务器实际显示的画面（会显示一个真实窗口约 40 秒，需要屏幕录制权限）；`tests/linux.sh` 在 Docker 容器里的 Linux（aarch64、x86_64；bash 和 fish）上运行 liberttyd。CI 在每次推送时运行单元测试和测试套件，并编译 Linux 版 liberttyd。`docs/DEVELOPMENT.md` 说明代码结构、修 bug 的流程（先写失败的测试）和发布步骤。
 
 ```sh
 # 不开窗口，把命令的最终屏幕输出为 PNG

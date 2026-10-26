@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Inside, for whoever builds Libertty: the window controller in nine files by what each does; the probes and benches out of release builds (a release asked for one stops, rather than opening a window that could take over your sessions); the app as a library with unit tests (`swift test`); `tests/run.sh` four checks at a time, each with a liberttyd of its own, in about 4 minutes instead of 10, its UI expectations patient on a loaded machine; CI for the Mac and for Linux liberttyd; `scripts/release.sh` refusing a Linux liberttyd that isn't the commit's and running the tests first; `docs/DEVELOPMENT.md`.
+
 ## 0.3.8
 
 > Settings from the command palette, tried out live; a Theme Editor; panes moved by dragging; compact and glass panes, a theme accent and colored tab icons; minimum contrast and line height; Codex in agent setup; Web Access over Tailscale.
