@@ -36,4 +36,14 @@ struct WireTests {
         while seen.count < 200, let f = b.receive() { seen.append(String(decoding: f.payload, as: UTF8.self)) }
         #expect(seen == (0..<200).map(String.init))
     }
+
+    @Test func osc7Paths() {
+        #expect(SessionInfo.fileURL("file://mac/Users/me/%E6%88%91%E7%9A%84%20%E6%96%87%E6%A1%A3")! == ("mac", "/Users/me/我的 文档"))
+        #expect(SessionInfo.fileURL("file://mac/tmp/a#b?c")! == ("mac", "/tmp/a#b?c"))
+        #expect(SessionInfo.fileURL("file:///tmp/x")! == ("", "/tmp/x"))
+        #expect(SessionInfo.fileURL("http://x/y") == nil)
+        #expect(SessionInfo.percentDecoded("100%") == nil)
+        #expect(SessionInfo.percentDecoded("%ff") == nil)
+        #expect(SessionInfo.percentDecoded("a%2Fb") == "a/b")
+    }
 }

@@ -15,6 +15,7 @@ DOCKER=${DOCKER:-$(command -v docker || echo /Applications/Docker.app/Contents/R
 # Docker Desktop's credential helper sits beside its docker.
 export PATH=${DOCKER:h}:$PATH
 $DOCKER info > /dev/null 2>&1 || { echo "linux: skipped — Docker isn't running"; exit 0; }
+mkdir -p $ROOT/build
 swift build > $ROOT/build/test-build.log 2>&1 || { grep -E "error:" $ROOT/build/test-build.log; exit 1; }
 LIBERTTY=$(swift build --show-bin-path)/Libertty
 failures=0

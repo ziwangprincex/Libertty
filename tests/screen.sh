@@ -11,6 +11,7 @@
 set -u
 ROOT=${0:A:h:h}
 cd $ROOT
+mkdir -p $ROOT/build
 swift build > $ROOT/build/test-build.log 2>&1 || { grep -E "error:" $ROOT/build/test-build.log; exit 1; }
 OUT=${1:-$ROOT/build/test-output/screen}
 PRIVATE=$(mktemp -d)

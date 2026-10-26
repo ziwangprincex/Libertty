@@ -204,7 +204,32 @@ public struct SessionInfo: Codable, Sendable {
         let rest = raw.dropFirst("file://".count)
         guard let slash = rest.firstIndex(of: "/") else { return nil }
         let encoded = String(rest[slash...])
-        return (String(rest[..<slash]), encoded.removingPercentEncoding ?? encoded)
+        return (String(rest[..<slash]), percentDecoded(encoded) ?? encoded)
+    }
+
+    /// `%XX` back to bytes, read as UTF-8; nil for a stray `%` or bytes that
+    /// aren't UTF-8. (By hand: FoundationEssentials, liberttyd's on Linux,
+    /// has no `removingPercentEncoding`.)
+    public static func percentDecoded(_ s: String) -> String? {
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(s.utf8.count)
+        var it = s.utf8.makeIterator()
+        func hex(_ c: UInt8) -> UInt8? {
+            switch c {
+            case 0x30...0x39: c - 0x30
+            case 0x41...0x46: c - 0x41 + 10
+            case 0x61...0x66: c - 0x61 + 10
+            default: nil
+            }
+        }
+        while let c = it.next() {
+            guard c == 0x25 else { bytes.append(c); continue }
+            guard let a = it.next().flatMap(hex), let b = it.next().flatMap(hex) else { return nil }
+            bytes.append(a << 4 | b)
+        }
+        // Bytes that aren't UTF-8 come out as U+FFFD: then not the same bytes.
+        let text = String(decoding: bytes, as: UTF8.self)
+        return text.utf8.elementsEqual(bytes) ? text : nil
     }
 }
 

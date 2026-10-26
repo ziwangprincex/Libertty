@@ -15,6 +15,7 @@ BUILD=(-c $CONFIG)
 # liberttyd embeds its Info.plist at link time, a file SwiftPM doesn't watch.
 [[ ! $ROOT/Sources/liberttyd/Info.plist -nt $(swift build $BUILD --show-bin-path)/liberttyd ]] || touch $ROOT/Sources/liberttyd/main.swift
 # A failed build must stop here: an old binary wouldn't know the probe flags.
+mkdir -p $ROOT/build
 swift build $BUILD > $ROOT/build/test-build.log 2>&1 || { grep -E "error:" $ROOT/build/test-build.log; exit 1; }
 BIN=$(swift build $BUILD --show-bin-path)
 LIBERTTY=$BIN/Libertty
