@@ -39,26 +39,74 @@ wait $warm 2> /dev/null
 # Nothing may hang the suite: every command gets two minutes.
 limit() { perl -e 'alarm shift; exec @ARGV or die "$ARGV[0]: $!\n"' 120 "$@"; }
 
-check() {  # check NAME COMMAND... : passes if COMMAND succeeds
-  local name=$1; shift
-  if limit "$@" > $OUT/$name.log 2>&1; then
-    echo "ok    $name"
+# Checks run side by side, JOBS at a time (LIBERTTY_TEST_JOBS; 1 runs them
+# one after another): each with a liberttyd and a data folder of its own,
+# and its own copy of the empty config (a probe may write its config). A
+# stretch that shares the suite's liberttyd between commands runs with
+# SERIAL=1. Results print as each check ends, a summary in order at the end.
+JOBS=${LIBERTTY_TEST_JOBS:-4}
+SERIAL=0
+typeset -a ORDER
+mkdir -p $PRIVATE/jobs
+
+judge() {  # judge NAME PATTERN COMMAND... : PATTERN empty = the exit status decides
+  local name=$1 pattern=$2; shift 2
+  local dir=$PRIVATE/jobs/$name ok=0 a
+  mkdir -p $dir
+  local -a args=()
+  for a in "$@"; do
+    if [[ $a == XDG_CONFIG_HOME=$PRIVATE/empty-config ]]; then mkdir -p $dir/config; a=XDG_CONFIG_HOME=$dir/config; fi
+    args+=("$a")
+  done
+  if (( SERIAL )); then
+    limit "${args[@]}" > $OUT/$name.log 2>&1
   else
-    echo "FAIL  $name (see $OUT/$name.log)"
-    (( failures++ ))
+    limit env LIBERTTY_DAEMON_SOCKET=$dir/d.sock LIBERTTY_DAEMON_LOG=$dir/d.log LIBERTTY_DATA_DIR=$dir \
+      "${args[@]}" > $OUT/$name.log 2>&1
+  fi
+  local code=$?
+  if [[ -z $pattern ]]; then (( code == 0 )) && ok=1; else grep -qE -- "$pattern" $OUT/$name.log && ok=1; fi
+  if (( ok )); then
+    echo "ok    $name" | tee $dir/result
+  elif [[ -z $pattern ]]; then
+    echo "FAIL  $name (see $OUT/$name.log)" | tee $dir/result
+  else
+    echo "FAIL  $name: no /$pattern/ (see $OUT/$name.log)" | tee $dir/result
   fi
 }
 
-expect() {  # expect NAME PATTERN COMMAND... : passes if the output matches PATTERN
-  local name=$1 pattern=$2; shift 2
-  limit "$@" > $OUT/$name.log 2>&1
-  if grep -qE -- "$pattern" $OUT/$name.log; then
-    echo "ok    $name"
-  else
-    echo "FAIL  $name: no /$pattern/ (see $OUT/$name.log)"
-    (( failures++ ))
-  fi
+# UI probes are timed by the wall clock (a step waits so long, then looks):
+# at most UI_JOBS of them at once, the rest of the slots for everything else.
+UI_JOBS=${LIBERTTY_TEST_UI_JOBS:-4}
+typeset -a UI_PIDS CHECK_PIDS
+
+# Until every check started so far is done (not `wait`: servers the suite
+# runs in the background never end).
+settle() { local p; for p in $CHECK_PIDS; do wait $p 2> /dev/null; done; CHECK_PIDS=(); }
+
+run() {  # run NAME PATTERN COMMAND...
+  ORDER+=($1)
+  if (( SERIAL || JOBS <= 1 )); then judge "$@"; return; fi
+  local ui=0
+  [[ " $* " == *" --ui-probe "* ]] && ui=1
+  while true; do
+    UI_PIDS=(${UI_PIDS:#}) ; local alive=() p
+    for p in $UI_PIDS; do kill -0 $p 2> /dev/null && alive+=($p); done
+    UI_PIDS=($alive)
+    (( ${#${(f)"$(jobs -r)"}} < JOBS )) && (( ! ui || ${#UI_PIDS} < UI_JOBS )) && break
+    sleep 0.05
+  done
+  judge "$@" &
+  CHECK_PIDS+=($!)
+  (( ui )) && UI_PIDS+=($!)
 }
+
+# Until check NAME has its result: two that can't share the machine (WebKit's
+# store is the app's, whichever process opens it).
+after() { while [[ ! -e $PRIVATE/jobs/$1/result ]]; do sleep 0.1; done; }
+
+check() { local name=$1; shift; run $name "" "$@"; }  # check NAME COMMAND... : passes if COMMAND succeeds
+expect() { run "$@"; }  # expect NAME PATTERN COMMAND... : passes if the output matches PATTERN
 
 # Rendering (look at the PNGs)
 check snapshot-showcase $LIBERTTY --snapshot $OUT/showcase.png --cols 90 --rows 15 -- sh $ROOT/tests/fixtures/showcase.sh
@@ -103,7 +151,7 @@ expect links-cjk-punct 'text https://github.com/foo/bar 0:' $LIBERTTY --link-pro
 expect links-cjk-quote 'text https://github.com/foo/bar 0:' $LIBERTTY --link-probe 'printf "访问“https://github.com/foo/bar”获取\n"'
 expect links-kana 'text https://ja.wikipedia.org/wiki/佐々木小次郎 0:' $LIBERTTY --link-probe 'printf "https://ja.wikipedia.org/wiki/佐々木小次郎 です\n"'
 expect links-cjk-path 'text https://zh.wikipedia.org/wiki/中文 0:' $LIBERTTY --link-probe 'printf "看 https://zh.wikipedia.org/wiki/中文。\n"'
-expect links-path 'CLI.swift line 42 col 7' $LIBERTTY --link-probe 'printf "Sources/Libertty/App/CLI.swift:42:7: error\n"'
+expect links-path 'CLI.swift line 42 col 7' $LIBERTTY --link-probe 'printf "Sources/LiberttyApp/App/CLI.swift:42:7: error\n"'
 expect selection-autoscroll 'drag up \+ 3 ticks: line2' $LIBERTTY --selection-probe
 expect selection-extend 'shift-click extend: line28 \| line29 \| line' $LIBERTTY --selection-probe
 expect zsh-command-finished 'finished: printf .* exit=1' $LIBERTTY --command-probe zsh
@@ -159,7 +207,8 @@ expect remote-host 'remote-probe: all passed' env LIBERTTY_SSH=$ROOT/tests/fixtu
 expect web-access 'web-probe: all passed' env LIBERTTY_WEB_PORT=$(( 17000 + RANDOM % 900 )) \
   LIBERTTY_TAILSCALE=$ROOT/tests/fixtures/fake-tailscale FAKE_TAILSCALE_LOG=$PRIVATE/tailscale.log $LIBERTTY --web-probe
 
-# Sessions (liberttyd)
+# Sessions (liberttyd): commands one after another on the suite's liberttyd.
+SERIAL=1
 ID=$($LIBERTTY +new-session -e 'printf "persisted\n"; sleep 30')
 sleep 0.5
 expect session-list "$ID" $LIBERTTY +list-sessions
@@ -175,6 +224,7 @@ $LIBERTTY +kill-session $ID > /dev/null
 WAITID=$($LIBERTTY +new-session -e 'sleep 0.3; exit 4')
 $LIBERTTY +wait $WAITID > /dev/null 2>&1
 if [[ $? == 4 ]]; then echo "ok    session-wait-status"; else echo "FAIL  session-wait-status"; (( failures++ )); fi
+SERIAL=0
 
 # ⌘K clears liberttyd's copy too (or the history would come back on reattach)
 expect clear-reaches-liberttyd 'before ⌘K: 50, after: [0-2], window: [0-2]$' $LIBERTTY --clear-probe
@@ -347,7 +397,7 @@ expect tasks 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixt
 CV=$PRIVATE/canvas
 mkdir -p $CV
 cp $ROOT/tests/fixtures/sketch.excalidraw $CV/
-expect canvas 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed -e "s|@DIR@|$CV|g" -e "s|@DATA@|$PRIVATE|g" $ROOT/tests/fixtures/canvas.txt)" $OUT
+expect canvas 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed -e "s|@DIR@|$CV|g" -e "s|@DATA@|$PRIVATE/jobs/canvas|g" $ROOT/tests/fixtures/canvas.txt)" $OUT
 # The profiler: a busy loop recorded with sample, shown in speedscope, kept.
 expect profiler 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/profiler.txt)" $OUT
 pkill -f "while True: sum(i \* i for i in range(9999))" 2> /dev/null
@@ -364,7 +414,7 @@ expect sqlite 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@DIR@|$SQ|g"
 mkdir -p $PRIVATE/plugin-config/libertty
 cp -R $ROOT/tests/fixtures/plugins $PRIVATE/plugin-config/libertty/plugins
 expect plugins 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/plugin-config $LIBERTTY --ui-probe \
-  "$(sed -e "s|@DATA@|$PRIVATE|g" -e "s|@CONFIG@|$PRIVATE/plugin-config|g" $ROOT/tests/fixtures/plugins.txt)" $OUT
+  "$(sed -e "s|@DATA@|$PRIVATE/jobs/plugins|g" -e "s|@CONFIG@|$PRIVATE/plugin-config|g" $ROOT/tests/fixtures/plugins.txt)" $OUT
 # The notebook block, in a jupyter of this run's (LIBERTTY_TEST_JUPYTER, the
 # one in build/jupyter, or the PATH's); skipped where there's none.
 JUPYTER=${LIBERTTY_TEST_JUPYTER:-}
@@ -390,8 +440,11 @@ sleep 0.5
 expect browser 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@SITE@|http://127.0.0.1:$PORT|g" $ROOT/tests/fixtures/browser.txt)" $OUT
 mkdir -p $PRIVATE/browser-config/libertty
 print 'browser-automation = true' > $PRIVATE/browser-config/libertty/config
+settle
+SERIAL=1
 expect browser-automation 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/browser-config $LIBERTTY --ui-probe \
   "$(sed -e "s|@SITE@|http://127.0.0.1:$PORT|g" -e "s|@HOST@|127.0.0.1:$PORT|g" -e "s|@OUT@|$OUT|g" $ROOT/tests/fixtures/browser-automation.txt)" $OUT
+SERIAL=0
 kill $SITE_PID 2>/dev/null
 # Park Pane / Unpark Pane.
 expect park 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/park.txt)" $OUT
@@ -409,6 +462,12 @@ expect cli-wait 'cli-wait: all passed' zsh $ROOT/tests/cli-wait-test.sh $LIBERTT
 expect send-key 'send-key: all passed' zsh $ROOT/tests/send-key-test.sh $LIBERTTY
 expect import-ghostty 'import-ghostty: all passed' zsh $ROOT/tests/import-ghostty-test.sh $LIBERTTY
 
+# The benches last, alone (everything else done): they take every core
+# they get, starving whatever runs beside them, and their numbers mean
+# something only on a quiet machine.
+settle
+SERIAL=1
+
 # Big paste: every byte arrives, through a full pty (EAGAIN) and through liberttyd
 expect paste-local 'read 2000000 ' $LIBERTTY --paste-probe
 expect paste-liberttyd 'read 2000000 ' $LIBERTTY --paste-probe --persist
@@ -416,7 +475,14 @@ expect paste-liberttyd 'read 2000000 ' $LIBERTTY --paste-probe --persist
 # Throughput, end to end (no window), both paths
 expect throughput-local 'local pty: [0-9]+ MB/s' $LIBERTTY --session-bench $ROOT/bench/payloads/dense_cells.bin --mb 100
 expect throughput-liberttyd 'via liberttyd: [0-9]+ MB/s' $LIBERTTY --session-bench $ROOT/bench/payloads/dense_cells.bin --mb 100 --persist
+settle
 grep -hE 'MB/s' $OUT/throughput-*.log | sed 's/^/      /'
 
+# Every check's result, in the suite's order.
+for name in $ORDER; do
+  result=$(cat $PRIVATE/jobs/$name/result 2>/dev/null || echo "FAIL  $name: didn't finish")
+  [[ $result == ok* ]] || { (( failures++ )); echo "$result"; }
+done
+echo "${#ORDER} checks"
 (( failures == 0 )) && echo "all passed" || echo "$failures failed"
 exit $(( failures > 0 ))

@@ -190,707 +190,726 @@ enum UIProbe {
         }
         defer { DistributedNotificationCenter.default().removeObserver(closedObserver) }
         for step in steps {
-            switch step {
-            case .key(let spec):
-                // To whatever has the keyboard: the palette while it's open.
-                if !press(spec, in: CommandPalette.openPanel ?? window) {
-                    print("FAIL  ui-probe key: unknown key \(spec)")
-                    failures += 1
+            // An expectation that doesn't hold yet is asked again for a while
+            // (`LIBERTTY_PROBE_PATIENCE` seconds, 3 by default): a loaded machine
+            // is slow, not wrong. Only its last answer is printed.
+            let retries = Self.asksAgain(step)
+            let deadline = Date().addingTimeInterval(retries ? Self.patience : 0)
+            let before = failures
+            while true {
+                held = retries ? [] : nil
+                repeat {  // (a step's `continue` ends its attempt)
+                    switch step {
+                    case .key(let spec):
+                        // To whatever has the keyboard: the palette while it's open.
+                        if !press(spec, in: CommandPalette.openPanel ?? window) {
+                            print("FAIL  ui-probe key: unknown key \(spec)")
+                            failures += 1
+                        }
+                        pump(0.15)
+                    case .type(let text):
+                        for spec in text.map(String.init) { _ = press(spec, in: CommandPalette.openPanel ?? window) }
+                        pump(0.35)
+                    case .click(let x, let y):
+                        click(x: x, y: y, in: window)
+                        pump(0.2)
+                    case .clickLabeled(let label):
+                        // Where it is now, so the script doesn't depend on layout —
+                        // once it's really there: a column still sliding in has its
+                        // controls placed under whatever it will uncover.
+                        guard let center = reachable(label, in: window) else {
+                            let blocker = find(label, in: window.contentView).flatMap { control -> String? in
+                                guard let content = window.contentView else { return nil }
+                                let frame = control.convert(control.bounds, to: content)
+                                let center = NSPoint(x: frame.midX, y: frame.midY)
+                                let hit = content.hitTest(center).map { String(describing: type(of: $0)) } ?? "nothing"
+                                return "\(hit) (it's at \(frame.integral) in \(content.bounds.size); "
+                                    + "inspector \(controller.isInspectorShown ? "shown" : "hidden"))"
+                            }
+                            print("FAIL  ui-probe click: \(label) " + (blocker.map { "is covered by \($0)" } ?? "isn't on screen"))
+                            failures += 1
+                            continue
+                        }
+                        click(x: center.x, y: center.y, in: window)
+                        pump(0.2)
+                    case .wait(let seconds):
+                        pump(seconds)
+                    case .tab(let which):
+                        if which == "new" || which == "here" {
+                            // "here": as ⌘T does, in the focused pane's folder.
+                            if controller.newTab(workingDirectory: which == "new" ? scratch : nil) == nil {
+                                print("FAIL  ui-probe tab: couldn't open one")
+                                failures += 1
+                            }
+                        } else if let n = Int(which), n >= 1, n <= controller.tabs.count {
+                            controller.select(controller.tabs[n - 1])
+                        } else {
+                            print("FAIL  ui-probe tab: no tab \(which)")
+                            failures += 1
+                        }
+                        pump(0.5)
+                    case .shot(let name):
+                        capture(window, to: output + "/" + name)
+                        // The palette's own panel beside it, while one is open.
+                        if let panel = CommandPalette.openPanel {
+                            capture(panel, to: output + "/" + (name as NSString).deletingPathExtension + "-palette.png")
+                        }
+                        if let editor = MainActor.assumeIsolated({ ThemeEditor.shared.openWindow }) {
+                            capture(editor, to: output + "/" + (name as NSString).deletingPathExtension + "-theme-editor.png")
+                        }
+                    case .size(let width, let height):
+                        var frame = window.frame
+                        frame.size = NSSize(width: width, height: height)
+                        window.setFrame(frame, display: true)
+                        pump(0.4)
+                    case .expect(let text):
+                        // Newline-joined: a match may not span two panes' text.
+                        let all = screenText(controller)
+                        if all.contains(text) {
+                            print("ok    ui-probe expect \(text)")
+                        } else {
+                            print("FAIL  ui-probe expect: no \(text) on screen; screen ends: …\(all.suffix(80))")
+                            failures += 1
+                        }
+                    case .expectPalette(let text):
+                        // The palette's first row, while it's open.
+                        let first = CommandPalette.shownRows.map { $0.first ?? "(an empty palette)" } ?? "(no palette open)"
+                        if first.contains(text) {
+                            print("ok    ui-probe palette shows \(text)")
+                        } else {
+                            print("FAIL  ui-probe palette: first row is \(first.debugDescription), not \(text)")
+                            failures += 1
+                        }
+                    case .expectStatus(let text):
+                        // Word for word: `dock=1` isn't `dock=10`, `sounds=` is none.
+                        let summary = controller.statusSummary
+                        let shown = Set(summary.split(separator: " "))
+                        if text.split(separator: " ").allSatisfy(shown.contains) {
+                            print("ok    ui-probe status shows \(text)")
+                        } else {
+                            print("FAIL  ui-probe status: no \(text) in \(summary)")
+                            failures += 1
+                        }
+                    case .expectTab(let text):
+                        // The sidebar rows: name, detail and pane count, as shown.
+                        let rows = controller.sidebarRows
+                        if rows.contains(where: { $0.contains(text) }) {
+                            print("ok    ui-probe tab shows \(text)")
+                        } else {
+                            print("FAIL  ui-probe tab: no row shows \(text); rows: \(rows)")
+                            failures += 1
+                        }
+                    case .workspace(let which):
+                        if which == "new" || which.hasPrefix("new:") {
+                            let name = which.hasPrefix("new:") ? String(which.dropFirst(4)) : ""
+                            if !controller.newWorkspace(named: name) { print("FAIL  ui-probe workspace: couldn't make one"); failures += 1 }
+                        } else if which == "close" {
+                            controller.closeWorkspace(at: controller.activeWorkspace)
+                        } else if let n = Int(which), n >= 1, n <= controller.workspaceNames.count {
+                            controller.switchWorkspace(to: n - 1)
+                        } else {
+                            print("FAIL  ui-probe workspace: no \(which)")
+                            failures += 1
+                        }
+                        pump(0.5)
+                    case .roundtrip:
+                        guard let saved = controller.savedState() else { print("FAIL  ui-probe roundtrip: nothing to save"); failures += 1; continue }
+                        let live = Set(controller.persistentSessionIDs)
+                        guard let copy = TerminalWindowController.restore(saved, live: live, config: Config()) else {
+                            print("FAIL  ui-probe roundtrip: the saved window didn't come back")
+                            failures += 1
+                            continue
+                        }
+                        let parked = { (c: TerminalWindowController) in c.everyTab.map { $0.parked.count } }
+                        let same = copy.workspaceNames == controller.workspaceNames && copy.activeWorkspace == controller.activeWorkspace
+                            && copy.workspaceTabs.map(\.count) == controller.workspaceTabs.map(\.count)
+                            && parked(copy) == parked(controller)
+                            && copy.everyTab.map { $0.parked.map(\.showsCard) } == controller.everyTab.map { $0.parked.map(\.showsCard) }
+                        if same {
+                            print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy))")
+                        } else {
+                            print("FAIL  ui-probe roundtrip: \(copy.workspaceNames)/\(copy.activeWorkspace)/\(copy.workspaceTabs.map(\.count))/\(parked(copy)) "
+                                  + "vs \(controller.workspaceNames)/\(controller.activeWorkspace)/\(controller.workspaceTabs.map(\.count))/\(parked(controller))")
+                            failures += 1
+                        }
+                    case .open(let path, let line, let edit):
+                        // A block's address opens as itself (`open:libertty-block://screen?own=1`).
+                        let url = path.hasPrefix(Blocks.scheme + "://") ? URL(string: path)! : URL(fileURLWithPath: path)
+                        controller.openDocument(url, line: line, edit: edit ? true : nil)
+                        pump(0.4)
+                    case .editorWait:
+                        let deadline = Date().addingTimeInterval(10)
+                        while controller.selectedDocument?.isEditorReady != true, Date() < deadline { pump(0.1) }
+                        if controller.selectedDocument?.isEditorReady == true {
+                            pump(0.2)
+                            print("ok    ui-probe editor ready")
+                        } else {
+                            print("FAIL  ui-probe editor: never came up (is vendor/codemirror built?)")
+                            failures += 1
+                        }
+                    case .editorJS(let script):
+                        // Diagnostics: what the page says (not a check).
+                        var answer: Any?
+                        var answered = false
+                        controller.selectedDocument?.editorEvaluate(script) { answer = $0; answered = true }
+                        let deadline = Date().addingTimeInterval(3)
+                        while !answered, Date() < deadline { pump(0.05) }
+                        print("js    \(script.prefix(60)) => \(answer.map { "\($0)" } ?? "nil")")
+                    case .editorInsert(let text):
+                        controller.selectedDocument?.editorInsert(text)
+                        pump(0.3)
+                    case .editorSave:
+                        var done: Bool?
+                        controller.selectedDocument?.save { done = $0 }
+                        let deadline = Date().addingTimeInterval(5)
+                        while done == nil, Date() < deadline { pump(0.05) }
+                        if done == true { print("ok    ui-probe saved") } else { print("FAIL  ui-probe save: \(done.map(String.init) ?? "no answer")"); failures += 1 }
+                        pump(0.3)
+                    case .expectEditor(let text):
+                        var shown: String?
+                        var answered = false
+                        controller.selectedDocument?.editorText { shown = $0; answered = true }
+                        let deadline = Date().addingTimeInterval(3)
+                        while !answered, Date() < deadline { pump(0.05) }
+                        if shown?.contains(text) == true {
+                            print("ok    ui-probe editor shows \(text)")
+                        } else {
+                            print("FAIL  ui-probe editor: no \(text.debugDescription) in \(String((shown ?? "(nothing)").prefix(120)).debugDescription)")
+                            failures += 1
+                        }
+                    case .expectDirty(let want):
+                        let dirty = controller.selectedDocument?.hasUnsavedChanges == true
+                        if dirty == want {
+                            print("ok    ui-probe \(want ? "unsaved changes" : "saved")")
+                        } else {
+                            print("FAIL  ui-probe dirty: \(dirty), wanted \(want)")
+                            failures += 1
+                        }
+                    case .expectFile(let path, let text):
+                        let contents = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+                        if contents.contains(text) {
+                            print("ok    ui-probe file has \(text.debugDescription)")
+                        } else {
+                            print("FAIL  ui-probe file: \(path) has \(String(contents.prefix(120)).debugDescription), not \(text.debugDescription)")
+                            failures += 1
+                        }
+                    case .sheet(let title):
+                        func button(in view: NSView?) -> NSButton? {
+                            guard let view else { return nil }
+                            if let b = view as? NSButton, b.title == title { return b }
+                            return view.subviews.lazy.compactMap(button(in:)).first
+                        }
+                        if let sheet = window.attachedSheet, let b = button(in: sheet.contentView) {
+                            b.performClick(nil)
+                            pump(0.5)
+                        } else {
+                            print("FAIL  ui-probe sheet: \(window.attachedSheet == nil ? "none up" : "no \(title) button")")
+                            failures += 1
+                        }
+                    case .expectSheet(let want):
+                        let up = window.attachedSheet != nil
+                        if up == want { print("ok    ui-probe sheet \(up ? "up" : "gone")") } else {
+                            print("FAIL  ui-probe sheet: \(up ? "up" : "none"), wanted \(want ? "one" : "none")")
+                            failures += 1
+                        }
+                    case .waitEdit(let token, let path):
+                        controller.openDocument(URL(fileURLWithPath: path), edit: true, waitToken: token)
+                        pump(0.4)
+                    case .expectClosed(let token):
+                        let deadline = Date().addingTimeInterval(3)
+                        while !closedEditors.contains(token), Date() < deadline { pump(0.05) }
+                        if closedEditors.contains(token) { print("ok    ui-probe editor \(token) closed") } else {
+                            print("FAIL  ui-probe editor \(token): no word that it closed")
+                            failures += 1
+                        }
+                    case .bar(let text):
+                        guard let bar = controller.selectedDocument?.browserBar else {
+                            print("FAIL  ui-probe bar: no browser in front")
+                            failures += 1
+                            continue
+                        }
+                        bar.field.stringValue = text
+                        bar.onNavigate?(text)
+                        pump(0.8)
+                    case .browser(let op, let arg, let want):
+                        let token = UUID().uuidString
+                        let out = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-browser-\(token)")
+                        var answer: Bool?
+                        let center = DistributedNotificationCenter.default()
+                        let observer = center.addObserver(forName: BrowserAutomation.replied, object: nil, queue: .main) { note in
+                            if note.userInfo?["token"] as? String == token { answer = note.userInfo?["ok"] as? String == "1" }
+                        }
+                        var info = ["op": op, "token": token, "out": out.path]
+                        if op == "type" { info["arg"] = arg.replacingOccurrences(of: " | ", with: "\u{1f}") }
+                        else if op == "screenshot" { info["file"] = arg } else { info["arg"] = arg }
+                        BrowserAutomation.handle(info, in: controller)
+                        let deadline = Date().addingTimeInterval(8)
+                        while answer == nil, Date() < deadline { pump(0.05) }
+                        center.removeObserver(observer)
+                        let said = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
+                        try? FileManager.default.removeItem(at: out)
+                        pump(0.4)
+                        guard let want else { continue }
+                        let failed = want.hasPrefix("!")
+                        let text = failed ? String(want.dropFirst()) : want
+                        if answer == !failed, text.isEmpty || said.contains(text) {
+                            print("ok    ui-probe browser \(op) \(failed ? "refused" : "says") \(text)")
+                        } else {
+                            print("FAIL  ui-probe browser \(op): \(answer.map { $0 ? "ok" : "failed" } ?? "no answer"), said \(String(said.prefix(200)).debugDescription)")
+                            failures += 1
+                        }
+                    case .pageWait:
+                        let deadline = Date().addingTimeInterval(10)
+                        var ready = false
+                        while !ready, Date() < deadline {
+                            pump(0.2)
+                            ready = (pageEvaluate(controller, "document.readyState === 'complete' && document.body.innerText.trim().length > 0 && !document.body.innerText.includes('Reading…')") as? Bool) == true
+                        }
+                        if ready { print("ok    ui-probe page up"); pump(0.3) } else { print("FAIL  ui-probe page: never drew"); failures += 1 }
+                    case .expectPage(let text, let want):
+                        let deadline = Date().addingTimeInterval(want ? 3 : 0.5)
+                        var has = false
+                        repeat {
+                            has = (pageEvaluate(controller, "document.body.innerText.includes(\(jsLiteral(text)))") as? Bool) == true
+                            if has == want { break }
+                            pump(0.15)
+                        } while Date() < deadline
+                        if has == want {
+                            print("ok    ui-probe page \(want ? "shows" : "hasn't") \(text)")
+                        } else {
+                            let shown = (pageEvaluate(controller, "document.body.innerText") as? String) ?? "(nothing)"
+                            print("FAIL  ui-probe page: \(want ? "no" : "still") \(text.debugDescription); it shows \(String(shown.prefix(240)).debugDescription)")
+                            failures += 1
+                        }
+                    case .pageClick(let text):
+                        let script = """
+                            (function(t){if(t.startsWith('css:')){const e=document.querySelector(t.slice(4));if(!e)return false;e.click();return true;}
+                            const all=[...document.querySelectorAll('button, .row, .chip, label')].filter(e=>e.offsetParent!==null);
+                            const exact=all.find(e=>e.title===t||e.textContent.trim()===t)||all.find(e=>e.textContent.includes(t));
+                            if(!exact)return false;exact.click();return true;})(\(jsLiteral(text)))
+                            """
+                        if (pageEvaluate(controller, script) as? Bool) == true { pump(0.5) } else {
+                            print("FAIL  ui-probe page-click: nothing says \(text.debugDescription)")
+                            failures += 1
+                        }
+                    case .pageType(let selector, let text):
+                        let script = """
+                            (function(s,t){const e=document.querySelector(s);if(!e)return false;e.focus();e.value=t;
+                            e.dispatchEvent(new Event('input',{bubbles:true}));return true;})(\(jsLiteral(selector)), \(jsLiteral(text)))
+                            """
+                        if (pageEvaluate(controller, script) as? Bool) == true { pump(0.2) } else {
+                            print("FAIL  ui-probe page-type: no \(selector)")
+                            failures += 1
+                        }
+                    case .pageJS(let script, let want):
+                        // Its value as text (a promise's once it settles): JSON for objects.
+                        let wrapped = "const v = await (\(script)); return typeof v === 'string' ? v : JSON.stringify(v);"
+                        var answer: Any?
+                        var answered = false
+                        controller.selectedDocument?.pageCall(wrapped) { answer = $0; answered = true }
+                        // A promise may wait for a kernel or a server to start.
+                        let deadline = Date().addingTimeInterval(60)
+                        while !answered, Date() < deadline { pump(0.03) }
+                        let said = answer as? String ?? "(no answer)"
+                        if let want {
+                            if said.contains(want) { print("ok    ui-probe page-js says \(want)") } else {
+                                print("FAIL  ui-probe page-js: \(script) said \(String(said.prefix(200)).debugDescription), not \(want.debugDescription)")
+                                failures += 1
+                            }
+                        }
+                        pump(0.2)
+                    case .expectShell(let command, let text):
+                        let p = Process()
+                        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+                        p.arguments = ["-c", command]
+                        let out = Pipe()
+                        p.standardOutput = out
+                        p.standardError = out
+                        try? p.run()
+                        let data = out.fileHandleForReading.readDataToEndOfFile()
+                        p.waitUntilExit()
+                        let said = String(decoding: data, as: UTF8.self)
+                        if said.contains(text) { print("ok    ui-probe shell says \(text)") } else {
+                            print("FAIL  ui-probe shell: \(command) said \(String(said.prefix(200)).debugDescription), not \(text.debugDescription)")
+                            failures += 1
+                        }
+                    case .shell(let command):
+                        let p = Process()
+                        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+                        p.arguments = ["-c", command]
+                        try? p.run()
+                        p.waitUntilExit()
+                        pump(0.6)
+                    case .undo:
+                        let undone = MainActor.assumeIsolated { () -> Bool in
+                            let manager = CloseUndo.shared.manager
+                            guard manager.canUndo else { return false }
+                            manager.undo()
+                            return true
+                        }
+                        if !undone {
+                            print("FAIL  ui-probe undo: nothing to undo")
+                            failures += 1
+                        }
+                        pump(0.5)
+                    case .focusEvent(let focused):
+                        controller.focusedTerminal.session.reportFocus(focused)
+                        pump(0.3)
+                    case .expectPinned:
+                        // As AppKit does at times of its own: its placement onto the layer's gravity.
+                        let panes = controller.everyTab.flatMap(\.panes)
+                        var wrong: [String] = []
+                        for pane in panes {
+                            pane.layerContentsPlacement = pane.layerContentsPlacement
+                            let summary = pane.contentsPlacementSummary
+                            if !summary.hasSuffix("gravity bottomLeft") { wrong.append(summary) }
+                            // The window server maps it onto the bounds whatever the gravity (a window brought back).
+                            if !pane.drawableFitsView { wrong.append("drawable \(pane.drawableSize) for a view of \(pane.bounds.size)") }
+                        }
+                        if wrong.isEmpty { print("ok    ui-probe \(panes.count) panes pinned top-left") } else {
+                            print("FAIL  ui-probe pinned: \(wrong.joined(separator: "; ")) (its drawable would be stretched to the view)")
+                            failures += 1
+                        }
+                    case .expectLayout(let want):
+                        pump(0.5)  // a balance under way settles
+                        let shown = controller.selectedTab.container?.layoutDescription { view in
+                            let id = ObjectIdentifier(view)
+                            if let name = paneNames[id] { return name }
+                            let name = String(UnicodeScalar(UInt8(97 + paneNames.count)))
+                            paneNames[id] = name
+                            return name
+                        } ?? "(no split)"
+                        if shown == want { print("ok    ui-probe layout \(want)") } else {
+                            print("FAIL  ui-probe layout: \(shown), not \(want)")
+                            failures += 1
+                        }
+                    case .expectLooks(let want):
+                        pump(0.3)
+                        var wrong: [String] = []
+                        for part in want.split(separator: ",") {
+                            let kv = part.split(separator: "=", maxSplits: 1).map(String.init)
+                            guard kv.count == 2 else { continue }
+                            switch kv[0] {
+                            case "compact":
+                                let first = controller.selectedTab.container?.views.first
+                                let inset = first?.frame.minX ?? -1
+                                let radius = first?.layer?.cornerRadius ?? -1
+                                let compact = inset < 1 && radius == 0
+                                if compact != (kv[1] == "yes") { wrong.append("pane at x \(inset), radius \(radius)") }
+                            case "accent":
+                                let shown = MainActor.assumeIsolated { Accent.custom?.hexString ?? "system" }
+                                if shown != kv[1] { wrong.append("accent \(shown)") }
+                            case "holes":
+                                let n = controller.areaHoleCount
+                                if String(n) != kv[1] { wrong.append("\(n) holes") }
+                            default: wrong.append("no \(kv[0])")
+                            }
+                        }
+                        if wrong.isEmpty { print("ok    ui-probe looks \(want)") } else {
+                            print("FAIL  ui-probe looks: \(wrong.joined(separator: ", ")), not \(want)")
+                            failures += 1
+                        }
+                    case .drop(let n, let side):
+                        let views = controller.selectedTab.container?.views ?? []
+                        guard views.indices.contains(n - 1), let pane = controller.selectedTab.focusedLeaf,
+                              controller.probeDrop(pane, on: views[n - 1], side) else {
+                            print("FAIL  ui-probe drop: no pane \(n) or no \(side)")
+                            failures += 1
+                            break
+                        }
+                        pump(0.6)
+                    case .themeEditor(let command):
+                        let done = MainActor.assumeIsolated { () -> Bool in
+                            let editor = ThemeEditor.shared
+                            if command == "open" { editor.show(nil) }
+                            else if command == "cancel" { editor.probeCancel() }
+                            else if command == "save" { editor.probeSave() }
+                            else if command.hasPrefix("name:") { editor.probeName(String(command.dropFirst(5))) }
+                            else if command.hasPrefix("set:"), case let parts = command.dropFirst(4).split(separator: "=", maxSplits: 1),
+                                    parts.count == 2, editor.probeSet(String(parts[0]), String(parts[1])) {}
+                            else { return false }
+                            return true
+                        }
+                        if !done {
+                            print("FAIL  ui-probe theme-editor: can't \(command)")
+                            failures += 1
+                        }
+                        pump(0.4)
+                    case .expectRuns(let path, let runs):
+                        let found = TerminalView.wouldRun(URL(fileURLWithPath: path))
+                        if found == runs { print("ok    ui-probe \(path) \(runs ? "asks first" : "opens")") } else {
+                            print("FAIL  ui-probe \(path): \(found ? "asks first" : "opens"), not \(runs ? "asks first" : "opens")")
+                            failures += 1
+                        }
+                    case .expectResizeFrames(let n):
+                        // Frames drawn inside a resize's transaction since the last of these (for the pane).
+                        let pane = controller.focusedTerminal
+                        let since = pane.resizeFrames - (resizeFrameMarks[ObjectIdentifier(pane)] ?? 0)
+                        resizeFrameMarks[ObjectIdentifier(pane)] = pane.resizeFrames
+                        if since == n { print("ok    ui-probe \(n) frames drawn resizing") } else {
+                            print("FAIL  ui-probe frames drawn resizing: \(since), not \(n)")
+                            failures += 1
+                        }
+                    case .expectNoOpenAnimation:
+                        if window.animationBehavior == .none { print("ok    ui-probe window opens without animation") } else {
+                            print("FAIL  ui-probe window: it animates as it opens (\(window.animationBehavior.rawValue))")
+                            failures += 1
+                        }
+                    case .expectSearching(let n):
+                        let count = controller.selectedTab.everyPane.filter { $0.session.searchResult.active }.count
+                        if count == n { print("ok    ui-probe \(n) panes searching") } else {
+                            print("FAIL  ui-probe searching: \(count) panes, not \(n)")
+                            failures += 1
+                        }
+                    case .expectPanes(let n):
+                        let count = controller.selectedPaneCount
+                        if count == n { print("ok    ui-probe \(n) panes") } else {
+                            print("FAIL  ui-probe panes: \(count), not \(n)")
+                            failures += 1
+                        }
+                    case .redo:
+                        let redone = MainActor.assumeIsolated { () -> Bool in
+                            let manager = CloseUndo.shared.manager
+                            guard manager.canRedo else { return false }
+                            manager.redo()
+                            return true
+                        }
+                        if !redone {
+                            print("FAIL  ui-probe redo: nothing to redo")
+                            failures += 1
+                        }
+                        pump(0.5)
+                    case .hover(let n):
+                        let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
+                        guard panes.indices.contains(n - 1),
+                              let event = NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [],
+                                                                 timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                                 eventNumber: 0, trackingNumber: 0, userData: nil) else {
+                            print("FAIL  ui-probe hover: no pane \(n)")
+                            failures += 1
+                            break
+                        }
+                        panes[n - 1].mouseEntered(with: event)
+                        pump(0.2)
+                    case .expectFocus(let n):
+                        let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
+                        // 0: none of them (the keyboard is in a field: the find bar, a filter).
+                        let focused = panes.firstIndex { $0 === window.firstResponder }.map { $0 + 1 } ?? 0
+                        if focused == n {
+                            print("ok    ui-probe " + (n == 0 ? "no pane has the keyboard" : "pane \(n) has the keyboard"))
+                        } else {
+                            print("FAIL  ui-probe focus: pane \(focused == 0 ? "none" : String(focused)), not \(n)")
+                            failures += 1
+                        }
+                    case .expectSubtitle(let text):
+                        let subtitle = window.subtitle
+                        if subtitle.contains(text) {
+                            print("ok    ui-probe subtitle says \(text)")
+                        } else {
+                            print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
+                            failures += 1
+                        }
+                    case .update(let install):
+                        // Libertty ▸ Check for Updates…, its dialog answered (Install
+                        // and Restart, or Later); up to a minute for the download.
+                        MainActor.assumeIsolated {
+                            let updates = UpdateController.shared
+                            updates.probeAnswer = install ? .alertFirstButtonReturn : .alertSecondButtonReturn
+                            updates.checkForUpdates(nil)
+                            let deadline = Date().addingTimeInterval(60)
+                            repeat { pump(0.1) } while updates.isBusy && Date() < deadline
+                            for line in updates.probeLog { print("update: \(line.replacingOccurrences(of: "\n", with: " "))") }
+                            if updates.isBusy {
+                                print("FAIL  ui-probe update: still under way after 60 s")
+                                failures += 1
+                            }
+                        }
+                    case .expectAppVersion(let version):
+                        // The bundle on disk now (an install replaced it).
+                        let info = NSDictionary(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist"))
+                        let found = info?["CFBundleShortVersionString"] as? String ?? "none"
+                        if found == version {
+                            print("ok    ui-probe app is \(version)")
+                        } else {
+                            print("FAIL  ui-probe app: \(found), not \(version)")
+                            failures += 1
+                        }
+                    case .metrics(let label):
+                        // The focused pane as drawn: its text size, cells, layer and drawable;
+                        // what has the keyboard; the window's title and content area.
+                        let responder = window.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
+                        print("metrics \(label): \(controller.focusedTerminal.metricsSummary) responder \(responder) "
+                              + "title \(window.titleVisibility == .visible ? "shown" : "hidden") subtitle '\(window.subtitle)' "
+                              + "layout \(Int(window.contentLayoutRect.width))x\(Int(window.contentLayoutRect.height))")
+                    case .motion(let on):
+                        // Animations as the user's app runs them (a probe has them off).
+                        Motion.forceReduced = !on
+                    case .expectUnmoved:
+                        // The focused pane where it was on the screen at the last of
+                        // these, to the point (the first one notes it).
+                        let pane = controller.focusedTerminal
+                        let frame = window.convertToScreen(pane.convert(pane.bounds, to: nil))
+                        let size = "\(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)),\(Int(frame.minY))"
+                        if let last = paneFrameMark, last != frame {
+                            let was = "\(Int(last.width))x\(Int(last.height)) at \(Int(last.minX)),\(Int(last.minY))"
+                            print("FAIL  ui-probe pane moved: \(size), was \(was) (window \(Int(window.frame.width)) wide)")
+                            failures += 1
+                        } else {
+                            print("ok    ui-probe pane \(size) (window \(Int(window.frame.width)) wide)")
+                        }
+                        paneFrameMark = frame
+                    case .reload:
+                        ConfigStore.shared.reloadByRequest()
+                        pump(0.3)
+                    case .appearance(let dark):
+                        // As the system's switching would (`theme = light:A,dark:B` follows it).
+                        NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                        pump(0.4)
+                    case .expectBackground(let hex):
+                        // What the pane draws behind its text (its dimming layer takes the same).
+                        let bg = controller.focusedTerminal.backgroundHex
+                        if bg == hex {
+                            print("ok    ui-probe background \(hex)")
+                        } else {
+                            print("FAIL  ui-probe background: \(bg), not \(hex)")
+                            failures += 1
+                        }
+                    case .expectFont(let size):
+                        let shown = Double(controller.focusedTerminal.fontSize)
+                        if shown == size {
+                            print("ok    ui-probe font \(size)")
+                        } else {
+                            print("FAIL  ui-probe font: \(shown), not \(size)")
+                            failures += 1
+                        }
+                    case .expectRegrids(let n):
+                        // Grid changes of the focused pane since the last of these (for it).
+                        let pane = controller.focusedTerminal
+                        let since = pane.regridCount - (regridMarks[ObjectIdentifier(pane)] ?? 0)
+                        regridMarks[ObjectIdentifier(pane)] = pane.regridCount
+                        if since == n {
+                            print("ok    ui-probe \(n) grid changes")
+                        } else {
+                            print("FAIL  ui-probe grid changes: \(since), not \(n)")
+                            failures += 1
+                        }
+                    case .actionNow(let text):
+                        // Without waiting for it to settle: shots of a slide in progress.
+                        guard let action = Action(text) else {
+                            print("FAIL  ui-probe action-now: unknown \(text)")
+                            failures += 1
+                            break
+                        }
+                        ActionDispatcher.perform(action, in: controller.focusedTerminal, controller: controller)
+                    case .action(let text):
+                        let actions = text.split(separator: ",").map { Action(String($0)) }
+                        guard !actions.isEmpty, actions.allSatisfy({ $0 != nil }) else {
+                            print("FAIL  ui-probe action: unknown \(text)")
+                            failures += 1
+                            break
+                        }
+                        for action in actions.compactMap({ $0 }) {
+                            ActionDispatcher.perform(action, in: controller.focusedTerminal, controller: controller)
+                        }
+                        pump(0.6)  // a pane slides out of its split
+                    case .expectWindows(let n):
+                        let count = 1 + others.filter { $0.window?.isVisible == true }.count
+                        if count == n {
+                            print("ok    ui-probe \(n) windows")
+                        } else {
+                            print("FAIL  ui-probe windows: \(count), not \(n)")
+                            failures += 1
+                        }
+                    case .expectOther(let text):
+                        guard let other = others.last(where: { $0.window?.isVisible == true }) else {
+                            print("FAIL  ui-probe other window: there's none")
+                            failures += 1
+                            break
+                        }
+                        let rows = other.sidebarRows
+                        if rows.contains(where: { $0.contains(text) }) || screenText(other).contains(text) {
+                            print("ok    ui-probe other window shows \(text)")
+                        } else {
+                            print("FAIL  ui-probe other window: no \(text); rows: \(rows)")
+                            failures += 1
+                        }
+                    case .takeTab(let n):
+                        guard let other = others.last(where: { $0.window?.isVisible == true }), let tab = other.tab(at: n - 1),
+                              controller.canTake(tab, from: other) else {
+                            print("FAIL  ui-probe take-tab: no tab \(n) to take")
+                            failures += 1
+                            break
+                        }
+                        controller.take(tab, from: other, at: controller.tabs.count)
+                        pump(0.4)
+                    case .expectShown(let n, let text):
+                        let shown = controller.shownSidebarRows
+                        if shown.count == n, text.isEmpty || shown.allSatisfy({ $0.contains(text) }) {
+                            print("ok    ui-probe sidebar shows \(n) tabs" + (text.isEmpty ? "" : " with \(text)"))
+                        } else {
+                            print("FAIL  ui-probe sidebar shows \(shown), not \(n)" + (text.isEmpty ? "" : " with \(text)"))
+                            failures += 1
+                        }
+                    case .expectTabCount(let n):
+                        if controller.tabs.count == n {
+                            print("ok    ui-probe \(n) tabs")
+                        } else {
+                            print("FAIL  ui-probe tabs: \(controller.tabs.count), not \(n)")
+                            failures += 1
+                        }
+                    case .expectWorkspace(let text):
+                        let names = controller.workspaceNames.enumerated().map {
+                            $0.offset == controller.activeWorkspace ? "[\($0.element)]" : $0.element
+                        }.joined(separator: " ")
+                        if text.hasPrefix("=") ? names == String(text.dropFirst()) : names.contains(text) {
+                            print("ok    ui-probe workspaces \(text)")
+                        } else {
+                            print("FAIL  ui-probe workspaces: \(names), not \(text)")
+                            failures += 1
+                        }
+                    case .expectFloat(let want):
+                        let has = controller.showsFloatingCard
+                        if has == want {
+                            print("ok    ui-probe floating card \(want ? "shown" : "absent")")
+                        } else {
+                            print("FAIL  ui-probe floating card: \(has ? "shown" : "absent"), wanted \(want ? "shown" : "absent")")
+                            failures += 1
+                        }
+                    case .expectScope(let text):
+                        let chips = CommandPalette.shownScopes?.joined(separator: " ") ?? "(no palette open)"
+                        if chips.contains(text) {
+                            print("ok    ui-probe palette chips \(text)")
+                        } else {
+                            print("FAIL  ui-probe palette chips: \(chips), not \(text)")
+                            failures += 1
+                        }
+                    case .expectStrip(let text):
+                        // The top tabs' names as drawn, and that they're in the bar.
+                        let names = controller.tabStripTitles
+                        if names?.contains(text) == true {
+                            print("ok    ui-probe top tab \(text)")
+                        } else {
+                            print("FAIL  ui-probe top tabs: none is \(text.debugDescription); they are \(names.map { "\($0)" } ?? "not in the bar")")
+                            failures += 1
+                        }
+                    case .expectNot(let text):
+                        let all = screenText(controller)
+                        if all.contains(text) {
+                            print("FAIL  ui-probe expect-not: \(text) is on screen")
+                            failures += 1
+                        } else {
+                            print("ok    ui-probe expect-not \(text)")
+                        }
+                    }
+                } while false
+                let said = held ?? []
+                held = nil
+                if failures == before || !retries || Date() >= deadline {
+                    said.forEach { Swift.print($0) }
+                    break
                 }
+                failures = before
                 pump(0.15)
-            case .type(let text):
-                for spec in text.map(String.init) { _ = press(spec, in: CommandPalette.openPanel ?? window) }
-                pump(0.35)
-            case .click(let x, let y):
-                click(x: x, y: y, in: window)
-                pump(0.2)
-            case .clickLabeled(let label):
-                // Where it is now, so the script doesn't depend on layout —
-                // once it's really there: a column still sliding in has its
-                // controls placed under whatever it will uncover.
-                guard let center = reachable(label, in: window) else {
-                    let blocker = find(label, in: window.contentView).flatMap { control -> String? in
-                        guard let content = window.contentView else { return nil }
-                        let frame = control.convert(control.bounds, to: content)
-                        let center = NSPoint(x: frame.midX, y: frame.midY)
-                        let hit = content.hitTest(center).map { String(describing: type(of: $0)) } ?? "nothing"
-                        return "\(hit) (it's at \(frame.integral) in \(content.bounds.size); "
-                            + "inspector \(controller.isInspectorShown ? "shown" : "hidden"))"
-                    }
-                    print("FAIL  ui-probe click: \(label) " + (blocker.map { "is covered by \($0)" } ?? "isn't on screen"))
-                    failures += 1
-                    continue
-                }
-                click(x: center.x, y: center.y, in: window)
-                pump(0.2)
-            case .wait(let seconds):
-                pump(seconds)
-            case .tab(let which):
-                if which == "new" || which == "here" {
-                    // "here": as ⌘T does, in the focused pane's folder.
-                    if controller.newTab(workingDirectory: which == "new" ? scratch : nil) == nil {
-                        print("FAIL  ui-probe tab: couldn't open one")
-                        failures += 1
-                    }
-                } else if let n = Int(which), n >= 1, n <= controller.tabs.count {
-                    controller.select(controller.tabs[n - 1])
-                } else {
-                    print("FAIL  ui-probe tab: no tab \(which)")
-                    failures += 1
-                }
-                pump(0.5)
-            case .shot(let name):
-                capture(window, to: output + "/" + name)
-                // The palette's own panel beside it, while one is open.
-                if let panel = CommandPalette.openPanel {
-                    capture(panel, to: output + "/" + (name as NSString).deletingPathExtension + "-palette.png")
-                }
-                if let editor = MainActor.assumeIsolated({ ThemeEditor.shared.openWindow }) {
-                    capture(editor, to: output + "/" + (name as NSString).deletingPathExtension + "-theme-editor.png")
-                }
-            case .size(let width, let height):
-                var frame = window.frame
-                frame.size = NSSize(width: width, height: height)
-                window.setFrame(frame, display: true)
-                pump(0.4)
-            case .expect(let text):
-                // Newline-joined: a match may not span two panes' text.
-                let all = screenText(controller)
-                if all.contains(text) {
-                    print("ok    ui-probe expect \(text)")
-                } else {
-                    print("FAIL  ui-probe expect: no \(text) on screen; screen ends: …\(all.suffix(80))")
-                    failures += 1
-                }
-            case .expectPalette(let text):
-                // The palette's first row, while it's open.
-                let first = CommandPalette.shownRows.map { $0.first ?? "(an empty palette)" } ?? "(no palette open)"
-                if first.contains(text) {
-                    print("ok    ui-probe palette shows \(text)")
-                } else {
-                    print("FAIL  ui-probe palette: first row is \(first.debugDescription), not \(text)")
-                    failures += 1
-                }
-            case .expectStatus(let text):
-                // Word for word: `dock=1` isn't `dock=10`, `sounds=` is none.
-                let summary = controller.statusSummary
-                let shown = Set(summary.split(separator: " "))
-                if text.split(separator: " ").allSatisfy(shown.contains) {
-                    print("ok    ui-probe status shows \(text)")
-                } else {
-                    print("FAIL  ui-probe status: no \(text) in \(summary)")
-                    failures += 1
-                }
-            case .expectTab(let text):
-                // The sidebar rows: name, detail and pane count, as shown.
-                let rows = controller.sidebarRows
-                if rows.contains(where: { $0.contains(text) }) {
-                    print("ok    ui-probe tab shows \(text)")
-                } else {
-                    print("FAIL  ui-probe tab: no row shows \(text); rows: \(rows)")
-                    failures += 1
-                }
-            case .workspace(let which):
-                if which == "new" || which.hasPrefix("new:") {
-                    let name = which.hasPrefix("new:") ? String(which.dropFirst(4)) : ""
-                    if !controller.newWorkspace(named: name) { print("FAIL  ui-probe workspace: couldn't make one"); failures += 1 }
-                } else if which == "close" {
-                    controller.closeWorkspace(at: controller.activeWorkspace)
-                } else if let n = Int(which), n >= 1, n <= controller.workspaceNames.count {
-                    controller.switchWorkspace(to: n - 1)
-                } else {
-                    print("FAIL  ui-probe workspace: no \(which)")
-                    failures += 1
-                }
-                pump(0.5)
-            case .roundtrip:
-                guard let saved = controller.savedState() else { print("FAIL  ui-probe roundtrip: nothing to save"); failures += 1; continue }
-                let live = Set(controller.persistentSessionIDs)
-                guard let copy = TerminalWindowController.restore(saved, live: live, config: Config()) else {
-                    print("FAIL  ui-probe roundtrip: the saved window didn't come back")
-                    failures += 1
-                    continue
-                }
-                let parked = { (c: TerminalWindowController) in c.everyTab.map { $0.parked.count } }
-                let same = copy.workspaceNames == controller.workspaceNames && copy.activeWorkspace == controller.activeWorkspace
-                    && copy.workspaceTabs.map(\.count) == controller.workspaceTabs.map(\.count)
-                    && parked(copy) == parked(controller)
-                    && copy.everyTab.map { $0.parked.map(\.showsCard) } == controller.everyTab.map { $0.parked.map(\.showsCard) }
-                if same {
-                    print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy))")
-                } else {
-                    print("FAIL  ui-probe roundtrip: \(copy.workspaceNames)/\(copy.activeWorkspace)/\(copy.workspaceTabs.map(\.count))/\(parked(copy)) "
-                          + "vs \(controller.workspaceNames)/\(controller.activeWorkspace)/\(controller.workspaceTabs.map(\.count))/\(parked(controller))")
-                    failures += 1
-                }
-            case .open(let path, let line, let edit):
-                // A block's address opens as itself (`open:libertty-block://screen?own=1`).
-                let url = path.hasPrefix(Blocks.scheme + "://") ? URL(string: path)! : URL(fileURLWithPath: path)
-                controller.openDocument(url, line: line, edit: edit ? true : nil)
-                pump(0.4)
-            case .editorWait:
-                let deadline = Date().addingTimeInterval(10)
-                while controller.selectedDocument?.isEditorReady != true, Date() < deadline { pump(0.1) }
-                if controller.selectedDocument?.isEditorReady == true {
-                    pump(0.2)
-                    print("ok    ui-probe editor ready")
-                } else {
-                    print("FAIL  ui-probe editor: never came up (is vendor/codemirror built?)")
-                    failures += 1
-                }
-            case .editorJS(let script):
-                // Diagnostics: what the page says (not a check).
-                var answer: Any?
-                var answered = false
-                controller.selectedDocument?.editorEvaluate(script) { answer = $0; answered = true }
-                let deadline = Date().addingTimeInterval(3)
-                while !answered, Date() < deadline { pump(0.05) }
-                print("js    \(script.prefix(60)) => \(answer.map { "\($0)" } ?? "nil")")
-            case .editorInsert(let text):
-                controller.selectedDocument?.editorInsert(text)
-                pump(0.3)
-            case .editorSave:
-                var done: Bool?
-                controller.selectedDocument?.save { done = $0 }
-                let deadline = Date().addingTimeInterval(5)
-                while done == nil, Date() < deadline { pump(0.05) }
-                if done == true { print("ok    ui-probe saved") } else { print("FAIL  ui-probe save: \(done.map(String.init) ?? "no answer")"); failures += 1 }
-                pump(0.3)
-            case .expectEditor(let text):
-                var shown: String?
-                var answered = false
-                controller.selectedDocument?.editorText { shown = $0; answered = true }
-                let deadline = Date().addingTimeInterval(3)
-                while !answered, Date() < deadline { pump(0.05) }
-                if shown?.contains(text) == true {
-                    print("ok    ui-probe editor shows \(text)")
-                } else {
-                    print("FAIL  ui-probe editor: no \(text.debugDescription) in \(String((shown ?? "(nothing)").prefix(120)).debugDescription)")
-                    failures += 1
-                }
-            case .expectDirty(let want):
-                let dirty = controller.selectedDocument?.hasUnsavedChanges == true
-                if dirty == want {
-                    print("ok    ui-probe \(want ? "unsaved changes" : "saved")")
-                } else {
-                    print("FAIL  ui-probe dirty: \(dirty), wanted \(want)")
-                    failures += 1
-                }
-            case .expectFile(let path, let text):
-                let contents = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-                if contents.contains(text) {
-                    print("ok    ui-probe file has \(text.debugDescription)")
-                } else {
-                    print("FAIL  ui-probe file: \(path) has \(String(contents.prefix(120)).debugDescription), not \(text.debugDescription)")
-                    failures += 1
-                }
-            case .sheet(let title):
-                func button(in view: NSView?) -> NSButton? {
-                    guard let view else { return nil }
-                    if let b = view as? NSButton, b.title == title { return b }
-                    return view.subviews.lazy.compactMap(button(in:)).first
-                }
-                if let sheet = window.attachedSheet, let b = button(in: sheet.contentView) {
-                    b.performClick(nil)
-                    pump(0.5)
-                } else {
-                    print("FAIL  ui-probe sheet: \(window.attachedSheet == nil ? "none up" : "no \(title) button")")
-                    failures += 1
-                }
-            case .expectSheet(let want):
-                let up = window.attachedSheet != nil
-                if up == want { print("ok    ui-probe sheet \(up ? "up" : "gone")") } else {
-                    print("FAIL  ui-probe sheet: \(up ? "up" : "none"), wanted \(want ? "one" : "none")")
-                    failures += 1
-                }
-            case .waitEdit(let token, let path):
-                controller.openDocument(URL(fileURLWithPath: path), edit: true, waitToken: token)
-                pump(0.4)
-            case .expectClosed(let token):
-                let deadline = Date().addingTimeInterval(3)
-                while !closedEditors.contains(token), Date() < deadline { pump(0.05) }
-                if closedEditors.contains(token) { print("ok    ui-probe editor \(token) closed") } else {
-                    print("FAIL  ui-probe editor \(token): no word that it closed")
-                    failures += 1
-                }
-            case .bar(let text):
-                guard let bar = controller.selectedDocument?.browserBar else {
-                    print("FAIL  ui-probe bar: no browser in front")
-                    failures += 1
-                    continue
-                }
-                bar.field.stringValue = text
-                bar.onNavigate?(text)
-                pump(0.8)
-            case .browser(let op, let arg, let want):
-                let token = UUID().uuidString
-                let out = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-browser-\(token)")
-                var answer: Bool?
-                let center = DistributedNotificationCenter.default()
-                let observer = center.addObserver(forName: BrowserAutomation.replied, object: nil, queue: .main) { note in
-                    if note.userInfo?["token"] as? String == token { answer = note.userInfo?["ok"] as? String == "1" }
-                }
-                var info = ["op": op, "token": token, "out": out.path]
-                if op == "type" { info["arg"] = arg.replacingOccurrences(of: " | ", with: "\u{1f}") }
-                else if op == "screenshot" { info["file"] = arg } else { info["arg"] = arg }
-                BrowserAutomation.handle(info, in: controller)
-                let deadline = Date().addingTimeInterval(8)
-                while answer == nil, Date() < deadline { pump(0.05) }
-                center.removeObserver(observer)
-                let said = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
-                try? FileManager.default.removeItem(at: out)
-                pump(0.4)
-                guard let want else { continue }
-                let failed = want.hasPrefix("!")
-                let text = failed ? String(want.dropFirst()) : want
-                if answer == !failed, text.isEmpty || said.contains(text) {
-                    print("ok    ui-probe browser \(op) \(failed ? "refused" : "says") \(text)")
-                } else {
-                    print("FAIL  ui-probe browser \(op): \(answer.map { $0 ? "ok" : "failed" } ?? "no answer"), said \(String(said.prefix(200)).debugDescription)")
-                    failures += 1
-                }
-            case .pageWait:
-                let deadline = Date().addingTimeInterval(10)
-                var ready = false
-                while !ready, Date() < deadline {
-                    pump(0.2)
-                    ready = (pageEvaluate(controller, "document.readyState === 'complete' && document.body.innerText.trim().length > 0 && !document.body.innerText.includes('Reading…')") as? Bool) == true
-                }
-                if ready { print("ok    ui-probe page up"); pump(0.3) } else { print("FAIL  ui-probe page: never drew"); failures += 1 }
-            case .expectPage(let text, let want):
-                let deadline = Date().addingTimeInterval(want ? 3 : 0.5)
-                var has = false
-                repeat {
-                    has = (pageEvaluate(controller, "document.body.innerText.includes(\(jsLiteral(text)))") as? Bool) == true
-                    if has == want { break }
-                    pump(0.15)
-                } while Date() < deadline
-                if has == want {
-                    print("ok    ui-probe page \(want ? "shows" : "hasn't") \(text)")
-                } else {
-                    let shown = (pageEvaluate(controller, "document.body.innerText") as? String) ?? "(nothing)"
-                    print("FAIL  ui-probe page: \(want ? "no" : "still") \(text.debugDescription); it shows \(String(shown.prefix(240)).debugDescription)")
-                    failures += 1
-                }
-            case .pageClick(let text):
-                let script = """
-                    (function(t){if(t.startsWith('css:')){const e=document.querySelector(t.slice(4));if(!e)return false;e.click();return true;}
-                    const all=[...document.querySelectorAll('button, .row, .chip, label')].filter(e=>e.offsetParent!==null);
-                    const exact=all.find(e=>e.title===t||e.textContent.trim()===t)||all.find(e=>e.textContent.includes(t));
-                    if(!exact)return false;exact.click();return true;})(\(jsLiteral(text)))
-                    """
-                if (pageEvaluate(controller, script) as? Bool) == true { pump(0.5) } else {
-                    print("FAIL  ui-probe page-click: nothing says \(text.debugDescription)")
-                    failures += 1
-                }
-            case .pageType(let selector, let text):
-                let script = """
-                    (function(s,t){const e=document.querySelector(s);if(!e)return false;e.focus();e.value=t;
-                    e.dispatchEvent(new Event('input',{bubbles:true}));return true;})(\(jsLiteral(selector)), \(jsLiteral(text)))
-                    """
-                if (pageEvaluate(controller, script) as? Bool) == true { pump(0.2) } else {
-                    print("FAIL  ui-probe page-type: no \(selector)")
-                    failures += 1
-                }
-            case .pageJS(let script, let want):
-                // Its value as text (a promise's once it settles): JSON for objects.
-                let wrapped = "const v = await (\(script)); return typeof v === 'string' ? v : JSON.stringify(v);"
-                var answer: Any?
-                var answered = false
-                controller.selectedDocument?.pageCall(wrapped) { answer = $0; answered = true }
-                // A promise may wait for a kernel or a server to start.
-                let deadline = Date().addingTimeInterval(60)
-                while !answered, Date() < deadline { pump(0.03) }
-                let said = answer as? String ?? "(no answer)"
-                if let want {
-                    if said.contains(want) { print("ok    ui-probe page-js says \(want)") } else {
-                        print("FAIL  ui-probe page-js: \(script) said \(String(said.prefix(200)).debugDescription), not \(want.debugDescription)")
-                        failures += 1
-                    }
-                }
-                pump(0.2)
-            case .expectShell(let command, let text):
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: "/bin/sh")
-                p.arguments = ["-c", command]
-                let out = Pipe()
-                p.standardOutput = out
-                p.standardError = out
-                try? p.run()
-                let data = out.fileHandleForReading.readDataToEndOfFile()
-                p.waitUntilExit()
-                let said = String(decoding: data, as: UTF8.self)
-                if said.contains(text) { print("ok    ui-probe shell says \(text)") } else {
-                    print("FAIL  ui-probe shell: \(command) said \(String(said.prefix(200)).debugDescription), not \(text.debugDescription)")
-                    failures += 1
-                }
-            case .shell(let command):
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: "/bin/sh")
-                p.arguments = ["-c", command]
-                try? p.run()
-                p.waitUntilExit()
-                pump(0.6)
-            case .undo:
-                let undone = MainActor.assumeIsolated { () -> Bool in
-                    let manager = CloseUndo.shared.manager
-                    guard manager.canUndo else { return false }
-                    manager.undo()
-                    return true
-                }
-                if !undone {
-                    print("FAIL  ui-probe undo: nothing to undo")
-                    failures += 1
-                }
-                pump(0.5)
-            case .focusEvent(let focused):
-                controller.focusedTerminal.session.reportFocus(focused)
-                pump(0.3)
-            case .expectPinned:
-                // As AppKit does at times of its own: its placement onto the layer's gravity.
-                let panes = controller.everyTab.flatMap(\.panes)
-                var wrong: [String] = []
-                for pane in panes {
-                    pane.layerContentsPlacement = pane.layerContentsPlacement
-                    let summary = pane.contentsPlacementSummary
-                    if !summary.hasSuffix("gravity bottomLeft") { wrong.append(summary) }
-                    // The window server maps it onto the bounds whatever the gravity (a window brought back).
-                    if !pane.drawableFitsView { wrong.append("drawable \(pane.drawableSize) for a view of \(pane.bounds.size)") }
-                }
-                if wrong.isEmpty { print("ok    ui-probe \(panes.count) panes pinned top-left") } else {
-                    print("FAIL  ui-probe pinned: \(wrong.joined(separator: "; ")) (its drawable would be stretched to the view)")
-                    failures += 1
-                }
-            case .expectLayout(let want):
-                pump(0.5)  // a balance under way settles
-                let shown = controller.selectedTab.container?.layoutDescription { view in
-                    let id = ObjectIdentifier(view)
-                    if let name = paneNames[id] { return name }
-                    let name = String(UnicodeScalar(UInt8(97 + paneNames.count)))
-                    paneNames[id] = name
-                    return name
-                } ?? "(no split)"
-                if shown == want { print("ok    ui-probe layout \(want)") } else {
-                    print("FAIL  ui-probe layout: \(shown), not \(want)")
-                    failures += 1
-                }
-            case .expectLooks(let want):
-                pump(0.3)
-                var wrong: [String] = []
-                for part in want.split(separator: ",") {
-                    let kv = part.split(separator: "=", maxSplits: 1).map(String.init)
-                    guard kv.count == 2 else { continue }
-                    switch kv[0] {
-                    case "compact":
-                        let first = controller.selectedTab.container?.views.first
-                        let inset = first?.frame.minX ?? -1
-                        let radius = first?.layer?.cornerRadius ?? -1
-                        let compact = inset < 1 && radius == 0
-                        if compact != (kv[1] == "yes") { wrong.append("pane at x \(inset), radius \(radius)") }
-                    case "accent":
-                        let shown = MainActor.assumeIsolated { Accent.custom?.hexString ?? "system" }
-                        if shown != kv[1] { wrong.append("accent \(shown)") }
-                    case "holes":
-                        let n = controller.areaHoleCount
-                        if String(n) != kv[1] { wrong.append("\(n) holes") }
-                    default: wrong.append("no \(kv[0])")
-                    }
-                }
-                if wrong.isEmpty { print("ok    ui-probe looks \(want)") } else {
-                    print("FAIL  ui-probe looks: \(wrong.joined(separator: ", ")), not \(want)")
-                    failures += 1
-                }
-            case .drop(let n, let side):
-                let views = controller.selectedTab.container?.views ?? []
-                guard views.indices.contains(n - 1), let pane = controller.selectedTab.focusedLeaf,
-                      controller.probeDrop(pane, on: views[n - 1], side) else {
-                    print("FAIL  ui-probe drop: no pane \(n) or no \(side)")
-                    failures += 1
-                    break
-                }
-                pump(0.6)
-            case .themeEditor(let command):
-                let done = MainActor.assumeIsolated { () -> Bool in
-                    let editor = ThemeEditor.shared
-                    if command == "open" { editor.show(nil) }
-                    else if command == "cancel" { editor.probeCancel() }
-                    else if command == "save" { editor.probeSave() }
-                    else if command.hasPrefix("name:") { editor.probeName(String(command.dropFirst(5))) }
-                    else if command.hasPrefix("set:"), case let parts = command.dropFirst(4).split(separator: "=", maxSplits: 1),
-                            parts.count == 2, editor.probeSet(String(parts[0]), String(parts[1])) {}
-                    else { return false }
-                    return true
-                }
-                if !done {
-                    print("FAIL  ui-probe theme-editor: can't \(command)")
-                    failures += 1
-                }
-                pump(0.4)
-            case .expectRuns(let path, let runs):
-                let found = TerminalView.wouldRun(URL(fileURLWithPath: path))
-                if found == runs { print("ok    ui-probe \(path) \(runs ? "asks first" : "opens")") } else {
-                    print("FAIL  ui-probe \(path): \(found ? "asks first" : "opens"), not \(runs ? "asks first" : "opens")")
-                    failures += 1
-                }
-            case .expectResizeFrames(let n):
-                // Frames drawn inside a resize's transaction since the last of these (for the pane).
-                let pane = controller.focusedTerminal
-                let since = pane.resizeFrames - (resizeFrameMarks[ObjectIdentifier(pane)] ?? 0)
-                resizeFrameMarks[ObjectIdentifier(pane)] = pane.resizeFrames
-                if since == n { print("ok    ui-probe \(n) frames drawn resizing") } else {
-                    print("FAIL  ui-probe frames drawn resizing: \(since), not \(n)")
-                    failures += 1
-                }
-            case .expectNoOpenAnimation:
-                if window.animationBehavior == .none { print("ok    ui-probe window opens without animation") } else {
-                    print("FAIL  ui-probe window: it animates as it opens (\(window.animationBehavior.rawValue))")
-                    failures += 1
-                }
-            case .expectSearching(let n):
-                let count = controller.selectedTab.everyPane.filter { $0.session.searchResult.active }.count
-                if count == n { print("ok    ui-probe \(n) panes searching") } else {
-                    print("FAIL  ui-probe searching: \(count) panes, not \(n)")
-                    failures += 1
-                }
-            case .expectPanes(let n):
-                let count = controller.selectedPaneCount
-                if count == n { print("ok    ui-probe \(n) panes") } else {
-                    print("FAIL  ui-probe panes: \(count), not \(n)")
-                    failures += 1
-                }
-            case .redo:
-                let redone = MainActor.assumeIsolated { () -> Bool in
-                    let manager = CloseUndo.shared.manager
-                    guard manager.canRedo else { return false }
-                    manager.redo()
-                    return true
-                }
-                if !redone {
-                    print("FAIL  ui-probe redo: nothing to redo")
-                    failures += 1
-                }
-                pump(0.5)
-            case .hover(let n):
-                let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
-                guard panes.indices.contains(n - 1),
-                      let event = NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [],
-                                                         timestamp: 0, windowNumber: window.windowNumber, context: nil,
-                                                         eventNumber: 0, trackingNumber: 0, userData: nil) else {
-                    print("FAIL  ui-probe hover: no pane \(n)")
-                    failures += 1
-                    break
-                }
-                panes[n - 1].mouseEntered(with: event)
-                pump(0.2)
-            case .expectFocus(let n):
-                let panes = controller.selectedTab.container?.views.compactMap { $0 as? TerminalView } ?? []
-                // 0: none of them (the keyboard is in a field: the find bar, a filter).
-                let focused = panes.firstIndex { $0 === window.firstResponder }.map { $0 + 1 } ?? 0
-                if focused == n {
-                    print("ok    ui-probe " + (n == 0 ? "no pane has the keyboard" : "pane \(n) has the keyboard"))
-                } else {
-                    print("FAIL  ui-probe focus: pane \(focused == 0 ? "none" : String(focused)), not \(n)")
-                    failures += 1
-                }
-            case .expectSubtitle(let text):
-                let subtitle = window.subtitle
-                if subtitle.contains(text) {
-                    print("ok    ui-probe subtitle says \(text)")
-                } else {
-                    print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
-                    failures += 1
-                }
-            case .update(let install):
-                // Libertty ▸ Check for Updates…, its dialog answered (Install
-                // and Restart, or Later); up to a minute for the download.
-                MainActor.assumeIsolated {
-                    let updates = UpdateController.shared
-                    updates.probeAnswer = install ? .alertFirstButtonReturn : .alertSecondButtonReturn
-                    updates.checkForUpdates(nil)
-                    let deadline = Date().addingTimeInterval(60)
-                    repeat { pump(0.1) } while updates.isBusy && Date() < deadline
-                    for line in updates.probeLog { print("update: \(line.replacingOccurrences(of: "\n", with: " "))") }
-                    if updates.isBusy {
-                        print("FAIL  ui-probe update: still under way after 60 s")
-                        failures += 1
-                    }
-                }
-            case .expectAppVersion(let version):
-                // The bundle on disk now (an install replaced it).
-                let info = NSDictionary(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist"))
-                let found = info?["CFBundleShortVersionString"] as? String ?? "none"
-                if found == version {
-                    print("ok    ui-probe app is \(version)")
-                } else {
-                    print("FAIL  ui-probe app: \(found), not \(version)")
-                    failures += 1
-                }
-            case .metrics(let label):
-                // The focused pane as drawn: its text size, cells, layer and drawable;
-                // what has the keyboard; the window's title and content area.
-                let responder = window.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
-                print("metrics \(label): \(controller.focusedTerminal.metricsSummary) responder \(responder) "
-                      + "title \(window.titleVisibility == .visible ? "shown" : "hidden") subtitle '\(window.subtitle)' "
-                      + "layout \(Int(window.contentLayoutRect.width))x\(Int(window.contentLayoutRect.height))")
-            case .motion(let on):
-                // Animations as the user's app runs them (a probe has them off).
-                Motion.forceReduced = !on
-            case .expectUnmoved:
-                // The focused pane where it was on the screen at the last of
-                // these, to the point (the first one notes it).
-                let pane = controller.focusedTerminal
-                let frame = window.convertToScreen(pane.convert(pane.bounds, to: nil))
-                let size = "\(Int(frame.width))x\(Int(frame.height)) at \(Int(frame.minX)),\(Int(frame.minY))"
-                if let last = paneFrameMark, last != frame {
-                    let was = "\(Int(last.width))x\(Int(last.height)) at \(Int(last.minX)),\(Int(last.minY))"
-                    print("FAIL  ui-probe pane moved: \(size), was \(was) (window \(Int(window.frame.width)) wide)")
-                    failures += 1
-                } else {
-                    print("ok    ui-probe pane \(size) (window \(Int(window.frame.width)) wide)")
-                }
-                paneFrameMark = frame
-            case .reload:
-                ConfigStore.shared.reloadByRequest()
-                pump(0.3)
-            case .appearance(let dark):
-                // As the system's switching would (`theme = light:A,dark:B` follows it).
-                NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-                pump(0.4)
-            case .expectBackground(let hex):
-                // What the pane draws behind its text (its dimming layer takes the same).
-                let bg = controller.focusedTerminal.backgroundHex
-                if bg == hex {
-                    print("ok    ui-probe background \(hex)")
-                } else {
-                    print("FAIL  ui-probe background: \(bg), not \(hex)")
-                    failures += 1
-                }
-            case .expectFont(let size):
-                let shown = Double(controller.focusedTerminal.fontSize)
-                if shown == size {
-                    print("ok    ui-probe font \(size)")
-                } else {
-                    print("FAIL  ui-probe font: \(shown), not \(size)")
-                    failures += 1
-                }
-            case .expectRegrids(let n):
-                // Grid changes of the focused pane since the last of these (for it).
-                let pane = controller.focusedTerminal
-                let since = pane.regridCount - (regridMarks[ObjectIdentifier(pane)] ?? 0)
-                regridMarks[ObjectIdentifier(pane)] = pane.regridCount
-                if since == n {
-                    print("ok    ui-probe \(n) grid changes")
-                } else {
-                    print("FAIL  ui-probe grid changes: \(since), not \(n)")
-                    failures += 1
-                }
-            case .actionNow(let text):
-                // Without waiting for it to settle: shots of a slide in progress.
-                guard let action = Action(text) else {
-                    print("FAIL  ui-probe action-now: unknown \(text)")
-                    failures += 1
-                    break
-                }
-                ActionDispatcher.perform(action, in: controller.focusedTerminal, controller: controller)
-            case .action(let text):
-                let actions = text.split(separator: ",").map { Action(String($0)) }
-                guard !actions.isEmpty, actions.allSatisfy({ $0 != nil }) else {
-                    print("FAIL  ui-probe action: unknown \(text)")
-                    failures += 1
-                    break
-                }
-                for action in actions.compactMap({ $0 }) {
-                    ActionDispatcher.perform(action, in: controller.focusedTerminal, controller: controller)
-                }
-                pump(0.6)  // a pane slides out of its split
-            case .expectWindows(let n):
-                let count = 1 + others.filter { $0.window?.isVisible == true }.count
-                if count == n {
-                    print("ok    ui-probe \(n) windows")
-                } else {
-                    print("FAIL  ui-probe windows: \(count), not \(n)")
-                    failures += 1
-                }
-            case .expectOther(let text):
-                guard let other = others.last(where: { $0.window?.isVisible == true }) else {
-                    print("FAIL  ui-probe other window: there's none")
-                    failures += 1
-                    break
-                }
-                let rows = other.sidebarRows
-                if rows.contains(where: { $0.contains(text) }) || screenText(other).contains(text) {
-                    print("ok    ui-probe other window shows \(text)")
-                } else {
-                    print("FAIL  ui-probe other window: no \(text); rows: \(rows)")
-                    failures += 1
-                }
-            case .takeTab(let n):
-                guard let other = others.last(where: { $0.window?.isVisible == true }), let tab = other.tab(at: n - 1),
-                      controller.canTake(tab, from: other) else {
-                    print("FAIL  ui-probe take-tab: no tab \(n) to take")
-                    failures += 1
-                    break
-                }
-                controller.take(tab, from: other, at: controller.tabs.count)
-                pump(0.4)
-            case .expectShown(let n, let text):
-                let shown = controller.shownSidebarRows
-                if shown.count == n, text.isEmpty || shown.allSatisfy({ $0.contains(text) }) {
-                    print("ok    ui-probe sidebar shows \(n) tabs" + (text.isEmpty ? "" : " with \(text)"))
-                } else {
-                    print("FAIL  ui-probe sidebar shows \(shown), not \(n)" + (text.isEmpty ? "" : " with \(text)"))
-                    failures += 1
-                }
-            case .expectTabCount(let n):
-                if controller.tabs.count == n {
-                    print("ok    ui-probe \(n) tabs")
-                } else {
-                    print("FAIL  ui-probe tabs: \(controller.tabs.count), not \(n)")
-                    failures += 1
-                }
-            case .expectWorkspace(let text):
-                let names = controller.workspaceNames.enumerated().map {
-                    $0.offset == controller.activeWorkspace ? "[\($0.element)]" : $0.element
-                }.joined(separator: " ")
-                if text.hasPrefix("=") ? names == String(text.dropFirst()) : names.contains(text) {
-                    print("ok    ui-probe workspaces \(text)")
-                } else {
-                    print("FAIL  ui-probe workspaces: \(names), not \(text)")
-                    failures += 1
-                }
-            case .expectFloat(let want):
-                let has = controller.showsFloatingCard
-                if has == want {
-                    print("ok    ui-probe floating card \(want ? "shown" : "absent")")
-                } else {
-                    print("FAIL  ui-probe floating card: \(has ? "shown" : "absent"), wanted \(want ? "shown" : "absent")")
-                    failures += 1
-                }
-            case .expectScope(let text):
-                let chips = CommandPalette.shownScopes?.joined(separator: " ") ?? "(no palette open)"
-                if chips.contains(text) {
-                    print("ok    ui-probe palette chips \(text)")
-                } else {
-                    print("FAIL  ui-probe palette chips: \(chips), not \(text)")
-                    failures += 1
-                }
-            case .expectStrip(let text):
-                // The top tabs' names as drawn, and that they're in the bar.
-                let names = controller.tabStripTitles
-                if names?.contains(text) == true {
-                    print("ok    ui-probe top tab \(text)")
-                } else {
-                    print("FAIL  ui-probe top tabs: none is \(text.debugDescription); they are \(names.map { "\($0)" } ?? "not in the bar")")
-                    failures += 1
-                }
-            case .expectNot(let text):
-                let all = screenText(controller)
-                if all.contains(text) {
-                    print("FAIL  ui-probe expect-not: \(text) is on screen")
-                    failures += 1
-                } else {
-                    print("ok    ui-probe expect-not \(text)")
-                }
             }
         }
         controller.close()
@@ -1093,6 +1112,24 @@ enum UIProbe {
     }
 
     /// Keep the run loop alive so the app draws and sessions produce.
+    /// What an expectation printed while it may still be asked again.
+    private static var held: [String]?
+
+    /// Lines the steps print: held while an expectation may be asked again.
+    private static func print(_ text: String) {
+        if held != nil { held!.append(text) } else { Swift.print(text) }
+    }
+
+    static let patience = Double(ProcessInfo.processInfo.environment["LIBERTTY_PROBE_PATIENCE"] ?? "") ?? 3
+
+    /// Expectations, asked again until they hold — not those that count
+    /// since their last asking (asking again would move their mark).
+    private static func asksAgain(_ step: Step) -> Bool {
+        let name = String(describing: step)
+        guard name.hasPrefix("expect") else { return false }
+        return !["expectRegrids", "expectResizeFrames", "expectUnmoved"].contains { name.hasPrefix($0) }
+    }
+
     private static func pump(_ seconds: Double) {
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
     }
