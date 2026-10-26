@@ -16,7 +16,7 @@ enum ParseBench {
         // an ordinary launch, a real window that takes the focus.
         let arguments = ["--session-bench": 1, "--link-probe": 1, "--command-probe": 1, "--responsible-probe": 1,
                          "--ui-probe": 2, "--document-probe": 2, "--remote-probe": 1, "--output-probe": 1,
-                         "--shell-probe": 2, "--parse-bench": 1]
+                         "--shell-probe": 2, "--parse-bench": 1, "--screen-probe": 1, "--screen-cover-probe": 1]
         // Not what follows -e: that's a command to run, its words its own.
         let own = args.firstIndex(of: "-e").map { Array(args[..<$0]) } ?? args
         for (flag, count) in arguments {
@@ -64,6 +64,12 @@ enum ParseBench {
         if args.contains("--kitty-key-probe") { kittyKeyProbe() }
         if let i = args.firstIndex(of: "--ui-probe"), i + 2 < args.count {
             MainActor.assumeIsolated { UIProbe.run(script: args[i + 1], output: args[i + 2]) }
+        }
+        if let i = args.firstIndex(of: "--screen-cover-probe"), i + 1 < args.count {
+            MainActor.assumeIsolated { ScreenProbe.cover(seconds: Double(args[i + 1]) ?? 1.5) }
+        }
+        if let i = args.firstIndex(of: "--screen-probe"), i + 1 < args.count {
+            MainActor.assumeIsolated { ScreenProbe.run(output: args[i + 1]) }
         }
         if args.contains("--resize-resync-probe") { resizeResyncProbe() }
         if args.contains("--slow-client-probe") { SlowClientProbe.run() }
