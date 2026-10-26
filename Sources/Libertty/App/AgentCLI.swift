@@ -3,9 +3,9 @@ import LiberttyCore
 
 /// Coding agents in Libertty (after Rex). `+status` reports what a program
 /// is doing to the terminal it runs in (OSC 7501); `+agent-hook` is what
-/// Claude Code's hooks run, so its tab says whether it's working, waiting
-/// for you or done; `+agent-setup` installs those hooks and a skill that
-/// tells it about Libertty's command line.
+/// Claude Code's hooks (and Codex's `notify`) run, so its tab says whether
+/// it's working, waiting for you or done; `+agent-setup` installs those and
+/// a skill that tells it about Libertty's command line.
 enum AgentCLI {
     private static func fail(_ message: String) {
         fflush(stdout)  // after what was printed before it
@@ -135,7 +135,8 @@ enum AgentCLI {
     /// with the hook's JSON on stdin: what the agent does, as its pane's
     /// program status. Inside Libertty only; elsewhere it does nothing.
     static func hook(_ args: [String]) -> Int32 {
-        guard args.count == 2, args[0] == "claude" else { fail("usage: libertty +agent-hook claude EVENT"); return 2 }
+        if args.first == "codex" { return codexHook(Array(args.dropFirst())) }
+        guard args.count == 2, args[0] == "claude" else { fail("usage: libertty +agent-hook claude EVENT | codex notify JSON"); return 2 }
         guard ProcessInfo.processInfo.environment["TERM_PROGRAM"] == "Libertty" else { return 0 }
         func report(_ state: String, id: String = "", kind: String = "", message: String = "") -> String {
             var r = Report(state: state)
@@ -176,6 +177,37 @@ enum AgentCLI {
             reports = [report("clear")]
         default:
             break
+        }
+        let sequence = reports.joined()
+        if !sequence.isEmpty { _ = write(sequence) }
+        return 0
+    }
+
+    /// `+agent-hook codex notify JSON`: what Codex's `notify` runs, the
+    /// event's JSON as its last argument (Codex sends `agent-turn-complete`
+    /// when a turn ends). Codex says nothing as a turn starts, so its tab
+    /// shows done and waiting, not working.
+    private static func codexHook(_ args: [String]) -> Int32 {
+        guard args.count >= 1, args[0] == "notify" else { fail("usage: libertty +agent-hook codex notify JSON"); return 2 }
+        guard ProcessInfo.processInfo.environment["TERM_PROGRAM"] == "Libertty" else { return 0 }
+        let json = args.count > 1 ? args[args.count - 1] : ""
+        let event = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
+        let type = event["type"] as? String ?? ""
+        func report(_ state: String, id: String = "", kind: String = "", message: String = "") -> String {
+            var r = Report(state: state)
+            r.app = "codex"
+            r.id = id
+            r.kind = kind
+            r.message = message
+            guard case .success(let sequence) = r.sequence() else { return "" }
+            return sequence
+        }
+        var reports: [String] = []
+        if type == "agent-turn-complete" {
+            reports = [report("clear", id: turn), report("done", message: event["last-assistant-message"] as? String ?? "")]
+        } else if type.contains("approval") {
+            let message = event["message"] as? String ?? (event["command"] as? [String])?.joined(separator: " ") ?? ""
+            reports = [report("blocked", id: turn, kind: "permission", message: message)]
         }
         let sequence = reports.joined()
         if !sequence.isEmpty { _ = write(sequence) }
@@ -246,24 +278,50 @@ enum AgentCLI {
         return result
     }
 
-    /// `+agent-setup [--claude-dir DIR] [--remove] [--dry-run] [--yes]`:
-    /// Libertty's hooks in Claude Code's settings.json and its skill, after
-    /// saying what changes (and asking, unless --yes).
+    /// `+agent-setup [--agent claude|codex|all] [--claude-dir DIR] [--codex-dir DIR]
+    /// [--remove] [--dry-run] [--yes]`: Libertty's hooks in Claude Code's
+    /// settings.json and Codex's config.toml (`notify`), and the skill for
+    /// each, after saying what changes (and asking, unless --yes). Without
+    /// --agent: Claude Code, and Codex when it's set up here (~/.codex).
     static func setup(_ args: [String]) -> Int32 {
-        let usage = "usage: libertty +agent-setup [--claude-dir DIR] [--remove] [--dry-run] [--yes]"
-        var dir: String?
+        let usage = "usage: libertty +agent-setup [--agent claude|codex|all] [--claude-dir DIR] [--codex-dir DIR] [--remove] [--dry-run] [--yes]"
+        var dir: String?, codexDir: String?, agent: String?
         var i = 0
         while i < args.count {
             switch args[i] {
-            case "--claude-dir":
+            case "--claude-dir", "--codex-dir", "--agent":
                 guard i + 1 < args.count, !args[i + 1].isEmpty else { fail(usage); return 2 }
-                dir = args[i + 1]
+                if args[i] == "--claude-dir" { dir = args[i + 1] } else if args[i] == "--codex-dir" { codexDir = args[i + 1] } else { agent = args[i + 1] }
                 i += 1
             case "--remove", "--dry-run", "--yes": break
             default: fail(usage); return 2
             }
             i += 1
         }
+        let env = ProcessInfo.processInfo.environment
+        let codexRoot = URL(fileURLWithPath: ((codexDir ?? env["CODEX_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? "~/.codex") as NSString).expandingTildeInPath).standardizedFileURL
+        let agents: [String]
+        switch agent {
+        case "claude": agents = ["claude"]
+        case "codex": agents = ["codex"]
+        case "all": agents = ["claude", "codex"]
+        case nil:
+            // A folder given for one of them: that one alone.
+            if dir != nil || codexDir != nil { agents = (dir != nil ? ["claude"] : []) + (codexDir != nil ? ["codex"] : []) }
+            else { agents = ["claude"] + (FileManager.default.fileExists(atPath: codexRoot.path) ? ["codex"] : []) }
+        default: fail(usage); return 2
+        }
+        var status: Int32 = 0
+        if agents.contains("claude") { status = max(status, setupClaude(args, dir: dir)) }
+        if agents.contains("codex") {
+            if agents.count > 1 { print("") }
+            status = max(status, setupCodex(args, root: codexRoot, given: codexDir != nil || env["CODEX_HOME"] != nil))
+        }
+        return status
+    }
+
+    private static func setupClaude(_ args: [String], dir: String?) -> Int32 {
         let removing = args.contains("--remove"), dryRun = args.contains("--dry-run")
         let env = ProcessInfo.processInfo.environment
         let root = URL(fileURLWithPath: ((dir ?? env["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : $0 }
@@ -363,6 +421,140 @@ enum AgentCLI {
         return 0
     }
 
+    // MARK: Codex
+
+    /// What Codex's `notify` runs (it adds the event's JSON as the last
+    /// argument): nothing outside Libertty, nothing that can fail Codex.
+    static let codexNotify = "notify = [\"sh\", \"-c\", '[ \"$TERM_PROGRAM\" = Libertty ] && command -v libertty >/dev/null && "
+        + "libertty +agent-hook codex notify \"$1\" || true', \"libertty-hook\"]"
+
+    /// `config.toml`'s text with Libertty's `notify` (replacing an earlier
+    /// one of Libertty's), or without it. Nil when Codex runs a `notify` of
+    /// someone else's: there's one, and Libertty's would replace it.
+    static func codexConfig(_ text: String, installing: Bool) -> String? {
+        var lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
+        if lines.last == "" { lines.removeLast() }
+        // Top-level keys come before the first table: `notify` is one.
+        let tables = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("[") } ?? lines.count
+        var found: Range<Int>?
+        var i = 0
+        while i < tables {
+            let t = lines[i].trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("notify") && t.dropFirst("notify".count).trimmingCharacters(in: .whitespaces).hasPrefix("=") {
+                // An array over several lines: to its closing bracket.
+                var end = i
+                while end < tables - 1, !lines[end].contains("]") { end += 1 }
+                found = i..<(end + 1)
+                break
+            }
+            i += 1
+        }
+        if let found {
+            guard lines[found].joined().contains("libertty +agent-hook") else { return installing ? nil : text }
+            // This very line already: as it is.
+            if installing, found.count == 1, lines[found.lowerBound] == codexNotify { return text }
+            lines.removeSubrange(found)
+            var at = found.lowerBound
+            // Its comment too, and the blank line set before them.
+            if at > 0, lines[at - 1].hasPrefix("# Libertty") { lines.remove(at: at - 1); at -= 1 }
+            if at > 0, at < lines.count, lines[at - 1].trimmingCharacters(in: .whitespaces).isEmpty,
+               lines[at].trimmingCharacters(in: .whitespaces).isEmpty { lines.remove(at: at) }
+            if at > 0, at == lines.count, lines[at - 1].trimmingCharacters(in: .whitespaces).isEmpty { lines.removeLast() }
+        }
+        if installing {
+            let at = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("[") } ?? lines.count
+            var block = ["# Libertty: the tab says when Codex is done or waits for you (libertty +agent-setup).", codexNotify]
+            if at < lines.count { block.append("") }
+            if at > 0, !lines[at - 1].trimmingCharacters(in: .whitespaces).isEmpty { block.insert("", at: 0) }
+            lines.insert(contentsOf: block, at: at)
+        }
+        while lines.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeLast() }
+        return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func setupCodex(_ args: [String], root: URL, given: Bool) -> Int32 {
+        let removing = args.contains("--remove"), dryRun = args.contains("--dry-run")
+        let fm = FileManager.default
+        let configURL = root.appendingPathComponent("config.toml").resolvingSymlinksInPath()
+        let skillURL = root.appendingPathComponent("skills/libertty/SKILL.md").resolvingSymlinksInPath()
+        let skillDir = skillURL.deletingLastPathComponent()
+        let shown = { (url: URL) in (url.path as NSString).abbreviatingWithTildeInPath }
+        print("Codex's settings: \(shown(root))" + (given ? "" : " (another with --codex-dir, or CODEX_HOME)"))
+        let exists = fm.fileExists(atPath: configURL.path)
+        let current: String
+        if exists {
+            guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+                fail("\(configURL.path) isn't text Libertty can read; nothing changed")
+                return 1
+            }
+            current = text
+        } else {
+            current = ""
+        }
+        guard let updated = codexConfig(current, installing: !removing) else {
+            print("  \(shown(configURL)) already runs a notify program of its own, and Codex runs only one:")
+            print("  have it also run `libertty +agent-hook codex notify \"$JSON\"` with the same argument for Libertty's tab states.")
+            return 1
+        }
+        let configChange = updated != current && !(removing && !exists)
+        let skillText = skill()
+        let installedSkill = try? String(contentsOf: skillURL, encoding: .utf8)
+        let skillChange = removing ? installedSkill != nil : installedSkill != skillText
+        let skillEdited = installedSkill != nil && installedSkill != skillText
+        guard configChange || skillChange else {
+            print(removing ? "Libertty's notify and skill aren't there; nothing to do." : "Already set up; nothing to do.")
+            return 0
+        }
+        let stamp = Int(Date().timeIntervalSince1970)
+        func backupName(_ url: URL) -> URL {
+            (0...).lazy.map { n in
+                url.deletingLastPathComponent()
+                    .appendingPathComponent("\(url.lastPathComponent).libertty-backup-\(stamp)" + (n == 0 ? "" : "-\(n)"))
+            }.first { !fm.fileExists(atPath: $0.path) }!
+        }
+        let backup = backupName(configURL), skillBackup = backupName(skillURL)
+        if configChange {
+            print(removing ? "  \(shown(configURL)): remove Libertty's notify"
+                  : "  \(shown(configURL)): \(exists ? "add" : "create it with") notify, which runs: libertty +agent-hook codex notify JSON")
+            if !removing { print("      (in Libertty: the tab says when Codex is done or waits for your approval)") }
+            if exists { print("      the file as it was goes to \(backup.lastPathComponent)") }
+        }
+        if skillChange {
+            print(removing ? "  \(shown(skillURL)): remove the skill" : "  \(shown(skillURL)): the libertty skill (how to use Libertty's command line)")
+            if skillEdited { print("      it was changed: it goes to \(skillBackup.lastPathComponent)") }
+        }
+        if dryRun { print("(--dry-run: nothing written)"); return 0 }
+        if !args.contains("--yes") {
+            guard isatty(STDIN_FILENO) != 0 else { fail("not asked on a terminal: run again with --yes to go ahead"); return 1 }
+            print("Go ahead? [y/N] ", terminator: "")
+            fflush(stdout)
+            guard let answer = readLine(), ["y", "yes"].contains(answer.lowercased()) else { print("Nothing changed."); return 1 }
+        }
+        do {
+            if configChange {
+                try fm.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let mode = (try? fm.attributesOfItem(atPath: configURL.path))?[.posixPermissions] as? NSNumber
+                if exists { try fm.copyItem(at: configURL, to: backup) }
+                try Data(updated.utf8).write(to: configURL, options: .atomic)
+                if let mode { try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: configURL.path) }
+            }
+            if skillChange {
+                if skillEdited { try fm.moveItem(at: skillURL, to: skillBackup) } else if removing { try fm.removeItem(at: skillURL) }
+                if removing {
+                    if (try? fm.contentsOfDirectory(atPath: skillDir.path))?.isEmpty == true { try? fm.removeItem(at: skillDir) }
+                } else {
+                    try fm.createDirectory(at: skillDir, withIntermediateDirectories: true)
+                    try skillText.write(to: skillURL, atomically: true, encoding: .utf8)
+                }
+            }
+        } catch {
+            fail(error.localizedDescription)
+            return 1
+        }
+        print(removing ? "Removed." : "Done. Codex sessions started in Libertty from now on use it.")
+        return 0
+    }
+
     /// The skill: what Libertty's command line does for an agent.
     static func skill() -> String {
         """
@@ -410,8 +602,8 @@ enum AgentCLI {
         - `libertty +rename-session NAME` — name this session (its tab shows the name); two or three
           lowercase words joined by hyphens. `libertty +rename-session ""` takes the name away.
         - `libertty +status working|blocked|done|error|clear [--message TEXT]` — say what you're doing on
-          this pane's tab. Libertty's hooks already report Claude Code's own states; use it for a long
-          piece of work of your own, e.g. a script that runs a while.
+          this pane's tab. Libertty's hooks already report Claude Code's states (Codex's when a turn ends or
+          waits for approval); use it for a long piece of work of your own, e.g. a script that runs a while.
 
         `libertty +help` lists every command.
         """

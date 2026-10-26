@@ -53,3 +53,14 @@ key:enter
 wait:2.5
 expect-tab:probe-task
 expect:“probe-task”
+# Codex's notify, as the line +agent-setup writes runs it (the event's JSON
+# last): waiting for approval, then done when the turn ends.
+type:sh -c '[ "$TERM_PROGRAM" = Libertty ] && libertty +agent-hook codex notify "$1"' libertty-hook '{"type":"approval-requested","message":"Run make?"}'; sleep 4
+key:enter
+wait:2.0
+expect-status:tab=blocked
+wait:3.0
+type:sh -c '[ "$TERM_PROGRAM" = Libertty ] && libertty +agent-hook codex notify "$1"' libertty-hook '{"type":"agent-turn-complete","last-assistant-message":"All set"}'
+key:enter
+wait:2.0
+expect-status:tab=done

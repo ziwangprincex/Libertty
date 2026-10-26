@@ -225,6 +225,19 @@ check agent-setup sh -c '"$0" +agent-setup --claude-dir "$1" --yes && "$0" +agen
   [ "$(grep -c "agent-hook claude" "$1/settings.json")" = 6 ] && grep -q "say done" "$1/settings.json" && [ -f "$1/skills/libertty/SKILL.md" ] &&
   "$0" +agent-setup --claude-dir "$1" --remove --yes && ! grep -q agent-hook "$1/settings.json" &&
   grep -q "say done" "$1/settings.json" && grep -q opus "$1/settings.json" && [ ! -d "$1/skills/libertty" ]' $LIBERTTY $AGENT
+# +agent-setup for Codex: notify goes in before config.toml's first table,
+# once; a notify of someone else's is left alone; --remove leaves the file as it was.
+CODEX=$PRIVATE/codex
+mkdir -p $CODEX
+print 'model = "gpt-5-codex"\n\n[tui]\nnotifications = true' > $CODEX/config.toml
+cp $CODEX/config.toml $PRIVATE/codex-original.toml
+check agent-setup-codex sh -c '"$0" +agent-setup --agent codex --codex-dir "$1" --yes &&
+  "$0" +agent-setup --agent codex --codex-dir "$1" --yes | grep -q "nothing to do" &&
+  [ "$(grep -c "agent-hook codex notify" "$1/config.toml")" = 1 ] && [ -f "$1/skills/libertty/SKILL.md" ] &&
+  awk "/^notify/ { n = NR } /^\[tui\]/ { t = NR } END { exit !(n && t && n < t) }" "$1/config.toml" &&
+  "$0" +agent-setup --agent codex --codex-dir "$1" --remove --yes && cmp -s "$1/config.toml" "$2" && [ ! -d "$1/skills/libertty" ] &&
+  echo "notify = [\"say\", \"done\"]" > "$1/config.toml" && ! "$0" +agent-setup --agent codex --codex-dir "$1" --yes &&
+  grep -q "say" "$1/config.toml" && ! grep -q agent-hook "$1/config.toml"' $LIBERTTY $CODEX $PRIVATE/codex-original.toml
 # Moving panes and tabs: to a new tab, another tab, a new window, and a
 # window's tab to another window (the windows it opens stay off screen).
 expect move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \

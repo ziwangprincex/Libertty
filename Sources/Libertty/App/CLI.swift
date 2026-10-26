@@ -164,9 +164,10 @@ enum CLI {
                                          report to this terminal what a program is doing (OSC 7501): idle, working,
                                          blocked (waiting for you; KIND permission, question or auth), done, error;
                                          clear [--id ID] takes it back
-          libertty +agent-setup [--claude-dir DIR] [--remove] [--dry-run] [--yes]
+          libertty +agent-setup [--agent claude|codex|all] [--claude-dir DIR] [--codex-dir DIR] [--remove] [--dry-run] [--yes]
                                          Claude Code hooks (its tab says when it works, waits for you or is done;
-                                         it learns where it runs) and a skill for this command line; asks first
+                                         it learns where it runs), Codex's notify (done, waiting for approval) and a
+                                         skill for this command line for each; Codex when ~/.codex is there; asks first
 
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
