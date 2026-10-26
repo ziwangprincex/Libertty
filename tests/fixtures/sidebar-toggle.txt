@@ -5,6 +5,9 @@
 wait:1.0
 # A window appears as it is: AppKit's opening zoom made its text seem to change size.
 expect-no-open-animation:go
+# The drawable stays at 1:1 from the top-left when AppKit sets the layer's gravity
+# again (its default stretched it: the text showed squeezed, the sidebar's button, Shift+Tab).
+expect-pinned:go
 # (The grid it starts with counts as one; from here on, none.)
 expect-regrids:1
 expect-resize-frames:1
@@ -49,4 +52,5 @@ wait:0.5
 expect-unmoved:here
 expect-regrids:0
 expect-resize-frames:0
+expect-pinned:go
 expect-font:13

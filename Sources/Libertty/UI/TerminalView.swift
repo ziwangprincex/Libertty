@@ -75,6 +75,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     init(session: TerminalSession, config: Config) throws {
         self.session = session
         super.init(frame: .zero)
+        // The layer is AppKit's (layer-backed): AppKit sets its gravity from
+        // this, at times of its own, over ours below — and its default stretches
+        // the contents to the bounds. The drawable is larger than the view
+        // (see updateGrid), so the text showed squeezed (to about 90% × 80%)
+        // until the next frame: the sidebar's button, Shift+Tab. Top-left is
+        // what AppKit then sets: the bottom-left below, for this flipped view.
+        layerContentsPlacement = .topLeft
         wantsLayer = true
         layerContentsRedrawPolicy = .duringViewResize
 
@@ -228,6 +235,17 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         updateGrid()
     }
 
+    /// The drawable at 1:1 from the top-left, cropped, never scaled to the
+    /// bounds — whatever set the layer's gravity since (see init).
+    private func pinContents() {
+        if metalLayer.contentsGravity != .bottomLeft { metalLayer.contentsGravity = .bottomLeft }
+    }
+
+    /// The layer's gravity and how AppKit places it (`--ui-probe`).
+    var contentsPlacementSummary: String {
+        "placement \(layerContentsPlacement.rawValue) gravity \(metalLayer.contentsGravity.rawValue)"
+    }
+
     /// Wake the display link; it pauses itself once frames stop changing.
     func setNeedsRender(force: Bool = false) {
         if force { forceRedraw = true }
@@ -272,6 +290,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// Draw if anything changed; returns whether a frame was presented.
     @discardableResult
     private func drawFrame() -> Bool {
+        pinContents()
         // Something else took the viewport to the bottom (typing, new
         // output while following): the rows line up again.
         if smoothOffset != 0, session.scrollbar.atBottom { setSmoothOffset(0) }
@@ -761,6 +780,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         metalLayer.presentsWithTransaction = true
         lastResize = CACurrentMediaTime()
         resizeFrames += 1
+        pinContents()
         renderer.render(session, into: metalLayer, focused: isFocused, force: true)
         // This was the display link's frame too: drawing it twice would hold
         // every drawable and stall the next step for up to a second.
