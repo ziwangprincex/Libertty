@@ -39,6 +39,12 @@ struct Config: Equatable {
         return on.values.allSatisfy { $0 }
     }
     var fontSize: Double = 13
+    /// Ghostty's `adjust-cell-height`: pixels or a percentage added to the
+    /// font's line height (Rex's line height), the text kept centered.
+    var adjustCellHeight = MetricAdjust.none
+    /// Ghostty's `minimum-contrast`: text below this WCAG contrast ratio
+    /// against its background is drawn white or black (1: never).
+    var minimumContrast: Double = 1
     var background: RGB?
     var foreground: RGB?
     var cursorColor: RGB?
@@ -205,6 +211,8 @@ struct Config: Equatable {
         ("font-family", "A monospaced font family (libertty +list-fonts). Empty: the bundled JetBrainsMono Nerd Font."),
         ("font-feature", "As in Ghostty: -calt (or -liga) turns programming ligatures (-> != ===) off. Repeatable."),
         ("font-size", "Points, 6–72."),
+        ("adjust-cell-height", "Make the line height taller or shorter, as in Ghostty: a number of pixels (2, -1) or a percentage (20%) added to the font's own; the text stays centered, and box drawing and powerline glyphs follow the cell."),
+        ("minimum-contrast", "The least contrast text may have against its background, as in Ghostty: a WCAG ratio from 1 (anything, default) to 21; text below it is drawn white or black. 1.1 keeps text from vanishing, 3 or more keeps it easy to read. Not box drawing, powerline glyphs or emoji."),
         ("background", "Override the theme's background (#rrggbb)."),
         ("foreground", "Override the theme's text color."),
         ("cursor-color", "Override the theme's cursor color."),
@@ -287,6 +295,8 @@ struct Config: Equatable {
         case "font-family": return [fontFamily]
         case "font-feature": return fontFeatures
         case "font-size": return [num(fontSize)]
+        case "adjust-cell-height": return [adjustCellHeight.configString]
+        case "minimum-contrast": return [num(minimumContrast)]
         case "background": return color(background)
         case "foreground": return color(foreground)
         case "cursor-color": return color(cursorColor)
@@ -504,6 +514,12 @@ struct Config: Equatable {
         case "font-size":
             if reset { fontSize = defaults.fontSize; return nil }
             guard let x = double(6...72) else { return "not a number" }; fontSize = x
+        case "adjust-cell-height":
+            if reset { adjustCellHeight = defaults.adjustCellHeight; return nil }
+            guard let x = MetricAdjust(v) else { return "a number of pixels (2, -1) or a percentage (20%)" }; adjustCellHeight = x
+        case "minimum-contrast":
+            if reset { minimumContrast = defaults.minimumContrast; return nil }
+            guard let x = double(1...21) else { return "a contrast ratio from 1 to 21" }; minimumContrast = x
         case "background": guard let x = color() else { return "not a color" }; background = x
         case "foreground": guard let x = color() else { return "not a color" }; foreground = x
         case "cursor-color": guard let x = color() else { return "not a color" }; cursorColor = x

@@ -68,6 +68,7 @@ check snapshot-underlines $LIBERTTY --snapshot $OUT/underlines.png --cols 40 --r
 check snapshot-sprites $LIBERTTY --snapshot $OUT/sprites.png --cols 64 --rows 6 -- sh $ROOT/tests/fixtures/sprites.sh
 check snapshot-ligatures $LIBERTTY --snapshot $OUT/ligatures.png --cols 64 --rows 4 -- 'printf "a -> b => c != d === e !== f <= g |> h <!-- -->\nplain words (just text)\n"'
 expect padding-color 'padding-color: all passed' zsh $ROOT/tests/padding-color-test.sh $LIBERTTY $OUT
+expect text-render 'text-render: all passed' zsh $ROOT/tests/text-render-test.sh $LIBERTTY $OUT
 # Smooth scrolling half a row into the history: the row below the viewport peeks in.
 check snapshot-smooth-scroll $LIBERTTY --snapshot $OUT/smooth-scroll.png --cols 40 --rows 6 --scroll-up 10 --offset 50 -- \
   'i=1; while [ $i -le 40 ]; do printf "\033[3%dmline %02d\033[0m \033[4%dm bg %02d \033[0m\n" $((i % 7 + 1)) $i $((i % 7 + 1)) $i; i=$((i+1)); done'

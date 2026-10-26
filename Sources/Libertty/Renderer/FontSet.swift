@@ -25,8 +25,8 @@ final class FontSet {
     static let preferredFamilies = [FontRegistry.bundledFamily, "JetBrains Mono", "SF Mono", "Menlo"]
 
     /// `family` comes first when given; a family that isn't installed falls
-    /// back to the bundled font.
-    init(family: String = "", pointSize: CGFloat, scale: CGFloat) {
+    /// back to the bundled font. `cellHeightAdjust` is `adjust-cell-height`.
+    init(family: String = "", pointSize: CGFloat, scale: CGFloat, cellHeightAdjust: MetricAdjust = .none) {
         FontRegistry.registerBundledFonts()
         self.pointSize = pointSize
         self.scale = scale
@@ -76,9 +76,11 @@ final class FontSet {
         let descent = CTFontGetDescent(regular)
         let leading = CTFontGetLeading(regular)
         cellWidth = max(1, Int(advance.width.rounded(.up)))
-        cellHeight = max(1, Int((ascent + descent + leading).rounded(.up)))
-        // Split leading evenly above and below so text sits centered in the cell.
-        baseline = Int((ascent + leading / 2).rounded(.up))
+        let natural = max(1, Int((ascent + descent + leading).rounded(.up)))
+        cellHeight = max(1, cellHeightAdjust.applied(to: natural))
+        // Split leading evenly above and below so text sits centered in the
+        // cell; so does the height adjust-cell-height adds (or takes away).
+        baseline = Int((ascent + leading / 2).rounded(.up)) + (cellHeight - natural) / 2
 
         underlineThickness = max(1, Int(CTFontGetUnderlineThickness(regular).rounded()))
         underlinePosition = min(cellHeight - underlineThickness,
@@ -154,5 +156,40 @@ final class FontSet {
             families.insert(family)
         }
         return families.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+}
+
+/// Ghostty's font metric modifiers (`adjust-cell-height`): a number adds that
+/// many pixels to the font's own value, a percentage that share of it (`2`,
+/// `-1`, `20%`, `-10%`); it never sets the value outright.
+enum MetricAdjust: Equatable {
+    case pixels(Int)
+    case percent(Double)
+
+    static let none = MetricAdjust.pixels(0)
+
+    init?(_ text: String) {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if t.hasSuffix("%") {
+            guard let p = Double(t.dropLast().trimmingCharacters(in: .whitespaces)), p > -100, p <= 1000 else { return nil }
+            self = .percent(p)
+        } else {
+            guard let n = Int(t), abs(n) <= 1000 else { return nil }
+            self = .pixels(n)
+        }
+    }
+
+    var configString: String {
+        switch self {
+        case .pixels(let n): return n == 0 ? "" : String(n)
+        case .percent(let p): return (p == p.rounded() ? String(Int(p)) : String(p)) + "%"
+        }
+    }
+
+    func applied(to value: Int) -> Int {
+        switch self {
+        case .pixels(let n): return value + n
+        case .percent(let p): return Int((Double(value) * (1 + p / 100)).rounded())
+        }
     }
 }

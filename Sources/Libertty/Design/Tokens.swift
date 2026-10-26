@@ -91,6 +91,31 @@ struct RGB: Equatable {
     func packed(alpha: UInt8 = 255) -> UInt32 {
         UInt32(r) | UInt32(g) << 8 | UInt32(b) << 16 | UInt32(alpha) << 24
     }
+
+    /// sRGB → linear, per channel value.
+    private static let linear: [Double] = (0..<256).map { i in
+        let c = Double(i) / 255
+        return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    }
+
+    /// Relative luminance (WCAG 2.0), 0 for black to 1 for white.
+    var luminance: Double {
+        0.2126 * Self.linear[Int(r)] + 0.7152 * Self.linear[Int(g)] + 0.0722 * Self.linear[Int(b)]
+    }
+
+    /// WCAG 2.0 contrast ratio, 1 (the same) to 21 (black on white).
+    func contrast(with other: RGB) -> Double {
+        let (a, b) = (luminance, other.luminance)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    /// Ghostty's `minimum-contrast`: this color as text on `background`, or
+    /// white or black (whichever reads better) when it's below `minimum`.
+    func readable(on background: RGB, minimum: Double) -> RGB {
+        guard minimum > 1, contrast(with: background) < minimum else { return self }
+        let l = background.luminance
+        return 1.05 / (l + 0.05) > (l + 0.05) / 0.05 ? RGB(255, 255, 255) : RGB(0, 0, 0)
+    }
 }
 
 enum Timing {

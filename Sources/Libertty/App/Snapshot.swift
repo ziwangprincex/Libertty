@@ -95,13 +95,14 @@ enum Snapshot {
                                wait: Double = 0, settle: Double = 0) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw TerminalError.libghostty("no Metal device") }
         let scale: CGFloat = 2
-        let fonts = FontSet(family: config.fontFamily, pointSize: fontSize, scale: scale)
+        let fonts = FontSet(family: config.fontFamily, pointSize: fontSize, scale: scale, cellHeightAdjust: config.adjustCellHeight)
         let initStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         let renderer = try TerminalRenderer(device: device, fonts: fonts)
         renderer.selectionColor = config.resolvedTheme.selection
         renderer.ligatures = config.ligatures
         renderer.backgroundOpacity = config.backgroundOpacity
         renderer.paddingColor = config.windowPaddingColor
+        renderer.minimumContrast = config.minimumContrast
         if benchFrames > 0 {
             FileHandle.standardError.write(String(format: "renderer init: %.1f ms\n",
                 Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - initStart) / 1e6).data(using: .utf8)!)

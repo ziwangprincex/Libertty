@@ -24,6 +24,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     // Settings (see `apply`)
     private var fontFamily = ""
+    private var cellHeightAdjust = MetricAdjust.none
     private var configFontSize: CGFloat?
     private(set) var padding = Config().padding
     private var unfocusedOpacity: CGFloat = 0.65
@@ -141,6 +142,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         renderer.ligatures = config.ligatures
         renderer.backgroundOpacity = config.backgroundOpacity
         renderer.paddingColor = config.windowPaddingColor
+        renderer.minimumContrast = config.minimumContrast
         metalLayer.isOpaque = config.backgroundOpacity >= 1
         padding = config.padding
         unfocusedOpacity = config.unfocusedSplitOpacity
@@ -158,8 +160,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if !smoothScrolling { setSmoothOffset(0) }
 
         let size = CGFloat(config.fontSize)
-        let familyChanged = config.fontFamily != fontFamily
+        let familyChanged = config.fontFamily != fontFamily || config.adjustCellHeight != cellHeightAdjust
         fontFamily = config.fontFamily
+        cellHeightAdjust = config.adjustCellHeight
         if configFontSize != size || resetFontSize {
             configFontSize = size
             if fontSize != size {
@@ -232,7 +235,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private func rebuildFonts() {
         let scale = window?.backingScaleFactor ?? 2
         metalLayer.contentsScale = scale
-        renderer.setFonts(FontSet(family: fontFamily, pointSize: fontSize, scale: scale))
+        renderer.setFonts(FontSet(family: fontFamily, pointSize: fontSize, scale: scale, cellHeightAdjust: cellHeightAdjust))
         updateGrid()
     }
 

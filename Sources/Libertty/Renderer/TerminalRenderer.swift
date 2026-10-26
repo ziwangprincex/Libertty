@@ -100,6 +100,11 @@ final class TerminalRenderer {
     /// cells with their own background color stay opaque.
     var backgroundOpacity: Double = 1
     var paddingColor = PaddingColor.background
+    /// Ghostty's `minimum-contrast` (a WCAG ratio, 1–21): text that reads
+    /// worse against its background is drawn white or black. Box drawing,
+    /// blocks and powerline glyphs keep their colors (they meet backgrounds
+    /// on purpose), as in Ghostty; emoji have their own.
+    var minimumContrast: Double = 1
     /// A full-screen program's screen: `extend` carries its edges anyway.
     private var alternateScreen = false
     /// Far enough past the grid to reach every drawable's edge (the GPU clips).
@@ -451,6 +456,15 @@ final class TerminalRenderer {
 
     /// Powerline's shapes drawn to fit their cells (Ghostty's list): carried
     /// into the padding, they'd stretch.
+    /// Box drawing, block elements, legacy computing symbols and powerline
+    /// glyphs: drawn to meet the cells around them (Ghostty's `noMinContrast`).
+    private static func isGraphicsElement(_ cp: UInt32) -> Bool {
+        switch cp {
+        case 0x2500...0x259F, 0x1FB00...0x1FBFF, 0x1CC00...0x1CEBF, 0xE0B0...0xE0D7: true
+        default: false
+        }
+    }
+
     private static func isPowerline(_ cp: UInt32) -> Bool {
         switch cp {
         case 0xE0B0...0xE0C8, 0xE0CA, 0xE0CC...0xE0D2, 0xE0D4: true
@@ -563,6 +577,9 @@ final class TerminalRenderer {
             if paddingColor != .background, graphemes > 0, Self.isPowerline(cp) { row.keepsPadding = true }
 
             guard graphemes > 0, !style.invisible else { continue }
+            if minimumContrast > 1, !Self.isGraphicsElement(cp) {
+                fg = fg.readable(on: bg ?? colors.background, minimum: minimumContrast)
+            }
             let fgColor = fg.packed(alpha: style.faint ? 128 : 255)
 
             var fontStyle: FontSet.Style = []

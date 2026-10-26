@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `minimum-contrast` (as in Ghostty): text that reads worse against its background than this WCAG ratio is drawn white or black; dark-gray output on a dark theme, or a program's colors that clash with the theme's, stay readable. Box drawing, blocks and powerline glyphs keep their colors.
+- `adjust-cell-height` (as in Ghostty; Rex's line height): taller or shorter rows, in pixels (`2`) or a percentage (`20%`), the text centered in them; box drawing and powerline glyphs follow the cell.
+
 ## 0.3.7
 
 > The terminal's text no longer shows squeezed for a moment when a window comes back (Stage Manager, the Dock, launching).
