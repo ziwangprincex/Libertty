@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed, this time where the window server is concerned too: a window brought back (Stage Manager, the Dock, launching) showed the terminal's last frame squeezed (to about 90% wide and 70% tall) until the next frame. The terminal's drawable was larger than the view (it grew in 256-pixel steps), and there the window server maps the contents onto the view whatever the layer's gravity says. The drawable is the view's size now, pixel for pixel (as Ghostty's), so mapped onto the view it shows as it is. Picture in Picture and the floating card, which show it scaled, keep the pane's true shape as well.
+
 ## 0.3.6
 
 > The terminal's text no longer shows squeezed for a moment (after Shift+Tab, the sidebar's button and others): fixed at its cause.

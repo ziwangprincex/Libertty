@@ -77,10 +77,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         super.init(frame: .zero)
         // The layer is AppKit's (layer-backed): AppKit sets its gravity from
         // this, at times of its own, over ours below — and its default stretches
-        // the contents to the bounds. The drawable is larger than the view
-        // (see updateGrid), so the text showed squeezed (to about 90% × 80%)
-        // until the next frame: the sidebar's button, Shift+Tab. Top-left is
-        // what AppKit then sets: the bottom-left below, for this flipped view.
+        // the contents to the bounds, which squeezed a drawable larger than the
+        // view (the sidebar's button, Shift+Tab). Top-left is what AppKit then
+        // sets: the bottom-left below, for this flipped view. (The drawable is
+        // the view's size too now, see updateGrid; a frame not yet redrawn
+        // for a new size is still cropped, not stretched.)
         layerContentsPlacement = .topLeft
         wantsLayer = true
         layerContentsRedrawPolicy = .duringViewResize
@@ -244,6 +245,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// The layer's gravity and how AppKit places it (`--ui-probe`).
     var contentsPlacementSummary: String {
         "placement \(layerContentsPlacement.rawValue) gravity \(metalLayer.contentsGravity.rawValue)"
+    }
+
+    /// The drawable is the view, pixel for pixel (`--ui-probe`): mapped onto
+    /// the bounds, it shows as it is.
+    var drawableFitsView: Bool {
+        let scale = metalLayer.contentsScale
+        return abs(metalLayer.drawableSize.width - bounds.width * scale) < 1 && abs(metalLayer.drawableSize.height - bounds.height * scale) < 1
     }
 
     /// Wake the display link; it pauses itself once frames stop changing.
@@ -774,8 +782,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         guard freezes == 0 else { return }
         layoutOverlays()
         let stale = updateGrid()
-        // Same grid and drawable: the frame on screen is still right (it is
-        // pinned top-left and at least as big as the view), so skip the draw.
+        // Same grid and drawable (the same size in pixels): the frame on
+        // screen is still right, so skip the draw.
         guard changed, stale, window != nil, renderer != nil else { return }
         metalLayer.presentsWithTransaction = true
         lastResize = CACurrentMediaTime()
@@ -849,12 +857,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         // Before the first layout the view has no size yet; reporting a 1×1
         // grid would reach programs that start immediately (`stty size`).
         guard usableW >= CGFloat(fonts.cellWidth), usableH >= CGFloat(fonts.cellHeight) else { return false }
-        // Drawables come in 256 px steps: a resize then reuses the same size
-        // for many frames instead of allocating a new surface every step.
-        // The extra is cropped (top-left gravity, clipped bounds), never scaled.
-        let bucket: CGFloat = 256
-        let drawable = CGSize(width: (bounds.width * scale / bucket).rounded(.up) * bucket,
-                              height: (bounds.height * scale / bucket).rounded(.up) * bucket)
+        // Exactly the view, in pixels (as Ghostty's). A larger drawable (it
+        // grew in 256 px steps, to keep one size through a resize) is pinned
+        // top-left by the layer's gravity — but not where the window server
+        // maps the contents onto the bounds whatever the gravity says: a window
+        // brought back (Stage Manager, the Dock) showed its last frame so,
+        // squeezed to about 90% × 70%, until the next frame. At the view's
+        // own size, mapped onto the bounds is as it is.
+        let largest = CGFloat(metalLayer.device?.supportsFamily(.apple3) == true ? 16384 : 8192)
+        let drawable = CGSize(width: min(largest, max(1, (bounds.width * scale).rounded())),
+                              height: min(largest, max(1, (bounds.height * scale).rounded())))
         var changed = false
         if metalLayer.drawableSize != drawable {
             metalLayer.drawableSize = drawable

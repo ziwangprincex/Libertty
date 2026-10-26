@@ -48,7 +48,7 @@ import LiberttyCore
 ///   expect-searching:N    N panes of the tab in front (parked ones too) have a search open
 ///   expect-no-open-animation:go  the window appears as it is (no zoom: its text would seem to change size)
 ///   expect-resize-frames:N the focused pane drew N frames inside a resize since the last of these
-///   expect-pinned:go      every pane's drawable is pinned top-left, also once AppKit sets its gravity again
+///   expect-pinned:go      every pane's drawable is its view's size and pinned top-left, also once AppKit sets its gravity again
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -534,6 +534,8 @@ enum UIProbe {
                     pane.layerContentsPlacement = pane.layerContentsPlacement
                     let summary = pane.contentsPlacementSummary
                     if !summary.hasSuffix("gravity bottomLeft") { wrong.append(summary) }
+                    // The window server maps it onto the bounds whatever the gravity (a window brought back).
+                    if !pane.drawableFitsView { wrong.append("drawable \(pane.drawableSize) for a view of \(pane.bounds.size)") }
                 }
                 if wrong.isEmpty { print("ok    ui-probe \(panes.count) panes pinned top-left") } else {
                     print("FAIL  ui-probe pinned: \(wrong.joined(separator: "; ")) (its drawable would be stretched to the view)")
