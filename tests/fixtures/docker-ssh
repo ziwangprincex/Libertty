@@ -1,0 +1,25 @@
+#!/bin/sh
+# Stands in for ssh in the Linux check (tests/linux.sh, LIBERTTY_SSH points
+# here): takes ssh's options, then runs the remote command in a Linux
+# container ($LINUX_CONTAINER) as its user `tester`, through `docker exec`
+# ($DOCKER), stdin and stdout passed through as ssh passes them; its login
+# shell is $LINUX_SHELL (bash when unset). While
+# $FAKE_SSH_DOWN exists, the "network" is down.
+check=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -O) [ "$2" = check ] && check=1; shift 2 ;;
+    -o|-F|-S|-p|-l|-i|-J|-L|-R|-D|-E|-b|-c|-e|-m|-Q|-W|-w) shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+host=$1
+shift
+if [ -n "$FAKE_SSH_DOWN" ] && [ -e "$FAKE_SSH_DOWN" ]; then
+  echo "ssh: connect to host $host port 22: Network is unreachable" >&2
+  exit 255
+fi
+[ $check = 1 ] && exit 0
+exec "$DOCKER" exec -i -u tester -w /home/tester -e HOME=/home/tester -e SHELL="${LINUX_SHELL:-/bin/bash}" -e LANG=C.UTF-8 \
+  -e USER=tester "$LINUX_CONTAINER" /bin/sh -c "$*"

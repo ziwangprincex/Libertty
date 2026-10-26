@@ -379,8 +379,15 @@ enum ParseBench {
             let down = ProcessInfo.processInfo.environment["FAKE_SSH_DOWN"] ?? "/tmp/libertty-test/fake-ssh-down"
             FileManager.default.createFile(atPath: down, contents: nil)
             let kill = Process()
-            kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-            kill.arguments = ["-f", info.liberttyd + " --bridge"]
+            // The bridges are processes here (fake-ssh), or there: then
+            // FAKE_SSH_KILL is how to end them (docker-ssh's container).
+            if let there = ProcessInfo.processInfo.environment["FAKE_SSH_KILL"], !there.isEmpty {
+                kill.executableURL = URL(fileURLWithPath: "/bin/sh")
+                kill.arguments = ["-c", there]
+            } else {
+                kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+                kill.arguments = ["-f", info.liberttyd + " --bridge"]
+            }
             try kill.run()
             kill.waitUntilExit()
             check("link down", wait(5) { !session.linkUp })
