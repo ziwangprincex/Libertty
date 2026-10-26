@@ -20,7 +20,9 @@ wait:1.5
 page-js:libertty_canvas.api.getSceneElements().length ==> 1
 # Unsaved and changed on disk: the save is refused, never overwriting.
 page-js:(() => { const a = libertty_canvas.api; a.updateScene({ elements: [...a.getSceneElementsIncludingDeleted(), { ...a.getSceneElements()[0], id: "second", x: 600, version: 1 }] }); return "ok"; })()
-shell:python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['appState']={'viewBackgroundColor':'#123456'}; json.dump(d, open(p,'w'))" @DIR@/sketch.excalidraw
+# (perl, not python: it must land before the edit's save, 0.4 s after it —
+# python's start alone can take that on a busy machine.)
+shell:perl -MJSON::PP -0777 -i -pe '$d = decode_json($_); $d->{appState} = {viewBackgroundColor => "#123456"}; $_ = encode_json($d)' @DIR@/sketch.excalidraw
 wait:1.5
 expect-shell:grep -c second @DIR@/sketch.excalidraw || true ==> 0
 expect-page:changed on disk

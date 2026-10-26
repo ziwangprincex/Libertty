@@ -12,25 +12,29 @@ enum FontRegistry {
     static func registerBundledFonts() {
         guard !registered else { return }
         registered = true
-        let fonts = fontDirectories.lazy
-            .compactMap { dir in try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) }
-            .first { !$0.isEmpty }?
-            .filter { ["ttf", "otf"].contains($0.pathExtension.lowercased()) } ?? []
+        let fonts = fontFiles
         guard !fonts.isEmpty else { return }
         CTFontManagerRegisterFontURLs(fonts as CFArray, .process, true, nil)
     }
 
-    /// The app bundle's Resources/Fonts, or the vendored copy when running
-    /// unbundled from `swift build` (development and snapshot tests).
-    private static var fontDirectories: [URL] {
-        var dirs: [URL] = []
+    /// The app bundle's Resources/Fonts; unbundled (`swift build`: development,
+    /// the tests), the same files where the checkout keeps them — not a copy
+    /// a bundle made earlier, which a fresh checkout doesn't have yet.
+    private static var fontFiles: [URL] {
+        func fonts(in dir: URL) -> [URL] {
+            ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+                .filter { ["ttf", "otf"].contains($0.pathExtension.lowercased()) }
+        }
         if let resources = Bundle.main.resourceURL {
-            dirs.append(resources.appendingPathComponent("Fonts"))
+            let bundled = fonts(in: resources.appendingPathComponent("Fonts"))
+            if !bundled.isEmpty { return bundled }
         }
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        dirs.append(root.appendingPathComponent("build/fonts"))
-        return dirs
+        let mono = root.appendingPathComponent("vendor/ghostty/src/font/res")
+        let ui = root.appendingPathComponent("vendor/geist")
+        return ["Regular", "Bold", "Italic", "BoldItalic"].map { mono.appendingPathComponent("JetBrainsMonoNerdFont-\($0).ttf") }
+            + ["Regular", "Medium", "SemiBold"].map { ui.appendingPathComponent("Geist-\($0).ttf") }
     }
 }

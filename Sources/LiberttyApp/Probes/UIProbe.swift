@@ -459,7 +459,8 @@ enum UIProbe {
                             failures += 1
                         }
                     case .pageWait:
-                        let deadline = Date().addingTimeInterval(10)
+                        // A first page also starts WebKit's processes: slow on a busy machine.
+                        let deadline = Date().addingTimeInterval(max(10, Self.patience * 3))
                         var ready = false
                         while !ready, Date() < deadline {
                             pump(0.2)
@@ -467,7 +468,7 @@ enum UIProbe {
                         }
                         if ready { print("ok    ui-probe page up"); pump(0.3) } else { print("FAIL  ui-probe page: never drew"); failures += 1 }
                     case .expectPage(let text, let want):
-                        let deadline = Date().addingTimeInterval(want ? 3 : 0.5)
+                        let deadline = Date().addingTimeInterval(want ? max(3, Self.patience) : 0.5)
                         var has = false
                         repeat {
                             has = (pageEvaluate(controller, "document.body.innerText.includes(\(jsLiteral(text)))") as? Bool) == true
