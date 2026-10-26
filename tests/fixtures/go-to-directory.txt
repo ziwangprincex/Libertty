@@ -39,3 +39,17 @@ expect-palette:folders · new tab here
 key:enter
 wait:1.5
 expect-tab-count:3
+# ⌥↵: there in the focused pane instead, at its prompt (no new tab).
+action:go_to_directory
+wait:0.5
+type:@DIR@/sub-al
+wait:0.4
+expect-palette:sub-alpha
+key:alt+enter
+wait:1.5
+expect-tab-count:3
+type:pwd | sed 's/^/HERE=/'
+key:enter
+wait:0.8
+expect:HERE=
+expect:sub-alpha

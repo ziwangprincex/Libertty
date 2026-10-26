@@ -57,6 +57,8 @@ enum CLI {
         case "+rename-session": status = renameSession(rest)
         case "+split": status = split(rest)
         case "+move-pane": status = movePane(rest)
+        case "+swap-pane": status = swapPane(rest)
+        case "+resize-pane": status = resizePane(rest)
         case "+status": status = AgentCLI.status(rest)
         case "+agent-hook": status = AgentCLI.hook(rest)
         case "+agent-setup": status = AgentCLI.setup(rest)
@@ -147,9 +149,12 @@ enum CLI {
                                          a new pane beside the one showing session ID (this pane's without it),
                                          kept when its program ends with --keep-open;
                                          prints the new session's ID (a pane on a host: add --host HOST for --cwd)
-          libertty +move-pane [ID] --new-tab | --tab N | --new-window
+          libertty +move-pane [ID] --new-tab | --tab N | --new-window | --beside OTHER [--right|--left|--down|--up]
                                          move the pane showing session ID (this pane's without it);
-                                         tab N of its own window
+                                         tab N of its own window; beside OTHER's pane in the same split
+          libertty +swap-pane [ID] OTHER    the two panes trade places in their split (each place keeps its size)
+          libertty +resize-pane [ID] --right|--left|--down|--up POINTS | --equalize
+                                         move the divider on that side of the pane by POINTS; even out the split
           libertty +attach ID [--window]    show a session in a tab (or window) of the running Libertty; a session
                                          shown twice mirrors: both follow it, closing one leaves the other
         Inside Libertty, $LIBERTTY_SESSION is the current pane's ID.
@@ -532,9 +537,10 @@ enum CLI {
     /// session ID (this pane's without it) moves, in the running Libertty.
     /// Tab N is of the pane's own window and workspace.
     private static func movePane(_ args: [String]) -> Int32 {
-        let usage = "usage: libertty +move-pane [ID] --new-tab | --tab N | --new-window"
+        let usage = "usage: libertty +move-pane [ID] --new-tab | --tab N | --new-window | --beside OTHER [--right|--left|--down|--up]"
         var id = ProcessInfo.processInfo.environment["LIBERTTY_SESSION"].flatMap { $0.isEmpty ? nil : $0 }
         var to: String?
+        var side = "right"
         var i = 0
         while i < args.count {
             switch args[i] {
@@ -544,6 +550,11 @@ enum CLI {
                 guard i + 1 < args.count, let n = Int(args[i + 1]), n > 0 else { fail(usage); return 2 }
                 to = "tab:\(n)"
                 i += 1
+            case "--beside":
+                guard i + 1 < args.count, !args[i + 1].hasPrefix("-") else { fail(usage); return 2 }
+                to = "beside:" + args[i + 1]
+                i += 1
+            case "--right", "--left", "--down", "--up": side = String(args[i].dropFirst(2))
             case let a where !a.hasPrefix("-"): id = a
             default: fail(usage); return 2
             }
@@ -551,7 +562,7 @@ enum CLI {
         }
         guard let id, let to else { fail(usage); return 2 }
         guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
-        let answer = RemoteControl.request(["kind": "move-pane", "id": id, "to": to], timeout: 10)
+        let answer = RemoteControl.request(["kind": "move-pane", "id": id, "to": to, "side": side], timeout: 10)
         switch answer?["result"] {
         case "moved":
             return 0
@@ -560,6 +571,58 @@ enum CLI {
             return 1
         case "refused":
             fail("can't move it: \(answer?["message"] ?? "")")
+            return 1
+        default:
+            fail("Libertty didn't answer (one older than this command?)")
+            return 1
+        }
+    }
+
+    /// `+swap-pane [ID] OTHER`: the panes showing the two sessions trade
+    /// places (Rex's swap). Without ID, this pane.
+    private static func swapPane(_ args: [String]) -> Int32 {
+        let usage = "usage: libertty +swap-pane [ID] OTHER"
+        let mine = ProcessInfo.processInfo.environment["LIBERTTY_SESSION"].flatMap { $0.isEmpty ? nil : $0 }
+        let ids = args.filter { !$0.hasPrefix("-") }
+        guard args.count == ids.count, let (id, other) = ids.count == 2 ? (ids[0], ids[1]) : ids.count == 1 ? mine.map({ ($0, ids[0]) }) : nil
+        else { fail(usage); return 2 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        return arrangeAnswer(RemoteControl.request(["kind": "swap-pane", "id": id, "with": other], timeout: 10), id: id, done: "swapped")
+    }
+
+    /// `+resize-pane [ID] --right|--left|--down|--up POINTS | --equalize`:
+    /// the divider on that side of the pane moves (Ghostty's resize_split).
+    private static func resizePane(_ args: [String]) -> Int32 {
+        let usage = "usage: libertty +resize-pane [ID] --right|--left|--down|--up POINTS | --equalize"
+        var id = ProcessInfo.processInfo.environment["LIBERTTY_SESSION"].flatMap { $0.isEmpty ? nil : $0 }
+        var direction: String?, points = 0
+        var i = 0
+        while i < args.count {
+            switch args[i] {
+            case "--right", "--left", "--down", "--up":
+                guard i + 1 < args.count, let n = Int(args[i + 1]), n > 0 else { fail(usage); return 2 }
+                (direction, points) = (String(args[i].dropFirst(2)), n)
+                i += 1
+            case "--equalize": direction = "equalize"
+            case let a where !a.hasPrefix("-"): id = a
+            default: fail(usage); return 2
+            }
+            i += 1
+        }
+        guard let id, let direction else { fail(usage); return 2 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        let answer = RemoteControl.request(["kind": "resize-pane", "id": id, "direction": direction, "points": String(points)], timeout: 10)
+        return arrangeAnswer(answer, id: id, done: "resized")
+    }
+
+    private static func arrangeAnswer(_ answer: [String: String]?, id: String, done: String) -> Int32 {
+        switch answer?["result"] {
+        case done: return 0
+        case "no-pane":
+            fail("no window shows session \(answer?["missing"] ?? id) (libertty +list-sessions)")
+            return 1
+        case "refused":
+            fail("can't: \(answer?["message"] ?? "")")
             return 1
         default:
             fail("Libertty didn't answer (one older than this command?)")

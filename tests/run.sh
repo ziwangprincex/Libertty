@@ -232,6 +232,9 @@ expect move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
 # +split and +move-pane: panes arranged by session ID from a pane's shell.
 expect split-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/split-cli.txt)" $OUT --persist
+# libertty +swap-pane, +resize-pane, +move-pane --beside.
+expect arrange-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/arrange-cli.txt)" $OUT --persist
 # A program that fails at once keeps its pane (a key closes it); --keep-open.
 expect keep-open 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/keep-open.txt)" $OUT --persist

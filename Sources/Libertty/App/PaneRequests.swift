@@ -13,6 +13,9 @@ enum PaneRequests {
         case "move-pane":
             move(info, in: controllers)
             return true
+        case "swap-pane", "resize-pane":
+            arrange(info, in: controllers)
+            return true
         case "list-panes":
             list(info, in: controllers)
             return true
@@ -77,6 +80,7 @@ enum PaneRequests {
     /// Answers `moved`, `no-pane`, or `refused` with why — then nothing moves
     /// and nothing comes forward.
     private static func move(_ info: [String: String], in controllers: [TerminalWindowController]) {
+        if let to = info["to"], to.hasPrefix("beside:") { return arrange(info, in: controllers) }
         let target: TerminalWindowController.MoveTarget, action: Action
         switch info["to"] ?? "" {
         case "new-tab": (target, action) = (.newTab, .moveSurfaceToNewTab)
@@ -101,6 +105,48 @@ enum PaneRequests {
         ActionDispatcher.perform(action, in: pane, controller: controller)
         Probe.activateApp()
         RemoteControl.answer(info, ["result": "moved"])
+    }
+
+    /// Within a split: `swap-pane {id, with}`, `resize-pane {id, direction,
+    /// points}` (direction `equalize` evens it out), `move-pane {id, to:
+    /// beside:OTHER, side}`. Answers swapped, resized or moved; `no-pane`
+    /// (with which: `missing`); `refused` with why.
+    private static func arrange(_ info: [String: String], in controllers: [TerminalWindowController]) {
+        guard let id = info["id"], let (controller, pane) = find(id, in: controllers) else {
+            return RemoteControl.answer(info, ["result": "no-pane", "missing": info["id"] ?? ""])
+        }
+        let other: TerminalView?
+        if info["kind"] == "swap-pane" || info["to"]?.hasPrefix("beside:") == true {
+            let otherID = info["with"] ?? String((info["to"] ?? "").dropFirst("beside:".count))
+            guard let found = controller.pane(showing: otherID) else {
+                return RemoteControl.answer(info, ["result": "no-pane", "missing": otherID])
+            }
+            other = found
+        } else {
+            other = nil
+        }
+        let result: String
+        switch info["kind"] {
+        case "swap-pane":
+            result = controller.arrange(pane, .swap(other!)) ?? "swapped"
+        case "resize-pane":
+            let direction = info["direction"] ?? ""
+            if direction == "equalize" {
+                result = controller.arrange(pane, .equalize) ?? "resized"
+            } else if let d = SplitContainerView.Direction(cliName: direction) {
+                result = controller.arrange(pane, .resize(d, CGFloat(Int(info["points"] ?? "") ?? 0))) ?? "resized"
+            } else {
+                result = "where to: right, left, down or up"
+            }
+        default:
+            let side = SplitContainerView.Direction(cliName: info["side"] ?? "right") ?? .right
+            result = controller.arrange(pane, .beside(other!, side)) ?? "moved"
+        }
+        if ["swapped", "resized", "moved"].contains(result) {
+            RemoteControl.answer(info, ["result": result])
+        } else {
+            RemoteControl.answer(info, ["result": "refused", "message": result])
+        }
     }
 
     /// The window showing session `id`, and its pane there.

@@ -1595,10 +1595,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         updateSidebar()  // the row says "zoomed"
     }
 
-    /// Sidebar ▸ cd Here: type the command at the focused pane's prompt.
+    /// Sidebar ▸ cd Here, Go to Directory's ⌥↵: type the command at the
+    /// focused pane's prompt (a space first keeps it out of the history; the
+    /// line there cleared first, as ⌃U does). With a program in front of the
+    /// shell, typing would go to the program: a new tab opens there instead.
     func changeDirectory(to path: String) {
         if !selectedTab.isTerminal { select(terminalTab) }
-        focusedTerminal.sendInput(" cd " + ShellQuote.quote(path) + "\n")
+        guard !focusedTerminal.session.hasForegroundProgram else {
+            newTab(workingDirectory: path)
+            return
+        }
+        focusedTerminal.sendInput("\u{15} cd " + ShellQuote.quote(path) + "\n")
         window?.makeFirstResponder(focusedTerminal)
     }
 
@@ -3297,6 +3304,31 @@ extension TerminalWindowController: PaneHeaderSource {
         focusLeaf(leaf)
         updateDimming()
         updateSidebar()
+    }
+
+    enum Arrangement { case swap(TerminalView), beside(TerminalView, SplitContainerView.Direction),
+                       resize(SplitContainerView.Direction, CGFloat), equalize }
+
+    /// `libertty +swap-pane`, `+resize-pane`, `+move-pane --beside`: `pane`
+    /// rearranged in its split. Nil when done, else why not.
+    func arrange(_ pane: TerminalView, _ how: Arrangement) -> String? {
+        guard let tab = tab(containing: pane), let container = tab.container else { return "it's parked (unpark it first)" }
+        switch how {
+        case .swap(let other), .beside(let other, _):
+            guard other !== pane else { return "that's the same pane" }
+            guard container.views.contains(where: { $0 === other }) else { return "the other pane isn't in the same split" }
+        case .resize, .equalize:
+            guard container.views.count > 1 else { return "it's the only pane of its tab" }
+        }
+        switch how {
+        case .swap(let other): container.swap(pane, with: other)
+        case .beside(let other, let side): container.move(pane, beside: other, toward: side)
+        case .resize(let side, let points): container.resize(pane, toward: side, by: points)
+        case .equalize: container.equalize(animated: true)
+        }
+        updateDimming()
+        updateSidebar()
+        return nil
     }
 
     /// `--ui-probe`: how many terminals glass panes let the desktop through.

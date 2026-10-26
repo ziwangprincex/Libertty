@@ -21,6 +21,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var picker: SettingPicker?
         /// The title in its own font (the font picker's rows).
         var font: NSFont?
+        /// ⌥↵: another way to run it (a folder: cd there in the focused pane).
+        var alternate: (() -> Void)?
         var run: () -> Void
     }
 
@@ -447,7 +449,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private static var lastListing: (folder: String, entries: [(name: String, isDirectory: Bool)])?
 
     private static func folderItem(_ path: String, subtitle: String, in controller: TerminalWindowController) -> Item {
-        Item(title: (path as NSString).abbreviatingWithTildeInPath, subtitle: subtitle, symbol: "folder", kind: .folder) {
+        Item(title: (path as NSString).abbreviatingWithTildeInPath, subtitle: subtitle, symbol: "folder", kind: .folder,
+             alternate: { [weak controller] in controller?.changeDirectory(to: path) }) {
             [weak controller] in
             controller?.newTab(workingDirectory: path)
         }
@@ -573,6 +576,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard new != scope else { return }
         scope = new
         for (s, button) in chips { button.isOn = s == new }
+        updateFooter()
         filter(field.stringValue)
     }
 
@@ -653,9 +657,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
         let hints = NSStackView(views: [
             KeyCap("↑"), KeyCap("↓"), Self.hint("navigate"), KeyCap("↵"), Self.hint("run"),
+            KeyCap("⌥↵"), Self.hint("cd here"),
         ])
         hints.spacing = 6
         hints.setCustomSpacing(12, after: hints.views[2])
+        hints.setCustomSpacing(12, after: hints.views[4])
         let close = NSStackView(views: [KeyCap("esc", mono: true), Self.hint("close")])
         close.spacing = 6
         for bar in [hints, close] {
@@ -663,6 +669,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             effect.addSubview(bar)
         }
         footer = (hints, close)
+        updateFooter()
     }
 
     private static func placeholder(panesOnly: Bool) -> String {
@@ -674,8 +681,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let (hints, close) = footer else { return }
         let picking = picker != nil
         (hints.views[2] as? NSTextField)?.stringValue = picking ? "try" : "navigate"
-        (hints.views[4] as? NSTextField)?.stringValue = picking ? "keep" : "run"
+        (hints.views[4] as? NSTextField)?.stringValue = picking ? "keep" : scope == .folders ? "new tab" : "run"
         (close.views[1] as? NSTextField)?.stringValue = picking ? "back" : "close"
+        // Folders: ⌥↵ goes there in the focused pane instead.
+        let folders = scope == .folders && !picking
+        hints.views[5].isHidden = !folders
+        hints.views[6].isHidden = !folders
         layout()
     }
 
@@ -786,10 +797,16 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         if !refocus { controller?.autohideIfAway() }
     }
 
-    private func runSelected() { run(row: table.selectedRow) }
+    private func runSelected(alternate: Bool = false) { run(row: table.selectedRow, alternate: alternate) }
 
-    private func run(row: Int) {
+    private func run(row: Int, alternate: Bool = false) {
         guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] else { return }
+        if alternate {
+            guard let other = item.alternate else { return NSSound.beep() }
+            close()
+            DispatchQueue.main.async { other() }
+            return
+        }
         if let picker = item.picker { return enterPicker(picker) }
         if !item.preview.isEmpty {
             // Written while it's still shown: no flash of the old setting between.
@@ -834,6 +851,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         case #selector(NSResponder.moveDown(_:)): move(1)
         case #selector(NSResponder.moveUp(_:)): move(-1)
         case #selector(NSResponder.insertNewline(_:)): runSelected()
+        // ⌥↵: the selected item's other way (a folder: cd there).
+        case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): runSelected(alternate: true)
         case #selector(NSResponder.cancelOperation(_:)): if picker != nil { leavePicker() } else { close() }
         // Tab walks the chips: All, Panes, Commands…
         case #selector(NSResponder.insertTab(_:)): cycleScope(1)

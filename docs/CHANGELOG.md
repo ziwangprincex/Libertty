@@ -15,6 +15,8 @@
 - `accent-color` (Rex's Use theme accent): `system` (default), `theme` (the theme's cursor color when it's a color, else its blue) or any `#rrggbb`, for the focused pane's line, the palette's and sidebar's marks, progress rings and the drag's lit area.
 - `tab-icon-color` (Rex's Use color for tab icons): each program's glyph on the tabs in its color (Claude orange, Vim green, SSH cyan…); off by default, as before.
 - All four, and Autobalance Splits, are in the palette's settings too, tried out live.
+- `libertty +swap-pane [ID] OTHER`, `+resize-pane [ID] --right|--left|--down|--up POINTS | --equalize` and `+move-pane [ID] --beside OTHER [--down…]` (Rex's `swap`, `resize`, `move`): a split rearranged from the command line by session ID, refusing with why (another split, the same pane, a parked one).
+- Go to Directory's ⌥↵ (and the sidebar's cd Here): go there in the focused pane, at its prompt — the line there cleared first; with a program running in the pane, a new tab opens there instead of typing into the program. The palette's footer says so in Folders.
 - The config is read again when it's emptied by truncation (`: > config`); it used to be missed until the next write.
 - ⌘-clicking a program's link to a file that would run (an app, an installer, a `.command`, any executable) asks first, showing its path; documents, source files and folders open as before. A link's text needn't say where it goes.
 
