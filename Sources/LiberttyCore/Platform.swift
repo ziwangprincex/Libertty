@@ -229,5 +229,23 @@ public enum JSONSerialization {
     public static func data(withJSONObject object: Any) throws -> Data {
         try JSONEncoder().encode(Value(object))
     }
+
+    public struct WritingOptions: OptionSet, Sendable {
+        public let rawValue: Int
+        public init(rawValue: Int) { self.rawValue = rawValue }
+        public static let sortedKeys = WritingOptions(rawValue: 1)
+    }
+
+    public static func data(withJSONObject object: Any, options: WritingOptions) throws -> Data {
+        let encoder = JSONEncoder()
+        if options.contains(.sortedKeys) { encoder.outputFormatting = .sortedKeys }
+        return try encoder.encode(Value(object))
+    }
 }
+
+/// JSON's null in a [String: Any] (Foundation's NSNull isn't in FoundationEssentials).
+public let jsonNull: Any = Optional<Any>.none as Any
+#else
+/// JSON's null in a [String: Any].
+public let jsonNull: Any = NSNull()
 #endif

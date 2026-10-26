@@ -309,7 +309,8 @@ enum BoxDrawing {
         let bits = cp - 0x2800
         let dot = max(1, (min(w / 4, h / 8)).rounded())
         let xs = [((w / 2 - dot) / 2).rounded(), (w / 2 + (w / 2 - dot) / 2).rounded()]
-        let ys = (0..<4).map { (CGFloat($0) * h / 4 + (h / 4 - dot) / 2).rounded() }
+        let inset: CGFloat = (h / 4 - dot) / 2
+        let ys: [CGFloat] = (0..<4).map { (CGFloat($0) * h / 4 + inset).rounded() }
         // Dots 1–3 and 7 are the left column, 4–6 and 8 the right.
         let place: [(Int, Int)] = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2), (0, 3), (1, 3)]
         for (i, (col, row)) in place.enumerated() where bits & (1 << UInt32(i)) != 0 {

@@ -1,4 +1,9 @@
+#if os(Linux)
+import Dispatch
+import FoundationEssentials  // not Foundation: on Linux that brings 45 MB of ICU
+#else
 import Foundation
+#endif
 
 /// `libertty +events`: what happens in liberttyd's sessions as it happens,
 /// one JSON object per event, to every connection that asked (Tern's

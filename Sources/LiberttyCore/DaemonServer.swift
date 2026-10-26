@@ -641,7 +641,7 @@ final class DaemonSession {
             guard let started = commandStarted else { break }
             commandStarted = nil
             pendingEvents.append(("command-finished", [
-                "exit": event.has_exit_code ? Int(event.exit_code) as Any : NSNull(),
+                "exit": event.has_exit_code ? Int(event.exit_code) as Any : jsonNull,
                 "milliseconds": Int(((Date().timeIntervalSince1970 - started) * 1000).rounded()),
             ]))
         default:
