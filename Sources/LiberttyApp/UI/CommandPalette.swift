@@ -192,7 +192,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         let keybinds = ConfigStore.shared.keybinds
         // The window it was opened over: the palette itself is gone by the
         // time an item runs.
-        weak let controller = self.controller
+        weak var controller = self.controller
         var out: [Item] = []
         func command(_ title: String, _ action: Action, _ symbol: String) {
             out.append(Item(title: title, symbol: symbol, shortcut: keybinds.trigger(for: action)?.displayString ?? "") {

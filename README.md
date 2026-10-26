@@ -299,7 +299,7 @@ Benchmarks against other terminals are in `bench/` (`bench/RESULTS.md`).
 |---|---|
 | `Sources/LiberttyApp/` | The app, as a library: `App` (launch, CLI), `UI`, `Terminal`, `Renderer`, `Document`, `Blocks`, `Config`, `Remote`, `Web`, `Input`, `Design`, `Probes` (debug builds only) |
 | `Sources/Libertty/` | The executable: starts LiberttyApp |
-| `Tests/LiberttyTests/` | Unit tests (`swift test`): config, colors, agent setup, parsing, the split tree, the wire protocol |
+| `tests/LiberttyTests/` | Unit tests (`swift test`): config, colors, agent setup, parsing, the split tree, the wire protocol |
 | `Sources/LiberttyCore/` | Shared by app and daemon: PTY reader, wire protocol, daemon server, remote PTY |
 | `Sources/liberttyd/` | The session daemon's entry point |
 | `Sources/CPty/` | C helpers: `openpty` and spawn, Unix sockets, libproc queries |

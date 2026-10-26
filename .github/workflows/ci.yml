@@ -23,6 +23,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: The newest Xcode on the runner
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s $XCODE
+          swift --version
       - name: Zig
         run: |
           curl -fsSL https://ziglang.org/download/$ZIG_VERSION/zig-aarch64-macos-$ZIG_VERSION.tar.xz | tar xJ -C $RUNNER_TEMP

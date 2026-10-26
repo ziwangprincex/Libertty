@@ -11,7 +11,7 @@ release goes out. The README covers building and using it.
 | `Sources/LiberttyApp/Probes/` | The UI probe, benches, traces, snapshots and every `--…-probe`: compiled only with `LIBERTTY_PROBES` (debug builds), one probe a file. |
 | `Sources/Libertty/` | The executable: `Launch.run()`. |
 | `Sources/LiberttyCore/`, `Sources/liberttyd/` | What the app and the daemon share; the daemon. |
-| `Tests/LiberttyTests/` | Unit tests (swift-testing). |
+| `tests/LiberttyTests/` | Unit tests (swift-testing). |
 | `tests/` | The headless suite (`run.sh`), its fixtures, and the checks run by hand. |
 
 ## Tests, from fastest to slowest

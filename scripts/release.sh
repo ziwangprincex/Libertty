@@ -73,7 +73,7 @@ else
   fi
   # Tested already (staging, then --publish after the version commit) with
   # no code changed since: not again.
-  CODE=(Sources Tests Package.swift tests Resources vendor/codemirror blocks)
+  CODE=(Sources Package.swift tests Resources vendor/codemirror blocks)
   TESTED=$(cat build/release-tested 2>/dev/null || true)
   if (( SKIP_TESTS )); then
     echo "warning: not testing (--skip-tests)"

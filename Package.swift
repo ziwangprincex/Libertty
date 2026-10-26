@@ -90,7 +90,7 @@ let package = Package(
         .testTarget(
             name: "LiberttyTests",
             dependencies: ["LiberttyApp", "LiberttyCore"],
-            path: "Tests/LiberttyTests",
+            path: "tests/LiberttyTests",
             // (Unsafe flags hide the toolchain's plugin for @Test from the
             // compiler: it's named again, where the toolchain keeps it.)
             swiftSettings: vtSwift + [.unsafeFlags(testingPlugin)],
