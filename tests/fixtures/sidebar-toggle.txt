@@ -3,29 +3,38 @@
 # its place on the screen to the point, and its grid never changes (nothing
 # reflows, its program never hears of it). With animations as in the app too.
 wait:1.0
+# A window appears as it is: AppKit's opening zoom made its text seem to change size.
+expect-no-open-animation:go
 # (The grid it starts with counts as one; from here on, none.)
 expect-regrids:1
+expect-resize-frames:1
 expect-font:13
 expect-unmoved:here
 action:toggle_sidebar
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 action:toggle_sidebar
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 action:toggle_inspector
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 action:toggle_inspector
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 motion:on
 action:toggle_sidebar
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 action:toggle_sidebar
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 # Twice in a moment, back where it was.
 action-now:toggle_sidebar
 wait:0.1
@@ -33,9 +42,11 @@ action-now:toggle_sidebar
 wait:0.5
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 # And back into the terminal from the sidebar.
 key:shift+tab
 wait:0.5
 expect-unmoved:here
 expect-regrids:0
+expect-resize-frames:0
 expect-font:13

@@ -46,6 +46,8 @@ import LiberttyCore
 ///   expect-panes:N        the tab in front has N panes in its split
 ///   focus-event:in|out    the focused pane gains or loses the keyboard, as its program hears it
 ///   expect-searching:N    N panes of the tab in front (parked ones too) have a search open
+///   expect-no-open-animation:go  the window appears as it is (no zoom: its text would seem to change size)
+///   expect-resize-frames:N the focused pane drew N frames inside a resize since the last of these
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -104,6 +106,7 @@ enum UIProbe {
 
     /// Each pane's grid changes at its last `expect-regrids`.
     private static var regridMarks: [ObjectIdentifier: Int] = [:]
+    private static var resizeFrameMarks: [ObjectIdentifier: Int] = [:]
 
     static func run(script: String, output: String) -> Never {
         let app = NSApplication.shared
@@ -522,6 +525,20 @@ enum UIProbe {
             case .focusEvent(let focused):
                 controller.focusedTerminal.session.reportFocus(focused)
                 pump(0.3)
+            case .expectResizeFrames(let n):
+                // Frames drawn inside a resize's transaction since the last of these (for the pane).
+                let pane = controller.focusedTerminal
+                let since = pane.resizeFrames - (resizeFrameMarks[ObjectIdentifier(pane)] ?? 0)
+                resizeFrameMarks[ObjectIdentifier(pane)] = pane.resizeFrames
+                if since == n { print("ok    ui-probe \(n) frames drawn resizing") } else {
+                    print("FAIL  ui-probe frames drawn resizing: \(since), not \(n)")
+                    failures += 1
+                }
+            case .expectNoOpenAnimation:
+                if window.animationBehavior == .none { print("ok    ui-probe window opens without animation") } else {
+                    print("FAIL  ui-probe window: it animates as it opens (\(window.animationBehavior.rawValue))")
+                    failures += 1
+                }
             case .expectSearching(let n):
                 let count = controller.selectedTab.everyPane.filter { $0.session.searchResult.active }.count
                 if count == n { print("ok    ui-probe \(n) panes searching") } else {
@@ -801,7 +818,7 @@ enum UIProbe {
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
         case hover(Int), expectFocus(Int)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int)
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
@@ -907,6 +924,8 @@ enum UIProbe {
             case "expect-panes": steps.append(.expectPanes(Int(arg) ?? -1))
             case "focus-event": steps.append(.focusEvent(arg == "in"))
             case "expect-searching": steps.append(.expectSearching(Int(arg) ?? -1))
+            case "expect-no-open-animation": steps.append(.expectNoOpenAnimation)
+            case "expect-resize-frames": steps.append(.expectResizeFrames(Int(arg) ?? -1))
             case "open", "edit":
                 var path = arg, line: Int?
                 if let colon = arg.lastIndex(of: ":"), let n = Int(arg[arg.index(after: colon)...]) {

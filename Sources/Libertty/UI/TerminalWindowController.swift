@@ -281,6 +281,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         window.title = "Libertty"
         window.contentViewController = splitController
         window.isReleasedWhenClosed = false
+        // A window appears as it is: AppKit's document-window animation
+        // draws it scaled (about 98%, growing to full over 0.4 s), so the
+        // terminal's text seemed to change size each time one opened.
+        if !quick { window.animationBehavior = .none }
         if UserDefaults.standard.bool(forKey: Self.floatDefaultsKey) { window.level = .floating }
 
         super.init(window: window)
@@ -1646,10 +1650,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         }
         let area = areaController.view
         let before = area.window.map { $0.convertToScreen(area.convert(area.bounds, to: nil)) } ?? .zero
-        // Its grids stay as they are while the window catches up.
+        // Its terminals stay as they are while the window catches up: no
+        // grid change and no frame drawn at the size they pass through.
         let panes = allPanes.filter { $0.window != nil }
-        panes.forEach { $0.holdGrid() }
-        defer { panes.forEach { $0.releaseGrid() } }
+        panes.forEach { $0.freeze() }
+        defer { panes.forEach { $0.thaw() } }
         // One picture on the screen: the column and the window's new edge together.
         window.disableScreenUpdatesUntilFlush()
         item.isCollapsed = collapsed

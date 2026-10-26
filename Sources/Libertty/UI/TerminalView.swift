@@ -751,6 +751,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
         super.setFrameSize(newSize)
+        // Frozen: sized for a moment only (see `freeze`).
+        guard freezes == 0 else { return }
         layoutOverlays()
         let stale = updateGrid()
         // Same grid and drawable: the frame on screen is still right (it is
@@ -758,6 +760,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         guard changed, stale, window != nil, renderer != nil else { return }
         metalLayer.presentsWithTransaction = true
         lastResize = CACurrentMediaTime()
+        resizeFrames += 1
         renderer.render(session, into: metalLayer, focused: isFocused, force: true)
         // This was the display link's frame too: drawing it twice would hold
         // every drawable and stall the next step for up to a second.
@@ -787,6 +790,29 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     }
     /// How many grid changes the pane has made (`--ui-probe` counts a slide's).
     private(set) var regridCount = 0
+    /// How many frames it drew inside a resize's transaction (`--ui-probe`).
+    private(set) var resizeFrames = 0
+
+    /// A column of the window comes or goes and the window takes its width
+    /// at once (the sidebar's button): the view is laid out at a passing
+    /// size and back to its own within one step. Frozen, it neither fits its
+    /// grid and drawable nor draws meanwhile, and the frame on screen stays
+    /// — its own size's. Drawn there, two frames at two drawable sizes in
+    /// one transaction left the last shown scaled down (to about 90%) until
+    /// the next frame, up to the cursor's next blink: the text seemed to
+    /// shrink and grow back each time the sidebar came or went.
+    private var freezes = 0
+
+    func freeze() { freezes += 1 }
+
+    /// The last freeze let go: fit the size it ends at (and draw, only if
+    /// that isn't the size it had).
+    func thaw() {
+        freezes = max(0, freezes - 1)
+        guard freezes == 0 else { return }
+        layoutOverlays()
+        updateGrid()
+    }
 
     /// Fit the grid and drawable to the view. Returns whether either changed,
     /// i.e. whether what is on screen is now out of date.

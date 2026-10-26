@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: showing or hiding the sidebar or the inspector with its button showed the terminal's text shrunk to about 90% for up to half a second, then back: the terminal drew two frames at the sizes it passed through while the window took the column's width, and the last of them showed scaled until the next frame (the cursor's next blink). It draws none now; the frame on screen, its own size's, stays.
+- A window appears as it is, without AppKit's opening zoom: drawn at about 98% and growing to full size over 0.4 s, it made the terminal's text seem to change size each time a window opened (a screenshot, taken after, showed it as it was).
+
 ## 0.3.4
 
 > Bug fixes throughout: background tabs no longer take the keyboard from the find bar, Redo after Undo Close no longer crashes, Korean and Japanese input keeps every character, Chinese folder names and links work, the cursor covers a whole Chinese character, Ctrl keys work on AZERTY, QWERTZ and Dvorak, and focus reporting and colored, curly underlines are supported.
