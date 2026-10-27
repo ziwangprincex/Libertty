@@ -745,6 +745,11 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     /// A web page done loading, as WebKit itself says (`--ui-probe`'s page-wait,
     /// when the page's own script can't be asked yet).
     var pageLoaded: Bool { browserBar != nil && !web.isLoading && web.estimatedProgress >= 1 && !(web.title ?? "").isEmpty }
+    /// What WebKit says of the page, for a page-wait that gave up.
+    var pageState: String {
+        "bar \(browserBar != nil), loading \(web.isLoading), progress \(web.estimatedProgress), title \((web.title ?? "").debugDescription), "
+            + "url \(web.url?.absoluteString ?? "none"), in a window \(web.window != nil), visible \(web.window?.isVisible ?? false)"
+    }
     /// Run a function body in the page, awaited (the probe's `page-js`); an error comes back as its text.
     func pageCall(_ body: String, _ completion: @escaping (Any?) -> Void) {
         web.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in

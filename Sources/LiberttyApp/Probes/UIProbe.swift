@@ -460,14 +460,21 @@ enum UIProbe {
                         }
                     case .pageWait:
                         // A first page also starts WebKit's processes: slow on a busy machine.
-                        let deadline = Date().addingTimeInterval(max(10, Self.patience * 3))
-                        var ready = false
+                        let started = Date(), deadline = started.addingTimeInterval(max(10, Self.patience * 3))
+                        var ready = false, said: Any?
                         while !ready, Date() < deadline {
                             pump(0.2)
-                            ready = (pageEvaluate(controller, "document.readyState === 'complete' && document.body.innerText.trim().length > 0 && !document.body.innerText.includes('Reading…')") as? Bool) == true
-                                || controller.selectedDocument?.pageLoaded == true
+                            said = pageEvaluate(controller, "document.readyState === 'complete' && document.body.innerText.trim().length > 0 && !document.body.innerText.includes('Reading…')")
+                            ready = (said as? Bool) == true || controller.selectedDocument?.pageLoaded == true
                         }
-                        if ready { print("ok    ui-probe page up"); pump(0.3) } else { print("FAIL  ui-probe page: never drew"); failures += 1 }
+                        let took = String(format: "%.1f s", Date().timeIntervalSince(started))
+                        if ready { print("ok    ui-probe page up (\(took))"); pump(0.3) } else {
+                            // What it was waiting on, for a failure that's seen only elsewhere (CI).
+                            let doc = controller.selectedDocument
+                            print("FAIL  ui-probe page: never drew in \(took): the page said \(said.map { "\($0)" } ?? "nothing"); "
+                                  + (doc.map { "\($0.url.absoluteString): \($0.pageState)" } ?? "no document in front"))
+                            failures += 1
+                        }
                     case .expectPage(let text, let want):
                         let deadline = Date().addingTimeInterval(want ? max(3, Self.patience) : 0.5)
                         var has = false
