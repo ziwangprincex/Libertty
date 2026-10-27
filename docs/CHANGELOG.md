@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.9
+
+> Fixes found by running everything on a clean machine: a captured page with its colors, bash naming the folder at once, Linux hosts' liberttyd up to date.
+
+- `libertty +capture --html` wrote a page whose palette colors (a prompt's red, a program's blues) were CSS variables the page never defined, so they showed in no color; the page defines them now.
+- bash: after `cd proj && vim`, the tab and the pane's folder named the old folder until the next prompt; bash's integration now says the folder before each command, as zsh's does.
+- The liberttyd that Libertty installs on a Linux host is current again. The one shipped since 0.3.0 could no longer be built from the sources (it needed Foundation pieces Linux's lean build lacks): it was an old build, without keeping windows' layouts on the host. It's built by CI now, from the commit's own sources.
+- Fonts in unbundled runs (tests, `swift run`) come from where the checkout keeps them.
+
 ## Unreleased
 
 - Inside, for whoever builds Libertty: the window controller in nine files by what each does; the probes and benches out of release builds (a release asked for one stops, rather than opening a window that could take over your sessions); the app as a library with unit tests (`swift test`); `tests/run.sh` four checks at a time, each with a liberttyd of its own, in about 4 minutes instead of 10, its UI expectations patient on a loaded machine; CI for the Mac and for Linux liberttyd; `scripts/release.sh` refusing a Linux liberttyd that isn't the commit's and running the tests first; `docs/DEVELOPMENT.md`.
