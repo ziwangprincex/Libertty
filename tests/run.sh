@@ -50,7 +50,26 @@ SERIAL=0
 typeset -a ORDER
 mkdir -p $PRIVATE/jobs
 
-judge() {  # judge NAME PATTERN COMMAND... : PATTERN empty = the exit status decides
+# LIBERTTY_TEST_RETRIES (CI: 1): a check that fails runs again, from the
+# start, that many times; one that passes so says it, and its first run's
+# log stays as NAME.first.log. Locally 0: a failure is a failure.
+RETRIES=${LIBERTTY_TEST_RETRIES:-0}
+
+judge() {  # judge NAME PATTERN COMMAND...
+  local name=$1 tries=0
+  while true; do
+    attempt "$@"
+    [[ $(cat $PRIVATE/jobs/$name/result) == ok* ]] && break
+    (( tries >= RETRIES )) && break
+    (( tries++ ))
+    cp $OUT/$name.log $OUT/$name.first.log
+    rm -rf $PRIVATE/jobs/$name/config $PRIVATE/jobs/$name/d.sock*
+  done
+  (( tries > 0 )) && [[ $(cat $PRIVATE/jobs/$name/result) == ok* ]] && echo "ok    $name (passed on retry $tries)" > $PRIVATE/jobs/$name/result
+  cat $PRIVATE/jobs/$name/result
+}
+
+attempt() {  # attempt NAME PATTERN COMMAND... : PATTERN empty = the exit status decides
   local name=$1 pattern=$2; shift 2
   local dir=$PRIVATE/jobs/$name ok=0 a
   mkdir -p $dir
@@ -68,11 +87,11 @@ judge() {  # judge NAME PATTERN COMMAND... : PATTERN empty = the exit status dec
   local code=$?
   if [[ -z $pattern ]]; then (( code == 0 )) && ok=1; else grep -qE -- "$pattern" $OUT/$name.log && ok=1; fi
   if (( ok )); then
-    echo "ok    $name" | tee $dir/result
+    echo "ok    $name" > $dir/result
   elif [[ -z $pattern ]]; then
-    echo "FAIL  $name (see $OUT/$name.log)" | tee $dir/result
+    echo "FAIL  $name (see $OUT/$name.log)" > $dir/result
   else
-    echo "FAIL  $name: no /$pattern/ (see $OUT/$name.log)" | tee $dir/result
+    echo "FAIL  $name: no /$pattern/ (see $OUT/$name.log)" > $dir/result
   fi
 }
 
@@ -488,6 +507,8 @@ for name in $ORDER; do
   result=$(cat $PRIVATE/jobs/$name/result 2>/dev/null || echo "FAIL  $name: didn't finish")
   [[ $result == ok* ]] || { (( failures++ )); echo "$result"; }
 done
+retried=$(cat $PRIVATE/jobs/*/result 2>/dev/null | grep -c "passed on retry")
+(( retried )) && echo "$retried passed only on a retry:" && grep -h "passed on retry" $PRIVATE/jobs/*/result
 echo "${#ORDER} checks"
 (( failures == 0 )) && echo "all passed" || echo "$failures failed"
 exit $(( failures > 0 ))

@@ -43,6 +43,7 @@ jobs:
           LIBERTTY_TEST_JOBS: 3
           LIBERTTY_TEST_UI_JOBS: 2
           LIBERTTY_PROBE_PATIENCE: 10
+          LIBERTTY_TEST_RETRIES: 1
         run: zsh tests/run.sh
       - name: Test output
         if: failure()
