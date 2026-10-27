@@ -5,6 +5,7 @@
 - Every setting from the command palette: besides the pickers, each other key of the config (scrollback, quick terminal, notifications, Web Access…) is listed in the Settings chip and found by its name; Return lets you type its value, saying as you type what line it writes or why the value doesn't fit, with the key's help under it. Empty goes back to the default.
 - Codex shows working on its tab while a turn runs: Codex's notify says when a turn ends, not when it starts, so Return in its pane says working until the turn ends, Codex asks for approval, or its output stays quiet for 5 s. Checked with a stand-in named codex, not Codex itself.
 - A closed split pane no longer lives on (its terminal, its scrollback) until the next split changes: the animation that closed it kept it. Memory checked with `heap` after 20 rounds of tabs, splits and documents opened and closed: what stays is the window's own, about 70 MB; `leaks` finds nothing of Libertty's.
+- The Theme Editor's name fields no longer move to the right the first time it opens; the bright colors are labeled by color under their heading (Bright Magenta was cut short), VoiceOver still says Bright. A setting's help in the palette reads as a paragraph.
 
 ## 0.3.9
 

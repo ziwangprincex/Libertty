@@ -102,7 +102,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private var topCap: KeyCap?
     private var dim: NSView?
     private var veilTint: NSView?
-    private static let width: CGFloat = 640, itemHeight: CGFloat = 40, groupHeight: CGFloat = 32
+    private static let width: CGFloat = 640, itemHeight: CGFloat = 40, groupHeight: CGFloat = 32,
+                       helpHeight: CGFloat = 22
     private static let topHeight: CGFloat = 54, chipsHeight: CGFloat = 34, footerHeight: CGFloat = 38
     private static let maxListHeight: CGFloat = 400
 
@@ -384,7 +385,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // The help, a line at a time (the rows don't wrap).
         var lines: [String] = [], line = ""
         for word in doc.split(separator: " ") {
-            if line.count + word.count > 78 { lines.append(line); line = "" }
+            if line.count + word.count > 90 { lines.append(line); line = "" }
             line += (line.isEmpty ? "" : " ") + word
         }
         if !line.isEmpty { lines.append(line) }
@@ -768,9 +769,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     }
 
     private var listHeight: CGFloat {
-        let content = noMatches ? Self.itemHeight : rows.reduce(0) { sum, row in
-            if case .group = row { sum + Self.groupHeight } else { sum + Self.itemHeight }
-        }
+        let content = noMatches ? Self.itemHeight : rows.indices.reduce(0) { $0 + height(of: $1) }
         return min(Self.maxListHeight, content)
     }
 
@@ -949,9 +948,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     func numberOfRows(in tableView: NSTableView) -> Int { noMatches ? 1 : rows.count }
 
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        if !noMatches, rows.indices.contains(row), case .group = rows[row] { return Self.groupHeight }
-        return Self.itemHeight
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat { height(of: row) }
+
+    /// A setting's help, under the value being typed, reads as one paragraph:
+    /// its lines close together.
+    private func height(of row: Int) -> CGFloat {
+        guard !noMatches, rows.indices.contains(row) else { return Self.itemHeight }
+        if case .group = rows[row] { return Self.groupHeight }
+        return editing != nil && row > 0 ? Self.helpHeight : Self.itemHeight
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {

@@ -77,13 +77,16 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
         ])
         top.column(at: 0).xPlacement = .trailing
         top.rowSpacing = 8
+        // Its own width at the left, as it opens the first time and every
+        // time after (else the stack can widen it, the labels pushed right).
+        top.setContentHuggingPriority(.required, for: .horizontal)
         start.widthAnchor.constraint(equalToConstant: 300).isActive = true
         name.widthAnchor.constraint(equalToConstant: 300).isActive = true
 
         let base = row([(.background, "Background"), (.foreground, "Text"), (.cursor, "Cursor"), (.selection, "Selection")],
                        ratios: false)
         let normal = row((0..<8).map { (.ansi($0), Self.ansiNames[$0]) }, ratios: true)
-        let bright = row((8..<16).map { (.ansi($0), "Bright " + Self.ansiNames[$0 - 8]) }, ratios: true)
+        let bright = row((8..<16).map { (.ansi($0), Self.ansiNames[$0 - 8]) }, ratios: true)
 
         for box in [generate, harmonious] {
             box.target = self
@@ -170,6 +173,9 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
             well.widthAnchor.constraint(equalToConstant: 56).isActive = true
             well.heightAnchor.constraint(equalToConstant: 28).isActive = true
             wells[slot] = well
+            // VoiceOver hears the bright ones as such; the label under it says
+            // only the color, its row's heading the rest.
+            if case .ansi(let i) = slot, i >= 8 { well.setAccessibilityLabel("Bright " + title) } else { well.setAccessibilityLabel(title) }
             let name = NSTextField(labelWithString: title)
             name.font = .systemFont(ofSize: 10.5)
             name.textColor = .secondaryLabelColor
