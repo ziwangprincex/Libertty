@@ -53,3 +53,24 @@ struct SplitTests {
         #expect(s.drop(at: NSPoint(x: 200, y: 300), dragging: a) == nil)
     }
 }
+
+/// An animation that ended keeps nothing it was given: a container keeps
+/// its last animator till its next change, and a pane closing is captured
+/// by the animator's completion.
+@MainActor
+struct AnimatorTests {
+    final class Captured {}
+
+    @Test func anEndedAnimationLetsGoOfItsClosures() {
+        weak var captured: Captured?
+        var animator: FrameAnimator?
+        do {
+            let pane = Captured()
+            captured = pane
+            // Not in a window: it ends at once, as Reduce Motion does.
+            animator = FrameAnimator.run(on: NSView(), duration: 0.2, update: { _ in _ = pane }, completion: { _ = pane })
+        }
+        #expect(animator != nil)
+        #expect(captured == nil)
+    }
+}

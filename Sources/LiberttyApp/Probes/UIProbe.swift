@@ -198,7 +198,7 @@ enum UIProbe {
             let before = failures
             while true {
                 held = retries ? [] : nil
-                repeat {  // (a step's `continue` ends its attempt)
+                autoreleasepool { repeat {  // (a step's `continue` ends its attempt; what it autoreleased goes with it)
                     switch step {
                     case .key(let spec):
                         // To whatever has the keyboard: the palette while it's open.
@@ -903,7 +903,7 @@ enum UIProbe {
                             print("ok    ui-probe expect-not \(text)")
                         }
                     }
-                } while false
+                } while false }
                 let said = held ?? []
                 held = nil
                 if failures == before || !retries || Date() >= deadline {
@@ -1132,8 +1132,14 @@ enum UIProbe {
         return !["expectRegrids", "expectResizeFrames", "expectUnmoved"].contains { name.hasPrefix($0) }
     }
 
+    /// The run loop for `seconds`, its autoreleased objects let go as it
+    /// goes, as NSApplication's loop does — else every closed pane would live
+    /// on to the probe's end, and the memory it measures would be the probe's.
     private static func pump(_ seconds: Double) {
-        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        let end = Date().addingTimeInterval(seconds)
+        repeat {
+            autoreleasepool { _ = RunLoop.main.run(mode: .default, before: min(end, Date().addingTimeInterval(0.05))) }
+        } while Date() < end
     }
 
     // MARK: Keys (a real NSEvent, US layout)

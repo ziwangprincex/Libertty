@@ -49,8 +49,10 @@ extension Motion {
 final class FrameAnimator {
     private let duration: CFTimeInterval
     private let curve: CubicBezier
-    private let update: (Double) -> Void
-    private let completion: () -> Void
+    /// Let go of once it ends: whoever keeps the animator (a container,
+    /// till its next change) mustn't keep what they captured — a closed pane.
+    private var update: ((Double) -> Void)?
+    private var completion: (() -> Void)?
     private var link: CADisplayLink?
     private var start: CFTimeInterval = 0
     private var retainSelf: FrameAnimator?
@@ -74,8 +76,7 @@ final class FrameAnimator {
 
     private func begin(on view: NSView) {
         guard duration > 0, view.window != nil else {
-            update(1)
-            completion()
+            end()
             return
         }
         retainSelf = self  // keep alive until the animation finishes
@@ -84,7 +85,7 @@ final class FrameAnimator {
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         link.add(to: .main, forMode: .common)
         self.link = link
-        update(0)
+        update?(0)
         // A window that isn't on screen gets no display frames: end on time anyway.
         DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.15) { [weak self] in self?.finish() }
     }
@@ -94,23 +95,27 @@ final class FrameAnimator {
         link?.invalidate()
         link = nil
         retainSelf = nil
+        update = nil
+        completion = nil
     }
 
     /// Jump to the end and run the completion now, if it hasn't run yet
     /// (a new change interrupts this one: its end state must still happen).
     func finish() {
         guard link != nil else { return }
+        end()
+    }
+
+    private func end() {
+        let (update, completion) = (self.update, self.completion)
         cancel()
-        update(1)
-        completion()
+        update?(1)
+        completion?()
     }
 
     @objc private func step(_ link: CADisplayLink) {
         let t = min(1, (CACurrentMediaTime() - start) / duration)
-        update(curve(t))
-        if t >= 1 {
-            cancel()
-            completion()
-        }
+        guard t < 1 else { return end() }
+        update?(curve(t))
     }
 }
