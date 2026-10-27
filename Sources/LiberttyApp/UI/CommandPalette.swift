@@ -23,6 +23,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var font: NSFont?
         /// ⌥↵: another way to run it (a folder: cd there in the focused pane).
         var alternate: (() -> Void)?
+        /// A config key typed in place (any key without a picker).
+        var editKey: String?
         var run: () -> Void
     }
 
@@ -338,7 +340,65 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             let now = picker.options().first { Self.isCurrent($0, of: picker) }?.label ?? picker.current
             out.append(Item(title: "Change \(picker.title)…", subtitle: now, symbol: picker.symbol, kind: .setting, picker: picker) {})
         }
+        // Every other key, typed in place: the whole config from here, not
+        // only the file. (Not the repeatable ones, nor what +set refuses.)
+        let picked = Set(SettingPicker.all.map(\.key))
+        let config = ConfigStore.shared.savedConfig
+        for (key, _) in Config.documentation where !picked.contains(key) && !Config.repeatable.contains(key)
+            && !["config-file", "browser-automation"].contains(key) {
+            let value = config.values(of: key).first ?? ""
+            out.append(Item(title: key, subtitle: value.isEmpty ? "unset" : value, symbol: "slider.horizontal.3",
+                            kind: .setting, editKey: key) {})
+        }
         return out
+    }
+
+    // MARK: A value typed in
+
+    /// The key whose value is being typed, if one is.
+    private var editing: String?
+
+    private func enterEditor(_ key: String) {
+        beforePicker = (all, scope, field.stringValue)
+        editing = key
+        all = []
+        field.stringValue = ConfigStore.shared.savedConfig.values(of: key).first ?? ""
+        field.placeholderString = "\(key) = …  (empty: the default)"
+        field.currentEditor()?.selectAll(nil)
+        for (_, chip) in chips { chip.isHidden = true }
+        updateFooter()
+        filter(field.stringValue)
+    }
+
+    /// What the typed value would do: the line it writes, or why not; and
+    /// what the key is for.
+    private func editRows(_ typed: String) -> [Item] {
+        guard let key = editing else { return [] }
+        let value = typed.trimmingCharacters(in: .whitespaces)
+        var probe = ConfigStore.shared.savedConfig
+        let problem = probe.set(key, value)
+        let doc = Config.documentation.first { $0.key == key }?.doc ?? ""
+        let head = problem.map { Item(title: $0, subtitle: "not \(key)'s kind of value", symbol: "exclamationmark.triangle") {} }
+            ?? Item(title: value.isEmpty ? "\(key): back to the default" : "\(key) = \(value)",
+                    subtitle: "↵ writes it to the config", symbol: "checkmark") {}
+        // The help, a line at a time (the rows don't wrap).
+        var lines: [String] = [], line = ""
+        for word in doc.split(separator: " ") {
+            if line.count + word.count > 78 { lines.append(line); line = "" }
+            line += (line.isEmpty ? "" : " ") + word
+        }
+        if !line.isEmpty { lines.append(line) }
+        return [head] + lines.map { Item(title: $0, symbol: "", kind: .option) {} }
+    }
+
+    /// Return while typing: written when it's a value the key takes.
+    private func commitEdit() {
+        guard let key = editing else { return }
+        let value = field.stringValue.trimmingCharacters(in: .whitespaces)
+        var probe = ConfigStore.shared.savedConfig
+        guard probe.set(key, value) == nil else { return NSSound.beep() }
+        ConfigStore.shared.set(key, value.isEmpty ? nil : value)
+        close()
     }
 
     /// Whether the files' config has this option now (a default written or
@@ -383,6 +443,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let before = beforePicker else { return }
         ConfigStore.shared.endPreview()
         picker = nil
+        editing = nil
         beforePicker = nil
         all = before.all
         field.stringValue = before.query
@@ -508,6 +569,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     }
 
     private func filter(_ query: String) {
+        if editing != nil {
+            shown = editRows(query)
+            rows = shown.map { .item($0) }
+            noMatches = false
+            table.reloadData()
+            table.selectRowIndexes([0], byExtendingSelection: false)
+            return layout()
+        }
         let q = query.trimmingCharacters(in: .whitespaces)
         let inScope = picker != nil ? all : all.filter { scope.admits($0.kind) }
         if q.isEmpty {
@@ -581,7 +650,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     }
 
     private func cycleScope(_ delta: Int) {
-        guard !panesOnly, picker == nil else { return }
+        guard !panesOnly, picker == nil, editing == nil else { return }
         let all = scopes
         let i = all.firstIndex(of: scope) ?? 0
         setScope(all[(i + delta + all.count) % all.count])
@@ -679,9 +748,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// The footer's words: a picker's options are tried and kept, Esc goes back.
     private func updateFooter() {
         guard let (hints, close) = footer else { return }
-        let picking = picker != nil
+        let picking = picker != nil || editing != nil
         (hints.views[2] as? NSTextField)?.stringValue = picking ? "try" : "navigate"
-        (hints.views[4] as? NSTextField)?.stringValue = picking ? "keep" : scope == .folders ? "new tab" : "run"
+        for view in hints.views[0...2] { view.isHidden = editing != nil }
+        (hints.views[4] as? NSTextField)?.stringValue = editing != nil ? "set" : picking ? "keep" : scope == .folders ? "new tab" : "run"
         (close.views[1] as? NSTextField)?.stringValue = picking ? "back" : "close"
         // Folders: ⌥↵ goes there in the focused pane instead.
         let folders = scope == .folders && !picking
@@ -708,7 +778,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let parent else { return }
         let width = min(Self.width, parent.frame.width - 40)
         let list = listHeight
-        let chipsH = chips.isEmpty || picker != nil ? 0 : Self.chipsHeight
+        let chipsH = chips.isEmpty || picker != nil || editing != nil ? 0 : Self.chipsHeight
         let height = Self.topHeight + chipsH + (list > 0 ? list + 12 : 0) + Self.footerHeight
         let content = parent.contentLayoutRect
         let top = parent.frame.minY + content.maxY - 12
@@ -801,6 +871,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private func run(row: Int, alternate: Bool = false) {
         guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] else { return }
+        if editing != nil { return commitEdit() }
         if alternate {
             guard let other = item.alternate else { return NSSound.beep() }
             close()
@@ -808,6 +879,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             return
         }
         if let picker = item.picker { return enterPicker(picker) }
+        if let key = item.editKey { return enterEditor(key) }
         if !item.preview.isEmpty {
             // Written while it's still shown: no flash of the old setting between.
             item.run()
@@ -853,7 +925,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         case #selector(NSResponder.insertNewline(_:)): runSelected()
         // ⌥↵: the selected item's other way (a folder: cd there).
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): runSelected(alternate: true)
-        case #selector(NSResponder.cancelOperation(_:)): if picker != nil { leavePicker() } else { close() }
+        case #selector(NSResponder.cancelOperation(_:)): if picker != nil || editing != nil { leavePicker() } else { close() }
         // Tab walks the chips: All, Panes, Commands…
         case #selector(NSResponder.insertTab(_:)): cycleScope(1)
         case #selector(NSResponder.insertBacktab(_:)): cycleScope(-1)
@@ -895,7 +967,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             return cell
         case .item(let item):
             let cell = tableView.makeView(withIdentifier: PaletteCell.identifier, owner: nil) as? PaletteCell ?? PaletteCell()
-            cell.show(item)
+            // A key's help, under what the typed value does: quieter.
+            cell.show(item, dim: editing != nil && item.symbol.isEmpty)
             return cell
         }
     }

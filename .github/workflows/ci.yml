@@ -46,7 +46,8 @@ jobs:
           LIBERTTY_TEST_RETRIES: 1
         run: zsh tests/run.sh
       - name: Test output
-        if: failure()
+        # Always: a check that passed only on a retry left its first log there too.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-output

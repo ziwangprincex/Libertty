@@ -55,3 +55,28 @@ wait:0.4
 expect-background:#112233
 key:escape
 wait:0.4
+# Any other key, typed in place: what it would write, or why not, live.
+key:cmd+shift+p
+wait:0.4
+type:undo-timeout
+wait:0.3
+expect-palette:undo-timeout · 5s
+key:enter
+wait:0.4
+key:cmd+a
+type:soon
+wait:0.3
+expect-palette:not undo-timeout's kind of value
+key:backspace
+key:backspace
+key:backspace
+key:backspace
+type:30s
+wait:0.3
+expect-palette:undo-timeout = 30s
+key:enter
+wait:0.8
+type:grep -c '^undo-timeout = 30s$' @CFG@/config && echo TYPED-IN-FILE
+key:enter
+wait:0.6
+expect:TYPED-IN-FILE

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Every setting from the command palette: besides the pickers, each other key of the config (scrollback, quick terminal, notifications, Web Access…) is listed in the Settings chip and found by its name; Return lets you type its value, saying as you type what line it writes or why the value doesn't fit, with the key's help under it. Empty goes back to the default.
+
 ## 0.3.9
 
 > Fixes found by running everything on a clean machine: a captured page with its colors, bash naming the folder at once, Linux hosts' liberttyd up to date.
