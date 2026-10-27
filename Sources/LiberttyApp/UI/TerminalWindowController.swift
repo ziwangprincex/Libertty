@@ -449,6 +449,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         }
         pane.onRequestClose = { [weak self] pane in self?.closeTerminalPane(pane) }
         pane.onDragPane = { [weak self] pane, event in self?.dragPane(pane, from: event) }
+        pane.onSubmit = { [weak self] pane in self?.promptSubmitted(in: pane) }
         pane.session.programStatus.onChange = { [weak self] in self?.updateTitle() }
         if pane.session.host != nil { pane.updateLinkBanner() }
         pane.onFocus = { [weak self] pane in self?.paneDidFocus(pane) }

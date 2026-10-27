@@ -435,4 +435,37 @@ extension TerminalWindowController {
             self.window?.makeFirstResponder(tab.focusTarget)
         }
     }
+
+    // MARK: Codex's turn
+
+    /// Codex says when its turn ends (`notify`), not when it starts: Return
+    /// in a pane where Codex runs starts one — its tab says working until
+    /// the turn ends (done, waiting for approval) or Codex goes quiet (no
+    /// output for 5 s: its status line ticks every second while it works,
+    /// so a Return that started nothing ends at once).
+    func promptSubmitted(in pane: TerminalView) {
+        guard programs[ObjectIdentifier(pane.session)]?.name == "Codex" else { return }
+        let status = pane.session.programStatus
+        // Already working, or waiting for an answer this Return may give: as it is.
+        if let turn = status.records["turn"], turn.app == "codex", turn.state == .working { return }
+        status.apply(ProgramStatusStore.Report(clear: false, state: .working, kind: .none, progress: nil, id: "turn",
+                                               app: "codex", title: "", message: ""))
+        sessionProgramStatusChanged(pane.session)
+        watchCodexTurn(pane, since: CACurrentMediaTime())
+    }
+
+    private func watchCodexTurn(_ pane: TerminalView, since: CFTimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak pane] in
+            guard let self, let pane else { return }
+            let status = pane.session.programStatus
+            guard let turn = status.records["turn"], turn.app == "codex", turn.state == .working else { return }
+            let last = max(since, pane.session.outputMark.time)
+            if CACurrentMediaTime() - last > 5 {
+                status.clear(id: "turn")
+                self.sessionProgramStatusChanged(pane.session)
+            } else {
+                self.watchCodexTurn(pane, since: since)
+            }
+        }
+    }
 }

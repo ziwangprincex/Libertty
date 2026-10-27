@@ -291,6 +291,10 @@ expect program-status-sound-config 'no sound named “NoSuchSound”' $LIBERTTY 
 # name on its tab (in liberttyd: --persist).
 expect agent 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/agent.txt)" $OUT --persist
+# Codex's turn: Return in its pane says working, until its notify hook or quiet.
+mkdir -p $PRIVATE/codex-bin
+expect codex-turn 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/codex-bin|g" $ROOT/tests/fixtures/codex-turn.txt)" $OUT
 # +agent-setup in a Claude Code folder of the test's own: its hooks and skill
 # go in once, others' hooks stay, --remove takes only Libertty's away.
 AGENT=$PRIVATE/claude

@@ -1,0 +1,21 @@
+# Codex's turn on its tab: Codex says when a turn ends (notify), not when it
+# starts — Return in its pane says working, until the turn ends or it goes
+# quiet. A stand-in named codex: a turn ticks a status line for 2 s, then
+# runs the notify hook +agent-setup installs; an empty line starts nothing.
+shell:printf '#!/bin/sh\nwhile read line; do [ -z "$line" ] && continue; i=0; while [ $i -lt 4 ]; do printf "\\\\rWorking %%ds" $i; sleep 0.5; i=$((i+1)); done; echo; libertty +agent-hook codex notify %s; done\n' "'{\"type\":\"agent-turn-complete\"}'" > @DIR@/codex && chmod +x @DIR@/codex
+type:@DIR@/codex
+key:enter
+wait:2.5
+type:hello
+key:enter
+wait:0.6
+expect-status:tab=working
+wait:3.0
+expect-status:tab=done
+# Return on an empty line: working for a moment, then quiet — back to what
+# the last turn left.
+key:enter
+wait:0.5
+expect-status:tab=working
+wait:6.5
+expect-status:tab=done

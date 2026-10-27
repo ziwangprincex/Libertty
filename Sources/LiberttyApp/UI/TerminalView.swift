@@ -466,6 +466,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// The grip beside the ×: dragged, the window moves the pane (beside
     /// another, in its place, or out to a window of its own).
     var onDragPane: ((TerminalView, NSEvent) -> Void)?
+    /// Return pressed in it (the window: an agent that says nothing as its turn starts).
+    var onSubmit: ((TerminalView) -> Void)?
     private lazy var grip: PaneGrip = {
         let g = PaneGrip()
         g.toolTip = "Drag to move the pane: beside another, onto one to trade places, or out of the window"
@@ -952,6 +954,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         }
         if hideMouseWhileTyping { NSCursor.setHiddenUntilMouseMoves(true) }
         restartBlink()
+        // Return (not composing): what's typed is sent — a prompt to an agent, say.
+        if event.keyCode == 36, !hasMarkedText(), event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
+            onSubmit?(self)
+        }
         let hadMarkedText = hasMarkedText()
         keyTextAccumulator = []
         defer { keyTextAccumulator = nil }
