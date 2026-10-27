@@ -1,37 +1,41 @@
 # libertty +swap-pane, +resize-pane and +move-pane --beside: a split
 # rearranged from the command line by session ID (sessions in liberttyd:
 # --persist).
+# Each command's status is echoed after a short sleep: a layout change resizes
+# the pane, and the shell redrawing its prompt then can take a line printed
+# in the same instant with it (slow machines: CI) — what's checked here is the
+# layout and the exit status, not that race.
 type:A=$LIBERTTY_SESSION; B=$(libertty +split --no-focus -e 'sleep 60'); echo "MADE=${#B}"
 key:enter
 wait:2.5
 expect:MADE=8
 expect-layout:h50(a,b)
-type:libertty +swap-pane "$B"; echo "SWAP=$?"
+type:libertty +swap-pane "$B"; r=$?; sleep 0.8; echo "SWAP=$r"
 key:enter
 wait:1.0
 expect:SWAP=0
 expect-layout:h50(b,a)
-type:libertty +resize-pane --left 64; echo "RESIZE=$?"
+type:libertty +resize-pane --left 64; r=$?; sleep 0.8; echo "RESIZE=$r"
 key:enter
 wait:1.0
 expect:RESIZE=0
 expect-layout:h40(b,a)
-type:libertty +resize-pane --equalize; echo "EVEN=$?"
+type:libertty +resize-pane --equalize; r=$?; sleep 0.8; echo "EVEN=$r"
 key:enter
 wait:1.0
 expect:EVEN=0
 expect-layout:h50(b,a)
-type:libertty +move-pane "$B" --beside "$A" --down; echo "BESIDE=$?"
+type:libertty +move-pane "$B" --beside "$A" --down; r=$?; sleep 0.8; echo "BESIDE=$r"
 key:enter
 wait:1.0
 expect:BESIDE=0
 expect-layout:v50(a,b)
-type:libertty +swap-pane nosuchid; echo "NONE=$?"
+type:libertty +swap-pane nosuchid; r=$?; sleep 0.8; echo "NONE=$r"
 key:enter
 wait:1.0
 expect:NONE=1
 expect:no window shows session nosuchid
-type:libertty +swap-pane "$A" "$A"; echo "SAME=$?"
+type:libertty +swap-pane "$A" "$A"; r=$?; sleep 0.8; echo "SAME=$r"
 key:enter
 wait:1.0
 expect:SAME=1
