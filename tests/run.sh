@@ -462,9 +462,18 @@ fi
 expect screen 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/screen.txt)" $OUT
 # The browser block, against a local server (python's), read and driven as +browser does.
 PORT=$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-python3 -I -m http.server $PORT --bind 127.0.0.1 --directory $ROOT/tests/fixtures/site > /dev/null 2>&1 &
+# Not `python3 -m http.server`: binding, it looks up its address's host
+# name, which took a fresh CI Mac 30 s (the page waited on it, and failed).
+python3 -I -c 'import functools, http.server, socketserver, sys
+class Server(http.server.ThreadingHTTPServer):
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[2])
+Server(("127.0.0.1", int(sys.argv[1])), handler).serve_forever()' $PORT $ROOT/tests/fixtures/site > /dev/null 2>&1 &
 SITE_PID=$!
-sleep 0.5
+# Up before a page asks it (a slow start is the server's, not the browser's).
+for i in {1..100}; do curl -sf -o /dev/null --max-time 1 http://127.0.0.1:$PORT/index.html && break; sleep 0.1; done
 expect browser 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@SITE@|http://127.0.0.1:$PORT|g" $ROOT/tests/fixtures/browser.txt)" $OUT
 mkdir -p $PRIVATE/browser-config/libertty
 print 'browser-automation = true' > $PRIVATE/browser-config/libertty/config
