@@ -11,7 +11,7 @@ enum KittyImages {
 
     /// Turn the protocol on for a terminal (it's off until there's storage).
     static func enable(on terminal: GhosttyTerminal) {
-        var limit: UInt64 = 320 << 20  // kitty's and Ghostty's default
+        var limit = KittyGraphics.storageLimit
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT, &limit)
         var yes = true
         // Local programs may hand images over as files or shared memory (fast);

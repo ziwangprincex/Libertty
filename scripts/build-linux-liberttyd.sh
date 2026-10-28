@@ -3,7 +3,7 @@
 # for x86_64 and aarch64, into Resources/remote/ (scripts/bundle.sh ships
 # them; Libertty installs the right one on a host the first time it connects).
 #
-# Needs Zig 0.16 (as for the Mac build), Swift's static Linux SDK and the
+# Needs Zig 0.17 (as for the Mac build), Swift's static Linux SDK and the
 # swift.org toolchain of the same version (the Command Line Tools' swift
 # can't use swift.org SDKs). Both install without root:
 #   swift sdk install https://download.swift.org/swift-6.4.1-release/static-sdk/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz \

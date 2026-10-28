@@ -812,7 +812,6 @@ final class DaemonSession {
         if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
-            if let images = imagesOnScreen() { outbox.send(.output, images) }
         } else {
             outbox.send(.attached, Connection.headed(header, body: UnsafeRawBufferPointer(start: nil, count: 0)))
         }
@@ -846,24 +845,11 @@ final class DaemonSession {
     /// How many times a window was caught up, for the log.
     private var catchUps = 0
 
-    /// Our state for a window catching up: a snapshot, then the images on
-    /// screen (under `lock`).
+    /// Our state for a window catching up: a snapshot, its kitty images
+    /// included (under `lock`).
     private func catchUpFrames() -> [(Wire.Kind, Data)] {
         guard let snapshot = Snapshots.encode(terminal) else { return [] }
-        var frames: [(Wire.Kind, Data)] = [(.snapshot, snapshot)]
-        if let images = imagesOnScreen() { frames.append((.output, images)) }
-        return frames
-    }
-
-    /// A snapshot is text: the images on screen follow it as kitty commands,
-    /// for the one window only — and never inside an unfinished escape
-    /// sequence the snapshot carries (under `lock`).
-    private func imagesOnScreen() -> Data? {
-        var ground = true
-        _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_VT_GROUND, &ground)
-        guard ground else { return nil }
-        let images = KittyGraphics.replay(terminal)
-        return images.isEmpty ? nil : Data(images)
+        return [(.snapshot, snapshot)]
     }
 
     func detach(_ connection: Connection) {
@@ -1190,6 +1176,9 @@ public enum Snapshots {
             }
             var compress = true
             _ = ghostty_snapshot_decoder_set(decoder, GHOSTTY_SNAPSHOT_DECODER_OPT_COMPRESS_HISTORY, &compress)
+            // Its images: libghostty's default keeps only 10 MB of them.
+            var limit = KittyGraphics.storageLimit
+            _ = ghostty_snapshot_decoder_set(decoder, GHOSTTY_SNAPSHOT_DECODER_OPT_KITTY_IMAGE_STORAGE_LIMIT, &limit)
             var terminal: GhosttyTerminal?
             guard ghostty_snapshot_decoder_decode(decoder, &terminal) == GHOSTTY_SUCCESS else { return nil }
             return terminal

@@ -105,7 +105,7 @@ Shell 运行在 `liberttyd` 中，由 Libertty 按需启动。应用退出、崩
 
 ## 环境要求与构建
 
-- macOS 14+、Swift 6（Command Line Tools 即可）、Zig 0.16（`brew install zig@0.16`）。
+- macOS 14+、Swift 6（Command Line Tools 即可）、Zig 0.17（`brew install zig`）。
 - Node.js 和 npm 仅在重新构建内置网页时需要；构建产物已在仓库中。
 
 ```sh

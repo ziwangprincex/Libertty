@@ -174,8 +174,8 @@ have no unsaved edits.
 
 ## Requirements and build
 
-- macOS 14+, Swift 6 (the Command Line Tools are sufficient), Zig 0.16
-  (`brew install zig@0.16`).
+- macOS 14+, Swift 6 (the Command Line Tools are sufficient), Zig 0.17
+  (`brew install zig`).
 - Node.js and npm only to rebuild the bundled web pages; their built output is
   already in the repository.
 

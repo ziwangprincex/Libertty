@@ -141,7 +141,7 @@ final class Outbox {
         return behind
     }
 
-    /// The session's catch-up (a snapshot, the images on screen): the
+    /// The session's catch-up (a snapshot, with its images): the
     /// skipping ends, and output queues after it. Under the session's lock,
     /// so no output can come between the snapshot and the queue.
     func caughtUp(_ catchUp: [(Wire.Kind, Data)]) {
