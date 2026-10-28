@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.3.10
 
+> A closed split pane no longer stays in memory; Ghostty 1.4.0's terminal, with kitty images in a session's snapshot; every setting from the command palette; Codex shown working.
+
+- A closed split pane no longer lives on (its terminal, its scrollback) until the next split changes: the animation that closed it kept it. Memory checked with `heap` after 20 rounds of tabs, splits and documents opened and closed: what stays is the window's own, about 70 MB; `leaks` finds nothing of Libertty's.
+- libghostty-vt from Ghostty 1.4.0 (was a 1.3.2 development commit): its parser fixes (backspace and cursor-left stop at the left margin, column and row moves relative to the origin, cancelled APC commands discarded), and a session's snapshot now carries its kitty images. A window attaching to liberttyd gets them there, including those scrolled into the history, instead of the visible ones sent again after the snapshot; a restored snapshot keeps up to 320 MB of them (libghostty's default kept 10 MB). Sessions kept by 0.3.9 carry over when it updates: checked by handing a session with 300 lines of history from 0.3.9's liberttyd to this one. Building it needs Zig 0.17.
 - Every setting from the command palette: besides the pickers, each other key of the config (scrollback, quick terminal, notifications, Web Access…) is listed in the Settings chip and found by its name; Return lets you type its value, saying as you type what line it writes or why the value doesn't fit, with the key's help under it. Empty goes back to the default.
 - Codex shows working on its tab while a turn runs: Codex's notify says when a turn ends, not when it starts, so Return in its pane says working until the turn ends, Codex asks for approval, or its output stays quiet for 5 s. Checked with a stand-in named codex, not Codex itself.
-- A closed split pane no longer lives on (its terminal, its scrollback) until the next split changes: the animation that closed it kept it. Memory checked with `heap` after 20 rounds of tabs, splits and documents opened and closed: what stays is the window's own, about 70 MB; `leaks` finds nothing of Libertty's.
 - The Theme Editor's name fields no longer move to the right the first time it opens; the bright colors are labeled by color under their heading (Bright Magenta was cut short), VoiceOver still says Bright. A setting's help in the palette reads as a paragraph.
-- libghostty-vt from Ghostty 1.4.0 (was a 1.3.2 development commit): its parser fixes (backspace and cursor-left stop at the left margin, column and row moves relative to the origin, cancelled APC commands discarded), and a session's snapshot now carries its kitty images. A window attaching to liberttyd gets them there, including those scrolled into the history, instead of the visible ones sent again after the snapshot; a restored snapshot keeps up to 320 MB of them (libghostty's default kept 10 MB). Building it needs Zig 0.17.
 
 ## 0.3.9
 
