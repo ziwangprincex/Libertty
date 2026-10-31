@@ -85,16 +85,27 @@ struct SettingPicker {
              Option(label: "Left Option is Alt", value: "left"), Option(label: "Right Option is Alt", value: "right")]
         },
         SettingPicker(key: "tab-bar", title: "Tab Style", symbol: "sidebar.left") {
-            [Option(label: "Sidebar", value: "", detail: "tabs listed down the side (default)"),
-             Option(label: "Top", value: "top", detail: "tabs along the toolbar")]
+            [Option(label: "Left Side", value: "", detail: "tabs listed down a sidebar on the left (default)"),
+             Option(label: "Right Side", value: "right", detail: "tabs listed down a sidebar on the right"),
+             Option(label: "Above", value: "top", detail: "tabs along the top of the window")]
         },
         SettingPicker(key: "pane-style", title: "Pane Style", symbol: "rectangle.grid.2x2") {
             [Option(label: "Comfortable", value: "", detail: "cards with room around them (default)"),
              Option(label: "Compact", value: "compact", detail: "edge to edge, a hairline between")]
         },
-        SettingPicker(key: "pane-glass", title: "Glass Panes", symbol: "drop") {
-            [Option(label: "Off", value: "", detail: "solid terminals (default)"),
-             Option(label: "On", value: "true", detail: "the desktop shows through the terminals, blurred; the frame stays solid")]
+        SettingPicker(key: "interface-style", title: "Interface Style", symbol: "drop") {
+            [Option(label: "Classic", value: "", detail: "a solid window (default)"),
+             Option(label: "Glass", value: "glass", detail: "the desktop shows through the window and the terminals, blurred")]
+        },
+        SettingPicker(key: "window-theme", title: "Color Scheme", symbol: "circle.lefthalf.filled") {
+            [Option(label: "Auto", value: "", detail: "follow macOS (default)"),
+             Option(label: "Light", value: "light", detail: "always light, and the theme's light half"),
+             Option(label: "Dark", value: "dark", detail: "always dark, and the theme's dark half")]
+        },
+        SettingPicker(key: "animation", title: "Animation Style", symbol: "wand.and.rays") {
+            [Option(label: "Natural", value: "", detail: "the interface's motion as designed (default)"),
+             Option(label: "Snappy", value: "snappy", detail: "shorter"),
+             Option(label: "Off", value: "off", detail: "no motion")]
         },
         SettingPicker(key: "accent-color", title: "Accent Color", symbol: "paintbrush.pointed") {
             [Option(label: "System", value: "", detail: "System Settings' accent (default)"),

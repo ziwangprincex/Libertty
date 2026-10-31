@@ -75,14 +75,14 @@ extension TerminalWindowController {
     /// show_tabs: the sidebar lists the tabs doing `activity`, or all of
     /// them again if it does already. The sidebar comes out for it.
     func showTabs(_ activity: TabActivity) {
-        guard config.tabBar == .sidebar else { return }
+        guard config.tabBar.inSidebar else { return }
         // Again while it shows: every tab. While the sidebar is away: it comes out with them.
         sidebar.show(activity: sidebar.activity == activity && isSidebarShown ? .all : activity)
         if !isSidebarShown, sidebar.activity != .all { toggleSidebar() }
     }
 
     /// Which tabs the sidebar lists; nil when the tabs are along the top.
-    var sidebarActivity: TabActivity? { config.tabBar == .sidebar ? sidebar.activity : nil }
+    var sidebarActivity: TabActivity? { config.tabBar.inSidebar ? sidebar.activity : nil }
 
     /// The sidebar rows its filters leave showing (`--ui-probe`).
     var shownSidebarRows: [String] {
@@ -143,7 +143,7 @@ extension TerminalWindowController {
         let selected = tabs.firstIndex { $0 === selectedTab } ?? 0
         sidebar.show(workspace: workspaces[activeWorkspace].name, of: workspaces.count)
         tabStrip.show(workspace: workspaces[activeWorkspace].name, of: workspaces.count)
-        sidebar.show(tabsShown: config.tabBar == .sidebar)
+        sidebar.show(tabsShown: config.tabBar.inSidebar)
         sidebar.show(tabs: infos, selected: selected)
         if config.tabBar == .top { tabStrip.show(tabs: infos, selected: selected) }
         // A host's directories aren't this Mac's: no file tree, no git status for them.

@@ -12,7 +12,7 @@ extension TerminalWindowController {
         // the accent, the tab glyphs' colors.
         let accent = config.accent(with: config.resolvedTheme)
         let looksChanged = Layout.compact != (config.paneStyle == .compact) || Accent.custom != accent
-            || TileStack.colored != config.tabIconColor || config.paneGlass != old.paneGlass
+            || TileStack.colored != config.tabIconColor || config.glass != old.glass || config.interfaceTint != old.interfaceTint
         Layout.compact = config.paneStyle == .compact
         Accent.custom = accent
         TileStack.colored = config.tabIconColor
@@ -60,7 +60,7 @@ extension TerminalWindowController {
         if config.tabBar == .top, !config.sidebarFiles, config.tabBar != old.tabBar || old.sidebarFiles, isSidebarShown {
             foldedForTabBar = true
             setCollapsed(sidebarItem, true)
-        } else if config.tabBar == .sidebar, foldedForTabBar {
+        } else if config.tabBar.inSidebar, foldedForTabBar {
             foldedForTabBar = false
             setCollapsed(sidebarItem, false)
         }
@@ -77,7 +77,7 @@ extension TerminalWindowController {
         guard let window else { return }
         let theme = config.resolvedTheme
         // Glass panes: the window lets the desktop through, the frame stays as it is.
-        let glass = config.paneGlass
+        let glass = config.glass
         let opaque = config.backgroundOpacity >= 1 && !glass
         window.isOpaque = opaque
         // One surface around the panes (toolbar, side columns, gaps), lit

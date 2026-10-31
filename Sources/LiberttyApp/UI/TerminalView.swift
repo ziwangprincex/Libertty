@@ -146,7 +146,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         renderer.minimumContrast = config.minimumContrast
         metalLayer.isOpaque = config.paneOpacity >= 1
         padding = config.padding
-        unfocusedOpacity = config.unfocusedSplitOpacity
+        unfocusedOpacity = config.inactivePaneFade ? config.unfocusedSplitOpacity : 1
         dimLayer.backgroundColor = theme.background.nsColor.cgColor
         if isDimmed { dimLayer.opacity = Float(1 - unfocusedOpacity) }
         copyOnSelect = config.copyOnSelect

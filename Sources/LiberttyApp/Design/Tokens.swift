@@ -16,14 +16,17 @@ enum Motion {
     static let card: CFTimeInterval = 0.32
     static let panel: CFTimeInterval = 0.45
 
-    static var reduced: Bool { forceReduced || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    static var reduced: Bool { forceReduced || style == .off || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// `animation` (Rex's Animation style): snappy runs at 60% of the time.
+    static var style = Config.AnimationStyle.natural
 
     /// No animations at all (`--ui-probe`): a script must not depend on
     /// Core Animation getting frames, which stops while the display sleeps.
     static var forceReduced = false
 
     /// Duration to use for an animation, or zero when the user asked for less motion.
-    static func duration(_ value: CFTimeInterval) -> CFTimeInterval { reduced ? 0 : value }
+    static func duration(_ value: CFTimeInterval) -> CFTimeInterval { reduced ? 0 : style == .snappy ? value * 0.6 : value }
 }
 
 /// The interface's accent: the system's (default), or with `accent-color`

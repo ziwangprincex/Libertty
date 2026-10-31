@@ -327,6 +327,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     private func configDidChange() {
         let store = ConfigStore.shared
+        Motion.style = store.config.animation
+        // `window-theme`: the whole app's appearance, so the theme's light or
+        // dark half follows it (SystemAppearance reads NSApp's).
+        let appearance: NSAppearance? = switch store.config.windowTheme {
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        case .auto, .system: nil
+        }
+        if NSApp.appearance?.name != appearance?.name { NSApp.appearance = appearance }
         if launched, !oneShot { MainActor.assumeIsolated { WebAccess.shared.apply(store.config) } }
         let keybinds = store.keybinds
         if keybinds != menuKeybinds {
