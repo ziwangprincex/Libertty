@@ -69,3 +69,45 @@ struct ColorTests {
         #expect(back == t)
     }
 }
+
+/// OKLCH, and the interface colors made from a theme with it.
+struct SurfaceTests {
+    @Test func oklchOfAKnownColor() {
+        // As Rex's color picker shows #EFF8FF.
+        let c = OKLCH(RGB(0xef, 0xf8, 0xff))
+        #expect(abs(c.l - 0.974) < 0.001)
+        #expect(abs(c.c - 0.013) < 0.001)
+        #expect(abs(c.h - 241) < 1)
+    }
+
+    @Test func oklchRoundTrips() {
+        for c in [RGB(0, 0, 0), RGB(255, 255, 255), RGB(0x2f, 0x81, 0xf7), RGB(0x0d, 0x11, 0x17), RGB(0xff, 0x7b, 0x72)] {
+            #expect(OKLCH(c).rgb == c)
+        }
+    }
+
+    @Test func outOfGamutKeepsHueAndLightness() {
+        let wanted = OKLCH(l: 0.7, c: 0.37, h: 150)
+        #expect(!wanted.inGamut)
+        let got = OKLCH(wanted.rgb)
+        #expect(abs(got.l - 0.7) < 0.01)
+        #expect(abs(got.h - 150) < 2)
+        #expect(got.c < 0.37 && got.c > 0.1)
+    }
+
+    /// Merino Dark's terminal background and text, and the interface colors
+    /// Rex gives them.
+    @Test func surfacesMatchRexs() {
+        var theme = Theme.all[0]
+        theme.background = RGB(13, 17, 23)
+        theme.foreground = RGB(230, 237, 243)
+        let s = theme.surfaces
+        func close(_ a: RGB, _ b: RGB) -> Bool { OKLab(a).distance(to: OKLab(b)) < 0.02 }
+        #expect(close(s.canvas, RGB(12, 14, 17)))
+        #expect(close(s.raised, RGB(30, 32, 35)))
+        #expect(close(s.stroke, RGB(46, 49, 53)))
+        #expect(close(s.contentSecondary, RGB(130, 135, 140)))
+        #expect(close(s.contentTertiary, RGB(102, 106, 111)))
+        #expect(theme.chrome == s.canvas)
+    }
+}

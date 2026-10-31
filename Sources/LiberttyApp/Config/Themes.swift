@@ -15,14 +15,9 @@ struct Theme: Equatable {
         return 0.2126 * Double(b.r) + 0.7152 * Double(b.g) + 0.0722 * Double(b.b) < 128
     }
 
-    /// The window around the panes — toolbar, sidebar, the gaps between
-    /// cards — one surface (Tern's look): a dark theme's terminals are cards
-    /// lit above a deeper frame; a light theme's sit flush with it.
-    var chrome: RGB {
-        guard isDark else { return background }
-        func deeper(_ v: UInt8) -> UInt8 { UInt8((Double(v) * 0.64).rounded()) }
-        return RGB(deeper(background.r), deeper(background.g), deeper(background.b))
-    }
+    /// The window around the panes — sidebar, the gaps between cards — one
+    /// surface, a step below the terminals (Rex's canvas; see `Surfaces`).
+    var chrome: RGB { surfaces.canvas }
 
     /// Full 256-color palette for libghostty-vt.
     var palette256: [RGB] {
