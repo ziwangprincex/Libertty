@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Libertty ▸ Settings… (⌘,, the new `open_settings` action) is a window, laid out as Rex's Settings: a search field and the pages down the left (liberttyd, Interface, Themes, Terminal, Shortcuts, Integrations, Notifications, Remote Hosts, Advanced), back and forward and the page's name above, its settings in a grouped form on the right — switches, segmented choices, pop-ups, sliders, pictures for Color scheme and Interface style. Every change is checked as the config file would be and written as one line of it, in place (comments and the other lines as they were); a key that an included file sets shows as set there instead. Themes lists Light Mode and Dark Mode apart, each theme a little terminal in its colors: choosing one writes only that half of `theme = light:…,dark:…`; Libertty's own come first, then yours, then an installed Ghostty's (folded, searchable); New opens the Theme Editor, Import copies Ghostty or iTerm2 themes into yours. Shortcuts lists every action with its key, filtered by name or by key (`cmd+k`); click one to record another (Delete removes it), which writes a `keybind` line; the keys that work from any app and the quick terminal are there too. Notifications has a page for each program state (working, blocked, error, done): the tab's mark, notifications, the Dock badge and a sound. The window takes the theme's colors, as Rex's does. The file itself is Libertty ▸ Open Config File (`open_config`); `cmd+comma` was bound to it, and a config that binds it so keeps it.
+- View ▸ Customize View (as in Rex): Color Scheme, Tab Style, Pane Style and Interface Style, the one in use checked.
+
 ## 0.3.10
 
 > A closed split pane no longer stays in memory; Ghostty 1.4.0's terminal, with kitty images in a session's snapshot; every setting from the command palette; Codex shown working.

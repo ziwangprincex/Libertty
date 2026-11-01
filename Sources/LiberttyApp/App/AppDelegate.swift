@@ -675,7 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             // Its own panel: no window to bring forward (that would also take
             // the keyboard from it, so the next press could never put it away).
             QuickTerminal.shared.toggle()
-        case .openConfig, .reloadConfig, .openThemeEditor, .connectToHost:
+        case .openSettings, .openConfig, .reloadConfig, .openThemeEditor, .connectToHost:
             // About the app, not a window.
             ActionDispatcher.perform(action)
         default:
@@ -819,12 +819,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                                  controller: NSApp.keyWindow?.windowController as? TerminalWindowController)
     }
 
+    /// View ▸ Customize View: one of a setting's choices, written as Settings writes it.
+    @objc func chooseSetting(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? SettingChoice else { return }
+        MainActor.assumeIsolated { _ = SettingsModel.shared.write(choice.key, choice.option.value) }
+    }
+
     @objc func useFloatAsDefault(_ sender: Any?) {
         let floating = (NSApp.keyWindow?.windowController as? TerminalWindowController)?.isFloatingOnTop ?? false
         UserDefaults.standard.set(floating, forKey: TerminalWindowController.floatDefaultsKey)
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if let choice = item.representedObject as? SettingChoice {
+            let now = ConfigStore.shared.savedConfig.values(of: choice.key).first ?? ""
+            item.state = SettingsModel.matches(choice.option, now, of: choice.key) ? .on : .off
+            return true
+        }
         if item.action == #selector(undo(_:)) || item.action == #selector(redo(_:)) {
             let manager = MainActor.assumeIsolated { CloseUndo.shared.manager }
             let undo = item.action == #selector(undo(_:))
@@ -889,7 +900,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             let floating = controller?.hasFloatingPane == true
             item.title = floating ? "Bring Back Floating Pane" : "Float Pane"
             return floating || controller?.canParkFocusedPane == true
-        case .newWindow, .newTab, .closeAllWindows, .toggleVisibility, .openConfig, .reloadConfig, .openThemeEditor, .quit:
+        case .newWindow, .newTab, .closeAllWindows, .toggleVisibility, .openSettings, .openConfig, .reloadConfig, .openThemeEditor, .quit:
             return true
         default:
             return controller != nil
@@ -932,7 +943,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                           selector: #selector(UpdateController.checkForUpdates(_:)), symbol: "arrow.down.circle", in: app)
         update.target = MainActor.assumeIsolated { UpdateController.shared }
         app.addItem(.separator())
-        item("Settings…", .openConfig, symbol: "gear", in: app)
+        item("Settings…", .openSettings, symbol: "gear", in: app)
+        item("Open Config File", .openConfig, symbol: "doc.text", in: app)
         item("Reload Configuration", .reloadConfig, symbol: "arrow.trianglehead.2.clockwise.rotate.90", in: app)
         item("Theme Editor…", .openThemeEditor, symbol: "paintbrush", in: app)
         item("Secure Keyboard Entry", .toggleSecureInput, symbol: "lock.display", in: app)
@@ -1017,6 +1029,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         view.addItem(.separator())
         item("Show Sidebar", .toggleSidebar, symbol: "sidebar.left", in: view)
         item("Show Inspector", .toggleInspector, symbol: "sidebar.right", in: view)
+        // Rex's View ▸ Customize View: the look, without opening Settings.
+        let customize = NSMenu(title: "Customize View")
+        let customizeItem = view.addItem(withTitle: "Customize View", action: nil, keyEquivalent: "")
+        customizeItem.submenu = customize
+        if #available(macOS 26, *) {
+            customizeItem.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Customize View")
+        }
+        for (title, key) in [("Color Scheme", "window-theme"), ("Tab Style", "tab-bar"), ("Pane Style", "pane-style"),
+                             ("Interface Style", "interface-style")] {
+            let choices = NSMenu(title: title)
+            customize.addItem(withTitle: title, action: nil, keyEquivalent: "").submenu = choices
+            for option in SettingsRegistry.item(key)?.options ?? [] {
+                let choice = choices.addItem(withTitle: option.label, action: #selector(chooseSetting(_:)), keyEquivalent: "")
+                choice.target = self
+                choice.representedObject = SettingChoice(key: key, option: option)
+            }
+        }
         view.addItem(.separator())
         item("Reset Font Size", .resetFontSize, symbol: "textformat.size", in: view)
         item("Increase Font Size", .increaseFontSize(1), symbol: "textformat.size.larger", in: view)

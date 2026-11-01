@@ -369,6 +369,11 @@ printf 'theme = probe-theme\n' > $PRIVATE/theme-config/libertty/config
 printf 'background = #112233\n' > $PRIVATE/theme-config/libertty/themes/probe-theme
 expect theme-editor 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/theme-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/theme-config/libertty|g" $ROOT/tests/fixtures/theme-editor.txt)" $OUT
+# Libertty ▸ Settings… (⌘,): a control changes one line of the config, in place; a theme, a search.
+mkdir -p $PRIVATE/settings-config/libertty
+printf '# Settings writes its lines in place: this stays.\nfont-size = 14\ntab-bar = left\n# The end.\n' > $PRIVATE/settings-config/libertty/config
+expect settings-window 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/settings-config \
+  $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/settings-config/libertty|g" $ROOT/tests/fixtures/settings-window.txt)" $OUT
 # Panes rearranged by a drag's drop, Split Best Fit; split-autobalance evening them out.
 expect arrange 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/arrange.txt)" $OUT

@@ -125,6 +125,7 @@ enum ActionDispatcher {
         case .copyCommandOutput: controller?.copyLastCommandOutput()
         case .writeScrollbackFile(let then): controller?.writeTextFile(selection: false, then: then)
         case .writeSelectionFile(let then): controller?.writeTextFile(selection: true, then: then)
+        case .openSettings: MainActor.assumeIsolated { SettingsWindowController.shared.show() }
         case .openConfig: AppDelegate.openConfigFile()
         case .reloadConfig: ConfigStore.shared.reloadByRequest()
         case .openThemeEditor: MainActor.assumeIsolated { ThemeEditor.shared.show(nil) }

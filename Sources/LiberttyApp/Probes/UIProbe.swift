@@ -59,6 +59,14 @@ import LiberttyCore
 ///                         left, right, up, down (beside it) or swap
 ///   theme-editor:open|cancel|save|name:NAME|set:SLOT=#rrggbb  drive Libertty ▸ Theme Editor (SLOT: background,
 ///                         foreground, cursor, selection or 0–15)
+///   settings:open|close|page:NAME|press:LABEL|search:TEXT|mark|dump  drive Libertty ▸ Settings…: a page; press
+///                         the control VoiceOver calls LABEL (a segment, a switch, a theme card: `Nord theme`);
+///                         type TEXT in Search Settings and press Return; mark the config file; print every element
+///   expect-settings:page=NAME|LABEL=VALUE|LABEL  the page in front; a control's value as VoiceOver reads it
+///                         (a segment's 1 or 0, a card's Selected); that something is labeled LABEL
+///   expect-config-change:LINE  since settings:mark (or the last of these), the config file changed by one
+///                         line, which now reads LINE: rewritten in place, or added
+///   (shot: takes the Settings window as NAME-settings.png while it's open)
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -256,6 +264,9 @@ enum UIProbe {
                         }
                         if let editor = MainActor.assumeIsolated({ ThemeEditor.shared.openWindow }) {
                             capture(editor, to: output + "/" + (name as NSString).deletingPathExtension + "-theme-editor.png")
+                        }
+                        if let settings = MainActor.assumeIsolated({ SettingsWindowController.shared.openWindow }) {
+                            capture(settings, to: output + "/" + (name as NSString).deletingPathExtension + "-settings.png")
                         }
                     case .size(let width, let height):
                         var frame = window.frame
@@ -644,6 +655,25 @@ enum UIProbe {
                             failures += 1
                         }
                         pump(0.4)
+                    case .settings(let command):
+                        if let why = Self.settings(command) {
+                            print("FAIL  ui-probe settings \(command): \(why)")
+                            failures += 1
+                        }
+                    case .expectSettings(let want):
+                        if let why = Self.expectSettings(want) {
+                            print("FAIL  ui-probe settings: \(why), not \(want)")
+                            failures += 1
+                        } else {
+                            print("ok    ui-probe settings show \(want)")
+                        }
+                    case .expectConfigChange(let line):
+                        if let why = Self.expectConfigChange(line) {
+                            print("FAIL  ui-probe config: \(why)")
+                            failures += 1
+                        } else {
+                            print("ok    ui-probe config changed one line: \(line)")
+                        }
                     case .expectRuns(let path, let runs):
                         let found = TerminalView.wouldRun(URL(fileURLWithPath: path))
                         if found == runs { print("ok    ui-probe \(path) \(runs ? "asks first" : "opens")") } else {
@@ -959,6 +989,7 @@ enum UIProbe {
         case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
+        case settings(String), expectSettings(String), expectConfigChange(String)
         case browser(op: String, arg: String, want: String?), bar(String)
         /// The window's frame, in points (to compare shots with another app's).
         case size(CGFloat, CGFloat)
@@ -1063,6 +1094,9 @@ enum UIProbe {
             case "expect-resize-frames": steps.append(.expectResizeFrames(Int(arg) ?? -1))
             case "expect-pinned": steps.append(.expectPinned)
             case "theme-editor": steps.append(.themeEditor(arg))
+            case "settings": steps.append(.settings(arg))
+            case "expect-settings": steps.append(.expectSettings(arg))
+            case "expect-config-change": steps.append(.expectConfigChange(arg))
             case "expect-layout": steps.append(.expectLayout(arg))
             case "expect-looks": steps.append(.expectLooks(arg))
             case "drop":
@@ -1142,7 +1176,7 @@ enum UIProbe {
     /// The run loop for `seconds`, its autoreleased objects let go as it
     /// goes, as NSApplication's loop does — else every closed pane would live
     /// on to the probe's end, and the memory it measures would be the probe's.
-    private static func pump(_ seconds: Double) {
+    static func pump(_ seconds: Double) {
         let end = Date().addingTimeInterval(seconds)
         repeat {
             autoreleasepool { _ = RunLoop.main.run(mode: .default, before: min(end, Date().addingTimeInterval(0.05))) }
@@ -1181,7 +1215,7 @@ enum UIProbe {
         return table
     }()
 
-    private static func press(_ spec: String, in window: NSWindow) -> Bool {
+    static func press(_ spec: String, in window: NSWindow) -> Bool {
         var flags: NSEvent.ModifierFlags = []
         var key = spec
         // The modifier prefixes are lower case; the key after them keeps
@@ -1274,7 +1308,7 @@ enum UIProbe {
 
     // MARK: Mouse and shots
 
-    private static func click(x: CGFloat, y: CGFloat, in window: NSWindow) {
+    static func click(x: CGFloat, y: CGFloat, in window: NSWindow) {
         // The script speaks from the content's top-left; AppKit from the
         // window's bottom-left.
         let height = window.contentView?.bounds.height ?? 0

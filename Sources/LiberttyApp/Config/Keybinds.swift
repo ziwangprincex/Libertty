@@ -214,7 +214,7 @@ enum Action: Equatable {
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
     case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
     case undo, redo
-    case openConfig, reloadConfig, openThemeEditor, quit
+    case openSettings, openConfig, reloadConfig, openThemeEditor, quit
     case ignore, unbind
 
     /// Actions without an argument, by Ghostty name.
@@ -249,7 +249,7 @@ enum Action: Equatable {
         ("toggle_picture_in_picture", .togglePictureInPicture),
         ("toggle_broadcast_input", .toggleBroadcastInput), ("copy_command_output", .copyCommandOutput),
         ("undo", .undo), ("redo", .redo),
-        ("open_config", .openConfig), ("reload_config", .reloadConfig), ("open_theme_editor", .openThemeEditor), ("quit", .quit),
+        ("open_settings", .openSettings), ("open_config", .openConfig), ("reload_config", .reloadConfig), ("open_theme_editor", .openThemeEditor), ("quit", .quit),
         ("ignore", .ignore), ("unbind", .unbind),
     ]
 
@@ -415,6 +415,7 @@ enum Action: Equatable {
         ("write_scrollback_file:open|copy|paste|save", "Put the scrollback in a text file and open it in a tab, copy or paste its path, or save it where you choose"),
         ("write_selection_file:open|copy|paste|save", "The same for the selection"),
         ("toggle_quick_terminal", "Drop a terminal down from the top of the screen, or put it away (good as a global: key)"),
+        ("open_settings", "Open the Settings window: every setting, each change written to the config file"),
         ("open_config", "Open the config file in your text editor"), ("reload_config", "Reload the config file"),
         ("open_theme_editor", "Edit a theme's colors, every window showing each change, and save it as a theme of your own"),
         ("quit", "Quit Libertty"),
@@ -491,7 +492,7 @@ struct Keybinds: Equatable {
     /// Libertty doesn't have yet (search, inspector, command palette, undo).
     static let defaults: [String] = {
         var d = [
-            "cmd+comma=open_config", "cmd+shift+comma=reload_config", "cmd+q=quit",
+            "cmd+comma=open_settings", "cmd+shift+comma=reload_config", "cmd+q=quit",
             "cmd+shift+p=toggle_command_palette", "cmd+shift+backslash=toggle_tab_overview",
             "cmd+shift+k=connect_to_host",
             "cmd+f=start_search", "escape=end_search", "cmd+e=search_selection",

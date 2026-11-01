@@ -200,8 +200,10 @@ Other build scripts:
 
 The config file is `~/.config/libertty/config` in Ghostty's format (`key = value`,
 `keybind = cmd+d=new_split:right`, `theme = light:X,dark:Y`, `config-file = ...`).
-Libertty ▸ Settings… (⌘,) opens it; changes apply when the file is saved. Errors are
-listed in a Configuration Errors window. Ghostty theme files are accepted, from
+Libertty ▸ Settings… (⌘,) is a window of every setting, laid out as Rex's are; each change
+there is one line of the file, written in place. Libertty ▸ Open Config File opens the file
+itself; changes apply when it is saved. Errors are listed in a Configuration Errors window.
+Ghostty theme files are accepted, from
 `~/.config/libertty/themes` and from an installed Ghostty.app. The command palette's
 Settings change the common keys in place, each choice tried in every window as it's
 selected (Return writes the line, Esc puts it back), and Libertty ▸ Theme Editor… makes
