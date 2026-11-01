@@ -21,6 +21,7 @@ release goes out. The README covers building and using it.
 | `swift test` | well under a second | Pure logic: config keys, colors and palettes, agent setup's file edits, keys and actions, the split tree, the wire protocol. |
 | `zsh tests/run.sh` | about 4 minutes | Everything headless: renderer snapshots by pixel, sessions and liberttyd, the CLI, Web Access, and the UI probe's scripts (`tests/fixtures/*.txt`) driving the real app off screen. Checks run 4 at a time (`LIBERTTY_TEST_JOBS`, `LIBERTTY_TEST_UI_JOBS`), each with its own liberttyd, data folder and empty config; the benches run last, alone. A UI probe's expectation is asked again for up to 3 s before it fails (`LIBERTTY_PROBE_PATIENCE`): a loaded machine is slow, not wrong. |
 | `tests/screen.sh` | 40 s, takes the screen | What the window server shows (ScreenCaptureKit, this process's windows only): scale changes the off-screen probe can't see. |
+| `tests/screen-check.sh` | 30 s, takes the screen | A built app on the real screen, driven from outside (its config, its menus) through Rex's layouts, the Settings window and the Theme Customizer: one contact sheet to look at, and checks (on the stage, inside the screen's visible part, no gap beside the sidebar, every pane its header). Works with Stage Manager. Needs Screen Recording and Accessibility for the terminal. `release.sh` runs it. |
 | `tests/linux.sh` | a few minutes, needs Docker | liberttyd on real Linux (aarch64, x86_64; bash and fish) through the remote probe. |
 | `tests/update-test.sh` | a few minutes | The updater, offline: a signed update installs, a forged one doesn't. |
 
@@ -73,10 +74,15 @@ installed liberttyd takes the sessions back:
 3. `scripts/fetch-linux-liberttyd.sh`, and commit `Resources/remote` if it
    changed (the daemon's sources changed since the binaries were built).
 4. `scripts/release.sh VERSION`: refuses a Linux liberttyd that isn't this
-   commit's, runs the unit tests and the suite, builds, signs and stages.
+   commit's, runs the unit tests and the suite, builds, signs and stages,
+   then shows the staged app on the real screen (`tests/screen-check.sh`,
+   half a minute): **look at `build/release-screens/VERSION/contact.png`**.
+   0.4.0 went out checked off screen only, and the screen showed four
+   things wrong within the hour.
 5. Commit the version (`Libertty VERSION`) and push.
 6. `scripts/release.sh VERSION --publish` (no retest: no code changed since
-   step 4), then check the release's zip, the feed and the cask agree.
+   step 4; it wants step 4's screen check passed), then check the release's
+   zip, the feed and the cask agree.
 7. By hand, when what changed calls for it: `tests/screen.sh` (rendering,
    windows), `tests/linux.sh` (the daemon, remote hosts), and whatever the
    changelog says was checked only with a stand-in (Codex, Tailscale).

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Inside, for whoever builds Libertty: a release is looked at on the real screen before it's published (`tests/screen-check.sh`, run by `scripts/release.sh`): the staged app, private, through Rex's layouts, the Settings window and the Theme Customizer, shot into one contact sheet and checked — on the stage (Stage Manager too), inside the screen's visible part, no gap beside the sidebar (it finds 0.3.10's), every pane its header. `--publish` wants it passed.
+
 ## 0.4.1
 
 > 0.4.0 as it looks on a real screen: Rex's glass, Classic that turns glass off, Rex's top tabs, and a Theme Customizer above the Dock.

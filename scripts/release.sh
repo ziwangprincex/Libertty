@@ -11,6 +11,12 @@
 # in Resources/remote was built from this commit's daemon sources
 # (Resources/remote/liberttyd-linux.source; scripts/fetch-linux-liberttyd.sh
 # takes CI's) — --allow-stale-linux ships older ones anyway, saying so.
+# Once staged, the app's look on the real screen (tests/screen-check.sh):
+# shots of Rex's layouts and its windows in build/release-screens/VERSION,
+# checked (on the stage, inside the screen, no gap beside the sidebar, every
+# pane its header), into contact.png for a person to look at; --publish
+# wants it passed for this version (--skip-screen-check publishes anyway,
+# saying so). It takes the screen for about half a minute.
 #
 # Staged: Libertty-VERSION.zip (what updates install), Libertty-VERSION.dmg,
 # appcast.json (the update feed: version, URL, SHA-256, Ed25519 signature,
@@ -21,14 +27,15 @@
 set -euo pipefail
 ROOT=${0:A:h:h}
 cd $ROOT
-USAGE="usage: scripts/release.sh VERSION [--publish | --restage | --refresh] [--skip-tests] [--allow-stale-linux]"
+USAGE="usage: scripts/release.sh VERSION [--publish | --restage | --refresh] [--skip-tests] [--allow-stale-linux] [--skip-screen-check]"
 VERSION=${1:?$USAGE}
-MODE= SKIP_TESTS=0 STALE_LINUX=0
+MODE= SKIP_TESTS=0 STALE_LINUX=0 SKIP_SCREENS=0
 for a in ${@:2}; do
   case $a in
     --publish|--restage|--refresh) MODE=$a ;;
     --skip-tests) SKIP_TESTS=1 ;;
     --allow-stale-linux) STALE_LINUX=1 ;;
+    --skip-screen-check) SKIP_SCREENS=1 ;;
     *) echo $USAGE; exit 2 ;;
   esac
 done
@@ -95,6 +102,21 @@ else
   mkdir -p $OUT
   ditto -c -k --sequesterRsrc --keepParent build/Libertty.app $ZIP
   cp build/Libertty-$VERSION.dmg $OUT/
+  # The look on the real screen, once per version (staging; --publish has
+  # rebuilt the same code with only the version commit since).
+  SCREENS=$ROOT/build/release-screens/$VERSION
+  if (( SKIP_SCREENS )); then
+    echo "warning: no look on the real screen (--skip-screen-check)"
+  elif [[ $MODE != --publish ]]; then
+    echo "== the look on the real screen (takes the screen for about half a minute)"
+    zsh tests/screen-check.sh build/Libertty.app $SCREENS | grep -E "^FAIL|^screen-check" || true
+    grep -q "^screen-check: all passed" $SCREENS/checks.txt 2>/dev/null \
+      || { echo "the screen check failed (see $SCREENS): nothing to publish"; exit 1; }
+    echo "Look at $SCREENS/contact.png before --publish."
+  else
+    grep -q "^screen-check: all passed" $SCREENS/checks.txt 2>/dev/null \
+      || { echo "no passed screen check for $VERSION: stage it first (scripts/release.sh $VERSION), or --skip-screen-check"; exit 1; }
+  fi
 fi
 SHA=$(shasum -a 256 $ZIP | cut -d' ' -f1)
 SIZE=$(stat -f%z $ZIP)
