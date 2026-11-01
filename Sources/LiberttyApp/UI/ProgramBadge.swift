@@ -196,8 +196,8 @@ final class TileStack: NSView {
     static var colored = false
     static let size: CGFloat = 14
     static let step: CGFloat = 11
-    /// How many glyphs before "+N" takes over.
-    private static let cap = 4
+    /// How many glyphs before "+N" takes over (`tab-icons`, Rex's Show tab icons).
+    static var cap = 3
 
     var tiles: [ProgramTile] = [] { didSet { changed() } }
     /// Drawn instead of the tiles when no program runs.
@@ -208,7 +208,7 @@ final class TileStack: NSView {
 
     private func changed() {
         // The last ones: the focused pane's comes last, to sit in front.
-        shown = Array(tiles.suffix(Self.cap))
+        shown = Self.cap > 0 ? Array(tiles.suffix(Self.cap)) : []
         overflow = tiles.count - shown.count
         invalidateIntrinsicContentSize()
         needsDisplay = true

@@ -81,8 +81,12 @@ struct ConfigTests {
         #expect(c.paneOpacity == 1)
         c.paneGlass = true
         #expect(c.paneOpacity == 0.7)
-        c.backgroundOpacity = 0.5
-        #expect(c.paneOpacity == 0.5)
+        // Glass terminals are Rex's 70% whatever background-opacity says:
+        // at 0 a pane would vanish into the glass.
+        c.backgroundOpacity = 0
+        #expect(c.paneOpacity == 0.7)
+        c.paneGlass = false
+        #expect(c.paneOpacity == 0)
     }
 
     @Test func accentFromTheConfig() {
@@ -92,5 +96,18 @@ struct ConfigTests {
         _ = c.set("accent-color", "#30D158")
         #expect(c.accent(with: theme) == RGB(0x30, 0xd1, 0x58))
         #expect(c.values(of: "accent-color") == ["#30d158"])
+    }
+}
+
+/// Rex's interface style and the older pane-glass.
+struct InterfaceStyleTests {
+    @Test func interfaceStyleWinsOverPaneGlass() {
+        var c = Config()
+        #expect(c.set("pane-glass", "true") == nil)
+        #expect(c.glass && c.values(of: "interface-style") == ["glass"])
+        #expect(c.set("interface-style", "classic") == nil)
+        #expect(!c.glass)
+        #expect(c.set("interface-style", "") == nil)
+        #expect(c.glass)
     }
 }

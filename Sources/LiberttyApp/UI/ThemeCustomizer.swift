@@ -12,17 +12,31 @@ struct ThemeCustomizerView: View {
     static let swatchWidth: CGFloat = 72
     static let swatchSpacing: CGFloat = 8
 
+    /// How tall the colors may be before they scroll: the screen's room
+    /// less the bottom bar, so Save & Apply is never under the Dock.
+    private var maxContentHeight: CGFloat {
+        max(320, (NSScreen.main?.visibleFrame.height ?? 900) - 130)
+    }
+
     var body: some View {
         let look = CustomizerLook(theme: model.theme, themed: model.preview)
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 24) {
-                header(look)
-                colors(look)
-                extendedPalette(look)
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 24) {
+                    header(look)
+                    colors(look)
+                    extendedPalette(look)
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 30)
+                .padding(.bottom, 24)
+                .background(GeometryReader { g in Color.clear.preference(key: ContentHeight.self, value: g.size.height) })
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 30)
-            .padding(.bottom, 24)
+            .scrollIndicators(.automatic)
+            .frame(height: min(model.contentHeight, maxContentHeight))
+            .onPreferenceChange(ContentHeight.self) { height in
+                if abs(height - model.contentHeight) > 0.5 { model.contentHeight = height }
+            }
             bottomBar(look)
         }
         .frame(width: 8 * Self.swatchWidth + 7 * Self.swatchSpacing + 2 * 16 + 2 * 28)
@@ -494,4 +508,10 @@ struct PopoverAnchor: NSViewRepresentable {
     }
 
     func updateNSView(_ view: View, context: Context) { register(view) }
+}
+
+/// The customizer's colors' own height, to size their scroll view by.
+private struct ContentHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

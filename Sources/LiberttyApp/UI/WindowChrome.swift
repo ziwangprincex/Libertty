@@ -25,11 +25,14 @@ final class WindowBackdrop: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     /// `opacity` below 1 or `glass`: the desktop shows through. Glass
-    /// blurs it in macOS's HUD material, tinted with the canvas when
-    /// `tinted` (Rex's Tint with theme, at Rex's 30%).
+    /// blurs it in macOS's HUD material under the canvas, as Rex's does:
+    /// 70% of it over a light theme, 60% over a dark one (Rex: 30% and a
+    /// 60% overlay); untinted, a neutral shade instead of the theme's.
     func apply(canvas: RGB, opacity: Double, blurred: Bool, glass: Bool, tinted: Bool) {
-        let alpha = glass ? (tinted ? max(0.3, min(opacity, 0.85)) : 0) : opacity
-        tint.layer?.backgroundColor = canvas.nsColor.withAlphaComponent(alpha).cgColor
+        let dark = canvas.luminance < 0.18
+        let shade = tinted ? canvas : (dark ? RGB(30, 30, 30) : RGB(236, 236, 236))
+        let alpha = glass ? (dark ? 0.6 : 0.7) : opacity
+        tint.layer?.backgroundColor = (glass ? shade : canvas).nsColor.withAlphaComponent(alpha).cgColor
         if glass || (blurred && opacity < 1) {
             let view = blur ?? NSVisualEffectView(frame: bounds)
             view.material = glass ? .hudWindow : .underWindowBackground

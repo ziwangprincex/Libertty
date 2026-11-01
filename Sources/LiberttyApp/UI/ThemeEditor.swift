@@ -379,6 +379,8 @@ extension ThemeEditor: NSPopoverDelegate {
 /// What the customizer shows and edits.
 @MainActor
 final class ThemeCustomizerModel: ObservableObject {
+    /// The colors' own height (the view measures it), to size their scroll view by.
+    @Published var contentHeight: CGFloat = 640
     enum Slot: Hashable {
         case background, foreground, cursor, cursorText, selection, selectionForeground
         case ansi(Int)

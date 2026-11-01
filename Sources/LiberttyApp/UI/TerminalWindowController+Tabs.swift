@@ -18,6 +18,8 @@ extension TerminalWindowController {
         Accent.custom = accent
         Surfaces.current = config.resolvedTheme.surfaces
         TileStack.colored = config.tabIconColor
+        if TileStack.cap != config.tabIcons { TileStack.cap = config.tabIcons; updateSidebar() }
+        tabStrip.fill = config.tabFill
         // The panes take it when it changed — or its theme did (the theme's
         // file, the system's appearance), or Reload Configuration asked.
         let theme = config.resolvedTheme

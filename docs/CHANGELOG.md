@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Seen on a real screen (0.4.0 had been checked off screen only): glass was a gray HUD whatever the theme, and at `background-opacity = 0` its terminals vanished into it. Glass is Rex's now: the canvas over the blur at 70% (light) or 60% (dark), the terminals at 70%; background-opacity is for classic.
+- Choosing Classic (Settings, View ▸ Customize View) left glass on in a config that still had `pane-glass = true`: `interface-style`, once set, wins over it, and Settings shows Glass for such a config.
+- The tabs along the top are Rex's 242-point capsules (they cut "zsh ~" to "zsh…"), sharing the bar with `tab-fill`; `tab-icons` sets how many programs' icons a tab shows. Both keys did nothing in 0.4.0.
+- The Theme Customizer scrolls its colors on a short screen instead of putting Save & Apply under the Dock.
+
 ## 0.4.0
 
 > Libertty looks and is set up like Rex: one window surface with Rex's sidebar, pane cards and headers, no toolbar, and no more gap beside the sidebar; a Settings window; Rex's Theme Customizer with an OKLCH color picker; an installed Rex's themes by name.

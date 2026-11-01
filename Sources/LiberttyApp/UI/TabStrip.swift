@@ -12,9 +12,12 @@ final class TabStrip: NSView {
     static let height: CGFloat = 32
     private static let tabHeight: CGFloat = 32
     private static let spacing: CGFloat = 2
-    private static let maxTabWidth: CGFloat = 220
-    private static let minTabWidth: CGFloat = 64
+    /// Rex's capsules: 242 wide while there's room, shrinking alike to 100.
+    private static let maxTabWidth: CGFloat = 242
+    private static let minTabWidth: CGFloat = 100
 
+    /// `tab-fill` (Rex's Fill available space): the tabs share the bar's width.
+    var fill = false { didSet { if fill != oldValue { needsLayout = true } } }
     private var tabs: [SidebarTabInfo] = []
     private var selected = 0
     private var buttons: [TabStripButton] = []
@@ -123,8 +126,9 @@ final class TabStrip: NSView {
     /// Each tab's width: its own up to a cap, all shrunk alike when they
     /// don't fit, never below a minimum (then they scroll).
     private func widths() -> [CGFloat] {
-        let natural = buttons.map { min(Self.maxTabWidth, max(Self.minTabWidth, $0.naturalWidth)) }
         let room = bounds.width - addWidth - leading - Self.spacing * CGFloat(max(0, buttons.count - 1))
+        if fill, !buttons.isEmpty { return buttons.map { _ in max(Self.minTabWidth, (room / CGFloat(buttons.count)).rounded(.down)) } }
+        let natural = buttons.map { _ in Self.maxTabWidth }
         let total = natural.reduce(0, +)
         guard total > room, !natural.isEmpty else { return natural }
         // The widest give way first, down to one common width (a browser's

@@ -95,7 +95,9 @@ struct Config: Equatable {
     var tabFill = false
     /// Rex's Show tab icons: how many of a tab's programs it shows, 0–5.
     var tabIcons = 3
-    var interfaceStyle = InterfaceStyle.classic
+    /// Unset: `pane-glass` decides (older configs); set, it wins over it.
+    var interfaceStyleSet: InterfaceStyle?
+    var interfaceStyle: InterfaceStyle { interfaceStyleSet ?? (paneGlass ? .glass : .classic) }
     /// Rex's Tint with theme: glass takes the theme's color.
     var interfaceTint = true
     var windowTheme = WindowTheme.auto
@@ -252,9 +254,11 @@ struct Config: Equatable {
 
     /// How opaque the terminals' own background is: `background-opacity`,
     /// or with glass panes at most 0.7 (they're glass whatever the window).
-    var paneOpacity: Double { glass ? min(backgroundOpacity, 0.7) : backgroundOpacity }
+    /// Glass terminals are Rex's 70%, whatever background-opacity says
+    /// (at 0 a pane would vanish into the glass); classic ones follow it.
+    var paneOpacity: Double { glass ? 0.7 : backgroundOpacity }
     /// Glass panes: `interface-style = glass`, or the older `pane-glass`.
-    var glass: Bool { paneGlass || interfaceStyle == .glass }
+    var glass: Bool { interfaceStyle == .glass }
 
     var padding: NSEdgeInsets {
         NSEdgeInsets(top: windowPaddingY, left: windowPaddingX, bottom: windowPaddingY + 2, right: windowPaddingX)
@@ -298,9 +302,9 @@ struct Config: Equatable {
         ("pane-headers", "never, split or always: when a pane shows a header with its program, folder and size, and buttons to float, zoom and close it."),
         ("split-autobalance", "Even out the panes after every split, close and move (Rex's Autobalance splits): three side by side get a third each."),
         ("pane-style", "comfortable (cards with room around them, default) or compact (panes edge to edge with a hairline between them, square, out to the window's edges), as Rex's pane styles."),
-        ("interface-style", "classic (a solid window, default) or glass (Rex's Interface style): the desktop shows through the window and the terminals, blurred. How much shows in the terminals: background-opacity below 1, else 0.7."),
+        ("interface-style", "classic (a solid window, default) or glass (Rex's Interface style): the desktop shows through the window and the terminals, blurred, as much as in Rex (the terminals at 70%; background-opacity is for classic)."),
         ("interface-tint", "With interface-style = glass, tint the glass with the theme's color (Rex's Tint with theme); false leaves macOS's own."),
-        ("pane-glass", "true is interface-style = glass (kept for older configs)."),
+        ("pane-glass", "true is interface-style = glass, unless interface-style is set (kept for older configs)."),
         ("window-theme", "auto or system (follow macOS, default), light or dark: the window's appearance, and which half of theme = light:…,dark:… is used (Rex's Color scheme, Ghostty's window-theme)."),
         ("accent-color", "The interface's accent (the focused pane's line, selections, rings): system (default), theme (the theme's cursor color when it's a color, else its blue; Rex's Use theme accent) or #rrggbb."),
         ("tab-icon-color", "Draw each program's glyph on the tabs in its color (Rex's Use color for tab icons); off, they're all the label's gray."),
@@ -680,8 +684,8 @@ struct Config: Equatable {
             if reset { tabIcons = defaults.tabIcons; return nil }
             guard let x = int(0...5) else { return "a number, 0–5" }; tabIcons = x
         case "interface-style":
-            if reset { interfaceStyle = defaults.interfaceStyle; return nil }
-            guard let x = InterfaceStyle(rawValue: v) else { return "classic or glass" }; interfaceStyle = x
+            if reset { interfaceStyleSet = nil; return nil }
+            guard let x = InterfaceStyle(rawValue: v) else { return "classic or glass" }; interfaceStyleSet = x
         case "interface-tint":
             if reset { interfaceTint = defaults.interfaceTint; return nil }
             guard let x = bool() else { return "true or false" }; interfaceTint = x
