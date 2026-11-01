@@ -259,7 +259,6 @@ expect kitty-key 'kitty-key: all passed' $LIBERTTY --kitty-key-probe
 expect resize-resync 'resize-resync: all passed' $LIBERTTY --resize-resync-probe
 # A window that stops reading holds up nobody: not the program, not the
 # other windows, not typing; it skips ahead with a snapshot (or is hung up).
-expect slow-client 'slow-client: all passed' $LIBERTTY --slow-client-probe
 # The UI itself: real AppKit key events at a real window, off screen and
 # never focused (the only check that goes through TerminalView's keyboard).
 expect ui-probe 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/ui-probe.txt)" $OUT
@@ -509,6 +508,11 @@ expect import-ghostty 'import-ghostty: all passed' zsh $ROOT/tests/import-ghostt
 # something only on a quiet machine.
 settle
 SERIAL=1
+
+# A stuck window holds nobody up: timed against the same flood alone, so
+# with the benches, on a quiet machine (beside other checks the two floods
+# ran under different loads, and CI's three cores made it flaky).
+expect slow-client 'slow-client: all passed' $LIBERTTY --slow-client-probe
 
 # Big paste: every byte arrives, through a full pty (EAGAIN) and through liberttyd
 expect paste-local 'read 2000000 ' $LIBERTTY --paste-probe

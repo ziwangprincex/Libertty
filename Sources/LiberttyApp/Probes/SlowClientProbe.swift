@@ -125,19 +125,28 @@ enum SlowClientProbe {
         var stuck: Connection?
         if let catchUp {
             RunLoop.main.run(until: Date().addingTimeInterval(0.6))
-            guard let id = session.persistentID, let c = DaemonAddress.local.connect() else { return nil }
+            guard let id = session.persistentID, let c = DaemonAddress.local.connect() else {
+                print("      (couldn't reach liberttyd to attach a second client)")
+                return nil
+            }
             c.setBufferSizes(1 << 16)
             var request: [String: Any] = ["id": id]
             if catchUp { request["catchUp"] = true }
             c.send(.attach, json: request)
             c.setReceiveTimeout(5)
-            guard c.receive()?.kind == .attached else { return nil }
+            guard c.receive()?.kind == .attached else {
+                print("      (the second client wasn't attached within 5 s)")
+                return nil
+            }
             stuck = c  // and from here on, it reads nothing
         }
         // A second into the flood, a line is typed — through liberttyd's
         // `send`, which doesn't make our window the one whose answers count
         // (typing in it would): the stuck client stays that one.
-        guard wait(10, for: "LIBERTTY-FLOOD", in: session), let id = session.persistentID else { return nil }
+        guard wait(10, for: "LIBERTTY-FLOOD", in: session), let id = session.persistentID else {
+            print("      (the flood didn't start in the window within 10 s: \(seconds(Date().timeIntervalSince(started))) in)")
+            return nil
+        }
         RunLoop.main.run(until: Date().addingTimeInterval(1))
         let typedAt = Date()
         _ = DaemonClient.request(.send, json: ["id": id, "text": "TYPED-OK\r"])
@@ -146,7 +155,10 @@ enum SlowClientProbe {
             if typed.isInfinite, (try? String(contentsOfFile: typedFile, encoding: .utf8))?.contains("TYPED-OK") == true {
                 typed = Date().timeIntervalSince(typedAt)
             }
-        }) else { return nil }
+        }) else {
+            print("      (the flood didn't end in the window within 40 s; its last line: \(session.viewportText().lines.last(where: { !$0.isEmpty }) ?? "none"))")
+            return nil
+        }
         if typed.isInfinite, (try? String(contentsOfFile: typedFile, encoding: .utf8))?.contains("TYPED-OK") == true {
             typed = Date().timeIntervalSince(typedAt)
         }
