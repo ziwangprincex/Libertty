@@ -269,6 +269,7 @@ final class SidebarViewController: NSViewController {
         let more = Self.iconButton("ellipsis", "More", target: self, action: #selector(showMore(_:)))
         let filesRow = NSStackView(views: [disclosure, folderIcon, folderLabel, NSView(), up, refresh, reveal, more])
         filesRow.spacing = 6
+        filesRowView = filesRow
         filesButtons = [up, refresh, reveal, more]
         let click = NSClickGestureRecognizer(target: self, action: #selector(toggleFiles(_:)))
         click.numberOfClicksRequired = 2
@@ -378,6 +379,7 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    private weak var filesRowView: NSView?
     private let chromeRow = NSView()
     private let foot = NSStackView()
     private var chromeViews: (leading: NSView?, trailing: NSView?) = (nil, nil)
@@ -760,6 +762,8 @@ final class SidebarViewController: NSViewController {
         filesShown = shown
         files.isHidden = !shown
         filesButtons.forEach { $0.isHidden = !shown }
+        // Rex's sidebar is tabs only: with the files off, not even their row.
+        filesRowView?.isHidden = !shown
         tabsCapWithFiles.isActive = shown && tabsShown
         disclosure.image = NSImage(systemSymbolName: shown ? "chevron.down" : "chevron.right",
                                    accessibilityDescription: shown ? "Hide Files" : "Show Files")

@@ -133,7 +133,13 @@ extension TerminalWindowController {
         let live = Set(allPanes.map(ObjectIdentifier.init))
         attention.formIntersection(live)
         let infos = tabs.map { tab -> SidebarTabInfo in
-            let label = self.label(of: tab)
+            var label = self.label(of: tab)
+            // At a prompt a tab is its shell and its folder (Rex's "zsh ~").
+            if label.detail.isEmpty, tab.document == nil, let path = tab.focusedPane?.session.workingDirectory,
+               label.name == Self.shortDirectory(path) {
+                label.name = host == nil ? Self.shellName : "shell"
+                label.detail = path == NSHomeDirectory() ? "~" : (path as NSString).lastPathComponent
+            }
             // The row's ring says it rang; no bell glyph in its name.
             return SidebarTabInfo(title: label.name, detail: label.detail, status: status(of: tab)?.state,
                                   paneCount: tab.container?.views.count ?? 0, parked: tab.parked.count,
@@ -151,7 +157,14 @@ extension TerminalWindowController {
         tabStrip.show(workspace: workspaces[activeWorkspace].name, of: workspaces.count)
         sidebar.show(tabsShown: config.tabBar.inSidebar)
         sidebar.show(tabs: infos, selected: selected)
-        if config.tabBar == .top { tabStrip.show(tabs: infos, selected: selected) }
+        if config.tabBar == .top {
+            // A top tab says it in one line (Rex's "zsh ~").
+            tabStrip.show(tabs: infos.map { info in
+                var info = info
+                if !info.detail.isEmpty, info.title == Self.shellName || info.title == "shell" { info.title += " " + info.detail; info.detail = "" }
+                return info
+            }, selected: selected)
+        }
         // A host's directories aren't this Mac's: no file tree, no git status for them.
         let local = host == nil
         let dir = (local ? focusedWorkingDirectory : nil) ?? NSHomeDirectory()

@@ -1298,7 +1298,7 @@ final class TerminalSession {
         return (shell, arguments, environment)
     }
 
-    private static func loginShell() -> String {
+    static func loginShell() -> String {
         // Tests try another shell's integration (bash, fish) this way.
         if let given = ProcessInfo.processInfo.environment["LIBERTTY_SHELL"], FileManager.default.isExecutableFile(atPath: given) {
             return given

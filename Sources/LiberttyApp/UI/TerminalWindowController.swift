@@ -655,7 +655,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     static let defaultWorkspaceName = "Default"
     /// The login shell's name, as a pane at its prompt is called (`zsh`).
-    static let shellName = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh").lastPathComponent
+    static let shellName = (TerminalSession.loginShell() as NSString).lastPathComponent
 
     /// Set when the user already confirmed closing (a whole window or all of them).
     var skipCloseConfirmation = false

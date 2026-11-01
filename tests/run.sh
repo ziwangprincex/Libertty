@@ -392,7 +392,7 @@ expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empt
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config
-expect tab-strip 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/strip-config \
+expect tab-strip 'ui-probe: all passed' env LIBERTTY_SHELL=/bin/zsh XDG_CONFIG_HOME=$PRIVATE/strip-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/strip|g" $ROOT/tests/fixtures/tab-strip.txt)" $OUT
 # The editor block: open, type, save, changes on disk, line ends, unsaved-close, --wait.
 ED=$PRIVATE/editor
