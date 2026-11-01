@@ -1,9 +1,10 @@
 #!/bin/zsh
-# minimum-contrast, adjust-cell-height and palette-generate in snapshots'
-# pixels: dark text on the dark background comes out white once a contrast
-# is asked for, box drawing keeps its color; the cells grow by the pixels or
-# the percentage; the 256 colors' cube runs from the theme's background to
-# its text color.
+# minimum-contrast, adjust-cell-height, palette-generate, cursor-text and
+# selection-foreground in snapshots' pixels: dark text on the dark
+# background comes out white once a contrast is asked for, box drawing keeps
+# its color; the cells grow by the pixels or the percentage; the 256 colors'
+# cube runs from the theme's background to its text color; the text under
+# the cursor, and selected text, take their colors.
 # Prints "text-render: all passed".
 #   tests/text-render-test.sh LIBERTTY_BINARY OUTDIR
 set -u
@@ -42,4 +43,25 @@ cube() {  # GENERATE INDEX → the color of a cell in palette INDEX
 }
 [[ $(cube false 231) == "#ffffff" && $(cube false 16) == "#000000" ]] && ok "palette-generate off: xterm's cube" || bad "palette-generate off: $(cube false 231) $(cube false 16)"
 [[ $(cube true 231) == "#e6e6e6" && $(cube true 16) == "#1c1c1e" ]] && ok "palette-generate: the cube from the theme's colors" || bad "palette-generate: $(cube true 231) $(cube true 16)"
+# cursor-text: the character under a block cursor in that color, instead
+# of the background's.
+under() {  # CURSOR_TEXT → the first cell's pixels, a steady block cursor on it
+  local name=${1#\#} extra=()
+  [[ -n $1 ]] && extra=(--set cursor-text=$1)
+  $L --snapshot $OUT/cursor-text-${name:-none}.png --cols 10 --rows 2 --font-size 13 --set window-padding-x=10 \
+    --set window-padding-y=6 $extra --pixels ${points#;} -- "printf '\033[2 q########\r'; sleep 0.2" \
+    | awk '/^pixel/ { print $3 }'
+}
+[[ $(under '#ff0000') == *'#ff0000'* ]] && ok "cursor-text: the character under the cursor in its color" || bad "cursor-text: no #ff0000 under the cursor"
+[[ $(under '') != *'#ff0000'* && $(under '') == *'#1c1c1e'* ]] && ok "cursor-text unset: the background's color" || bad "cursor-text unset: not the background"
+# selection-foreground: selected text in that color, instead of its own.
+selected() {  # SELECTION_FOREGROUND → the first cell's pixels, everything selected
+  local name=${1#\#} extra=()
+  [[ -n $1 ]] && extra=(--set selection-foreground=$1)
+  $L --snapshot $OUT/selection-foreground-${name:-none}.png --cols 10 --rows 2 --font-size 13 --set window-padding-x=10 \
+    --set window-padding-y=6 $extra --select-all --pixels ${points#;} -- "printf '\033[?25l########'; sleep 0.2" \
+    | awk '/^pixel/ { print $3 }'
+}
+[[ $(selected '#00ff00') == *'#00ff00'* ]] && ok "selection-foreground: selected text in its color" || bad "selection-foreground: no #00ff00 in the selection"
+[[ $(selected '') != *'#00ff00'* ]] && ok "selection-foreground unset: selected text keeps its color" || bad "selection-foreground unset: changed"
 (( fails == 0 )) && echo "text-render: all passed"

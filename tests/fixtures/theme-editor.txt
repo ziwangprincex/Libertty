@@ -1,22 +1,39 @@
-# Libertty ▸ Theme Editor: a color changed shows in every window at once;
-# Cancel puts the theme back; Save and Use writes a theme file of your own
-# and makes it the theme. Runs with a config folder of its own (@CFG@):
-# theme = probe-theme (background #112233).
+# Libertty ▸ Theme Editor (the Theme Customizer): with Preview on, a color
+# changed shows in every window at once, and Preview off shows the files'
+# colors again; Revert and Cancel put the theme back; Save & Apply writes a
+# theme file of your own and makes it the theme. Runs with a config folder
+# of its own (@CFG@): theme = probe-theme (background #112233).
 expect-background:#112233
 theme-editor:open
 theme-editor:set:background=#203040
 expect-background:#203040
+# The picker: Background at L 0.2, C 0.02, H 250 is #0f171f.
+theme-editor:pick:background
+theme-editor:oklch:background=0.2,0.02,250
+expect-background:#0f171f
+theme-editor:preview:off
+expect-background:#112233
+theme-editor:preview:on
+expect-background:#0f171f
+theme-editor:revert
+expect-background:#112233
+theme-editor:oklch:background=0.2,0.02,250
+expect-background:#0f171f
 theme-editor:cancel
 expect-background:#112233
-# Saved: the file, the config's theme, the windows.
+# Saved: the file (the two new colors too), the config's theme, the windows.
 theme-editor:open
-theme-editor:set:background=#304050
+theme-editor:oklch:background=0.2,0.02,250
 theme-editor:set:1=#ff0000
+theme-editor:set:cursor-text=#010203
+theme-editor:set:selection-foreground=#fefefe
 theme-editor:name:Probe Made
 theme-editor:save
 wait:0.6
-expect-background:#304050
-type:grep -c 'background = #304050' '@CFG@/themes/Probe Made' && grep '^theme' @CFG@/config
+expect-background:#0f171f
+type:grep -c 'background = #0f171f' '@CFG@/themes/Probe Made' && grep '^cursor-text\|^selection-fore' '@CFG@/themes/Probe Made' | sed 's/ = /:=/' && grep '^theme' @CFG@/config
 key:enter
 wait:0.6
+expect:cursor-text:=#010203
+expect:selection-foreground:=#fefefe
 expect:theme = Probe Made

@@ -202,9 +202,11 @@ The config file is `~/.config/libertty/config` in Ghostty's format (`key = value
 `keybind = cmd+d=new_split:right`, `theme = light:X,dark:Y`, `config-file = ...`).
 Libertty ▸ Settings… (⌘,) opens it; changes apply when the file is saved. Errors are
 listed in a Configuration Errors window. Ghostty theme files are accepted, from
-`~/.config/libertty/themes` and from an installed Ghostty.app. The command palette's
-Settings change the common keys in place, each choice tried in every window as it's
-selected (Return writes the line, Esc puts it back), and Libertty ▸ Theme Editor… makes
+`~/.config/libertty/themes` and from an installed Ghostty.app, and an installed Rex's
+themes by name (read from the app, e.g. `theme = light:Merino Light,dark:Merino Dark`).
+The command palette's Settings change the common keys in place, each choice tried in
+every window as it's selected (Return writes the line, Esc puts it back), and
+Libertty ▸ Theme Editor… (Rex's Theme Customizer, with an OKLCH color picker) makes
 themes of your own, live.
 
 ```sh

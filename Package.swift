@@ -91,6 +91,8 @@ let package = Package(
             name: "LiberttyTests",
             dependencies: ["LiberttyApp", "LiberttyCore"],
             path: "tests/LiberttyTests",
+            // Files the tests read from where they are (#filePath).
+            exclude: ["Fixtures"],
             // (Unsafe flags hide the toolchain's plugin for @Test from the
             // compiler: it's named again, where the toolchain keeps it.)
             swiftSettings: vtSwift + [.unsafeFlags(testingPlugin)],

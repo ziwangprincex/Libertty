@@ -994,9 +994,8 @@ final class TerminalSession {
     /// precedence, as in every terminal.
     func apply(_ config: Config) {
         let theme = config.resolvedTheme
-        var palette = config.paletteGenerate ? theme.generatedPalette256(harmonious: config.paletteHarmonious) : theme.palette256
-        for (i, c) in config.palette where i >= 16 && i < 256 { palette[i] = c }
-        var colors = palette.map { GhosttyColorRgb(r: $0.r, g: $0.g, b: $0.b) }
+        // (The config's palette and palette-generate are in the theme by now.)
+        var colors = theme.fullPalette.map { GhosttyColorRgb(r: $0.r, g: $0.g, b: $0.b) }
         var fg = GhosttyColorRgb(theme.foreground), bg = GhosttyColorRgb(theme.background)
         var cursor = GhosttyColorRgb(theme.cursor)
         var style: GhosttyTerminalCursorStyle = switch config.cursorStyle {

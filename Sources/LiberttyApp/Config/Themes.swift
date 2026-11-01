@@ -9,6 +9,16 @@ struct Theme: Equatable {
     var cursor: RGB
     var selection: RGB
     var ansi: [RGB]  // 16 entries
+    /// The text under a block cursor (Ghostty's `cursor-text`); nil: the background.
+    var cursorText: RGB? = nil
+    /// Selected text (Ghostty's `selection-foreground`); nil: its own color.
+    var selectionForeground: RGB? = nil
+    /// Colors 16–255 from this theme's own (Ghostty's `palette-generate` and
+    /// `palette-harmonious`, which a theme file may set; the config's win).
+    var paletteGenerate = false
+    var paletteHarmonious = false
+    /// Colors 16–255 set one by one, over the generated (or xterm's) ones.
+    var extendedPalette: [Int: RGB] = [:]
 
     var isDark: Bool {
         let b = background
@@ -28,6 +38,14 @@ struct Theme: Equatable {
             let v = UInt8(8 + i * 10)
             p.append(RGB(v, v, v))
         }
+        return p
+    }
+
+    /// The 256 colors terminals get: xterm's or generated ones, with the
+    /// theme's own entries over them.
+    var fullPalette: [RGB] {
+        var p = paletteGenerate ? generatedPalette256(harmonious: paletteHarmonious) : palette256
+        for (i, c) in extendedPalette where (16..<256).contains(i) { p[i] = c }
         return p
     }
 
@@ -72,8 +90,10 @@ struct Theme: Equatable {
     }
 
     /// A theme file in Ghostty's format: `background`, `foreground`,
-    /// `cursor-color`, `selection-background` and `palette = N=#rrggbb`
-    /// lines; anything else is ignored. Missing colors come from Libertty Dark.
+    /// `cursor-color`, `cursor-text`, `selection-background`,
+    /// `selection-foreground`, `palette = N=#rrggbb`, `palette-generate` and
+    /// `palette-harmonious` lines; anything else is ignored. Missing colors
+    /// come from Libertty Dark.
     static func parse(name: String, text: String) -> Theme {
         var t = all[0]
         t.name = name
@@ -86,10 +106,15 @@ struct Theme: Equatable {
             case "background": RGB(string: value).map { t.background = $0 }
             case "foreground": RGB(string: value).map { t.foreground = $0 }
             case "cursor-color": RGB(string: value).map { t.cursor = $0 }
+            case "cursor-text": t.cursorText = RGB(string: value)
             case "selection-background": RGB(string: value).map { t.selection = $0 }
+            case "selection-foreground": t.selectionForeground = RGB(string: value)
             case "palette":
                 let p = value.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-                if p.count == 2, let i = Int(p[0]), (0..<16).contains(i), let c = RGB(string: p[1]) { t.ansi[i] = c }
+                guard p.count == 2, let i = Int(p[0]), let c = RGB(string: p[1]) else { continue }
+                if (0..<16).contains(i) { t.ansi[i] = c } else if (16..<256).contains(i) { t.extendedPalette[i] = c }
+            case "palette-generate": t.paletteGenerate = value.lowercased() == "true"
+            case "palette-harmonious": t.paletteHarmonious = value.lowercased() == "true"
             default: break
             }
         }
@@ -157,6 +182,9 @@ struct ThemeSpec: Equatable {
             else if parts.count == 1 { (light, dark) = (p, p) }
             else { return nil }
         }
+        // One half alone: Libertty's own theme for the other.
+        if light == nil, dark != nil { light = "Libertty Light" }
+        if dark == nil, light != nil { dark = Theme.defaultName }
         guard let light, let dark, !light.isEmpty, !dark.isEmpty else { return nil }
         (self.light, self.dark) = (light, dark)
     }
@@ -166,13 +194,36 @@ struct ThemeSpec: Equatable {
     func name(dark isDark: Bool) -> String { isDark ? dark : light }
 }
 
-/// Theme files: `~/.config/libertty/themes/NAME` first, then the themes that
-/// ship with an installed Ghostty.app (its files use the same format, so
-/// hundreds of schemes work as-is).
-final class ThemeLibrary {
+/// Themes by name: theme files in `~/.config/libertty/themes/NAME` first,
+/// then the themes of an installed Rex (read from its app, never copied),
+/// then the theme files that ship with an installed Ghostty.app (its files
+/// use the same format, so hundreds of schemes work as-is).
+class ThemeLibrary {
     static let shared = ThemeLibrary()
 
-    struct Entry { let name: String; let url: URL; let source: String }
+    struct Entry {
+        enum Location {
+            /// A theme file of its own.
+            case file(URL)
+            /// One of the themes in Rex's `themes.json`, read already.
+            case rex(URL, Theme)
+        }
+
+        let name: String
+        /// `user`, `Rex` or `Ghostty`.
+        let source: String
+        let location: Location
+
+        /// The file its colors are read from (Rex's themes.json for each of Rex's).
+        var url: URL {
+            switch location {
+            case .file(let url), .rex(let url, _): url
+            }
+        }
+
+        /// Whether it's a file of its own the Theme Customizer may replace or delete.
+        var isOwn: Bool { source == "user" }
+    }
 
     private var cache: [String: Entry]?
 
@@ -184,23 +235,55 @@ final class ThemeLibrary {
         return dirs
     }
 
+    /// Rex's themes file, in the first Rex app found (Rex.app, Rex Beta.app…).
+    /// Set (tests): this file instead, nil for none.
+    var rexThemesFile: URL?? = nil
+
+    private var rexFile: URL? {
+        if let rexThemesFile { return rexThemesFile }
+        for folder in ["/Applications", NSHomeDirectory() + "/Applications"] {
+            let apps = ((try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? [])
+                .filter { $0.hasPrefix("Rex") && $0.hasSuffix(".app") }.sorted()
+            for app in apps {
+                let url = URL(fileURLWithPath: folder).appendingPathComponent(app)
+                    .appendingPathComponent(RexThemes.path)
+                if FileManager.default.fileExists(atPath: url.path) { return url }
+            }
+        }
+        return nil
+    }
+
     /// Forget the directory listings (on config reload, so new files show up).
     func invalidate() { cache = nil }
 
-    /// Every theme file, deduplicated by name (earlier directories win).
+    /// Every theme, deduplicated by name (yours, then Rex's, then Ghostty's).
     var entries: [Entry] {
         if cache == nil {
             var found: [String: Entry] = [:]
-            for (dir, source) in directories {
-                guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { continue }
+            func add(_ entry: Entry) {
+                let key = entry.name.lowercased()
+                if found[key] == nil { found[key] = entry }
+            }
+            let dirs = directories
+            func addFiles(in dir: URL, source: String) {
+                guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
                 for name in names where !name.hasPrefix(".") {
-                    let key = name.lowercased()
-                    if found[key] == nil { found[key] = Entry(name: name, url: dir.appendingPathComponent(name), source: source) }
+                    add(Entry(name: name, source: source, location: .file(dir.appendingPathComponent(name))))
                 }
             }
+            for (dir, source) in dirs where source == "user" { addFiles(in: dir, source: source) }
+            if let file = rexFile {
+                for theme in RexThemes.read(file) { add(Entry(name: theme.name, source: "Rex", location: .rex(file, theme))) }
+            }
+            for (dir, source) in dirs where source != "user" { addFiles(in: dir, source: source) }
             cache = found
         }
         return cache!.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func entry(for name: String) -> Entry? {
+        if cache == nil { _ = entries }
+        return cache?[name.lowercased()]
     }
 
     func url(for name: String) -> URL? {
@@ -208,13 +291,84 @@ final class ThemeLibrary {
             let path = (name as NSString).expandingTildeInPath
             return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
         }
-        if cache == nil { _ = entries }
-        return cache?[name.lowercased()]?.url
+        return entry(for: name)?.url
     }
 
     func load(_ name: String) -> Theme? {
+        if case .rex(_, var theme)? = entry(for: name)?.location {
+            theme.name = name
+            return theme
+        }
         guard let url = url(for: name), let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return Theme.parse(name: name, text: text)
+    }
+}
+
+/// Rex's themes, as its app ships them: a JSON array in its design tokens'
+/// bundle, each `{id, name, appearance, source: {background, foreground,
+/// cursor, cursorText, selectionBackground, selectionForeground, ansi[16],
+/// paletteGenerate, paletteHarmonious}}` in sRGB hex. Read where Rex is
+/// installed, as Ghostty's theme files are; never copied.
+enum RexThemes {
+    static let path = "Contents/Resources/SuperUI_SuperDesignTokens.bundle/Contents/Resources/themes.json"
+
+    private struct Item: Decodable {
+        let name: String
+        let source: Source
+    }
+
+    private struct Source: Decodable {
+        let background: String
+        let foreground: String
+        let cursor: String?
+        let cursorText: String?
+        let selectionBackground: String?
+        let selectionForeground: String?
+        let ansi: [String]
+        let paletteGenerate: Bool?
+        let paletteHarmonious: Bool?
+    }
+
+    /// The file as last read, until it changes (it's a few megabytes; the
+    /// library is listed again on every config reload).
+    nonisolated(unsafe) private static var last: (url: URL, date: Date?, themes: [Theme])?
+    private static let lock = NSLock()
+
+    static func read(_ url: URL) -> [Theme] {
+        let date = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+        lock.lock()
+        defer { lock.unlock() }
+        if let last, last.url == url, last.date == date { return last.themes }
+        let themes = (try? Data(contentsOf: url)).map(parse) ?? []
+        last = (url, date, themes)
+        return themes
+    }
+
+    /// The themes in the file; one without its two main colors, or with an
+    /// ANSI palette that isn't 16 colors, is left out.
+    static func parse(_ data: Data) -> [Theme] {
+        guard let items = try? JSONDecoder().decode([Failable<Item>].self, from: data) else { return [] }
+        return items.compactMap { item -> Theme? in
+            guard let item = item.value, !item.name.isEmpty, !item.name.contains(","),
+                  let bg = RGB(string: item.source.background), let fg = RGB(string: item.source.foreground) else { return nil }
+            let ansi = item.source.ansi.compactMap { RGB(string: $0) }
+            guard ansi.count == 16 else { return nil }
+            var t = Theme(name: item.name, background: bg, foreground: fg,
+                          cursor: item.source.cursor.flatMap { RGB(string: $0) } ?? fg,
+                          selection: item.source.selectionBackground.flatMap { RGB(string: $0) } ?? Theme.all[0].selection,
+                          ansi: ansi)
+            t.cursorText = item.source.cursorText.flatMap { RGB(string: $0) }
+            t.selectionForeground = item.source.selectionForeground.flatMap { RGB(string: $0) }
+            t.paletteGenerate = item.source.paletteGenerate ?? false
+            t.paletteHarmonious = item.source.paletteHarmonious ?? false
+            return t
+        }
+    }
+
+    /// One element of the array, nil when it doesn't decode (the rest still do).
+    private struct Failable<T: Decodable>: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws { value = try? T(from: decoder) }
     }
 }
 

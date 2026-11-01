@@ -127,7 +127,7 @@ open build/Libertty.app
 
 ## 配置
 
-配置文件为 `~/.config/libertty/config`，格式与 Ghostty 相同（`key = value`、`keybind = cmd+d=new_split:right`、`theme = light:X,dark:Y`、`config-file = ...`）。Libertty ▸ 设置…（⌘,）打开该文件，保存后立即生效；配置错误会在 Configuration Errors 窗口中列出。可直接使用 Ghostty 的主题文件，来源包括 `~/.config/libertty/themes` 和已安装的 Ghostty.app。命令面板的 Settings 可以直接修改常用设置，选中某个选项时所有窗口立即试用（回车写入那一行，Esc 复原）；Libertty ▸ Theme Editor… 可以实时编辑并保存自己的主题。
+配置文件为 `~/.config/libertty/config`，格式与 Ghostty 相同（`key = value`、`keybind = cmd+d=new_split:right`、`theme = light:X,dark:Y`、`config-file = ...`）。Libertty ▸ 设置…（⌘,）打开该文件，保存后立即生效；配置错误会在 Configuration Errors 窗口中列出。可直接使用 Ghostty 的主题文件，来源包括 `~/.config/libertty/themes` 和已安装的 Ghostty.app；已安装 Rex 时，它的主题也可按名字使用（运行时从 Rex 应用中读取，例如 `theme = light:Merino Light,dark:Merino Dark`）。命令面板的 Settings 可以直接修改常用设置，选中某个选项时所有窗口立即试用（回车写入那一行，Esc 复原）；Libertty ▸ Theme Editor…（仿 Rex 的 Theme Customizer，带 OKLCH 取色器）可以实时编辑并保存自己的主题。
 
 ```sh
 libertty +set theme="Tokyo Night" font-size=14

@@ -96,6 +96,10 @@ final class TerminalRenderer {
     private var columnCount: UInt16 = 0
     private(set) var background = Theme.named(Theme.defaultName).background
     var selectionColor = Theme.named(Theme.defaultName).selection
+    /// Selected text's color (`selection-foreground`); nil: its own.
+    var selectionForeground: RGB?
+    /// The text under a block cursor (`cursor-text`); nil: the background.
+    var cursorText: RGB?
     /// Below 1 the default background is translucent (`background-opacity`);
     /// cells with their own background color stay opaque.
     var backgroundOpacity: Double = 1
@@ -580,6 +584,7 @@ final class TerminalRenderer {
             if minimumContrast > 1, !Self.isGraphicsElement(cp) {
                 fg = fg.readable(on: bg ?? colors.background, minimum: minimumContrast)
             }
+            if let selectionForeground, let selection, selection.contains(x) { fg = selectionForeground }
             let fgColor = fg.packed(alpha: style.faint ? 128 : 255)
 
             var fontStyle: FontSet.Style = []
@@ -757,10 +762,11 @@ final class TerminalRenderer {
             switch style {
             case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK:
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, width, ch), color: color))
-                // Redraw the glyph under the block in the background color so it stays legible.
+                // Redraw the glyph under the block in the background color (or
+                // `cursor-text`) so it stays legible.
                 if let i = row.glyphColumns.firstIndex(of: column) {
                     var g = row.glyphs[i]
-                    if g.flags & 1 == 0 { g.color = colors.background.packed() }
+                    if g.flags & 1 == 0 { g.color = (cursorText ?? colors.background).packed() }
                     cursorGlyph = g
                 }
             case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR:

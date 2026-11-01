@@ -170,7 +170,7 @@
 | `libertty +validate-config` 检查配置，逐行报告问题 | ✅ |
 | 自定义键位（keybind），Ghostty 语法和 action 名，`global:` 全局键位 | ✅ |
 | 分屏 pane 悬停时右上角出现 ×，右键菜单（复制、粘贴、分屏、清屏、查找、关闭） | ✅ |
-| 自定义主题文件（`~/.config/libertty/themes`，也能直接用 Ghostty 装的 463 套）、`theme = light:X,dark:Y` 跟随系统深浅色 | ✅ |
+| 自定义主题文件（`~/.config/libertty/themes`，也能直接用 Ghostty 装的 463 套，以及已安装的 Rex 的 41 套：运行时从 Rex.app 读取，不拷贝）、`theme = light:X,dark:Y` 跟随系统深浅色 | ✅ |
 
 ## 10. 借鉴 ELYTerminal / GoRex
 
@@ -217,7 +217,7 @@ Tern 的三项终端功能，加上 11 个 workspace block（编号 11 的 AI �
 |---|---|---|
 | 文字渲染：最小对比度、行高 | Text Contrast Correction、Line height adjustment | ✅ `minimum-contrast`、`adjust-cell-height`（Ghostty 同名），快照像素测试 `tests/text-render-test.sh` |
 | 在命令面板里改设置，选中即在所有窗口试用 | Change Terminal Font / Cursor Style / Padding Color / Option Key Behavior… | ✅ 面板的 Settings：主题、字体（每个字体用自己的字形列出）、字号、行高、对比度、光标、内边距颜色、透明度、失焦变暗、Option 键、标签样式、pane 标题栏、pane 风格、玻璃、强调色、标签图标颜色、自动均分；回车写进配置那一行，Esc 复原（`ConfigStore.preview`）。主题范围同样实时预览 |
-| 自定义主题 | Import Theme File、Regenerate Palette、Delete Custom Theme… | ✅ Libertty ▸ Theme Editor…：色板、对比度、实时预览、保存为 Ghostty 格式主题并启用、导入 Ghostty 主题和 `.itermcolors`、删除自己的主题；`palette-generate` / `palette-harmonious`（Ghostty 同名，CIELAB） |
+| 自定义主题 | Theme Customizer、Import Theme File、Regenerate Palette、Delete Custom Theme… | ✅ Libertty ▸ Theme Editor…（仿 Rex 的 Theme Customizer，SwiftUI）：Terminal / ANSI Standard / ANSI Bright 三行色块，点开 OKLCH 取色器（色相与彩度的圆盘、三条滑杆、hex），Preview 实时预览（定制器本身也换成主题配色）、Revert…、Save & Apply 保存为 Ghostty 格式主题并启用；Extended Palette：`palette-generate` / `palette-harmonious` 存进主题、可固定 16–255、Regenerate Palette、单独改其中任一色；`cursor-text` / `selection-foreground`；导入 Ghostty 主题和 `.itermcolors`、删除自己的主题 |
 | 分屏 | Autobalance splits、Split Pane Best Fit | ✅ `split-autobalance`、`new_split:auto`（Split Best Fit）；拖动 pane |
 | 界面风格 | Compact/Comfortable Pane Style、Use glass for panes、Use theme accent、Use color for tab icons | ✅ `pane-style`、`pane-glass`、`accent-color`、`tab-icon-color` |
 | Web 访问走 Tailscale | Serve over Tailscale | ✅ `web-access = tailscale`：`tailscale serve` HTTPS，链接是本机的 tailnet 名字；⚠️ 本机没装 Tailscale，用替身命令行验证 |
