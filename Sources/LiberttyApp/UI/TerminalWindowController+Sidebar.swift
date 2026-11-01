@@ -22,7 +22,8 @@ extension TerminalWindowController {
               !fillsScreen(window) else {
             return slideColumns { (Motion.reduced ? item : item.animator()).isCollapsed = collapsed }
         }
-        let area = areaController.view
+        // The panes, not the area: its insets change with the columns too.
+        let area: NSView = self.area.content ?? areaController.view
         let before = area.window.map { $0.convertToScreen(area.convert(area.bounds, to: nil)) } ?? .zero
         // Its terminals stay as they are while the window catches up: no
         // grid change and no frame drawn at the size they pass through.
@@ -32,17 +33,22 @@ extension TerminalWindowController {
         // One picture on the screen: the column and the window's new edge together.
         window.disableScreenUpdatesUntilFlush()
         item.isCollapsed = collapsed
+        updateStage()
         splitController.view.layoutSubtreeIfNeeded()
         // The window moves its edges by what the terminals' area moved and
         // shrank (whatever AppKit did to fit the column), so the area is
         // where it was.
-        let after = window.convertToScreen(area.convert(area.bounds, to: nil))
-        guard after != before else { return }
-        var frame = window.frame
-        frame.origin.x += before.minX - after.minX
-        frame.size.width += before.width - after.width
-        window.setFrame(Self.onScreen(frame, from: window.frame, visible: window.screen?.visibleFrame), display: true)
-        splitController.view.layoutSubtreeIfNeeded()
+        // Twice at most: the split view may share a point of the change
+        // with a column the first time.
+        for _ in 0..<2 {
+            let after = window.convertToScreen(area.convert(area.bounds, to: nil))
+            guard after != before else { return }
+            var frame = window.frame
+            frame.origin.x += before.minX - after.minX
+            frame.size.width += before.width - after.width
+            window.setFrame(Self.onScreen(frame, from: window.frame, visible: window.screen?.visibleFrame), display: true)
+            splitController.view.layoutSubtreeIfNeeded()
+        }
     }
 
     /// As wide as its screen allows: growing would push it off.
@@ -114,7 +120,7 @@ extension TerminalWindowController {
     }
     /// The top tabs' names as drawn, if they're in the window's bar (`--ui-probe`).
     var tabStripTitles: [String]? {
-        guard config.tabBar == .top, window?.toolbar?.items.contains(where: { $0.view === tabStrip }) == true else { return nil }
+        guard config.tabBar == .top, tabStrip.superview != nil else { return nil }
         return tabStrip.shownNames
     }
     /// Panes (terminals and documents) in the tab in front.

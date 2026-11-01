@@ -49,6 +49,11 @@ struct Surfaces: Equatable {
     var selected: NSColor { content.nsColor.withAlphaComponent(isDark ? 0.075 : 0.089) }
 }
 
+extension Surfaces {
+    /// The window in front's (every window shows the same theme).
+    @MainActor static var current = Surfaces(Theme.all[0])
+}
+
 extension Theme {
     var surfaces: Surfaces { Surfaces(self) }
 }

@@ -141,122 +141,91 @@ extension TerminalWindowController {
         onClose?(self)
     }
 
-    // MARK: Toolbar (Tern: actions on the right; Otty: + and the sidebar toggle over the sidebar)
+    // MARK: Chrome (Rex's: no toolbar items, the window's own buttons)
 
-    /// The toolbar for the `tab-bar` mode, unless it's already there. The
-    /// delegate is set before it joins the window: that's when it asks for
-    /// its items.
+    static let chromeToolbar = "libertty.window.rex"
+
+    /// An empty toolbar: it only puts the traffic lights where Rex has
+    /// them, in a 46-point band; the buttons are the window's (`chrome`).
     func installToolbar() {
-        guard let window, !isQuick else { return }
-        let id = config.tabBar == .top ? Self.topToolbar : Self.sidebarToolbar
-        guard window.toolbar?.identifier != id else { return }
-        let toolbar = NSToolbar(identifier: id)
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = true
-        toolbar.autosavesConfiguration = true
+        guard let window, !isQuick, window.toolbar?.identifier != Self.chromeToolbar else { return }
+        let toolbar = NSToolbar(identifier: Self.chromeToolbar)
+        toolbar.allowsUserCustomization = false
         window.toolbar = toolbar
-        // A slim bar, as Tern's (40 points): it's controls, not a title.
-        window.toolbarStyle = .unifiedCompact
-    }
-
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        if toolbar.identifier == Self.topToolbar {
-            // The tabs take the bar's middle (their + after the last), the
-            // controls the right (Tern's horizontal tabs).
-            return [.toggleSidebar, .sidebarTrackingSeparator, Self.tabsItem,
-                    Self.splitRightItem, Self.splitDownItem, Self.findItem, Self.inboxItem,
-                    .inspectorTrackingSeparator, .flexibleSpace, Self.hostItem, .toggleInspector]
-        }
-        return [.flexibleSpace, Self.newTabItem, .toggleSidebar, .sidebarTrackingSeparator,
-                .flexibleSpace, Self.splitRightItem, Self.splitDownItem, Self.findItem, Self.inboxItem,
-                .inspectorTrackingSeparator, .flexibleSpace, Self.hostItem, .toggleInspector]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        // The palette's button is there for Customize Toolbar, not by default.
-        var extra: [NSToolbarItem.Identifier] = [.space, .flexibleSpace, Self.paletteItem]
-        if toolbar.identifier == Self.topToolbar { extra.append(Self.newTabItem) }
-        return toolbarDefaultItemIdentifiers(toolbar) + extra
-    }
-
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
-                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        func item(_ label: String, _ symbol: String, _ action: Selector, keys: Action? = nil) -> NSToolbarItem {
-            let item = NSToolbarItem(itemIdentifier: id)
-            item.label = label
-            // The keys too, as the user has them bound (GoRex's tooltips).
-            item.toolTip = keys.map { Self.tip(label, $0) } ?? label
-            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-            item.target = self
-            item.action = action
-            item.isBordered = true
-            return item
-        }
-        switch id {
-        case Self.tabsItem:
-            let tabs = NSToolbarItem(itemIdentifier: id)
-            tabs.label = "Tabs"
-            tabs.visibilityPriority = .high
-            // The strip is one view: Customize Toolbar's palette gets a picture of it.
-            if flag {
-                tabs.view = tabStrip
-            } else {
-                tabs.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Tabs")
-            }
-            return tabs
-        case Self.hostItem:
-            let chip = NSToolbarItem(itemIdentifier: id)
-            chip.label = "Host"
-            chip.view = hostChip.view
-            return chip
-        case Self.newTabItem: return item("New Tab", "plus", #selector(toolbarNewTab(_:)), keys: .newTab)
-        case Self.splitRightItem: return item("Split Right", "rectangle.split.2x1", #selector(splitRight(_:)), keys: .newSplit(.right))
-        case Self.splitDownItem: return item("Split Down", "rectangle.split.1x2", #selector(splitDown(_:)), keys: .newSplit(.down))
-        case Self.findItem: return item("Find", "magnifyingglass", #selector(toolbarFind(_:)), keys: .startSearch)
-        case Self.paletteItem:
-            return item("Command Palette", "filemenu.and.selection", #selector(toolbarPalette(_:)), keys: .toggleCommandPalette)
-        case Self.inboxItem:
-            let bell = item("Notifications", "bell", #selector(toolbarInbox(_:)))
-            // The bar's own bell (not Customize Toolbar's picture of it)
-            // follows the inbox; a new bar's replaces the old one's.
-            guard flag else { return bell }
-            if Notifier.shared.unread > 0 {
-                bell.image = NSImage(systemSymbolName: "bell.badge", accessibilityDescription: "Notifications")
-            }
-            if let old = inboxObserver { NotificationCenter.default.removeObserver(old) }
-            inboxObserver = NotificationCenter.default.addObserver(forName: Notifier.inboxChanged, object: nil,
-                                                                   queue: .main) { [weak bell] _ in
-                let unread = Notifier.shared.unread > 0
-                bell?.image = NSImage(systemSymbolName: unread ? "bell.badge" : "bell", accessibilityDescription: "Notifications")
-            }
-            return bell
-        default: return nil
+        window.toolbarStyle = .unified
+        // The activity button lights up with unread news.
+        if let old = inboxObserver { NotificationCenter.default.removeObserver(old) }
+        inboxObserver = NotificationCenter.default.addObserver(forName: Notifier.inboxChanged, object: nil, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.chrome.show(unread: Notifier.shared.unread > 0) }
         }
     }
 
-    @objc private func toolbarNewTab(_ sender: Any?) { newTab() }
+    /// Where things sit for the tab style, the pane style and which columns
+    /// show (Rex's layouts): the panes' insets, the band over them, and the
+    /// window's buttons — in the sidebar's top row while it's on the left.
+    func updateStage() {
+        guard !isQuick else { return }
+        let sidebarShown = isSidebarShown
+        let onRight = config.tabBar == .right
+        let leftColumn = sidebarShown && !onRight
+        let rightColumn = (sidebarShown && onRight) || !inspectorItem.isCollapsed
+        let outer = Layout.stageInset
+        // A band only for the tabs along the top; otherwise the traffic
+        // lights and buttons share the panes' top row (their headers).
+        let band = config.tabBar == .top
+        let mid = WindowChrome.trafficLightMid(in: window)
+        area.bandHeight = band ? WindowChrome.bandHeight : 0
+        area.bandClearance = leftColumn ? 9 : WindowChrome.trafficLightRoom
+        area.bandMid = mid
+        area.insets = NSEdgeInsets(top: band ? 0 : outer, left: leftColumn ? 0 : outer, bottom: outer, right: rightColumn ? 0 : outer)
+        chrome.show(hostChip: host == nil ? nil : hostChip.view)
+        chrome.show(unread: Notifier.shared.unread > 0)
+        chrome.sidebarToggle.toolTip = Self.tip(sidebarShown ? "Hide Sidebar" : "Show Sidebar", .toggleSidebar)
+        let trailingInSidebar = sidebarShown && config.tabBar.inSidebar
+        sidebar.setChrome(leading: leftColumn ? chrome.leading : nil, trailing: trailingInSidebar ? chrome.trailing : nil, mid: mid,
+                          clearance: leftColumn ? WindowChrome.trafficLightRoom + 10 : 9)
+        area.setBand(left: leftColumn ? nil : chrome.leading, middle: config.tabBar == .top ? tabStrip : nil,
+                     right: trailingInSidebar ? nil : chrome.trailing)
+        (splitController.splitView as? FrameSplitView)?.line = Layout.compact ? Surfaces.current.stroke.nsColor : nil
+        everyTab.forEach { $0.container?.glassBehind = config.glass }
+    }
 
-    @objc private func toolbarPalette(_ sender: Any?) { CommandPalette.toggle(in: self) }
+    /// The room around the grid as `updateStage` lays it out: the band or
+    /// the top inset, the bottom and side insets, a pane's header.
+    func stageExtra() -> NSSize {
+        Self.stageExtra(config, sidebar: isSidebarShown, inspector: !inspectorItem.isCollapsed)
+    }
 
-    @objc private func toolbarInbox(_ sender: Any?) {
-        guard let button = (window?.toolbar?.items.first { $0.itemIdentifier == Self.inboxItem })?.view
-            ?? findToolbarView(for: Self.inboxItem) else { return }
+    static func stageExtra(_ config: Config, sidebar: Bool, inspector: Bool) -> NSSize {
+        let outer: CGFloat = config.paneStyle == .compact ? 0 : 8
+        let onRight = config.tabBar == .right
+        let leftColumn = sidebar && !onRight
+        let rightColumn = (sidebar && onRight) || inspector
+        let band = config.tabBar == .top
+        let header: CGFloat = config.paneHeaders == .always || (!band && !leftColumn) ? PaneHeader.height : 0
+        return NSSize(width: (leftColumn ? 0 : outer) + (rightColumn ? 0 : outer),
+                      height: (band ? WindowChrome.bandHeight : outer) + outer + header)
+    }
+
+    /// The sidebar goes to the side the tab style says.
+    func arrangeColumns() {
+        let items = splitController.splitViewItems
+        guard let content = items.first(where: { $0.viewController === areaController }) else { return }
+        let wanted = config.tabBar == .right ? [content, inspectorItem, sidebarItem] : [sidebarItem, content, inspectorItem]
+        guard items.map(ObjectIdentifier.init) != wanted.map(ObjectIdentifier.init) else { return }
+        splitController.splitViewItems = wanted
+    }
+
+    @objc func chromeToggleSidebar(_ sender: Any?) { toggleSidebar() }
+    @objc func chromeNewTab(_ sender: Any?) { newTab() }
+    @objc func chromePalette(_ sender: Any?) { CommandPalette.toggle(in: self) }
+
+    @objc func chromeActivity(_ sender: Any?) {
+        let button = chrome.activity
         if inboxPopover.isShown { inboxPopover.performClose(nil) } else {
-            inboxPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
+            inboxPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
 
-    /// The view an icon-only toolbar item draws in (items made with an
-    /// image have no `view` of their own).
-    private func findToolbarView(for id: NSToolbarItem.Identifier) -> NSView? {
-        guard let frame = window?.contentView?.superview else { return nil }
-        func search(_ v: NSView) -> NSView? {
-            if let button = v as? NSButton, button.action == #selector(toolbarInbox(_:)) { return button }
-            for sub in v.subviews { if let hit = search(sub) { return hit } }
-            return nil
-        }
-        return search(frame)
-    }
-    @objc private func toolbarFind(_ sender: Any?) { isSearching ? _ = endSearch() : startSearch() }
+    @objc func toolbarFind(_ sender: Any?) { isSearching ? _ = endSearch() : startSearch() }
 }

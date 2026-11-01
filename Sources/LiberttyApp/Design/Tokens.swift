@@ -76,14 +76,13 @@ enum Layout {
     /// with a hairline of the frame between them, square, out to the
     /// window's edges — every point for text. Comfortable (default): cards.
     static var compact = false
-    /// Between the window's edges and the panes' column, and around each
-    /// pane inside it: cards 6 apart, 6 from the edges (3 below the toolbar).
-    static var stageInset: CGFloat { compact ? 0 : 3 }
-    static var paneInset: CGFloat { compact ? 0.5 : 3 }
+    /// Rex's: cards 8 from the window's edges and 8 apart (flush against
+    /// the sidebar), compact panes a hairline apart.
+    static var stageInset: CGFloat { compact ? 0 : 8 }
     /// Gap between pane cards.
-    static var paneGap: CGFloat { paneInset * 2 }
-    /// A sidebar row (tabs).
-    static let rowHeight: CGFloat = 30
+    static var paneGap: CGFloat { compact ? 1 : 8 }
+    /// A sidebar row (tabs): Rex's 32-point capsule.
+    static let rowHeight: CGFloat = 32
 }
 
 /// The interface's type: Geist (bundled, OFL), as Tern sets it, else the

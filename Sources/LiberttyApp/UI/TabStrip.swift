@@ -9,8 +9,8 @@ import AppKit
 final class TabStrip: NSView {
     weak var controller: TerminalWindowController?
 
-    static let height: CGFloat = 28
-    private static let tabHeight: CGFloat = 26
+    static let height: CGFloat = 32
+    private static let tabHeight: CGFloat = 32
     private static let spacing: CGFloat = 2
     private static let maxTabWidth: CGFloat = 220
     private static let minTabWidth: CGFloat = 64
@@ -42,6 +42,8 @@ final class TabStrip: NSView {
         add.target = self
         add.action = #selector(newTab(_:))
         add.toolTip = TerminalWindowController.tip("New Tab", .newTab)
+        // The window's + is at the band's end (Rex's): none after the tabs.
+        add.isHidden = true
         addSubview(add)
         workspace.isBordered = false
         workspace.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Workspaces")
@@ -138,7 +140,7 @@ final class TabStrip: NSView {
         return natural.map { max(Self.minTabWidth, min($0, cap)) }
     }
 
-    private var addWidth: CGFloat { 4 + 28 }
+    private var addWidth: CGFloat { add.isHidden ? 0 : 4 + 28 }
     /// Room the workspace name takes before the first tab.
     private var leading: CGFloat { workspaceWidth > 0 ? workspaceWidth + 8 : 0 }
 

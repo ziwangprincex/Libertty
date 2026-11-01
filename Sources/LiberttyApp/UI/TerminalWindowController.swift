@@ -139,6 +139,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     private var configToken: AnyObject?
     private var layoutObservation: NSKeyValueObservation?
     private var sidebarObservation: NSKeyValueObservation?
+    private var inspectorObservation: NSKeyValueObservation?
+    /// The window's own buttons (Rex's), in the sidebar's top row or the band over the panes.
+    lazy var chrome = WindowChrome(target: self, toggleSidebar: #selector(chromeToggleSidebar(_:)),
+                                   activity: #selector(chromeActivity(_:)), palette: #selector(chromePalette(_:)),
+                                   newTab: #selector(chromeNewTab(_:)))
     /// The sidebar was folded because the tabs moved to the top and it had no files to show.
     var foldedForTabBar = false
 
@@ -152,7 +157,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     /// Float on Top for new windows (Window ▸ Use as Default).
     static let floatDefaultsKey = "WindowFloatOnTop"
-    private static let sidebarWidth: CGFloat = 250, inspectorWidth: CGFloat = 280
+    private static let sidebarWidth: CGFloat = 240, inspectorWidth: CGFloat = 280
     var onClose: ((TerminalWindowController) -> Void)?
 
     /// `cols`/`rows` override the config's window size (benchmarks pass them).
@@ -236,7 +241,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         selectedTab = groups[shown].tabs.contains { $0 === chosen } ? chosen : groups[shown].selected
         terminalTab = selectedTab.isTerminal ? selectedTab : groups[shown].terminal
 
-        sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        // Plain columns: a sidebar item is macOS's floating glass panel, a
+        // card apart from the panes; Rex's sidebar is the window's surface.
+        sidebarItem = NSSplitViewItem(viewController: sidebar)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 460
         sidebarItem.canCollapse = true
@@ -246,15 +253,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         contentItem.minimumThickness = 240
         // The terminals take what the window gains or loses (its edge dragged).
         contentItem.holdingPriority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.defaultLow.rawValue - 1)
-        inspectorItem = NSSplitViewItem(inspectorWithViewController: inspector)
+        inspectorItem = NSSplitViewItem(viewController: inspector)
         inspectorItem.minimumThickness = 220
         inspectorItem.maximumThickness = 420
         inspectorItem.canCollapse = true
         inspectorItem.isCollapsed = !showInspector
 
-        // No line between the columns: the window is one surface. (Its own
-        // split view, given before the controller's view loads, and the
-        // items before that view is laid out.)
+        // No line between the columns: the window is one surface, the
+        // backdrop under them all. (Its own split view, given before the
+        // controller's view loads, and the items before that view is laid out.)
         let columns = FrameSplitView()
         columns.isVertical = true
         columns.dividerStyle = .thin
@@ -262,15 +269,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         // The side columns' widths before they join (they keep them).
         sidebar.view.frame.size.width = Self.sidebarWidth
         inspector.view.frame.size.width = Self.inspectorWidth
-        splitController.splitViewItems = [sidebarItem, contentItem, inspectorItem]
-        // The grid gets exactly cols × rows; the columns are added around it.
+        splitController.splitViewItems = config.tabBar == .right
+            ? [contentItem, inspectorItem, sidebarItem] : [sidebarItem, contentItem, inspectorItem]
+        // The grid gets exactly cols × rows; the columns and Rex's room
+        // around the panes (band, insets, a header) are added around it.
+        let extra = quick ? .zero : Self.stageExtra(config, sidebar: !sidebarItem.isCollapsed, inspector: showInspector)
         let width = grid.width + (sidebarItem.isCollapsed ? 0 : Self.sidebarWidth) + (showInspector ? Self.inspectorWidth : 0)
-        splitController.view.frame = NSRect(x: 0, y: 0, width: width, height: grid.height)
+            + extra.width
+        let height = grid.height + extra.height
+        splitController.view.frame = NSRect(x: 0, y: 0, width: width, height: height)
 
         let window: NSWindow = quick
-            ? QuickPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: grid.height),
+            ? QuickPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                          styleMask: [.borderless, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
-            : TerminalWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: grid.height),
+            : TerminalWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
         window.titlebarAppearsTransparent = true
@@ -301,18 +313,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         area.findBar.onClose = { [weak self] in _ = self?.endSearch() }
 
         workspaces.flatMap(\.tabs).forEach(adoptAll)
+        // Headers as configured from the start: the first layout is the last.
+        if !quick { workspaces.flatMap(\.tabs).forEach { $0.container?.headers = config.paneHeaders } }
         firstResponderObservation = window.observe(\.firstResponder) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.firstResponderChanged() }
         }
+        // Rex's insets before the first layout, so the panes are laid out once.
+        updateStage()
         area.show(selectedTab.content)
         applyWindowStyle()
 
-        // Size: the toolbar sits over the content, so add its height.
+        // Size: the grid, and the room around it (the band, the insets, a header).
         let probe = focusedTerminal
-        let titlebar = window.frame.height - window.contentLayoutRect.height
-        window.setContentSize(NSSize(width: width, height: grid.height + titlebar))
+        window.setContentSize(NSSize(width: width, height: height))
         let minimum = probe.contentSize(cols: 20, rows: 4)
-        window.contentMinSize = NSSize(width: minimum.width, height: minimum.height + titlebar)
+        window.contentMinSize = NSSize(width: minimum.width + extra.width, height: minimum.height + extra.height)
         if let frame, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }) {
             window.setFrame(frame, display: false)
         } else {
@@ -326,7 +341,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
                 // Shown by anyone but us: it's the user's now.
                 if !item.isCollapsed { self?.foldedForTabBar = false }
                 self?.updateTitleVisibility()
+                self?.updateStage()
             }
+        }
+        inspectorObservation = inspectorItem.observe(\.isCollapsed) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.updateStage() }
         }
         // Its panes were made with this config and theme already.
         appliedTheme = config.resolvedTheme
@@ -635,6 +654,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     }
 
     static let defaultWorkspaceName = "Default"
+    /// The login shell's name, as a pane at its prompt is called (`zsh`).
+    static let shellName = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh").lastPathComponent
 
     /// Set when the user already confirmed closing (a whole window or all of them).
     var skipCloseConfirmation = false
@@ -657,17 +678,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// One toolbar per `tab-bar` mode, so each keeps its own customization.
     static let sidebarToolbar = "libertty.window.2", topToolbar = "libertty.window.top"
     lazy var hostChip = HostChip()
+    /// The tabs along the top (`tab-bar = top`), in the band over the panes.
     lazy var tabStrip: TabStrip = {
         let strip = TabStrip()
         strip.controller = self
-        // As wide as the bar lets it be: the toolbar stretches an item
-        // whose view may grow (as it does a search field).
-        strip.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            strip.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            strip.widthAnchor.constraint(lessThanOrEqualToConstant: 10_000),
-            strip.heightAnchor.constraint(equalToConstant: TabStrip.height),
-        ])
         return strip
     }()
     lazy var inboxPopover: NSPopover = {

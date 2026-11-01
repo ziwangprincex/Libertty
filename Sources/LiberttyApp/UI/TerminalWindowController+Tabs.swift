@@ -12,9 +12,11 @@ extension TerminalWindowController {
         // the accent, the tab glyphs' colors.
         let accent = config.accent(with: config.resolvedTheme)
         let looksChanged = Layout.compact != (config.paneStyle == .compact) || Accent.custom != accent
+            || Surfaces.current != config.resolvedTheme.surfaces
             || TileStack.colored != config.tabIconColor || config.glass != old.glass || config.interfaceTint != old.interfaceTint
         Layout.compact = config.paneStyle == .compact
         Accent.custom = accent
+        Surfaces.current = config.resolvedTheme.surfaces
         TileStack.colored = config.tabIconColor
         // The panes take it when it changed — or its theme did (the theme's
         // file, the system's appearance), or Reload Configuration asked.
@@ -51,9 +53,10 @@ extension TerminalWindowController {
             updateSidebar(force: true)
         }
         if config.tabBar != old.tabBar {
-            installToolbar()
+            arrangeColumns()
             updateTitleVisibility()
             updateSidebar()
+            updateStage()
         }
         // Tabs along the top and the files folded away: the sidebar has nothing
         // left, and comes back with the tabs (unless the user folded it).
@@ -70,26 +73,30 @@ extension TerminalWindowController {
     /// (the sidebar, the top; Tern's); with the sidebar folded away and
     /// no tabs on top, the title says which tab is in front.
     func updateTitleVisibility() {
-        window?.titleVisibility = config.tabBar == .top || isSidebarShown ? .hidden : .visible
+        // Rex's window says nothing in its top row: the tabs and headers do.
+        window?.titleVisibility = .hidden
     }
 
     func applyWindowStyle() {
         guard let window else { return }
         let theme = config.resolvedTheme
-        // Glass panes: the window lets the desktop through, the frame stays as it is.
+        let surfaces = theme.surfaces
+        // Glass: the desktop shows through the window, blurred (Rex's).
         let glass = config.glass
         let opaque = config.backgroundOpacity >= 1 && !glass
         window.isOpaque = opaque
-        // One surface around the panes (toolbar, side columns, gaps), lit
-        // below them in a dark theme (Tern's look).
-        let frame = config.backgroundOpacity >= 1 ? theme.chrome : theme.background
-        window.backgroundColor = opaque ? frame.nsColor : .clear
+        // One surface under the columns and around the panes, a step below
+        // the terminals (Rex's canvas).
+        window.backgroundColor = opaque ? surfaces.canvas.nsColor : .clear
         // Controls follow the terminal's theme.
         window.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
-        area.apply(background: frame, opacity: config.backgroundOpacity, blurred: config.backgroundBlur, glass: glass)
-        (splitController.splitView as? FrameSplitView)?.frameColor = frame.nsColor.withAlphaComponent(config.backgroundOpacity)
-        sidebar.apply(frame: frame, opacity: config.backgroundOpacity)
-        inspector.apply(frame: frame, opacity: config.backgroundOpacity)
+        (splitController.splitView as? FrameSplitView)?.backdrop.apply(
+            canvas: surfaces.canvas, opacity: config.backgroundOpacity, blurred: config.backgroundBlur,
+            glass: glass, tinted: config.interfaceTint)
+        area.apply(background: surfaces.canvas, opacity: config.backgroundOpacity, blurred: config.backgroundBlur, glass: glass)
+        sidebar.apply(frame: surfaces.canvas, opacity: 0)
+        inspector.apply(frame: surfaces.canvas, opacity: 0)
+        updateStage()
         everyTab.forEach { $0.document?.apply(theme: theme, renderMarkdown: config.markdownRendered) }
         everyTab.flatMap(\.documentPanes).forEach { $0.apply(theme: theme, renderMarkdown: config.markdownRendered) }
     }

@@ -76,7 +76,7 @@ struct Config: Equatable {
     var windowColumns = 100
     var windowRows = 30
     var unfocusedSplitOpacity: Double = 0.65
-    var paneHeaders = PaneHeaders.never
+    var paneHeaders = PaneHeaders.always
     /// Rex's Autobalance splits: the panes even out after every split, close and move.
     var splitAutobalance = false
     var paneStyle = PaneStyle.comfortable
@@ -123,7 +123,7 @@ struct Config: Equatable {
     var windowSidebar = true
     var windowInspector = false
     var sidebarShowHiddenFiles = true
-    var sidebarFiles = true
+    var sidebarFiles = false
     /// Markdown files open rendered (Tern's markdown_rendered); off shows the source.
     var markdownRendered = true
     /// Text files open in the editor (CodeMirror 6); false shows them as pages.

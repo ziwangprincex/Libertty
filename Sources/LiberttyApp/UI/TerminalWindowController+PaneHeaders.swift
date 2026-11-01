@@ -11,11 +11,12 @@ extension TerminalWindowController: PaneHeaderSource {
             let label = label(of: pane)
             let size = "\(pane.session.size.cols)×\(pane.session.size.rows)"
             let directory = Self.shortDirectory(pane.session.workingDirectory)
-            // At a prompt the label is the folder: the header names it by its
-            // last part, then says where it is (Tern's "cwd  libertty-test/…/cwd").
+            // At a prompt the label is the folder: the header names the shell,
+            // then where it is (Rex's "zsh ~").
             var name = label.name, detail = label.detail.isEmpty ? directory : label.detail
-            if label.detail.isEmpty, label.name == directory, let path = pane.session.workingDirectory {
-                name = path == NSHomeDirectory() ? "~" : (path as NSString).lastPathComponent
+            if label.detail.isEmpty, label.name == directory {
+                name = host == nil ? Self.shellName : "shell"
+                detail = directory
             }
             return PaneHeader.Info(name: name, detail: detail, size: size, focused: focused,
                                    marked: split && focused, floats: true, parks: split)
@@ -35,6 +36,9 @@ extension TerminalWindowController: PaneHeaderSource {
         case .zoom:
             reveal(leaf, in: tab)
             toggleZoom()
+        case .splitRight, .splitDown:
+            reveal(leaf, in: tab)
+            split(action == .splitRight ? .right : .down)
         case .pictureInPicture:
             if let pane = leaf as? TerminalView { floatPane(pane) }
         case .park:

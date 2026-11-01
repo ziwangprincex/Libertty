@@ -124,10 +124,21 @@ final class SplitContainerView: NSView {
         didSet { headerViews.values.forEach { $0.apply(background: cardColor) } }
     }
     private var headerViews: [ObjectIdentifier: PaneHeader] = [:]
+    /// Rex: with the sidebar hidden or on the right, the panes' top row is
+    /// the window's (traffic lights, the window's buttons): every pane wears
+    /// a header, and those along the top keep clear of the buttons.
+    var sharesTopRow = false {
+        didSet { if sharesTopRow != oldValue { layoutPanes() } }
+    }
+    /// How far the window's buttons reach into the top row from each end.
+    var topClearance: (leading: CGFloat, trailing: CGFloat) = (0, 0) {
+        didSet { if topClearance != oldValue { layoutPanes() } }
+    }
 
     /// Whether `leaf` shows a header now.
     func showsHeader(for leaf: NSView) -> Bool {
-        switch headers {
+        if sharesTopRow { return true }
+        return switch headers {
         case .never: false
         case .always: true
         case .split: !root.isLeaf
@@ -372,9 +383,9 @@ final class SplitContainerView: NSView {
     /// The part of the window a drop would take, to light while dragging.
     func area(of drop: Drop) -> CGRect {
         switch drop {
-        case .swap(let target): return Self.card(in: slot(of: target))
+        case .swap(let target): return card(in: slot(of: target))
         case .side(let target, let direction):
-            let r = Self.card(in: slot(of: target))
+            let r = card(in: slot(of: target))
             switch direction {
             case .left: return CGRect(x: r.minX, y: r.minY, width: r.width / 2, height: r.height)
             case .right: return CGRect(x: r.midX, y: r.minY, width: r.width / 2, height: r.height)
@@ -420,10 +431,10 @@ final class SplitContainerView: NSView {
             header.removeFromSuperview()
             headerViews[id] = nil
         }
-        // Every pane is a card on the window's frame (Tern's look), one pane
-        // too: each sits in its slot inset by `Layout.paneInset`, so the
-        // frame shows between neighbors and around the edges.
-        layer?.backgroundColor = nil
+        // Every pane is a card on the window's backdrop (Rex's), one pane
+        // too: neighbors `Layout.paneGap` apart, the area's insets around
+        // them. Compact panes meet at a hairline in the stroke's color.
+        layer?.backgroundColor = Layout.compact && !glassBehind ? Surfaces.current.stroke.nsColor.cgColor : nil
         place(root, in: bounds)
         for pane in views {
             pane.wantsLayer = true
@@ -459,16 +470,22 @@ final class SplitContainerView: NSView {
     /// A card's frame in its slot. A slot smaller than the inset (a tab not
     /// laid out yet) gets an empty frame at its corner: `insetBy` would give
     /// `.null`, which sits at infinity and poisons every constraint inside.
-    private static func card(in slot: CGRect) -> CGRect {
-        let inset = Layout.paneInset
-        guard slot.width > inset * 2, slot.height > inset * 2 else { return CGRect(origin: slot.origin, size: .zero) }
-        return slot.insetBy(dx: inset, dy: inset).integral
+    private func card(in slot: CGRect) -> CGRect {
+        let half = Layout.paneGap / 2
+        let left = slot.minX > bounds.minX + 0.5 ? half : 0, right = slot.maxX < bounds.maxX - 0.5 ? half : 0
+        let low = slot.minY > bounds.minY + 0.5 ? half : 0, high = slot.maxY < bounds.maxY - 0.5 ? half : 0
+        guard slot.width > left + right, slot.height > low + high else { return CGRect(origin: slot.origin, size: .zero) }
+        return CGRect(x: slot.minX + left, y: slot.minY + low, width: slot.width - left - right,
+                      height: slot.height - low - high).integral
     }
+
+    /// Glass panes: the hairline's color would show through them.
+    var glassBehind = false
 
     /// A pane's card in its slot: the pane, under its header when it shows
     /// one. Header and pane round only their outer corners, reading as one card.
     private func placeCard(_ pane: NSView, in slot: CGRect) {
-        let card = Self.card(in: slot)
+        let card = card(in: slot)
         guard showsHeader(for: pane), card.height > PaneHeader.height else {
             pane.frame = card
             Self.round(pane, top: true, bottom: true)
@@ -478,6 +495,9 @@ final class SplitContainerView: NSView {
         }
         let header = header(for: pane)
         header.frame = CGRect(x: card.minX, y: card.minY, width: card.width, height: PaneHeader.height)
+        let top = sharesTopRow && card.minY <= bounds.minY + 0.5
+        header.clearance = (top && card.minX <= bounds.minX + 0.5 ? max(0, topClearance.leading - card.minX) : 0,
+                            top && card.maxX >= bounds.maxX - 0.5 ? max(0, topClearance.trailing - (bounds.maxX - card.maxX)) : 0)
         pane.frame = CGRect(x: card.minX, y: card.minY + PaneHeader.height, width: card.width,
                             height: card.height - PaneHeader.height)
         Self.round(header, top: true, bottom: false)

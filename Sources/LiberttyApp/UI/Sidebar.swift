@@ -205,8 +205,8 @@ final class SidebarViewController: NSViewController {
     private var filesAlone: [NSLayoutConstraint] = []
     private var tabsShown = true
 
-    /// The window's frame color behind the column, opaque over the system
-    /// sidebar material (Tern's one surface), translucent with the window.
+    /// The column's own color: none now (`opacity` 0), the window's
+    /// backdrop shows (Rex's sidebar is the window's surface).
     func apply(frame: RGB, opacity: Double) {
         view.wantsLayer = true
         view.layer?.backgroundColor = frame.nsColor.withAlphaComponent(opacity).cgColor
@@ -223,6 +223,8 @@ final class SidebarViewController: NSViewController {
         tabCount.textColor = .tertiaryLabelColor
         // The workspace menu: which named set of tabs this is, and the others.
         let workspaces = Self.iconButton("square.stack.3d.up", "Workspaces", target: self, action: #selector(showWorkspaces(_:)))
+        // (Rex shows no count: the rows say it.)
+        tabCount.isHidden = true
         let tabsRow = NSStackView(views: [tabsHeader, NSView(), tabCount, workspaces])
 
         tabsTable.headerView = nil
@@ -286,20 +288,44 @@ final class SidebarViewController: NSViewController {
         filter.onChange = { [weak self] text in self?.filterTabs(text) }
         filter.onSubmit = { [weak self] in self?.selectFirstMatch() }
         filter.onActivity = { [weak self] activity in self?.show(activity: activity) }
+        filter.onEscape = { [weak self] in self?.showFilter(false) }
 
-        for v in [tabsRow, tabsScroll, divider, filesRow, files, filter] {
+        // The top row (the traffic lights' line): the window's buttons
+        // while the sidebar is on the left (`setChrome`); Rex's.
+        chromeRow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chromeRow)
+        // The foot (Rex's): filter the tabs, a new workspace, connect to a host.
+        let filterButton = WindowChrome.button("line.3.horizontal.decrease.circle", "Filter Tabs", self, #selector(toggleFilter(_:)))
+        let newWorkspace = WindowChrome.button("square.stack.3d.up.badge.automatic", "New Workspace…", self, #selector(newWorkspace(_:)))
+        let connect = WindowChrome.button("network", "Connect to Host…", self, #selector(connectToHost(_:)))
+        for b in [filterButton, newWorkspace, connect] { b.symbolConfiguration = .init(pointSize: 13, weight: .regular) }
+        foot.addArrangedSubview(filterButton)
+        foot.addArrangedSubview(NSView())
+        foot.addArrangedSubview(newWorkspace)
+        foot.addArrangedSubview(connect)
+        foot.orientation = .horizontal
+        foot.spacing = 2
+        filter.isHidden = true
+        for v in [tabsRow, tabsScroll, divider, filesRow, files, filter, foot] {
             v.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(v)
         }
         let guide = view.safeAreaLayoutGuide
+        _ = guide
         tabsHeight = tabsScroll.heightAnchor.constraint(equalToConstant: 38)
         NSLayoutConstraint.activate([
-            tabsRow.topAnchor.constraint(equalTo: guide.topAnchor, constant: 6),
-            tabsRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+            chromeRow.topAnchor.constraint(equalTo: view.topAnchor),
+            chromeRow.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chromeRow.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chromeRow.heightAnchor.constraint(equalToConstant: WindowChrome.bandHeight),
+            // Rex's session header: 25 high under the top row, then the rows.
+            tabsRow.topAnchor.constraint(equalTo: chromeRow.bottomAnchor, constant: 3),
+            tabsRow.heightAnchor.constraint(equalToConstant: 25),
+            tabsRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 19),
             tabsRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            tabsScroll.topAnchor.constraint(equalTo: tabsRow.bottomAnchor, constant: 6),
-            tabsScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            tabsScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+            tabsScroll.topAnchor.constraint(equalTo: tabsRow.bottomAnchor, constant: 1),
+            tabsScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 9),
+            tabsScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -9),
             tabsHeight,
             divider.topAnchor.constraint(equalTo: tabsScroll.bottomAnchor, constant: 8),
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
@@ -310,23 +336,27 @@ final class SidebarViewController: NSViewController {
             files.topAnchor.constraint(equalTo: filesRow.bottomAnchor, constant: 4),
             files.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             files.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            files.bottomAnchor.constraint(equalTo: filter.topAnchor, constant: -6),
-            filter.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            filter.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            filter.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10),
-            filter.heightAnchor.constraint(equalToConstant: 30),
+            files.bottomAnchor.constraint(equalTo: foot.topAnchor, constant: -6),
+            filter.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 9),
+            filter.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -9),
+            filter.centerYAnchor.constraint(equalTo: foot.centerYAnchor),
+            filter.heightAnchor.constraint(equalToConstant: 28),
+            foot.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 9),
+            foot.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -9),
+            foot.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
+            foot.heightAnchor.constraint(equalToConstant: 28),
         ])
         tabsHeight.priority = .defaultHigh
         // With the files folded away the tabs may use nearly the whole column.
         tabsCapWithFiles = tabsScroll.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor, multiplier: 0.45)
-        tabsCapAlone = filesRow.bottomAnchor.constraint(lessThanOrEqualTo: filter.topAnchor, constant: -10)
+        tabsCapAlone = filesRow.bottomAnchor.constraint(lessThanOrEqualTo: foot.topAnchor, constant: -10)
         tabsCapWithFiles.isActive = true
         tabsCapAlone.isActive = true
-        tabsSection = [tabsRow, tabsScroll, divider, filter]
+        tabsSection = [tabsRow, tabsScroll, divider, foot]
         filesBelowTabs = view.constraints.filter {
             ($0.firstItem === filesRow && $0.firstAttribute == .top) || ($0.firstItem === files && $0.firstAttribute == .bottom)
         }
-        filesAlone = [filesRow.topAnchor.constraint(equalTo: guide.topAnchor, constant: 6),
+        filesAlone = [filesRow.topAnchor.constraint(equalTo: chromeRow.bottomAnchor, constant: 3),
                       files.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)]
         self.view = view
     }
@@ -348,6 +378,58 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    private let chromeRow = NSView()
+    private let foot = NSStackView()
+    private var chromeViews: (leading: NSView?, trailing: NSView?) = (nil, nil)
+    private var chromeMid: CGFloat = 23
+    private var chromeClearance: CGFloat = 88
+
+    /// The window's buttons on the traffic lights' line (from the top);
+    /// nil takes them out. `clearance`: where the leading ones start.
+    func setChrome(leading: NSView?, trailing: NSView?, mid: CGFloat, clearance: CGFloat) {
+        _ = view
+        for old in [chromeViews.leading, chromeViews.trailing] {
+            if let old, old !== leading, old !== trailing, old.superview === chromeRow { old.removeFromSuperview() }
+        }
+        for new in [leading, trailing] {
+            guard let new, new.superview !== chromeRow else { continue }
+            new.removeFromSuperview()
+            new.translatesAutoresizingMaskIntoConstraints = true
+            chromeRow.addSubview(new)
+        }
+        chromeViews = (leading, trailing)
+        chromeMid = mid
+        chromeClearance = clearance
+        view.needsLayout = true
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let row = chromeRow.bounds
+        // The row isn't flipped: its top is maxY.
+        let mid = row.height - chromeMid
+        if let v = chromeViews.leading {
+            let size = v.fittingSize
+            v.frame = NSRect(x: chromeClearance, y: (mid - size.height / 2).rounded(), width: size.width, height: size.height)
+        }
+        if let v = chromeViews.trailing {
+            let size = v.fittingSize
+            v.frame = NSRect(x: row.width - 9 - size.width, y: (mid - size.height / 2).rounded(), width: size.width, height: size.height)
+        }
+    }
+
+    @objc private func toggleFilter(_ sender: Any?) { showFilter(filter.isHidden) }
+
+    /// The field takes the foot's place while the tabs are filtered.
+    private func showFilter(_ on: Bool) {
+        filter.isHidden = !on
+        foot.isHidden = on || !tabsShown
+        if on { filter.focus() } else { filter.clear() }
+    }
+
+    @objc private func newWorkspace(_ sender: Any?) { _ = ActionDispatcher.perform(.newWorkspace, controller: controller) }
+    @objc private func connectToHost(_ sender: Any?) { _ = ActionDispatcher.perform(.connectToHost, controller: controller) }
+
     private static func header(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = Typeface.header
@@ -362,7 +444,8 @@ final class SidebarViewController: NSViewController {
 
     /// The header says which workspace these tabs are in, once there are several.
     func show(workspace name: String, of count: Int) {
-        tabsTitle?.stringValue = count > 1 ? name : "Tabs"
+        // Rex names the session; Libertty's sets of tabs are workspaces.
+        tabsTitle?.stringValue = name
     }
     private static let rowSpacing: CGFloat = 2
 
@@ -508,7 +591,7 @@ final class SidebarViewController: NSViewController {
         let row = tabsTable.selectedRow
         // None for a row the filter folded away.
         let shown = row >= 0 && row < tabsTable.numberOfRows && tabs.indices.contains(row) && matches(tabs[row])
-        let rect = shown ? tabsTable.rect(ofRow: row).insetBy(dx: 2, dy: 1) : .zero
+        let rect = shown ? tabsTable.rect(ofRow: row) : .zero
         selectionCard.move(to: rect)
         // Keep it under every row view, including ones added since.
         if tabsTable.subviews.first !== selectionCard {
@@ -857,6 +940,8 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     static let identifier = NSUserInterfaceItemIdentifier("TabCell")
     private let dot = StatusBadge()
     private let tiles = TileStack()
+    /// Rex's 22-point rounded square behind the tab's glyph.
+    private let well = NSView()
     private let title = NSTextField(labelWithString: "")
     /// Printing (filled) or news waiting (ring): accent, no other color.
     private let news = CAShapeLayer()
@@ -886,18 +971,26 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         news.lineWidth = 1.2
         newsView.layer?.addSublayer(news)
         newsView.isHidden = true
-        for v in [dot, tiles, title, newsView, shortcut, close] {
+        well.wantsLayer = true
+        well.layer?.cornerRadius = 6
+        well.layer?.cornerCurve = .continuous
+        // Rex shows no key hints on its rows (the menu and ⌘1–9 still work).
+        shortcut.alphaValue = 0
+        for v in [well, dot, tiles, title, newsView, shortcut, close] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
         NSLayoutConstraint.activate([
-            dot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
+            well.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            well.centerYAnchor.constraint(equalTo: centerYAnchor),
+            well.widthAnchor.constraint(equalToConstant: 22), well.heightAnchor.constraint(equalToConstant: 22),
+            dot.centerXAnchor.constraint(equalTo: well.centerXAnchor),
             dot.centerYAnchor.constraint(equalTo: centerYAnchor),
             dot.widthAnchor.constraint(equalToConstant: 13), dot.heightAnchor.constraint(equalToConstant: 13),
             // The tiles take the badge's own place: only one of them shows.
-            tiles.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
+            tiles.centerXAnchor.constraint(equalTo: well.centerXAnchor),
             tiles.centerYAnchor.constraint(equalTo: centerYAnchor),
-            title.leadingAnchor.constraint(equalTo: tiles.trailingAnchor, constant: 6),
+            title.leadingAnchor.constraint(equalTo: well.trailingAnchor, constant: 8),
             title.centerYAnchor.constraint(equalTo: centerYAnchor),
             title.trailingAnchor.constraint(lessThanOrEqualTo: newsView.leadingAnchor, constant: -4),
             newsView.widthAnchor.constraint(equalToConstant: 8), newsView.heightAnchor.constraint(equalToConstant: 8),
@@ -1107,6 +1200,9 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     // appearance when they change.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        well.layer?.backgroundColor = Surfaces.current.raised.nsColor.cgColor
+        well.layer?.borderWidth = 0.5
+        well.layer?.borderColor = Surfaces.current.stroke.nsColor.cgColor
         if !newsView.isHidden {
             if news.fillColor != nil { news.fillColor = Accent.color.cgColor }
             if news.strokeColor != nil { news.strokeColor = Accent.color.cgColor }
@@ -1155,7 +1251,8 @@ final class SelectionCard: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = Radius.control
+        layer?.cornerRadius = 16
+        layer?.cornerCurve = .continuous
         layer?.shadowOpacity = 1
         layer?.shadowRadius = 3
         layer?.shadowOffset = CGSize(width: 0, height: -1)
@@ -1168,13 +1265,9 @@ final class SelectionCard: NSView {
     override func viewDidChangeEffectiveAppearance() { updateColors() }
 
     private func updateColors() {
-        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        // Dark: a faint lift, no shadow; light: a white card (Tern's rows),
-        // or a faint shade when flat (its top tabs).
-        let fill: NSColor = flat ? (dark ? .white.withAlphaComponent(0.06) : .black.withAlphaComponent(0.045))
-            : dark ? .white.withAlphaComponent(0.08) : .white
-        layer?.backgroundColor = fill.cgColor
-        layer?.shadowColor = NSColor.black.withAlphaComponent(dark || flat ? 0 : 0.10).cgColor
+        // Rex's selected row: the text color over the canvas, faintly; no shadow.
+        layer?.backgroundColor = Surfaces.current.selected.cgColor
+        layer?.shadowColor = NSColor.clear.cgColor
     }
 
     /// Be at `rect` at once (a drag, a scroll), whatever was under way.
@@ -1542,6 +1635,7 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
     var onChange: ((String) -> Void)?
     var onSubmit: (() -> Void)?
     var onActivity: ((TabActivity) -> Void)?
+    var onEscape: (() -> Void)?
     private let field = NSTextField()
     private let activityButton = NSButton()
     private var activity = TabActivity.all
@@ -1625,8 +1719,15 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
     }
 
     private func updateColors() {
-        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        layer?.backgroundColor = (dark ? NSColor.white.withAlphaComponent(0.06) : NSColor.black.withAlphaComponent(0.04)).cgColor
+        layer?.backgroundColor = Surfaces.current.hover.cgColor
+    }
+
+    func focus() { window?.makeFirstResponder(field) }
+
+    func clear() {
+        guard !field.stringValue.isEmpty else { return }
+        field.stringValue = ""
+        onChange?("")
     }
 
     // A click anywhere on it reaches the field.
@@ -1640,6 +1741,7 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
             onSubmit?()
             return true
         case #selector(NSResponder.cancelOperation(_:)):
+            if field.stringValue.isEmpty { onEscape?() }
             field.stringValue = ""
             onChange?("")
             return true

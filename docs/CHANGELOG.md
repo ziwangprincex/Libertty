@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The window as Rex's: the sidebar is the window's own surface from its top edge to its bottom (no floating panel), with the sidebar's toggle beside the traffic lights and activity, the command palette and a new tab at its end; the tab rows are Rex's 32-point capsules with a rounded glyph; the foot filters the tabs, makes a workspace or connects to a host. The panes are cards 8 points from the window's edges and from each other, flush against the sidebar (compact: edge to edge, a hairline between). Each pane wears Rex's header: the program and where it runs, and split right, split down, float, zoom and close. With the sidebar hidden or on the right (`tab-bar = right`), the panes' top row shares the traffic lights and buttons. No toolbar.
+- Fixed: a gap showed the desktop between the sidebar and the terminals with `background-opacity` below 1: the line between the columns was the frame's color at that opacity, with nothing behind it. One backdrop under every column now: the theme's canvas, or with `interface-style = glass` the desktop blurred through a tint of it.
+- Defaults as Rex's: pane headers always shown (`pane-headers = always`), the sidebar's file tree off (`sidebar-files = true` brings it back).
+
 ## 0.3.10
 
 > A closed split pane no longer stays in memory; Ghostty 1.4.0's terminal, with kitty images in a session's snapshot; every setting from the command palette; Codex shown working.

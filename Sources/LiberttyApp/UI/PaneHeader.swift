@@ -9,10 +9,10 @@ protocol PaneHeaderSource: AnyObject {
     func dragPane(_ leaf: NSView, from event: NSEvent)
 }
 
-/// A pane's header (Tern's `pane-headers`): what runs there and where, its
-/// grid size, and on the focused pane buttons to float it as a picture in
-/// picture, zoom it and close it. It's the top of the pane's card: a click
-/// focuses the pane, a double-click zooms it, as a title bar does.
+/// A pane's header (Rex's): the program's glyph and name, where it runs,
+/// and the pane's buttons — split right, split down, float, zoom, close —
+/// faint until the pointer is over them. It's the top of the pane's card:
+/// a click focuses the pane, a double-click zooms it, as a title bar does.
 final class PaneHeader: NSView {
     struct Info: Equatable {
         var name: String
@@ -29,9 +29,9 @@ final class PaneHeader: NSView {
         var parks = false
     }
 
-    enum Action { case focus, pictureInPicture, park, zoom, close }
+    enum Action { case focus, splitRight, splitDown, pictureInPicture, park, zoom, close }
 
-    static let height: CGFloat = 30
+    static let height: CGFloat = 36
 
     var onAction: ((Action) -> Void)?
     /// Dragged past a few points: the window moves the pane from here.
@@ -41,57 +41,67 @@ final class PaneHeader: NSView {
         didSet { if info != oldValue { update() } }
     }
 
+    private let glyph = NSImageView()
     private let name = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
     private let size = NSTextField(labelWithString: "")
-    private let pip = PaneHeader.button("pip.enter", "Float Pane")
-    private let park = PaneHeader.button("tray.and.arrow.down", "Park Pane")
-    private let zoom = PaneHeader.button("arrow.up.left.and.arrow.down.right", "Zoom")
-    private let close = PaneHeader.button("xmark", "Close")
-    private let line = NSView()
+    private let right = PaneHeader.button("rectangle.split.2x1", "Split Right")
+    private let down = PaneHeader.button("rectangle.split.1x2", "Split Down")
+    private let pip = PaneHeader.button("square.on.square", "Float Pane")
+    private let zoom = PaneHeader.button("arrow.up.left.and.arrow.down.right", "Zoom Pane")
+    private let close = PaneHeader.button("xmark", "Close Pane")
+    private var buttons: [NSButton] { [right, down, pip, zoom, close] }
     private let mark = NSView()
+    private var tracking: NSTrackingArea?
+    private var leadingEdge: NSLayoutConstraint!
+    private var trailingEdge: NSLayoutConstraint!
+    /// Room the window's buttons take at either end (`sharesTopRow`).
+    var clearance: (leading: CGFloat, trailing: CGFloat) = (0, 0) {
+        didSet {
+            leadingEdge.constant = 12 + clearance.leading
+            trailingEdge.constant = -7 - clearance.trailing
+        }
+    }
+    private var hovering = false { didSet { if hovering != oldValue { updateColors() } } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        name.font = Typeface.header
-        detail.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-        detail.textColor = .tertiaryLabelColor
+        glyph.symbolConfiguration = .init(pointSize: 12, weight: .medium)
+        name.font = Typeface.ui(13, .medium)
+        name.lineBreakMode = .byTruncatingTail
+        detail.font = Typeface.ui(13)
         detail.lineBreakMode = .byTruncatingHead  // the folder at its end says where
         detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        size.font = Typeface.hint
-        size.textColor = .tertiaryLabelColor
-        line.wantsLayer = true
+        name.setContentCompressionResistancePriority(.defaultLow + 1, for: .horizontal)
+        size.isHidden = true  // Rex shows no size; the probe still reads it
         mark.wantsLayer = true
         mark.isHidden = true
+        right.action = #selector(splitRightIt)
+        down.action = #selector(splitDownIt)
         pip.action = #selector(floatIt)
         zoom.action = #selector(zoomIt)
         close.action = #selector(closeIt)
-        park.action = #selector(parkIt)
-        let buttons = NSStackView(views: [pip, park, zoom, close])
-        buttons.spacing = 2
-        for v in [name, detail, size, buttons, line, mark] {
+        let stack = NSStackView(views: buttons)
+        stack.spacing = 2
+        for v in [glyph, name, detail, size, stack, mark] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
-        for b in [pip, park, zoom, close] { b.target = self }
+        for b in buttons { b.target = self }
+        leadingEdge = glyph.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12)
+        trailingEdge = stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7)
         NSLayoutConstraint.activate([
-            name.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            leadingEdge, trailingEdge,
+            glyph.centerYAnchor.constraint(equalTo: centerYAnchor),
+            name.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 6),
             name.centerYAnchor.constraint(equalTo: centerYAnchor),
-            detail.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 8),
+            detail.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 5),
             detail.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
-            detail.trailingAnchor.constraint(lessThanOrEqualTo: size.leadingAnchor, constant: -10),
+            detail.trailingAnchor.constraint(lessThanOrEqualTo: stack.leadingAnchor, constant: -10),
             size.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
-            // The buttons keep their room on every pane, so the size doesn't
-            // jump as the focus moves.
-            size.trailingAnchor.constraint(equalTo: buttons.leadingAnchor, constant: -8),
-            buttons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            buttons.centerYAnchor.constraint(equalTo: centerYAnchor),
-            buttons.widthAnchor.constraint(equalToConstant: 4 * 24 + 3 * 2),
-            line.leadingAnchor.constraint(equalTo: leadingAnchor),
-            line.trailingAnchor.constraint(equalTo: trailingAnchor),
-            line.bottomAnchor.constraint(equalTo: bottomAnchor),
-            line.heightAnchor.constraint(equalToConstant: 1),
+            size.trailingAnchor.constraint(equalTo: stack.leadingAnchor, constant: -8),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             mark.leadingAnchor.constraint(equalTo: leadingAnchor),
             mark.trailingAnchor.constraint(equalTo: trailingAnchor),
             mark.topAnchor.constraint(equalTo: topAnchor),
@@ -108,25 +118,24 @@ final class PaneHeader: NSView {
     private static func button(_ symbol: String, _ tip: String) -> NSButton {
         let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!, target: nil, action: nil)
         b.isBordered = false
-        b.contentTintColor = .secondaryLabelColor
-        b.symbolConfiguration = .init(pointSize: 11, weight: .regular)
+        b.symbolConfiguration = .init(pointSize: 12, weight: .regular)
         b.toolTip = tip
-        b.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        b.widthAnchor.constraint(equalToConstant: 22).isActive = true
         b.heightAnchor.constraint(equalToConstant: 22).isActive = true
         return b
     }
 
     private func update() {
         guard let info else { return }
+        glyph.image = NSImage(systemSymbolName: info.floats ? "apple.terminal" : "doc.text", accessibilityDescription: nil)
         name.stringValue = info.name
-        name.textColor = info.focused ? .labelColor : .secondaryLabelColor
         detail.stringValue = info.detail
         size.stringValue = info.size
-        pip.isHidden = !info.focused || !info.floats || !info.parks
-        park.isHidden = !info.focused || !info.floats || !info.parks
-        zoom.isHidden = !info.focused
-        close.isHidden = !info.focused
+        right.isHidden = !info.floats
+        down.isHidden = !info.floats
+        pip.isHidden = !info.floats
         mark.isHidden = !info.marked
+        updateColors()
     }
 
     /// The card's color, so header and terminal read as one card.
@@ -140,9 +149,27 @@ final class PaneHeader: NSView {
     }
 
     private func updateColors() {
-        line.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        let s = Surfaces.current
+        let focused = info?.focused ?? false
+        name.textColor = focused ? s.content.nsColor : s.contentSecondary.nsColor
+        glyph.contentTintColor = name.textColor
+        detail.textColor = s.contentTertiary.nsColor
+        // Rex's buttons: faint on every pane, clear under the pointer.
+        let tint = hovering ? s.contentSecondary.nsColor : s.contentTertiary.nsColor.withAlphaComponent(0.7)
+        buttons.forEach { $0.contentTintColor = tint }
         mark.layer?.backgroundColor = Accent.color.cgColor
     }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
 
     override func mouseDown(with event: NSEvent) {
         pressedAt = event.locationInWindow
@@ -157,8 +184,9 @@ final class PaneHeader: NSView {
 
     override func mouseUp(with event: NSEvent) { pressedAt = nil }
 
+    @objc private func splitRightIt() { onAction?(.splitRight) }
+    @objc private func splitDownIt() { onAction?(.splitDown) }
     @objc private func floatIt() { onAction?(.pictureInPicture) }
     @objc private func zoomIt() { onAction?(.zoom) }
-    @objc private func parkIt() { onAction?(.park) }
     @objc private func closeIt() { onAction?(.close) }
 }

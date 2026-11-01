@@ -1,15 +1,23 @@
 import AppKit
 
-/// The middle column: the selected tab's panes below the toolbar, on the
-/// window's frame (the theme's `chrome`, at `background-opacity`, optionally
-/// blurred), which also runs under the toolbar and the side columns so the
-/// window reads as one surface (Tern), and the find bar.
+/// The middle column: the selected tab's panes on the window's backdrop,
+/// inset as Rex lays them out (`insets`, set by the window), a band along
+/// the top while the traffic lights or the tabs are over this column, and
+/// the find bar.
 final class TerminalAreaView: NSView {
     /// The selected tab's panes, or its document.
     private(set) var content: NSView?
     let findBar = FindBar()
     private let fill = NSView()
-    private var blur: NSVisualEffectView?
+    /// Between the column's edges (below the band) and the panes.
+    var insets = NSEdgeInsets() { didSet { needsLayout = true } }
+    /// The band along the top: its height, the room the traffic lights take
+    /// at its left, and what it holds (left, middle, right).
+    var bandHeight: CGFloat = 0 { didSet { needsLayout = true } }
+    var bandClearance: CGFloat = 0 { didSet { needsLayout = true } }
+    private(set) var bandViews: (left: NSView?, middle: NSView?, right: NSView?) = (nil, nil, nil)
+    /// Where the band's controls line up (the traffic lights' middle, from the top).
+    var bandMid: CGFloat = 23 { didSet { needsLayout = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -23,6 +31,9 @@ final class TerminalAreaView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    // Its empty stretches are the window's surface: they move it.
+    override var mouseDownCanMoveWindow: Bool { true }
+
     func show(_ content: NSView) {
         guard content !== self.content else { return }
         self.content?.removeFromSuperview()
@@ -32,29 +43,30 @@ final class TerminalAreaView: NSView {
         needsLayout = true
     }
 
-    /// Glass panes (`pane-glass`): the frame has holes where the terminals
-    /// are, so the blur behind the window shows through them only.
+    /// The band's views; nil leaves that place empty.
+    func setBand(left: NSView?, middle: NSView?, right: NSView?) {
+        for old in [bandViews.left, bandViews.middle, bandViews.right] {
+            if let old, old !== left, old !== middle, old !== right, old.superview === self { old.removeFromSuperview() }
+        }
+        for new in [left, middle, right] {
+            guard let new, new.superview !== self else { continue }
+            new.removeFromSuperview()
+            new.translatesAutoresizingMaskIntoConstraints = true
+            addSubview(new, positioned: .below, relativeTo: findBar)
+        }
+        bandViews = (left, middle, right)
+        needsLayout = true
+    }
+
+    /// Glass panes (`interface-style = glass`): the backdrop shows through
+    /// the terminals; their cards are counted for the probe.
     private var glass = false
 
-    /// `background`: the frame's color (a translucent window keeps the
-    /// terminals' own: frame and cards blend into the one glass).
+    /// The backdrop (the window's) is the frame now: nothing is painted here.
     func apply(background: RGB, opacity: Double, blurred: Bool, glass: Bool = false) {
-        fill.layer?.backgroundColor = background.nsColor.withAlphaComponent(opacity).cgColor
+        fill.layer?.backgroundColor = nil
         self.glass = glass
         updateHoles()
-        if blurred || glass, opacity < 1 || glass {
-            if blur == nil {
-                let view = NSVisualEffectView()
-                view.material = .underWindowBackground
-                view.blendingMode = .behindWindow
-                view.state = .active
-                addSubview(view, positioned: .below, relativeTo: fill)
-                blur = view
-            }
-        } else {
-            blur?.removeFromSuperview()
-            blur = nil
-        }
         needsLayout = true
     }
 
@@ -101,32 +113,47 @@ final class TerminalAreaView: NSView {
         return nil
     }
 
-    /// The part below the toolbar, in this (unflipped) view's coordinates.
-    var contentRect: NSRect {
-        guard let window else { return bounds }
-        // Before the first layout the intersection is empty, and an empty
-        // NSRect intersection is `.null`, at infinity: never hand that on.
-        let rect = convert(window.contentLayoutRect, from: nil).intersection(bounds)
-        return rect.isNull ? bounds : rect
-    }
-
     override func layout() {
         super.layout()
-        let content = contentRect
         fill.frame = bounds
-        blur?.frame = bounds
         defer { updateHoles() }
-        // Everything starts below the toolbar: the toolbar has no material
-        // of its own, so text scrolling under it would collide with its
-        // controls. Inset a little from the edges, as the cards are.
-        let inset = Layout.stageInset
-        self.content?.frame = NSRect(x: inset, y: inset, width: max(0, bounds.width - inset * 2),
-                                     height: max(0, content.maxY - inset * 2))
+        let top = bounds.height - bandHeight
+        // Whole points: the split view can leave this column half a point
+        // wide, and a card between pixels rounds a point bigger.
+        self.content?.frame = NSRect(x: insets.left, y: insets.bottom,
+                                     width: max(0, (bounds.width - insets.left - insets.right).rounded(.down)),
+                                     height: max(0, (top - insets.top - insets.bottom).rounded(.down)))
+        // The band: its controls on the traffic lights' line.
+        let mid = bounds.height - bandMid
+        var left = bandClearance
+        if let v = bandViews.left {
+            let size = v.fittingSize
+            v.frame = NSRect(x: left, y: (mid - size.height / 2).rounded(), width: size.width, height: size.height)
+            left = v.frame.maxX + 6
+        }
+        var right = bounds.width - 9
+        if let v = bandViews.right {
+            let size = v.fittingSize
+            v.frame = NSRect(x: right - size.width, y: (mid - size.height / 2).rounded(), width: size.width, height: size.height)
+            right = v.frame.minX - 6
+        }
+        if let v = bandViews.middle {
+            let height = min(bandHeight, max(v.fittingSize.height, TabStrip.height))
+            v.frame = NSRect(x: left, y: (mid - height / 2).rounded(), width: max(0, right - left), height: height)
+        }
+        // No band: the buttons are over the panes' top row, which keeps clear of them.
+        if let content, let split = Self.split(in: content) {
+            let frame = content.frame
+            split.sharesTopRow = bandHeight == 0 && (bandViews.left != nil || bandViews.right != nil || bandClearance > 9)
+            split.topClearance = bandHeight > 0 ? (0, 0)
+                : (max(bandClearance, (bandViews.left?.frame.maxX ?? 0) + 4) - frame.minX,
+                   bandViews.right.map { frame.maxX - ($0.frame.minX - 4) } ?? 0)
+        }
         // The find bar only needs a frame while it's shown, and room for one.
         guard !findBar.isHidden, bounds.width > 120 else { return }
         let size = findBar.fittingSize
         let width = min(max(size.width, 360), bounds.width - 24)
-        findBar.frame = NSRect(x: bounds.width - width - 12, y: content.maxY - size.height - 10,
+        findBar.frame = NSRect(x: bounds.width - width - 12, y: top - insets.top - size.height - 10,
                                width: width, height: size.height)
     }
 }
@@ -149,23 +176,38 @@ final class ColumnsController: NSSplitViewController {
 
 }
 
-/// The window's columns (sidebar, panes, inspector) with no line between
-/// them: they're one surface, the divider drawn in the frame's color (a
-/// clear one would leave a hole to black).
+/// The window's columns (sidebar, panes, inspector) on one backdrop: the
+/// dividers draw nothing (the backdrop shows), or a hairline with compact
+/// panes (Rex's boundary lines).
 final class FrameSplitView: NSSplitView {
-    /// Painted behind the columns too: the controller's dividers are gaps
-    /// it doesn't draw into.
-    var frameColor: NSColor = .windowBackgroundColor {
-        didSet {
-            wantsLayer = true
-            layer?.backgroundColor = frameColor.cgColor
-            needsDisplay = true
+    let backdrop = WindowBackdrop()
+    /// The hairline between the columns, compact; nil draws none.
+    var line: NSColor? { didSet { needsDisplay = true } }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if backdrop.superview !== self {
+            backdrop.frame = bounds
+            addSubview(backdrop, positioned: .below, relativeTo: nil)
         }
     }
-    override var dividerColor: NSColor { frameColor }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        // Always under everything the split view adds (its items, AppKit's own).
+        if subview !== backdrop, backdrop.superview === self, subviews.first !== backdrop {
+            addSubview(backdrop, positioned: .below, relativeTo: nil)
+        }
+    }
+
+    override var dividerColor: NSColor { line ?? .clear }
+    /// A whole point: a thin divider is half of one on a Retina screen, and
+    /// a column a half point wide leaves the panes' cards between pixels.
+    override var dividerThickness: CGFloat { 1 }
 
     override func drawDivider(in rect: NSRect) {
-        frameColor.setFill()
+        guard let line else { return }
+        line.setFill()
         rect.fill()
     }
 }
