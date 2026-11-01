@@ -163,7 +163,8 @@ struct SettingsRow: View {
         Group {
             switch item.kind {
             case .toggle(let on, let off):
-                Toggle(isOn: Binding(get: { model.current(item.key!) != off },
+                // On for anything but `off` — and but nothing: a key with no value (as a theme says) isn't on.
+                Toggle(isOn: Binding(get: { let now = model.current(item.key!); return now != off && !now.isEmpty },
                                      set: { model.write(item.key!, $0 ? on : off, item: item.id) })) {
                     RowLabel(model: model, item: item)
                 }

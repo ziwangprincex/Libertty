@@ -256,30 +256,38 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    /// Libertty's themes at once, every theme file's once read (off the main
-    /// thread: an installed Ghostty has hundreds); again when files come or go.
+    /// Libertty's themes at once, then each source's, a run-loop turn apart (an
+    /// installed Ghostty has hundreds); again when themes come or go. Each is
+    /// read as the library reads it, whatever its source keeps it in.
     func loadThemes() {
         themesWanted = true
         let entries = ThemeLibrary.shared.entries.filter { !$0.name.contains(",") && Theme.builtIn($0.name) == nil }
         let signature = entries.map { "\($0.source)/\($0.name)" }.joined(separator: "\n")
         guard signature != themeSignature || themeGroups.isEmpty else { return }
         themeSignature = signature
-        let builtIn = ThemeGroup(id: "built-in", title: "Built-in", choices: Theme.all.map { ThemeChoice(name: $0.name, theme: $0) })
-        if themeGroups.isEmpty { themeGroups = [builtIn] }
-        let files = entries.map { (name: $0.name, url: $0.url, source: $0.source) }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var bySource: [String: [ThemeChoice]] = [:]
-            var order: [String] = []
-            for file in files {
-                guard let text = try? String(contentsOf: file.url, encoding: .utf8) else { continue }
-                if bySource[file.source] == nil { order.append(file.source) }
-                bySource[file.source, default: []].append(ThemeChoice(name: file.name, theme: Theme.parse(name: file.name, text: text)))
+        var groups = [ThemeGroup(id: "built-in", title: "Built-in", choices: Theme.all.map { ThemeChoice(name: $0.name, theme: $0) })]
+        themeGroups = groups
+        var sources: [String] = []
+        for entry in entries where !sources.contains(entry.source) { sources.append(entry.source) }
+        // Yours first, then the smaller collections before the larger.
+        let counts = Dictionary(entries.map { ($0.source, 1) }, uniquingKeysWith: +)
+        sources.sort { a, b in a == "user" || (b != "user" && counts[a]! < counts[b]!) }
+        func next(_ rest: ArraySlice<String>) {
+            guard let source = rest.first else { return }
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.themeSignature == signature else { return }
+                    let choices = entries.filter { $0.source == source }
+                        .compactMap { e in ThemeLibrary.shared.load(e.name).map { ThemeChoice(name: e.name, theme: $0) } }
+                    if !choices.isEmpty {
+                        groups.append(ThemeGroup(id: source, title: source == "user" ? "Your Themes" : source, choices: choices))
+                        self.themeGroups = groups
+                    }
+                    next(rest.dropFirst())
+                }
             }
-            // Yours first, then the smaller collections before the larger.
-            order.sort { a, b in a == "user" || (b != "user" && bySource[a]!.count < bySource[b]!.count) }
-            let groups = [builtIn] + order.map { ThemeGroup(id: $0, title: $0 == "user" ? "Your Themes" : $0, choices: bySource[$0]!) }
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.themeGroups = groups } }
         }
+        next(sources[...])
     }
 
     /// Choose `name` for one appearance: only that half of `theme = light:…,dark:…`.
