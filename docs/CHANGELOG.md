@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
+
+> 0.4.0 as it looks on a real screen: Rex's glass, Classic that turns glass off, Rex's top tabs, and a Theme Customizer above the Dock.
 
 - Seen on a real screen (0.4.0 had been checked off screen only): glass was a gray HUD whatever the theme, and at `background-opacity = 0` its terminals vanished into it. Glass is Rex's now: the canvas over the blur at 70% (light) or 60% (dark), the terminals at 70%; background-opacity is for classic.
 - Choosing Classic (Settings, View ▸ Customize View) left glass on in a config that still had `pane-glass = true`: `interface-style`, once set, wins over it, and Settings shows Glass for such a config.
