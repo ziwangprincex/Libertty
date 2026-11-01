@@ -140,6 +140,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         session.apply(config)
         let theme = config.resolvedTheme
         renderer.selectionColor = theme.selection
+        renderer.selectionForeground = theme.selectionForeground
+        renderer.cursorText = theme.cursorText
         renderer.ligatures = config.ligatures
         renderer.backgroundOpacity = config.paneOpacity
         renderer.paddingColor = config.windowPaddingColor

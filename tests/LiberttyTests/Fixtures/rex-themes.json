@@ -1,0 +1,43 @@
+[
+  {
+    "id": "probe-dusk",
+    "name": "Probe Dusk",
+    "appearance": "dark",
+    "source": {
+      "background": "#101418",
+      "foreground": "#d0d8e0",
+      "cursor": "#40e0c0",
+      "cursorText": "#101418",
+      "selectionBackground": "#203040",
+      "selectionForeground": "#f0f4f8",
+      "ansi": ["#18202a", "#e06060", "#60c080", "#d0b060", "#5090d0", "#9070c0", "#50b0c0", "#a0b0c0",
+               "#405060", "#f08080", "#80e0a0", "#e0c080", "#70b0f0", "#b090e0", "#70d0e0", "#f0f4f8"],
+      "paletteGenerate": true,
+      "paletteHarmonious": false,
+      "paletteBase": {},
+      "paletteOverrides": {}
+    },
+    "palette": [],
+    "semantic": {}
+  },
+  {
+    "id": "probe-noon",
+    "name": "Probe Noon",
+    "appearance": "light",
+    "source": {
+      "background": "#f8f4ee",
+      "foreground": "#302820",
+      "ansi": ["#302820", "#b03020", "#407020", "#906010", "#2050a0", "#804090", "#106878", "#988878",
+               "#605040", "#d04030", "#508830", "#b07820", "#3068c0", "#9850a8", "#208090", "#504438"],
+      "paletteGenerate": true,
+      "paletteHarmonious": true
+    }
+  },
+  {
+    "id": "probe-broken",
+    "name": "Probe Broken",
+    "appearance": "dark",
+    "source": { "background": "#000000", "foreground": "#ffffff", "ansi": ["#000000"] }
+  },
+  { "id": "not-a-theme" }
+]

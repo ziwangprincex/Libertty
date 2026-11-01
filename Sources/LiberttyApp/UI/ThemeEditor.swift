@@ -1,43 +1,43 @@
 import AppKit
-import UniformTypeIdentifiers
+import SwiftUI
 
-/// Libertty ▸ Theme Editor… (Rex's custom themes): a theme's colors in
-/// wells, every window showing each change as it's made; Save writes a theme
-/// file (Ghostty's format) to the config folder's `themes` and uses it.
-/// Starts from the theme in use, or any other; imports Ghostty theme files
-/// and iTerm2's `.itermcolors`; deletes themes of your own.
+/// Libertty ▸ Theme Editor… — Rex's Theme Customizer: a theme's colors as
+/// swatches, each opening an OKLCH picker; with Preview on every window
+/// (and the customizer itself) shows each change as it's made. Save & Apply
+/// writes a theme file (Ghostty's format) to the config folder's `themes`
+/// and uses it. Starts from the theme in use, or any other; imports Ghostty
+/// theme files and iTerm2's `.itermcolors`; deletes themes of your own.
 @MainActor
 final class ThemeEditor: NSObject, NSWindowDelegate {
     static let shared = ThemeEditor()
 
-    private enum Slot: Hashable {
-        case background, foreground, cursor, selection, ansi(Int)
-    }
-
-    private static let ansiNames = ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"]
-
     private var window: NSWindow?
-    private var theme = Theme.named(Theme.defaultName)
-    /// The theme it started from, as its file (or Libertty) has it.
-    private var original = Theme.named(Theme.defaultName)
-    private var wells: [Slot: NSColorWell] = [:]
-    /// Each palette color's contrast against the background, under its well.
-    private var ratios: [Int: NSTextField] = [:]
-    private let start = NSPopUpButton()
-    private let name = NSTextField()
-    private let generate = NSButton(checkboxWithTitle: "Make colors 16–255 from these (palette-generate)", target: nil, action: nil)
-    private let harmonious = NSButton(checkboxWithTitle: "Keep a light theme's order (palette-harmonious)", target: nil, action: nil)
-    private let extended = ExtendedPaletteView()
-    private let delete = NSButton(title: "Delete Theme…", target: nil, action: nil)
-    private let status = NSTextField(labelWithString: "")
-    /// A preview waiting for the run loop: dragging in the color panel sends
-    /// many changes a frame, and every window redraws for each preview.
+    let model = ThemeCustomizerModel()
+    private var popover: NSPopover?
+    /// The swatches' views, for the picker to point at.
+    var anchors: [ThemeCustomizerModel.Slot: NSView] = [:]
+    /// A preview waiting for the run loop: dragging in the picker sends many
+    /// changes a frame, and every window redraws for each preview.
     private var previewPending = false
 
-    @objc func show(_ sender: Any?) {
+    override init() {
+        super.init()
+        model.changed = { [weak self] in self?.modelChanged() }
+    }
+
+    @objc func show(_ sender: Any?) { show(startingFrom: nil) }
+
+    /// Open it on `name` (nil: the theme in use), unless it's open already.
+    func show(startingFrom name: String?) {
         let window = self.window ?? makeWindow()
         if !window.isVisible {
-            load(Self.themeInUse(), startingFrom: Self.themeInUseName())
+            if let name {
+                model.load(Theme.named(name), from: name)
+            } else {
+                model.load(Self.themeInUse(), from: Self.themeInUseName())
+            }
+            model.preview = true
+            updateLook()
             window.center()
         }
         // A probe's: off every screen, as its windows are.
@@ -46,10 +46,15 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
             window.orderFrontRegardless()
             window.setFrameOrigin(NSPoint(x: -20000, y: -23000))
             window.alphaValue = 1
+            window.makeFirstResponder(nil)
+            schedulePreview()
             return
         }
         Probe.activateApp()
         window.makeKeyAndOrderFront(nil)
+        // Not the name, all of it selected: a key typed would replace it.
+        window.makeFirstResponder(nil)
+        schedulePreview()
     }
 
     /// The theme the files name for the current appearance, overrides and all.
@@ -61,200 +66,35 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
     // MARK: Window
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520),
-                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "Theme Editor"
+        let controller = NSHostingController(rootView: ThemeCustomizerView(model: model, editor: self))
+        controller.sizingOptions = [.preferredContentSize]
+        let window = NSWindow(contentViewController: controller)
+        window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.title = "Theme Customizer"
         window.isReleasedWhenClosed = false
+        window.isMovableByWindowBackground = true
         window.delegate = self
-
-        start.target = self
-        start.action = #selector(startChanged(_:))
-        name.placeholderString = "Name"
-        name.lineBreakMode = .byTruncatingTail
-        let top = NSGridView(views: [
-            [label("Start from"), start],
-            [label("Save as"), name],
-        ])
-        top.column(at: 0).xPlacement = .trailing
-        top.rowSpacing = 8
-        // Its own width at the left, as it opens the first time and every
-        // time after (else the stack can widen it, the labels pushed right).
-        top.setContentHuggingPriority(.required, for: .horizontal)
-        start.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        name.widthAnchor.constraint(equalToConstant: 300).isActive = true
-
-        let base = row([(.background, "Background"), (.foreground, "Text"), (.cursor, "Cursor"), (.selection, "Selection")],
-                       ratios: false)
-        let normal = row((0..<8).map { (.ansi($0), Self.ansiNames[$0]) }, ratios: true)
-        let bright = row((8..<16).map { (.ansi($0), Self.ansiNames[$0 - 8]) }, ratios: true)
-
-        for box in [generate, harmonious] {
-            box.target = self
-            box.action = #selector(generateChanged(_:))
-        }
-        extended.translatesAutoresizingMaskIntoConstraints = false
-        extended.heightAnchor.constraint(equalToConstant: 56).isActive = true
-        extended.widthAnchor.constraint(equalToConstant: 588).isActive = true
-
-        status.textColor = .secondaryLabelColor
-        status.font = .systemFont(ofSize: 11)
-        status.lineBreakMode = .byTruncatingTail
-        let importButton = NSButton(title: "Import…", target: self, action: #selector(importTheme(_:)))
-        importButton.toolTip = "A Ghostty theme file, or iTerm2's .itermcolors"
-        delete.target = self
-        delete.action = #selector(deleteTheme(_:))
-        let revert = NSButton(title: "Revert", target: self, action: #selector(revert(_:)))
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel(_:)))
-        cancel.keyEquivalent = "\u{1b}"
-        let save = NSButton(title: "Save and Use", target: self, action: #selector(save(_:)))
-        save.keyEquivalent = "\r"
-        let buttons = NSStackView(views: [importButton, delete, NSView(), revert, cancel, save])
-        buttons.spacing = 8
-
-        let stack = NSStackView(views: [
-            top, separator(),
-            heading("Base"), base,
-            heading("Normal colors"), normal,
-            heading("Bright colors"), bright,
-            separator(), generate, harmonious, extended,
-            status, buttons,
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        stack.setCustomSpacing(4, after: stack.views[2])
-        stack.setCustomSpacing(4, after: stack.views[4])
-        stack.setCustomSpacing(4, after: stack.views[6])
-        stack.setCustomSpacing(2, after: generate)
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 26, bottom: 18, right: 26)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let content = NSView()
-        content.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: content.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            buttons.widthAnchor.constraint(equalTo: extended.widthAnchor),
-            status.widthAnchor.constraint(equalTo: extended.widthAnchor),
-        ])
-        window.contentView = content
         self.window = window
         return window
     }
 
-    private func label(_ text: String) -> NSTextField {
-        let l = NSTextField(labelWithString: text)
-        l.textColor = .secondaryLabelColor
-        return l
-    }
-
-    private func heading(_ text: String) -> NSTextField {
-        let l = NSTextField(labelWithString: text)
-        l.font = .systemFont(ofSize: 12, weight: .semibold)
-        return l
-    }
-
-    private func separator() -> NSBox {
-        let box = NSBox()
-        box.boxType = .separator
-        box.widthAnchor.constraint(equalToConstant: 588).isActive = true
-        return box
-    }
-
-    /// Wells side by side, each with its name (and its contrast) under it.
-    private func row(_ slots: [(Slot, String)], ratios withRatios: Bool) -> NSStackView {
-        let columns: [NSView] = slots.map { slot, title in
-            let well = NSColorWell(style: .default)
-            well.supportsAlpha = false
-            well.target = self
-            well.action = #selector(colorChanged(_:))
-            well.translatesAutoresizingMaskIntoConstraints = false
-            well.widthAnchor.constraint(equalToConstant: 56).isActive = true
-            well.heightAnchor.constraint(equalToConstant: 28).isActive = true
-            wells[slot] = well
-            // VoiceOver hears the bright ones as such; the label under it says
-            // only the color, its row's heading the rest.
-            if case .ansi(let i) = slot, i >= 8 { well.setAccessibilityLabel("Bright " + title) } else { well.setAccessibilityLabel(title) }
-            let name = NSTextField(labelWithString: title)
-            name.font = .systemFont(ofSize: 10.5)
-            name.textColor = .secondaryLabelColor
-            name.lineBreakMode = .byTruncatingTail
-            name.widthAnchor.constraint(lessThanOrEqualToConstant: 70).isActive = true
-            var views: [NSView] = [well, name]
-            if withRatios, case .ansi(let i) = slot {
-                let ratio = NSTextField(labelWithString: "")
-                ratio.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-                ratio.toolTip = "Contrast against the background (WCAG): below 3 is hard to read"
-                ratios[i] = ratio
-                views.append(ratio)
-            }
-            let column = NSStackView(views: views)
-            column.orientation = .vertical
-            column.alignment = .centerX
-            column.spacing = 3
-            return column
-        }
-        let row = NSStackView(views: columns)
-        row.spacing = withRatios ? 6 : 18
-        row.alignment = .top
-        return row
-    }
-
-    // MARK: Contents
-
-    private func load(_ theme: Theme, startingFrom startName: String) {
-        self.theme = theme
-        original = theme
-        start.removeAllItems()
-        var names = Theme.all.map(\.name)
-        let known = Set(names.map { $0.lowercased() })
-        names += ThemeLibrary.shared.entries.map(\.name).filter { !known.contains($0.lowercased()) }
-        start.addItems(withTitles: names)
-        if let item = start.item(withTitle: startName) { start.select(item) }
-        let ownName = isOwnTheme(startName)
-        name.stringValue = ownName ? startName : Self.freeName(from: startName)
-        let config = ConfigStore.shared.savedConfig
-        generate.state = config.paletteGenerate ? .on : .off
-        harmonious.state = config.paletteHarmonious ? .on : .off
-        refresh()
-    }
-
-    /// "Nord" → "Nord Custom", or "Nord Custom 2" when that's taken.
-    private static func freeName(from base: String) -> String {
-        let stem = base.hasSuffix(" Custom") ? base : base + " Custom"
-        var candidate = stem, n = 2
-        while Theme.exists(candidate) { candidate = "\(stem) \(n)"; n += 1 }
-        return candidate
-    }
-
-    private func isOwnTheme(_ name: String) -> Bool {
-        ThemeLibrary.shared.entries.contains { $0.name == name && $0.source == "user" }
-    }
-
-    private func color(_ slot: Slot) -> RGB {
-        switch slot {
-        case .background: theme.background
-        case .foreground: theme.foreground
-        case .cursor: theme.cursor
-        case .selection: theme.selection
-        case .ansi(let i): theme.ansi[i]
+    /// The customizer in the theme's own colors while it previews (Rex's
+    /// sheet does), else the system's.
+    private func updateLook() {
+        guard let window else { return }
+        if model.preview {
+            window.appearance = NSAppearance(named: model.theme.isDark ? .darkAqua : .aqua)
+            window.backgroundColor = model.theme.surfaces.canvas.nsColor
+        } else {
+            window.appearance = nil
+            window.backgroundColor = .windowBackgroundColor
         }
     }
 
-    private func refresh() {
-        for (slot, well) in wells { well.color = color(slot).nsColor }
-        for (i, field) in ratios {
-            let ratio = theme.ansi[i].contrast(with: theme.background)
-            field.stringValue = String(format: "%.1f", ratio)
-            // Black on a dark background is meant to be dim.
-            field.textColor = ratio < 3 && i != 0 && i != 8 ? .systemRed : .tertiaryLabelColor
-        }
-        harmonious.isEnabled = generate.state == .on
-        extended.colors = generate.state == .on
-            ? theme.generatedPalette256(harmonious: harmonious.state == .on) : theme.palette256
-        delete.isEnabled = isOwnTheme(start.titleOfSelectedItem ?? "")
-        status.stringValue = theme == original ? "" : "Every window shows these colors until you save or cancel."
+    private func modelChanged() {
+        updateLook()
         schedulePreview()
     }
 
@@ -265,65 +105,66 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
             guard let self else { return }
             previewPending = false
             guard window?.isVisible == true else { return }
-            ConfigStore.shared.preview(previewSettings())
+            if model.preview {
+                ConfigStore.shared.preview(model.previewSettings())
+            } else {
+                ConfigStore.shared.endPreview()
+            }
         }
     }
-
-    /// The colors as config lines over the files' own: the theme the files
-    /// name stays, these cover it.
-    private func previewSettings() -> [(key: String, value: String)] {
-        var settings: [(key: String, value: String)] = [
-            ("background", theme.background.hexString), ("foreground", theme.foreground.hexString),
-            ("cursor-color", theme.cursor.hexString), ("selection-background", theme.selection.hexString),
-            ("palette-generate", generate.state == .on ? "true" : "false"),
-            ("palette-harmonious", harmonious.state == .on ? "true" : "false"),
-        ]
-        for (i, c) in theme.ansi.enumerated() { settings.append(("palette", "\(i)=\(c.hexString)")) }
-        // The files' entries above 15 stay (only 0–15 are the theme's).
-        for (i, c) in ConfigStore.shared.savedConfig.palette where i >= 16 { settings.append(("palette", "\(i)=\(c.hexString)")) }
-        return settings
-    }
-
-    // MARK: Actions
-
-    @objc private func colorChanged(_ sender: NSColorWell) {
-        guard let slot = wells.first(where: { $0.value === sender })?.key,
-              let c = sender.color.usingColorSpace(.sRGB) else { return }
-        func channel(_ v: CGFloat) -> UInt8 { UInt8((min(max(v, 0), 1) * 255).rounded()) }
-        let rgb = RGB(channel(c.redComponent), channel(c.greenComponent), channel(c.blueComponent))
-        switch slot {
-        case .background: theme.background = rgb
-        case .foreground: theme.foreground = rgb
-        case .cursor: theme.cursor = rgb
-        case .selection: theme.selection = rgb
-        case .ansi(let i): theme.ansi[i] = rgb
-        }
-        refresh()
-    }
-
-    @objc private func generateChanged(_ sender: Any?) { refresh() }
-
-    @objc private func startChanged(_ sender: Any?) {
-        guard let picked = start.titleOfSelectedItem else { return }
-        let fresh = Theme.named(picked)
-        theme = fresh
-        original = fresh
-        name.stringValue = isOwnTheme(picked) ? picked : Self.freeName(from: picked)
-        refresh()
-    }
-
-    @objc private func revert(_ sender: Any?) {
-        theme = original
-        refresh()
-    }
-
-    @objc private func cancel(_ sender: Any?) { window?.close() }
 
     func windowWillClose(_ notification: Notification) {
+        popover?.close()
         ConfigStore.shared.endPreview()
     }
 
-    @objc private func importTheme(_ sender: Any?) {
+    // MARK: The picker
+
+    /// The OKLCH picker for `slot`, pointing at its swatch (one of colors
+    /// 16–255: at `rect` in the extended palette's grid).
+    func pick(_ slot: ThemeCustomizerModel.Slot, at rect: NSRect? = nil) {
+        popover?.close()
+        var key = slot
+        if case .indexed = slot { key = .indexed(0) }
+        guard let anchor = anchors[key], anchor.window != nil else { return }
+        model.beginPicking(slot)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = !Probe.running
+        popover.contentViewController = NSHostingController(rootView: OKLCHPickerView(model: model))
+        popover.delegate = self
+        let target: NSRect
+        if case .indexed(let i) = slot { target = rect ?? ExtendedPaletteGrid.frame(of: i) } else { target = anchor.bounds }
+        popover.show(relativeTo: target, of: anchor, preferredEdge: .maxY)
+        // The hex field waits for a click (focused, it would show its text selected).
+        popover.contentViewController?.view.window?.makeFirstResponder(nil)
+        self.popover = popover
+    }
+
+    var pickerWindow: NSWindow? { popover?.isShown == true ? popover?.contentViewController?.view.window : nil }
+
+    // MARK: Actions
+
+    func revert() {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Revert to the colors you started with?"
+        alert.informativeText = "Restore the palette and name from the start of this editing session or your last save."
+        alert.addButton(withTitle: "Revert")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            MainActor.assumeIsolated { self.model.revert() }
+        }
+    }
+
+    func cancel() { window?.close() }
+
+    func startFrom(_ name: String) {
+        model.load(Theme.named(name), from: name)
+    }
+
+    func importTheme() {
         guard let window else { return }
         let panel = NSOpenPanel()
         panel.message = "A Ghostty theme file, or an iTerm2 color preset (.itermcolors)"
@@ -334,12 +175,10 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
                 guard let self else { return }
                 let stem = url.deletingPathExtension().lastPathComponent
                 guard let imported = Self.read(url, name: stem) else {
-                    self.status.stringValue = "\(url.lastPathComponent) has no colors Libertty can read."
+                    self.model.status = "\(url.lastPathComponent) has no colors Libertty can read."
                     return
                 }
-                self.theme = imported
-                self.name.stringValue = Theme.exists(stem) ? Self.freeName(from: stem) : stem
-                self.refresh()
+                self.model.imported(imported, name: Theme.exists(stem) ? ThemeCustomizerModel.freeName(from: stem) : stem)
             }
         }
     }
@@ -360,7 +199,9 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
             t.background = bg
             t.foreground = fg
             t.cursor = rgb("Cursor Color") ?? fg
+            t.cursorText = rgb("Cursor Text Color")
             t.selection = rgb("Selection Color") ?? t.selection
+            t.selectionForeground = rgb("Selected Text Color")
             for i in 0..<16 { if let c = rgb("Ansi \(i) Color") { t.ansi[i] = c } }
             return t
         }
@@ -372,9 +213,9 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
         return Theme.parse(name: name, text: text)
     }
 
-    @objc private func deleteTheme(_ sender: Any?) {
-        guard let window, let picked = start.titleOfSelectedItem,
-              let entry = ThemeLibrary.shared.entries.first(where: { $0.name == picked && $0.source == "user" }) else { return }
+    func deleteTheme() {
+        guard let window, let entry = ThemeLibrary.shared.entry(for: model.startedFrom), entry.isOwn else { return }
+        let picked = entry.name
         let alert = NSAlert()
         alert.messageText = "Delete the theme “\(picked)”?"
         alert.informativeText = "Its file goes to the Trash: \((entry.url.path as NSString).abbreviatingWithTildeInPath)"
@@ -389,53 +230,51 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
                 if [config.theme.light, config.theme.dark].contains(picked) { ConfigStore.shared.set("theme", nil) }
                 ThemeLibrary.shared.invalidate()
                 ConfigStore.shared.reload(force: true)
-                self.load(Self.themeInUse(), startingFrom: Self.themeInUseName())
+                self.model.load(Self.themeInUse(), from: Self.themeInUseName())
             }
         }
     }
 
-    @objc private func save(_ sender: Any?) {
+    func save() {
         guard let window else { return }
-        let title = name.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty, !title.contains("/"), !title.hasPrefix("."), !title.contains(",") else {
-            status.stringValue = "A name, please: no “/” or “,”, not starting with “.”."
+        let title = model.name.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else {
+            model.status = "Give your theme a name."
+            return
+        }
+        guard !title.contains("/"), !title.hasPrefix("."), !title.contains(",") else {
+            model.status = "A name without “/” or “,”, not starting with “.”."
             return
         }
         guard Theme.builtIn(title) == nil else {
-            status.stringValue = "“\(title)” is one of Libertty's own themes: save it under another name."
+            model.status = "“\(title)” is one of Libertty's own themes: save it under another name."
             return
         }
         let folder = ConfigStore.directory.appendingPathComponent("themes")
         let url = folder.appendingPathComponent(title)
-        let replacing = FileManager.default.fileExists(atPath: url.path) && title != start.titleOfSelectedItem
+        let replacing = FileManager.default.fileExists(atPath: url.path) && title != model.startedFrom
         let config = ConfigStore.shared.savedConfig
-        // Colors the config sets itself would cover the theme's.
+        // What the config sets itself would cover the theme's.
         var covering = [("background", config.background != nil), ("foreground", config.foreground != nil),
-                        ("cursor-color", config.cursorColor != nil), ("selection-background", config.selectionBackground != nil),
-                        ("palette", config.palette.keys.contains { $0 < 16 })].filter(\.1).map(\.0)
+                        ("cursor-color", config.cursorColor != nil), ("cursor-text", config.cursorText != nil),
+                        ("selection-background", config.selectionBackground != nil),
+                        ("selection-foreground", config.selectionForeground != nil),
+                        ("palette", !config.palette.isEmpty),
+                        ("palette-generate", config.paletteGenerate != nil),
+                        ("palette-harmonious", config.paletteHarmonious != nil)].filter(\.1).map(\.0)
         func write() {
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                var named = theme
+                var named = model.theme
                 named.name = title
                 try Self.text(of: named).write(to: url, atomically: true, encoding: .utf8)
             } catch {
-                status.stringValue = "Couldn't write \(url.path): \(error.localizedDescription)"
+                model.status = "Couldn't write \(url.path): \(error.localizedDescription)"
                 return
             }
             ThemeLibrary.shared.invalidate()
             let store = ConfigStore.shared
-            for key in covering {
-                if key == "palette" {
-                    store.unset("palette") { value in
-                        Int(value.split(separator: "=").first?.trimmingCharacters(in: .whitespaces) ?? "").map { $0 < 16 } ?? false
-                    }
-                } else {
-                    store.set(key, nil)
-                }
-            }
-            store.set("palette-generate", generate.state == .on ? "true" : nil)
-            store.set("palette-harmonious", harmonious.state == .on ? "true" : nil)
+            for key in covering { store.set(key, nil) }
             // Following the system's light and dark: this side becomes the new theme.
             let spec = config.theme
             if spec.light != spec.dark {
@@ -444,7 +283,7 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
             } else {
                 store.set("theme", title)
             }
-            original = theme
+            model.saved(as: title)
             window.close()
         }
         func confirmCovering() {
@@ -476,65 +315,308 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
     /// The theme as a Ghostty theme file.
     static func text(of theme: Theme) -> String {
         var lines = [
-            "# \(theme.name), made with Libertty's Theme Editor. Ghostty's theme format.",
+            "# \(theme.name), made with Libertty's Theme Customizer. Ghostty's theme format.",
             "",
             "background = \(theme.background.hexString)",
             "foreground = \(theme.foreground.hexString)",
             "cursor-color = \(theme.cursor.hexString)",
-            "selection-background = \(theme.selection.hexString)",
-            "",
         ]
+        if let c = theme.cursorText { lines.append("cursor-text = \(c.hexString)") }
+        lines.append("selection-background = \(theme.selection.hexString)")
+        if let c = theme.selectionForeground { lines.append("selection-foreground = \(c.hexString)") }
+        lines.append("")
         for (i, c) in theme.ansi.enumerated() { lines.append("palette = \(i)=\(c.hexString)") }
+        if theme.paletteGenerate || theme.paletteHarmonious || !theme.extendedPalette.isEmpty { lines.append("") }
+        if theme.paletteGenerate { lines.append("palette-generate = true") }
+        if theme.paletteHarmonious { lines.append("palette-harmonious = true") }
+        for i in theme.extendedPalette.keys.sorted() { lines.append("palette = \(i)=\(theme.extendedPalette[i]!.hexString)") }
         lines.append("")
         return lines.joined(separator: "\n")
     }
 
     // MARK: Probe
 
-    /// `--ui-probe`: set one of the colors as if picked in its well.
+    /// `--ui-probe`: set one of the colors as if picked.
     func probeSet(_ slot: String, _ hex: String) -> Bool {
-        guard let rgb = RGB(string: hex) else { return false }
-        let key: Slot? = switch slot {
-        case "background": .background
-        case "foreground": .foreground
-        case "cursor": .cursor
-        case "selection": .selection
-        default: Int(slot).flatMap { (0..<16).contains($0) ? .ansi($0) : nil }
-        }
-        guard let key, let well = wells[key] else { return false }
-        well.color = rgb.nsColor
-        colorChanged(well)
+        guard let rgb = RGB(string: hex), let key = ThemeCustomizerModel.Slot(probeName: slot) else { return false }
+        model.set(key, rgb)
         return true
     }
 
-    func probeName(_ text: String) { name.stringValue = text }
-    func probeSave() { save(nil) }
-    func probeCancel() { cancel(nil) }
+    /// `--ui-probe`: set one of the colors by OKLCH, as the picker's disc
+    /// and sliders do (its picker opens on it).
+    func probeOKLCH(_ slot: String, _ lch: OKLCH) -> Bool {
+        guard let key = ThemeCustomizerModel.Slot(probeName: slot) else { return false }
+        pick(key)
+        // (Not laid out yet, or no room for the popover: the colors all the same.)
+        if model.picking != key { model.beginPicking(key) }
+        model.setPicked(lch)
+        return true
+    }
+
+    func probePick(_ slot: String) -> Bool {
+        guard let key = ThemeCustomizerModel.Slot(probeName: slot) else { return false }
+        pick(key)
+        return popover?.isShown == true
+    }
+
+    func probePreview(_ on: Bool) { model.preview = on }
+    func probeExtended(_ shown: Bool) { model.showExtended = shown }
+    func probeName(_ text: String) { model.name = text }
+    func probeSave() { popover?.close(); save() }
+    func probeCancel() { cancel() }
+    func probeRevert() { model.revert() }
     var isOpen: Bool { window?.isVisible == true }
     var openWindow: NSWindow? { isOpen ? window : nil }
 }
 
-/// The 256-color palette's colors 16–255: the cube as six 6×6 squares
-/// (red across them, green up, blue along), then the gray ramp — how
-/// palette-generate's colors come out, or xterm's.
-private final class ExtendedPaletteView: NSView {
-    var colors: [RGB] = [] { didSet { needsDisplay = true } }
+extension ThemeEditor: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        model.endPicking()
+    }
+}
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard colors.count == 256 else { return }
-        let cell = floor(min(bounds.width / 48, bounds.height / 6))
-        for r in 0..<6 {
-            for g in 0..<6 {
-                for b in 0..<6 {
-                    colors[16 + r * 36 + g * 6 + b].nsColor.setFill()
-                    NSRect(x: CGFloat(r * 7 + b) * cell, y: CGFloat(g) * cell, width: cell, height: cell).fill()
-                }
+/// What the customizer shows and edits.
+@MainActor
+final class ThemeCustomizerModel: ObservableObject {
+    enum Slot: Hashable {
+        case background, foreground, cursor, cursorText, selection, selectionForeground
+        case ansi(Int)
+        /// One of colors 16–255.
+        case indexed(Int)
+
+        static let terminal: [Slot] = [.background, .foreground, .cursor, .cursorText, .selection, .selectionForeground]
+        static let ansiNames = ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"]
+
+        var title: String {
+            switch self {
+            case .background: "Background"
+            case .foreground: "Text"
+            case .cursor: "Cursor"
+            case .cursorText: "Cursor Text"
+            case .selection: "Selection"
+            case .selectionForeground: "Selected Text"
+            case .ansi(let i): Self.ansiNames[i % 8]
+            case .indexed(let i): "Color \(i)"
             }
         }
-        // The grays after them, six to a row.
-        for i in 0..<24 {
-            colors[232 + i].nsColor.setFill()
-            NSRect(x: CGFloat(42 + i % 6) * cell, y: CGFloat(5 - i / 6) * cell, width: cell, height: cell).fill()
+
+        /// The picker's title: the bright ones say so.
+        var longTitle: String {
+            if case .ansi(let i) = self { return (i < 8 ? "" : "Bright ") + title }
+            return title
         }
+
+        /// The probe's names: background, foreground, cursor, cursor-text,
+        /// selection, selection-foreground, 0–255.
+        init?(probeName: String) {
+            switch probeName {
+            case "background": self = .background
+            case "foreground": self = .foreground
+            case "cursor": self = .cursor
+            case "cursor-text": self = .cursorText
+            case "selection": self = .selection
+            case "selection-foreground": self = .selectionForeground
+            default:
+                guard let i = Int(probeName), (0..<256).contains(i) else { return nil }
+                self = i < 16 ? .ansi(i) : .indexed(i)
+            }
+        }
+    }
+
+    /// Told of every change (the editor previews it and repaints the window).
+    var changed: () -> Void = {}
+
+    @Published var theme = Theme.named(Theme.defaultName) { didSet { if theme != oldValue { changed() } } }
+    @Published var name = "" { didSet { if name != oldValue { status = "" } } }
+    /// Every window (and the customizer) in these colors as they're edited.
+    @Published var preview = true { didSet { if preview != oldValue { changed() } } }
+    /// Off: colors 16–255 stay as they were when it was turned off.
+    @Published var autoRegenerate = true
+    @Published var showExtended = false
+    @Published var status = ""
+    /// The swatch whose picker is open, and the color in it as OKLCH: kept
+    /// as dragged (the swatch gets the nearest sRGB color), so hue and
+    /// chroma don't wander as the color is clipped.
+    @Published private(set) var picking: Slot?
+    @Published private(set) var picked = OKLCH(l: 0, c: 0, h: 0)
+    /// The picker's hex field, as typed.
+    @Published var pickedHex = ""
+
+    /// The theme and name at the start of this editing session or the last save.
+    private(set) var original = Theme.named(Theme.defaultName)
+    private(set) var originalName = ""
+    /// The theme it started from (its name as the library has it).
+    private(set) var startedFrom = ""
+
+    func load(_ theme: Theme, from name: String) {
+        startedFrom = name
+        self.name = ThemeLibrary.shared.entry(for: name)?.isOwn == true ? name : Self.freeName(from: name)
+        self.theme = theme
+        original = theme
+        originalName = self.name
+        autoRegenerate = !Self.isFrozen(theme)
+        status = ""
+    }
+
+    /// A theme file read in: these colors, under this name, to save as yours.
+    func imported(_ theme: Theme, name: String) {
+        self.theme = theme
+        self.name = name
+        autoRegenerate = !Self.isFrozen(theme)
+    }
+
+    func saved(as title: String) {
+        startedFrom = title
+        original = theme
+        originalName = title
+    }
+
+    func revert() {
+        theme = original
+        name = originalName
+        autoRegenerate = !Self.isFrozen(theme)
+        if let picking { picked = OKLCH(color(picking)) }
+        status = ""
+    }
+
+    /// Every one of 16–255 set: a generated palette that keeps its colors.
+    private static func isFrozen(_ theme: Theme) -> Bool {
+        theme.paletteGenerate && (16..<256).allSatisfy { theme.extendedPalette[$0] != nil }
+    }
+
+    /// "Merino Dark" → "Merino Dark (Duplicated)", or "(Duplicated 2)" when that's taken.
+    static func freeName(from base: String) -> String {
+        var stem = base
+        if let range = stem.range(of: #" \(Duplicated( \d+)?\)$"#, options: .regularExpression) { stem.removeSubrange(range) }
+        var candidate = "\(stem) (Duplicated)", n = 2
+        while Theme.exists(candidate) { candidate = "\(stem) (Duplicated \(n))"; n += 1 }
+        return candidate
+    }
+
+    var isOwnTheme: Bool { ThemeLibrary.shared.entry(for: startedFrom)?.isOwn == true }
+
+    // MARK: Colors
+
+    func color(_ slot: Slot) -> RGB {
+        switch slot {
+        case .background: theme.background
+        case .foreground: theme.foreground
+        case .cursor: theme.cursor
+        case .cursorText: theme.cursorText ?? theme.background
+        case .selection: theme.selection
+        case .selectionForeground: theme.selectionForeground ?? theme.foreground
+        case .ansi(let i): theme.ansi[i]
+        case .indexed(let i): palette[i]
+        }
+    }
+
+    func set(_ slot: Slot, _ rgb: RGB) {
+        var t = theme
+        switch slot {
+        case .background: t.background = rgb
+        case .foreground: t.foreground = rgb
+        case .cursor: t.cursor = rgb
+        case .cursorText: t.cursorText = rgb
+        case .selection: t.selection = rgb
+        case .selectionForeground: t.selectionForeground = rgb
+        case .ansi(let i): t.ansi[i] = rgb
+        case .indexed(let i): t.extendedPalette[i] = rgb
+        }
+        theme = t
+        if slot == picking, OKLCH(rgb).rgb != picked.rgb { picked = OKLCH(rgb) }
+    }
+
+    func beginPicking(_ slot: Slot) {
+        picking = slot
+        picked = OKLCH(color(slot))
+    }
+
+    func endPicking() { picking = nil }
+
+    /// The picker moved: the swatch takes the nearest sRGB color.
+    func setPicked(_ lch: OKLCH) {
+        picked = lch
+        guard let picking else { return }
+        set(picking, lch.rgb)
+    }
+
+    // MARK: Extended palette
+
+    /// The 256 colors as terminals will get them.
+    var palette: [RGB] { theme.fullPalette }
+
+    var generate: Bool {
+        get { theme.paletteGenerate }
+        set {
+            var t = theme
+            t.paletteGenerate = newValue
+            // Off is xterm's colors: the ones kept from a generated palette go.
+            if !newValue, !autoRegenerate { t.extendedPalette = [:] }
+            theme = t
+            if !newValue { autoRegenerate = true }
+        }
+    }
+
+    var harmonious: Bool {
+        get { theme.paletteHarmonious }
+        set {
+            var t = theme
+            t.paletteHarmonious = newValue
+            // Kept colors: made again in the new order.
+            if !autoRegenerate {
+                t.extendedPalette = [:]
+                t.extendedPalette = Self.frozen(t)
+            }
+            theme = t
+        }
+    }
+
+    func setAutoRegenerate(_ on: Bool) {
+        autoRegenerate = on
+        var t = theme
+        // Off: every color as it's generated now, set one by one; on: none.
+        t.extendedPalette = on ? [:] : Self.frozen(t)
+        theme = t
+    }
+
+    /// Colors 16–255 generated from the base colors now (Regenerate Palette).
+    func regenerate() {
+        var t = theme
+        t.extendedPalette = [:]
+        t.extendedPalette = Self.frozen(t)
+        theme = t
+    }
+
+    func resetOverrides() {
+        var t = theme
+        t.extendedPalette = [:]
+        theme = t
+    }
+
+    /// Entries of 16–255 set one by one over the generated ones.
+    var overrides: Int { autoRegenerate ? theme.extendedPalette.count : 0 }
+
+    private static func frozen(_ theme: Theme) -> [Int: RGB] {
+        let p = theme.fullPalette
+        return Dictionary(uniqueKeysWithValues: (16..<256).map { ($0, p[$0]) })
+    }
+
+    // MARK: Preview
+
+    /// The colors as config lines over the files' own: the theme the files
+    /// name stays, these cover it.
+    func previewSettings() -> [(key: String, value: String)] {
+        var settings: [(key: String, value: String)] = [
+            ("background", theme.background.hexString), ("foreground", theme.foreground.hexString),
+            ("cursor-color", theme.cursor.hexString), ("cursor-text", theme.cursorText?.hexString ?? ""),
+            ("selection-background", theme.selection.hexString),
+            ("selection-foreground", theme.selectionForeground?.hexString ?? ""),
+            ("palette-generate", theme.paletteGenerate ? "true" : "false"),
+            ("palette-harmonious", theme.paletteHarmonious ? "true" : "false"),
+        ]
+        for (i, c) in theme.ansi.enumerated() { settings.append(("palette", "\(i)=\(c.hexString)")) }
+        for i in theme.extendedPalette.keys.sorted() { settings.append(("palette", "\(i)=\(theme.extendedPalette[i]!.hexString)")) }
+        return settings
     }
 }

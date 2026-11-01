@@ -65,6 +65,8 @@ enum Snapshot {
         // share of a row further (smooth scrolling's in-between position).
         scrollUp = value("--scroll-up", 0)
         offsetPercent = value("--offset", 0)
+        // `--select-all`: everything selected, as ⌘A does, when it's drawn.
+        selectAll = flags.contains("--select-all")
 
         do {
             try render(command: shell ? nil : command, config: config, cols: cols, rows: rows, fontSize: fontSize,
@@ -81,6 +83,7 @@ enum Snapshot {
     nonisolated(unsafe) private static var pixels: [(Int, Int)] = []
     nonisolated(unsafe) private static var scrollUp = 0
     nonisolated(unsafe) private static var offsetPercent = 0
+    nonisolated(unsafe) private static var selectAll = false
 
     private final class ExitWaiter: TerminalSessionDelegate {
         var exited = false
@@ -100,6 +103,8 @@ enum Snapshot {
         let initStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         let renderer = try TerminalRenderer(device: device, fonts: fonts)
         renderer.selectionColor = config.resolvedTheme.selection
+        renderer.selectionForeground = config.resolvedTheme.selectionForeground
+        renderer.cursorText = config.resolvedTheme.cursorText
         renderer.ligatures = config.ligatures
         renderer.backgroundOpacity = config.backgroundOpacity
         renderer.paddingColor = config.windowPaddingColor
@@ -145,6 +150,7 @@ enum Snapshot {
         let p = config.padding
         renderer.origin = SIMD2(Float(p.left * scale), Float(p.top * scale))
         if scrollUp > 0 { session.scroll(rows: -scrollUp) }
+        if selectAll { session.selectAll() }
         renderer.pixelOffset = Float(fonts.cellHeight * offsetPercent) / 100
         let width = Int((CGFloat(cols * fonts.cellWidth) + (p.left + p.right) * scale).rounded(.up))
         let height = Int((CGFloat(rows * fonts.cellHeight) + (p.top + p.bottom) * scale).rounded(.up))

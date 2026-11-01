@@ -105,7 +105,7 @@ enum CLI {
                                          set itself; says what it adds and asks first
           libertty +update [--check]        install the newest version (signature-checked); --check only reports
 
-          libertty +list-themes [--path]    built-in themes, ~/.config/libertty/themes, and Ghostty's if installed
+          libertty +list-themes [--path]    built-in themes, ~/.config/libertty/themes, and Rex's and Ghostty's if installed
           libertty +list-fonts              monospaced font families
           libertty +list-keybinds [--default]
           libertty +list-actions            what keybinds (and +action) can do

@@ -60,12 +60,15 @@ struct Config: Equatable {
     var background: RGB?
     var foreground: RGB?
     var cursorColor: RGB?
+    var cursorText: RGB?
     var selectionBackground: RGB?
+    var selectionForeground: RGB?
     var palette: [Int: RGB] = [:]
     /// Ghostty's `palette-generate` / `palette-harmonious`: colors 16–255
-    /// made from the theme's own (see `Theme.generatedPalette256`).
-    var paletteGenerate = false
-    var paletteHarmonious = false
+    /// made from the theme's own (see `Theme.generatedPalette256`). Nil: as
+    /// the theme file says (off unless it says so).
+    var paletteGenerate: Bool?
+    var paletteHarmonious: Bool?
     var cursorStyle = CursorStyle.block
     var backgroundOpacity: Double = 1
     var backgroundBlur = true
@@ -229,8 +232,12 @@ struct Config: Equatable {
         if let background { t.background = background }
         if let foreground { t.foreground = foreground }
         if let cursorColor { t.cursor = cursorColor }
+        if let cursorText { t.cursorText = cursorText }
         if let selectionBackground { t.selection = selectionBackground }
-        for (i, c) in palette where i < 16 { t.ansi[i] = c }
+        if let selectionForeground { t.selectionForeground = selectionForeground }
+        if let paletteGenerate { t.paletteGenerate = paletteGenerate }
+        if let paletteHarmonious { t.paletteHarmonious = paletteHarmonious }
+        for (i, c) in palette { if i < 16 { t.ansi[i] = c } else { t.extendedPalette[i] = c } }
         return t
     }
 
@@ -268,10 +275,12 @@ struct Config: Equatable {
         ("background", "Override the theme's background (#rrggbb)."),
         ("foreground", "Override the theme's text color."),
         ("cursor-color", "Override the theme's cursor color."),
+        ("cursor-text", "Override the theme's color for the text under a block cursor (default: the background)."),
         ("selection-background", "Override the theme's selection color."),
+        ("selection-foreground", "Override the theme's color for selected text (default: the text keeps its own)."),
         ("palette", "Override one palette entry: palette = N=#rrggbb, N in 0–255. Repeatable."),
-        ("palette-generate", "Make the 256-color palette's colors 16–255 from the theme's own (as in Ghostty): its cube blends the background, the six base hues and the foreground, its grays run from the background to the foreground. Entries set with palette stay as set. Off by default: some programs expect xterm's fixed colors."),
-        ("palette-harmonious", "With palette-generate, keep a light theme's cube in its own order (background to foreground) instead of dark to light, as in Ghostty."),
+        ("palette-generate", "Make the 256-color palette's colors 16–255 from the theme's own (as in Ghostty): its cube blends the background, the six base hues and the foreground, its grays run from the background to the foreground. Entries set with palette stay as set. Unset: as the theme says, else off (some programs expect xterm's fixed colors)."),
+        ("palette-harmonious", "With palette-generate, keep a light theme's cube in its own order (background to foreground) instead of dark to light, as in Ghostty. Unset: as the theme says."),
         ("cursor-style", "block, bar, underline or block_hollow. Programs may still change it."),
         ("background-opacity", "0.1–1. Below 1 the window is translucent."),
         ("background-blur", "Blur what shows through a translucent window."),
@@ -366,10 +375,12 @@ struct Config: Equatable {
         case "background": return color(background)
         case "foreground": return color(foreground)
         case "cursor-color": return color(cursorColor)
+        case "cursor-text": return color(cursorText)
         case "selection-background": return color(selectionBackground)
+        case "selection-foreground": return color(selectionForeground)
         case "palette": return palette.keys.sorted().map { "\($0)=\(palette[$0]!.hexString)" }
-        case "palette-generate": return [String(paletteGenerate)]
-        case "palette-harmonious": return [String(paletteHarmonious)]
+        case "palette-generate": return [paletteGenerate.map(String.init) ?? ""]
+        case "palette-harmonious": return [paletteHarmonious.map(String.init) ?? ""]
         case "cursor-style": return [cursorStyle.rawValue]
         case "background-opacity": return [num(backgroundOpacity)]
         case "background-blur": return [String(backgroundBlur)]
@@ -603,7 +614,9 @@ struct Config: Equatable {
         case "background": guard let x = color() else { return "not a color" }; background = x
         case "foreground": guard let x = color() else { return "not a color" }; foreground = x
         case "cursor-color": guard let x = color() else { return "not a color" }; cursorColor = x
+        case "cursor-text": guard let x = color() else { return "not a color" }; cursorText = x
         case "selection-background": guard let x = color() else { return "not a color" }; selectionBackground = x
+        case "selection-foreground": guard let x = color() else { return "not a color" }; selectionForeground = x
         case "palette":
             if reset { palette = [:]; return nil }
             let parts = v.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }

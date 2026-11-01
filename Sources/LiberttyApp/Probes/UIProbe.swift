@@ -57,8 +57,10 @@ import LiberttyCore
 ///                         terminals glass panes let the desktop through (each part optional)
 ///   drop:N:SIDE           drop the focused pane on the tab's Nth pane (reading order) as a drag would:
 ///                         left, right, up, down (beside it) or swap
-///   theme-editor:open|cancel|save|name:NAME|set:SLOT=#rrggbb  drive Libertty ▸ Theme Editor (SLOT: background,
-///                         foreground, cursor, selection or 0–15)
+///   theme-editor:open|cancel|save|revert|name:NAME|set:SLOT=#rrggbb|oklch:SLOT=L,C,H|pick:SLOT|preview:on|off|extended:on|off
+///                         drive Libertty ▸ Theme Editor (the Theme Customizer). SLOT: background, foreground,
+///                         cursor, cursor-text, selection, selection-foreground or 0–255; oklch sets it as the
+///                         picker's disc and sliders do, pick opens the picker on it (a shot then has it too)
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
@@ -256,6 +258,9 @@ enum UIProbe {
                         }
                         if let editor = MainActor.assumeIsolated({ ThemeEditor.shared.openWindow }) {
                             capture(editor, to: output + "/" + (name as NSString).deletingPathExtension + "-theme-editor.png")
+                        }
+                        if let picker = MainActor.assumeIsolated({ ThemeEditor.shared.pickerWindow }) {
+                            capture(picker, to: output + "/" + (name as NSString).deletingPathExtension + "-color-picker.png")
                         }
                     case .size(let width, let height):
                         var frame = window.frame
@@ -633,9 +638,16 @@ enum UIProbe {
                             if command == "open" { editor.show(nil) }
                             else if command == "cancel" { editor.probeCancel() }
                             else if command == "save" { editor.probeSave() }
+                            else if command == "revert" { editor.probeRevert() }
+                            else if command == "preview:on" || command == "preview:off" { editor.probePreview(command.hasSuffix("on")) }
+                            else if command == "extended:on" || command == "extended:off" { editor.probeExtended(command.hasSuffix("on")) }
                             else if command.hasPrefix("name:") { editor.probeName(String(command.dropFirst(5))) }
+                            else if command.hasPrefix("pick:"), editor.probePick(String(command.dropFirst(5))) {}
                             else if command.hasPrefix("set:"), case let parts = command.dropFirst(4).split(separator: "=", maxSplits: 1),
                                     parts.count == 2, editor.probeSet(String(parts[0]), String(parts[1])) {}
+                            else if command.hasPrefix("oklch:"), case let parts = command.dropFirst(6).split(separator: "=", maxSplits: 1),
+                                    parts.count == 2, case let v = parts[1].split(separator: ",").compactMap({ Double($0) }), v.count == 3,
+                                    editor.probeOKLCH(String(parts[0]), OKLCH(l: v[0], c: v[1], h: v[2])) {}
                             else { return false }
                             return true
                         }

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The Theme Editor is Rex's Theme Customizer: the theme's name, whether it's light or dark, and its colors as tiles with their hex, in three rows (Terminal: background, text, cursor, cursor text, selection, selected text; ANSI Standard; ANSI Bright). A click opens an OKLCH color picker on a tile: a disc of the colors at the color's lightness, hue around and chroma outward, those sRGB can't show faded, with a needle and a ring to drag; Hue, Chroma and Lightness sliders whose tracks show what moving them gives; a hex field. Preview shows every change in every window, and in the customizer itself (in the theme's own colors), until Cancel; Revert… goes back to the colors it opened with; Save & Apply writes the theme and uses it, as before. The Extended Palette section turns `palette-generate` and `palette-harmonious` on for this theme, can keep colors 16–255 as they are while the base colors change (Regenerate Palette makes them again), shows them, and lets you choose any of them yourself. Start From, Import… and Delete Theme… are in its ⋯ menu.
+- `cursor-text` and `selection-foreground` (as in Ghostty): the color of the text under a block cursor (default: the background, as before) and of selected text (default: each character's own, as before), in the config and in theme files.
+- A theme file may set `palette-generate`, `palette-harmonious` and colors 16–255 (`palette = N=…`), as Ghostty's may; the config's own `palette-generate` and `palette` still win. The Theme Customizer saves them in the theme rather than the config.
+- An installed Rex's themes (Merino Dark, Abyssal Trench… 41 of them) work by name, `theme = dark:Merino Dark` included, read from Rex.app where it's installed (`/Applications` or `~/Applications`), never copied; `libertty +list-themes` lists them as Rex's. Themes of your own of the same name win. `theme = dark:NAME` (or `light:NAME`) alone keeps Libertty's own theme for the other appearance.
+
 ## 0.3.10
 
 > A closed split pane no longer stays in memory; Ghostty 1.4.0's terminal, with kitty images in a session's snapshot; every setting from the command palette; Codex shown working.
