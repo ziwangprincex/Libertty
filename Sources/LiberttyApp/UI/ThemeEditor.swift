@@ -38,6 +38,8 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
             }
             model.preview = true
             updateLook()
+            // Its size first (SwiftUI's), so it's centered as it will be.
+            window.layoutIfNeeded()
             window.center()
         }
         // A probe's: off every screen, as its windows are.
@@ -111,6 +113,18 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
                 ConfigStore.shared.endPreview()
             }
         }
+    }
+
+    /// SwiftUI may still grow it after it's shown (the colors' height is
+    /// measured): grown past the screen's bottom, it moves up, so Save &
+    /// Apply is never under the Dock.
+    func windowDidResize(_ notification: Notification) {
+        guard !Probe.running, let window, let visible = window.screen?.visibleFrame else { return }
+        var frame = window.frame
+        guard frame.minY < visible.minY || frame.maxY > visible.maxY else { return }
+        frame.origin.y = max(visible.minY, min(frame.origin.y, visible.maxY - frame.height))
+        if frame.minY < visible.minY { frame.origin.y = visible.minY }
+        window.setFrameOrigin(frame.origin)
     }
 
     func windowWillClose(_ notification: Notification) {
