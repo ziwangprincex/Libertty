@@ -1,0 +1,29 @@
+# Libertty ▸ Settings… (⌘,): Rex's Settings window. Each change is one line
+# of the config file, written in place (its comments and other lines as they
+# were). Runs with a config folder of its own (@CFG@): two comments,
+# font-size = 14 and tab-bar = left.
+key:cmd+,
+wait:0.8
+expect-settings:page=Interface
+expect-settings:Left Side=1
+settings:mark
+# Tab style ▸ Above: tab-bar = left becomes tab-bar = top, where it was.
+settings:press:Above
+expect-settings:Above=1
+expect-config-change:tab-bar = top
+shot:settings-interface.png
+# Themes, from the sidebar: a light theme chosen writes only the light half of theme.
+settings:press:Themes
+wait:0.5
+expect-settings:Libertty Light theme=Selected
+settings:press:Catppuccin Latte theme
+expect-settings:Catppuccin Latte theme=Selected
+expect-config-change:theme = light:Catppuccin Latte,dark:Libertty Dark
+shot:settings-themes.png
+# Search: "cursor", Return, and it's the Terminal page.
+settings:search:cursor
+expect-settings:page=Terminal
+shot:settings-terminal.png
+# What was there before is still there.
+expect-shell:cat '@CFG@/config' ==> # Settings writes its lines in place: this stays.
+expect-shell:grep -c '^font-size = 14$' '@CFG@/config' ==> 1

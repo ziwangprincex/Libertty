@@ -325,7 +325,7 @@ enum CLI {
         ===============
 
         Settings live in \((store.url.path as NSString).abbreviatingWithTildeInPath), Ghostty's format: `key = value`.
-        Libertty ▸ Settings… (⌘,) opens it; it applies as soon as it is saved.
+        Libertty ▸ Settings… (⌘,) changes it a line at a time; Libertty ▸ Open Config File opens it. It applies as soon as it is saved.
         From a shell: libertty +set key=value, libertty +get key, libertty +show-config, libertty +help.
 
         Options

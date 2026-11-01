@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 /// Shown when the config has problems, as Ghostty does: the list of errors,
-/// with Ignore and Reload Configuration. Settings themselves are edited in
-/// the file (Libertty ▸ Settings… opens it).
+/// with Ignore and Reload Configuration. Settings themselves are in the file
+/// (Libertty ▸ Open Config File), or Libertty ▸ Settings….
 final class ConfigurationErrorsController: NSWindowController, ObservableObject {
     static let shared = ConfigurationErrorsController()
 
