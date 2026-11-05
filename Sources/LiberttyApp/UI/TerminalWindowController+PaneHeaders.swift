@@ -19,7 +19,8 @@ extension TerminalWindowController: PaneHeaderSource {
                 detail = directory
             }
             return PaneHeader.Info(name: name, detail: detail, size: size, focused: focused,
-                                   marked: split && focused, floats: true, parks: split)
+                                   marked: split && focused, floats: true, parks: split,
+                                   branch: repoStatus(of: pane)?.summary ?? "")
         }
         if let doc = leaf as? DocumentView {
             let folder = doc.url.isFileURL ? Self.shortDirectory(doc.url.deletingLastPathComponent().path) : (doc.url.host ?? "")
@@ -44,6 +45,10 @@ extension TerminalWindowController: PaneHeaderSource {
         case .park:
             reveal(leaf, in: tab)
             parkFocusedPane()
+        case .changes:
+            // Its repository's changes, in the Git block.
+            reveal(leaf, in: tab)
+            ActionDispatcher.perform(.openGit, in: leaf as? TerminalView, controller: self)
         case .close:
             if let doc = leaf as? DocumentView { return closeDocumentPane(doc) }
             guard let pane = leaf as? TerminalView else { return }
@@ -155,4 +160,18 @@ extension TerminalWindowController: PaneHeaderSource {
         return true
     }
 
+
+    /// A pane's repository, as last read (`git-status`; this Mac's panes
+    /// only): asks git again when it's old — for a pane of the tab in front,
+    /// a few seconds; others, half a minute — and redraws when it changed.
+    func repoStatus(of pane: TerminalView, force: Bool = false) -> RepoStatus? {
+        guard config.gitStatus, host == nil, pane.session.host == nil, let dir = pane.session.workingDirectory else { return nil }
+        let inFront = selectedTab.everyPane.contains { $0 === pane }
+        return RepoStatusCache.shared.status(of: dir, force: force,
+                                             maxAge: inFront ? RepoStatusCache.freshFor : RepoStatusCache.freshBehind) { [weak self] in
+            guard let self else { return }
+            self.everyTab.forEach { $0.container?.updateHeaders() }
+            self.updateSidebar(force: false)
+        }
+    }
 }

@@ -44,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         UserDefaults.standard.register(defaults: ["ApplePressAndHoldEnabled": false])
         // Before any window: folders opened at launch get persistent sessions too.
         let config = ConfigStore.shared.config
+        // The interface's language, before any menu or window says a word.
+        L10n.start(config.language)
         TerminalWindowController.oneShot = oneShot
         Persistence.setUp(wanted: (config.sessionPersistence && !oneShot) || CommandLine.arguments.contains("--persist"))
     }
@@ -55,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         NSApp.servicesProvider = ServiceProvider()
         // Plugins that are on start with the app (their commands, their events).
         PluginHost.shared.start()
+        // What +agent-setup installed, current with this version.
+        if !oneShot { AgentCLI.refreshInstalled() }
+        if !oneShot { MainActor.assumeIsolated { MenuBarIcon.shared.apply(ConfigStore.shared.config.menuBarIcon) } }
         configToken = ConfigStore.shared.observe { [weak self] _ in self?.configDidChange() }
         // liberttyd came up late, or went: Quit and End Sessions comes or goes.
         NotificationCenter.default.addObserver(forName: Persistence.changed, object: nil, queue: .main) { [weak self] _ in
@@ -218,6 +223,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private func updateDockBadge() {
         let n = controllers.reduce(0) { $0 + $1.attentionCount }
         NSApp.dockTile.badgeLabel = n > 0 ? String(n) : nil
+        updateKeepAwake()
+        MainActor.assumeIsolated { MenuBarIcon.shared.update(waiting: n) }
+    }
+
+    /// `keep-awake`: held while it says so (with agents: while one works, in any window).
+    func updateKeepAwake() {
+        let mode = ConfigStore.shared.config.keepAwake
+        let working = mode == .agents && allControllers.contains { controller in
+            controller.allPanes.contains { pane in
+                KeepAwake.agentWorks(status: pane.session.programStatus,
+                                     tileAgent: controller.programs[ObjectIdentifier(pane.session)]?.agent)
+            }
+        }
+        KeepAwake.shared.update(mode: mode, agentsWorking: working)
     }
 
     /// Libertty ▸ Quit and End Sessions: what quitting does without persistence.
@@ -336,6 +355,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         case .auto, .system: nil
         }
         if NSApp.appearance?.name != appearance?.name { NSApp.appearance = appearance }
+        if launched { updateKeepAwake() }
+        if launched, !oneShot { MainActor.assumeIsolated { MenuBarIcon.shared.apply(store.config.menuBarIcon) } }
         if launched, !oneShot { MainActor.assumeIsolated { WebAccess.shared.apply(store.config) } }
         let keybinds = store.keybinds
         if keybinds != menuKeybinds {
@@ -379,6 +400,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // Undo Close (it closes for good at its timeout), or not shown yet.
         NSApp.orderedWindows.lazy.compactMap { $0.windowController as? TerminalWindowController }
             .first { c in self.controllers.contains { $0 === c } }
+    }
+
+    /// Every window's controller, in the order they opened, then the Quick Terminal's.
+    var allControllers: [TerminalWindowController] {
+        controllers + [QuickTerminal.shared.windowController].compactMap { $0 }
     }
 
     /// Close All Windows: one confirmation for everything still running.
@@ -917,7 +943,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         @discardableResult
         func item(_ title: String, _ action: Action? = nil, selector: Selector? = nil, key: String = "",
                   mods: NSEvent.ModifierFlags = [.command], symbol: String? = nil, in menu: NSMenu) -> NSMenuItem {
-            let item = menu.addItem(withTitle: title, action: selector ?? #selector(menuAction(_:)), keyEquivalent: key)
+            let item = menu.addItem(withTitle: L10n.t(title), action: selector ?? #selector(menuAction(_:)), keyEquivalent: key)
             item.keyEquivalentModifierMask = mods
             if let action {
                 if selector == nil {
@@ -975,6 +1001,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         item("New Window", .newWindow, symbol: "macwindow.badge.plus", in: file)
         item("New Tab", .newTab, symbol: "macwindow", in: file)
         item("Go to Directory…", .gotoDirectory, symbol: "folder", in: file)
+        item("Resume Conversation…", .resumeConversation, symbol: "bubble.left.and.text.bubble.right", in: file)
+        item("New Tab in Worktree…", .newTabInWorktree, symbol: "arrow.triangle.branch", in: file)
         item("Connect to Host…", .connectToHost, symbol: "network", in: file)
         file.addItem(.separator())
         item("Split Right", .newSplit(.right), symbol: "rectangle.righthalf.inset.filled", in: file)
@@ -1026,12 +1054,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let view = submenu("View", in: main)
         item("Command Palette", .toggleCommandPalette, symbol: "filemenu.and.selection", in: view)
         item("Go to Pane...", .gotoPane, symbol: "rectangle.3.group", in: view)
+        item("Jump to Pane Needing You", .gotoAttention, symbol: "exclamationmark.bubble", in: view)
+        item("Toggle Dark Mode", .toggleAppearance, symbol: "circle.lefthalf.filled", in: view)
         view.addItem(.separator())
         item("Show Sidebar", .toggleSidebar, symbol: "sidebar.left", in: view)
         item("Show Inspector", .toggleInspector, symbol: "sidebar.right", in: view)
         // Rex's View ▸ Customize View: the look, without opening Settings.
-        let customize = NSMenu(title: "Customize View")
-        let customizeItem = view.addItem(withTitle: "Customize View", action: nil, keyEquivalent: "")
+        let customize = NSMenu(title: L10n.t("Customize View"))
+        let customizeItem = view.addItem(withTitle: L10n.t("Customize View"), action: nil, keyEquivalent: "")
         customizeItem.submenu = customize
         if #available(macOS 26, *) {
             customizeItem.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Customize View")
@@ -1135,8 +1165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     private func submenu(_ title: String, in main: NSMenu) -> NSMenu {
-        let item = main.addItem(withTitle: title, action: nil, keyEquivalent: "")
-        let menu = NSMenu(title: title)
+        let item = main.addItem(withTitle: L10n.t(title), action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: L10n.t(title))
         item.submenu = menu
         return menu
     }

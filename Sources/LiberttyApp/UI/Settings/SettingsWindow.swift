@@ -117,7 +117,7 @@ struct SettingsView: View {
                     }
                 }
         }
-        .searchable(text: $model.query, placement: .sidebar, prompt: "Search Settings")
+        .searchable(text: $model.query, placement: .sidebar, prompt: Text(L10n.t("Search Settings")))
         .onSubmit(of: .search) { model.jumpToFirstResult() }
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .tint(model.config.accent(with: theme).map { Color($0) })

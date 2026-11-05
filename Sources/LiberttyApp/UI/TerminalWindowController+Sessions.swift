@@ -20,6 +20,7 @@ extension TerminalWindowController {
         if programs[ObjectIdentifier(session)] != nil || (session.host != nil && session.hasForegroundProgram) {
             pane.noteActivity()
         }
+        pokeAgentScreen(pane)
         if isSearching, pane === focusedTerminal {
             // New output may add matches; the count follows on the next frame.
             DispatchQueue.main.async { [weak self] in
@@ -38,10 +39,17 @@ extension TerminalWindowController {
 
     func sessionTitleChanged(_ session: TerminalSession, title: String) {
         updateTitle()
+        // An agent's title turns as a spinner while it works.
+        if let pane = pane(for: session) { pokeAgentScreen(pane) }
     }
 
     func sessionLabelChanged(_ session: TerminalSession) {
         updateTitle()
+        // Its agent's conversation goes by the name too (Resume Conversation…).
+        if session.host == nil, let id = session.persistentID {
+            let name = session.label
+            DispatchQueue.global(qos: .utility).async { Conversations.rename(session: id, to: name) }
+        }
     }
 
     /// `bell-features`, as in Ghostty.
@@ -59,6 +67,52 @@ extension TerminalWindowController {
             updateTitle()
         }
         if !looking, let pane { markAttention(pane) }
+    }
+
+    // MARK: Agents' turns (Last Turn)
+
+    /// An agent going to work from rest starts a turn (not one going on
+    /// after you answered it): a snapshot of its repository marks where the
+    /// turn began, for the Git block's Last Turn and `libertty +diff --turn`.
+    func noteTurn(_ session: TerminalSession) {
+        let key = ObjectIdentifier(session)
+        let record = session.programStatus.headline
+        let before = turnStates[key]
+        turnStates[key] = record?.state
+        guard let record, record.state == .working, before != .working, before != .blocked,
+              session.host == nil, let directory = session.workingDirectory else { return }
+        // Claude Code's hook took the snapshot itself, before the agent went
+        // to work (AgentCLI.beginTurn): the Git block reads it again.
+        if record.app == AgentCLI.claudeApp {
+            NotificationCenter.default.post(name: Blocks.commandFinished, object: nil)
+            return
+        }
+        guard let agent = programs[key]?.agent ?? ProgramBadge.agentKey(session.programStatus.effectiveApp(of: record)) else { return }
+        Turns.begin(directory: directory, agent: agent, session: session.persistentID ?? "") { _ in
+            NotificationCenter.default.post(name: Blocks.commandFinished, object: nil)
+        }
+    }
+
+    /// Whether a program in `directory` may edit files in `root`: it's in
+    /// the repository, or in a folder above it. (Paths as resolved.)
+    static func mayEdit(from directory: String, root: String) -> Bool {
+        directory == root || directory.hasPrefix(root + "/") || root.hasPrefix(directory == "/" ? "/" : directory + "/")
+    }
+
+    /// Whether an agent works now where it may edit `root` (a repository):
+    /// in a pane in it, or in a folder above it (an agent started in ~/src
+    /// edits ~/src/app). Its changes aren't to be reverted under it.
+    static func agentWorks(in root: String, among controllers: [TerminalWindowController]) -> Bool {
+        // Both as the file system has them (/tmp is /private/tmp).
+        func resolved(_ path: String) -> String { URL(fileURLWithPath: path).resolvingSymlinksInPath().path }
+        let base = resolved(root)
+        return controllers.contains { controller in
+            controller.allPanes.contains { pane in
+                guard let dir = pane.session.workingDirectory.map(resolved), mayEdit(from: dir, root: base) else { return false }
+                return KeepAwake.agentWorks(status: pane.session.programStatus,
+                                            tileAgent: controller.programs[ObjectIdentifier(pane.session)]?.agent)
+            }
+        }
     }
 
     // MARK: Tab news (GoRex): printing now, or something happened unseen
@@ -87,6 +141,7 @@ extension TerminalWindowController {
     func sessionProgramStatusChanged(_ session: TerminalSession) {
         updateTitle()
         notifyIfNeeded(session)
+        noteTurn(session)
         onAttentionChange?()
         // Back at a prompt: the sidebar tree follows the focused pane's
         // folder, and the command may have changed files anywhere in it.
@@ -99,6 +154,7 @@ extension TerminalWindowController {
     func sessionProgressChanged(_ session: TerminalSession) {
         updateSidebar()
         onAttentionChange?()
+        if let pane = pane(for: session) { pokeAgentScreen(pane) }
     }
 
     func sessionDesktopNotification(_ session: TerminalSession, title: String, body: String) {
@@ -112,6 +168,8 @@ extension TerminalWindowController {
         guard let pane = pane(for: session) else { return }
         PluginHost.shared.emit("commandFinished", ["command": command, "exitCode": exitCode.map { Int($0) } as Any? ?? NSNull(),
                                                    "duration": duration, "cwd": session.workingDirectory ?? ""])
+        // It may have changed the repository: its branch and changes again.
+        _ = repoStatus(of: pane, force: true)
         // A command that ran a while finished out of sight: its tab says so
         // until you look (a quick one isn't news).
         if duration >= 3, !isLookedAt(pane) { markAttention(pane) }
@@ -170,7 +228,7 @@ extension TerminalWindowController {
 
     /// The user can see this pane right now: Libertty is active, its window key,
     /// its tab selected.
-    private func isLookedAt(_ pane: TerminalView) -> Bool {
+    func isLookedAt(_ pane: TerminalView) -> Bool {
         NSApp.isActive && window?.isKeyWindow == true
             && (selectedTab.panes.contains { $0 === pane } || selectedTab.parked.contains { $0.showsCard && $0.pane === pane })
     }
@@ -254,6 +312,9 @@ extension TerminalWindowController {
     }
 
     func sessionExited(_ session: TerminalSession, status: Int32) {
+        // Its turn and screen state go now, before its address can be a new session's.
+        turnStates[ObjectIdentifier(session)] = nil
+        agentWatches[ObjectIdentifier(session)] = nil
         guard let pane = pane(for: session) else { return }
         // In a workspace that isn't showing: its panes are cleared away when
         // it comes back — unless nothing of it is left running.
@@ -444,6 +505,7 @@ extension TerminalWindowController {
     /// output for 5 s: its status line ticks every second while it works,
     /// so a Return that started nothing ends at once).
     func promptSubmitted(in pane: TerminalView) {
+        // (Its screen says so too, with agent-screen-status: the two records sit side by side.)
         guard programs[ObjectIdentifier(pane.session)]?.name == "Codex" else { return }
         let status = pane.session.programStatus
         // Already working, or waiting for an answer this Return may give: as it is.

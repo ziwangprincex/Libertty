@@ -54,6 +54,9 @@ struct Config: Equatable {
     /// Ghostty's `adjust-cell-height`: pixels or a percentage added to the
     /// font's line height (Rex's line height), the text kept centered.
     var adjustCellHeight = MetricAdjust.none
+    /// Ghostty's `adjust-cell-width`: pixels or a percentage added to the
+    /// columns' width (Kero's cell width), the text's size unchanged.
+    var adjustCellWidth = MetricAdjust.none
     /// Ghostty's `minimum-contrast`: text below this WCAG contrast ratio
     /// against its background is drawn white or black (1: never).
     var minimumContrast: Double = 1
@@ -168,6 +171,35 @@ struct Config: Equatable {
     /// Agents set up by `libertty +agent-setup` are asked to name their
     /// session after their task (Rex's "Let agents name sessions").
     var agentSessionNames = true
+    /// Coding agents' states told from what their screens show (herdr's
+    /// rules, AgentScreen), for agents that report none themselves.
+    var agentScreenStatus = true
+    /// Kero's Keep computer awake: hold off idle sleep never, always, or
+    /// while a coding agent in a pane works (the display still sleeps).
+    var keepAwake = KeepAwake.Mode.never
+    /// A pane whose liberttyd session was lost (a reboot) while Claude Code or
+    /// Codex ran in it picks the conversation up again (Conversations).
+    var resumeAgents = true
+    /// Where New Tab in Worktree… puts worktrees: relative to the repository,
+    /// or a path of its own; empty is .libertty/worktrees inside it.
+    var worktreeDir = ""
+    /// What a new worktree's branch starts from: the default branch, or the
+    /// focused pane's current one.
+    var worktreeBase = "default"
+    /// Panes say their repository's branch and changes (headers, sidebar rows):
+    /// Libertty runs git in the folders panes are in.
+    var gitStatus = true
+    /// The sidebar's tab rows: a second line (what the program reports, else
+    /// its branch and changes, else its folder), or compact: one line.
+    var sidebarRows = "comfortable"
+    /// Libertty in the menu bar (Kero's tray): what waits for you, the Quick
+    /// Terminal, Keep Mac Awake, Settings.
+    var menuBarIcon = false
+    /// The interface's language: auto (as macOS uses), en, zh-Hans (L10n).
+    var language = "auto"
+    /// Diffs (+diff's pages, the Git block): side by side once wide (auto),
+    /// or always unified, or always side by side.
+    var diffLayout = "auto"
     /// Ghostty's `cursor-style-blink`: nil blinks by default (and lets DEC
     /// mode 12 decide), true/false fix the default; programs can still change it.
     var cursorStyleBlink: Bool?
@@ -275,6 +307,7 @@ struct Config: Equatable {
         ("font-feature", "As in Ghostty: -calt (or -liga) turns programming ligatures (-> != ===) off. Repeatable."),
         ("font-size", "Points, 6–72."),
         ("adjust-cell-height", "Make the line height taller or shorter, as in Ghostty: a number of pixels (2, -1) or a percentage (20%) added to the font's own; the text stays centered, and box drawing and powerline glyphs follow the cell."),
+        ("adjust-cell-width", "Make the columns wider or narrower, as in Ghostty: a number of pixels (1, -1) or a percentage (3%) added to the font's own; the text keeps its size, at the left of each cell. Cells take whole pixels, so small steps can look uneven."),
         ("minimum-contrast", "The least contrast text may have against its background, as in Ghostty: a WCAG ratio from 1 (anything, default) to 21; text below it is drawn white or black. 1.1 keeps text from vanishing, 3 or more keeps it easy to read. Not box drawing, powerline glyphs or emoji."),
         ("background", "Override the theme's background (#rrggbb)."),
         ("foreground", "Override the theme's text color."),
@@ -339,6 +372,16 @@ struct Config: Equatable {
         ("program-status-notify", "Which program states notify you while you're elsewhere (with desktop-notifications) and light the pane's edge. Default blocked,done,error."),
         ("program-status-dock-badge", "Which program states the Dock icon's badge counts. Default blocked."),
         ("agent-session-names", "Ask coding agents to name their session after their task (libertty +agent-setup installs what asks them); the tab shows the name."),
+        ("agent-screen-status", "Tell what coding agents (Codex, Gemini, OpenCode, Amp, Cursor, Qwen…) are doing from what their screens show — working, waiting for you, done — when they don't report it themselves (Claude Code with libertty +agent-setup does)."),
+        ("keep-awake", "Keep the Mac from going to sleep: never (default), always, or agents (while a coding agent in a pane is working). The display still sleeps."),
+        ("resume-agents", "When a pane comes back without its program (liberttyd ended, as at a reboot) and Claude Code or Codex was running in it, resume the conversation in a new shell there (needs libertty +agent-setup)."),
+        ("worktree-dir", "Where New Tab in Worktree… (and +new-session --worktree) makes worktrees: a folder relative to the repository, or a path; empty (default) is .libertty/worktrees inside it, which git is told to ignore through .git/info/exclude."),
+        ("worktree-base", "What a new worktree's branch starts from: default (the repository's default branch, as a pull request is made against) or current (the branch of the pane you're in)."),
+        ("git-status", "Show each pane's git branch and the lines its changes add and remove (in pane headers and sidebar rows); false stops Libertty running git for them."),
+        ("sidebar-rows", "comfortable (default): each tab's row has a second line, what its program reports (OSC 7501), else its branch and changes, else its folder; compact: one line."),
+        ("menu-bar-icon", "Show Libertty in the menu bar: the icon fills (with a count) while programs wait for you; its menu goes to them, drops the Quick Terminal down, keeps the Mac awake, opens Settings."),
+        ("language", "The interface's language: auto (default, as macOS uses), en (English) or zh-Hans (简体中文): menus, the command palette, Settings and the sidebar. Takes effect when Libertty restarts."),
+        ("diff-layout", "How diffs lay out, in +diff's pages and the Git block: auto (default: side by side once there's room, else unified), unified or split (side by side)."),
         ("program-status-sound", "Which program states play a sound as they begin while you're elsewhere: e.g. blocked:Ping,error:Basso,done — a state alone plays the alert sound; the names are macOS's sounds (System Settings ▸ Sound). A state with a sound here doesn't also sound its notification. Default none."),
         ("cursor-style-blink", "Whether the cursor blinks by default: empty (blinks, and programs may turn it off with DEC mode 12), true or false. Programs can still change it (DECSCUSR)."),
         ("focus-follows-mouse", "Give the keyboard to the pane under the pointer, without a click (as in Ghostty): from one terminal pane to another of the window in front."),
@@ -375,6 +418,7 @@ struct Config: Equatable {
         case "font-feature": return fontFeatures
         case "font-size": return [num(fontSize)]
         case "adjust-cell-height": return [adjustCellHeight.configString]
+        case "adjust-cell-width": return [adjustCellWidth.configString]
         case "minimum-contrast": return [num(minimumContrast)]
         case "background": return color(background)
         case "foreground": return color(foreground)
@@ -435,6 +479,16 @@ struct Config: Equatable {
         case "notify-on-command-finish": return [notifyOnCommandFinish.rawValue]
         case "notify-on-command-finish-after": return [num(notifyOnCommandFinishAfter) + "s"]
         case "agent-session-names": return [String(agentSessionNames)]
+        case "agent-screen-status": return [String(agentScreenStatus)]
+        case "keep-awake": return [keepAwake.rawValue]
+        case "resume-agents": return [String(resumeAgents)]
+        case "worktree-dir": return [worktreeDir]
+        case "worktree-base": return [worktreeBase]
+        case "git-status": return [String(gitStatus)]
+        case "sidebar-rows": return [sidebarRows]
+        case "menu-bar-icon": return [String(menuBarIcon)]
+        case "language": return [language]
+        case "diff-layout": return [diffLayout]
         case "program-status-indicator": return [Self.statesString(programStatusIndicator)]
         case "program-status-notify": return [Self.statesString(programStatusNotify)]
         case "program-status-dock-badge": return [Self.statesString(programStatusDockBadge)]
@@ -612,6 +666,10 @@ struct Config: Equatable {
         case "adjust-cell-height":
             if reset { adjustCellHeight = defaults.adjustCellHeight; return nil }
             guard let x = MetricAdjust(v) else { return "a number of pixels (2, -1) or a percentage (20%)" }; adjustCellHeight = x
+        case "adjust-cell-width":
+            if reset { adjustCellWidth = defaults.adjustCellWidth; return nil }
+            guard let x = MetricAdjust(v), x.applied(to: 10) > 0 else { return "a number of pixels (1, -1) or a percentage (3%)" }
+            adjustCellWidth = x
         case "minimum-contrast":
             if reset { minimumContrast = defaults.minimumContrast; return nil }
             guard let x = double(1...21) else { return "a contrast ratio from 1 to 21" }; minimumContrast = x
@@ -761,6 +819,36 @@ struct Config: Equatable {
         case "agent-session-names":
             if reset { agentSessionNames = defaults.agentSessionNames; return nil }
             guard let x = bool() else { return "true or false" }; agentSessionNames = x
+        case "agent-screen-status":
+            if reset { agentScreenStatus = defaults.agentScreenStatus; return nil }
+            guard let x = bool() else { return "true or false" }; agentScreenStatus = x
+        case "keep-awake":
+            if reset { keepAwake = defaults.keepAwake; return nil }
+            guard let x = KeepAwake.Mode(rawValue: v.lowercased()) else { return "never, always or agents" }; keepAwake = x
+        case "resume-agents":
+            if reset { resumeAgents = defaults.resumeAgents; return nil }
+            guard let x = bool() else { return "true or false" }; resumeAgents = x
+        case "worktree-dir":
+            worktreeDir = reset ? defaults.worktreeDir : v
+        case "worktree-base":
+            if reset { worktreeBase = defaults.worktreeBase; return nil }
+            guard ["default", "current"].contains(v.lowercased()) else { return "default or current" }; worktreeBase = v.lowercased()
+        case "git-status":
+            if reset { gitStatus = defaults.gitStatus; return nil }
+            guard let x = bool() else { return "true or false" }; gitStatus = x
+        case "sidebar-rows":
+            if reset { sidebarRows = defaults.sidebarRows; return nil }
+            guard ["comfortable", "compact"].contains(v.lowercased()) else { return "comfortable or compact" }; sidebarRows = v.lowercased()
+        case "menu-bar-icon":
+            if reset { menuBarIcon = defaults.menuBarIcon; return nil }
+            guard let x = bool() else { return "true or false" }; menuBarIcon = x
+        case "language":
+            if reset { language = defaults.language; return nil }
+            guard ["auto", "en", "zh-hans"].contains(v.lowercased()) else { return "auto, en or zh-Hans" }
+            language = v.lowercased() == "zh-hans" ? "zh-Hans" : v.lowercased()
+        case "diff-layout":
+            if reset { diffLayout = defaults.diffLayout; return nil }
+            guard ["auto", "unified", "split"].contains(v.lowercased()) else { return "auto, unified or split" }; diffLayout = v.lowercased()
         case "program-status-indicator":
             if reset { programStatusIndicator = defaults.programStatusIndicator; return nil }
             switch Self.states(v) { case .success(let s): programStatusIndicator = s; case .failure(let why): return why.message }

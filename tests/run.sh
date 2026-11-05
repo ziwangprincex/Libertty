@@ -393,6 +393,21 @@ expect sidebar-toggle 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-
 # The sidebar's activity filter.
 expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-activity.txt)" $OUT
+# Jump to the pane that needs you (⌘J).
+expect attention 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/attention.txt)" $OUT
+# An agent's state from its screen: a stand-in Codex, built here.
+mkdir -p $PRIVATE/agent-screen
+cc -o $PRIVATE/agent-screen/codex $ROOT/tests/fixtures/fake-codex.c
+expect agent-screen 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/agent-screen|g" $ROOT/tests/fixtures/agent-screen.txt)" $OUT --persist
+# Resume Conversation…: one a hook recorded, picked up in a new tab in its
+# folder (no claude on this PATH: only the typed command is looked for).
+mkdir -p $PRIVATE/resume/data $PRIVATE/resume/proj
+print -r -- '[{"agent":"claude","id":"13b9c2e4-probe","session":"gone","directory":"'$PRIVATE/resume/proj'","name":"fix-login","title":"","started":1,"active":2,"ended":false}]' \
+  > $PRIVATE/resume/data/conversations.json
+expect resume 'ui-probe: all passed' env LIBERTTY_DATA_DIR=$PRIVATE/resume/data PATH=/usr/bin:/bin LIBERTTY_SHELL=/bin/sh \
+  XDG_CONFIG_HOME=$PRIVATE/empty-config $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/resume.txt)" $OUT
 # Tabs along the top (tab-bar = top), in a config of its own.
 mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertty
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config
@@ -423,6 +438,58 @@ mkdir -p $GB
   && printf 'struct App {\n    let name = "x"\n    let size = 1\n}\n' > app.swift && git commit -qam Second \
   && printf 'struct App {\n    let name = "x"\n    let size = 1\n    let answer = 42\n}\n' > app.swift && printf 'new\n' > notes.txt )
 expect git-block 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@REPO@|$GB|g" $ROOT/tests/fixtures/git-block.txt)" $OUT
+# Last Turn: an agent's turn's changes alone, kept or reverted hunk by hunk.
+LT=$PRIVATE/last-turn
+mkdir -p $LT
+( cd $LT && git init -q -b main && git config user.email t@example.com && git config user.name t \
+  && printf 'one\n' > app.txt && printf 'two\n' > other.txt && printf 'one\ntwo\nthree\nfour\nfive\nsix\n' > list.txt \
+  && git add -A && git commit -qm First \
+  && printf 'before the turn\n' >> other.txt )
+expect last-turn 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@REPO@|$LT|g" $ROOT/tests/fixtures/last-turn.txt)" $OUT
+# language = zh-Hans: the palette and Settings in Chinese, the config in its own words.
+mkdir -p $PRIVATE/zh-config/libertty
+print 'language = zh-Hans' > $PRIVATE/zh-config/libertty/config
+expect chinese 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/zh-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/chinese.txt)" $OUT
+# Toggle Dark Mode: the other appearance, one line of the config.
+# (A config file there already: a first write would add the template too.)
+mkdir -p $PRIVATE/appearance-config/libertty
+: > $PRIVATE/appearance-config/libertty/config
+expect appearance-toggle 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/appearance-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/appearance-toggle.txt)" $OUT
+# ⌘ over an image's path: the picture beside it.
+mkdir -p $PRIVATE/peek
+sips -s format png -z 60 90 /System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericDocumentIcon.icns \
+  --out $PRIVATE/peek/shot.png > /dev/null 2>&1
+print hi > $PRIVATE/peek/notes.txt
+expect image-peek 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/peek|g" $ROOT/tests/fixtures/image-peek.txt)" $OUT
+# Sidebar rows' second line and the header's branch.
+SR=$PRIVATE/sidebar-rows
+mkdir -p $SR
+( cd $SR && git init -q -b main && git config user.email t@example.com && git config user.name t \
+  && printf 'one\n' > a.txt && git add -A && git commit -qm First && printf 'two\n' >> a.txt )
+expect sidebar-rows 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@REPO@|$SR|g" $ROOT/tests/fixtures/sidebar-rows.txt)" $OUT
+# A diff document: files fold, all at once too, side by side once wide.
+expect diff-document 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/diff-document.txt)" $OUT
+# The Git block's changed files in their folders.
+GT=$PRIVATE/git-tree
+mkdir -p $GT
+( cd $GT && git init -q -b main && git config user.email t@example.com && git config user.name t \
+  && mkdir -p src/ui src/core && printf 'a\n' > src/ui/view.swift && printf 'b\n' > src/core/model.swift \
+  && printf 'c\n' > README.md && git add -A && git commit -qm First \
+  && printf 'a2\n' >> src/ui/view.swift && printf 'b2\n' >> src/core/model.swift && printf 'c2\n' >> README.md )
+expect git-tree 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@REPO@|$GT|g" $ROOT/tests/fixtures/git-tree.txt)" $OUT
+# Tabs and sessions in a worktree of their own, made and removed.
+WT=$PRIVATE/worktree
+mkdir -p $WT
+( cd $WT && git init -q -b main && git config user.email t@example.com && git config user.name t \
+  && printf 'one\n' > a.txt && git add -A && git commit -qm First )
+expect worktree 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@REPO@|$WT|g" $ROOT/tests/fixtures/worktree.txt)" $OUT
 # The Tasks block: its own sleep found under the terminal, read, and quit.
 expect tasks 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/tasks.txt)" $OUT
 # The canvas block: a drawing from its file, saved as drawn, following the disk; a new one.

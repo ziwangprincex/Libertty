@@ -53,3 +53,10 @@ https://github.com/jlfwong/speedscope — 1.25.0, its release build. MIT License
 Source Code Pro (Adobe), is under the SIL Open Font License 1.1; both are in
 blocks/profile/lib/LICENSES.txt.
 
+
+== herdr's agent manifests (agents' states from their screens) ==
+https://github.com/ogulcancelik/herdr — the rules that tell from a coding
+agent's screen whether it works, waits for you or sits idle, one manifest per
+agent, as Kero (github.com/egoist/kero) ships them. Apache License 2.0; the
+license is in agent-rules/LICENSE. Converted to agent-rules/rules.json by
+scripts/update-agent-rules.py; the rules themselves are unchanged.

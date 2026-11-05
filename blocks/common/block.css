@@ -106,3 +106,21 @@ textarea.field { height: auto; min-height: 64px; padding: 7px 9px; resize: verti
 .spin { display: inline-block; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* Diffs, folded and side by side (Kero's) */
+.diff-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px 8px; color: var(--t4); font-size: 11.5px; }
+.diff-bar .spacer { flex: 1; }
+.diff-bar .button { height: 22px; padding: 0 8px; font-size: 11.5px; }
+.diff-file-head { cursor: default; }
+.diff-fold { flex: none; width: 10px; color: var(--t4); font-size: 10px; transition: transform .12s; }
+.diff-file.folded .diff-fold { transform: rotate(-90deg); }
+.diff-file.folded > :not(.diff-file-head) { display: none; }
+.diff-file.folded .diff-file-head { border-bottom: 0; }
+.diff.split .sline { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px minmax(0, 1fr); white-space: pre; }
+.sline .ln { padding-right: 8px; text-align: right; color: var(--t4); -webkit-user-select: none; user-select: none; }
+.sline .code { padding: 0 12px 0 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.sline .code.add { background: color-mix(in srgb, var(--add) 12%, transparent); }
+.sline .code.del { background: color-mix(in srgb, var(--del) 12%, transparent); }
+.sline .code.none { background: var(--l1); }
+.sline.note { grid-template-columns: 44px 1fr; color: var(--t4); font-style: italic; }
+.sline .code.add, .sline .code.del { color: var(--t1); }

@@ -7,7 +7,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { L10n.t(englishTitle) }
+
+    private var englishTitle: String {
         switch self {
         case .liberttyd: "liberttyd"
         case .interface: "Interface"
@@ -48,7 +50,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     /// A page by its title or name, any case (the UI probe's `settings:page:`).
     init?(named name: String) {
         guard let page = Self.allCases.first(where: {
-            $0.title.caseInsensitiveCompare(name) == .orderedSame || $0.rawValue.caseInsensitiveCompare(name) == .orderedSame
+            $0.title.caseInsensitiveCompare(name) == .orderedSame || $0.englishTitle.caseInsensitiveCompare(name) == .orderedSame
+                || $0.rawValue.caseInsensitiveCompare(name) == .orderedSame
         }) else { return nil }
         self = page
     }
@@ -176,6 +179,19 @@ enum SettingsRegistry {
             item(.interface, "Appearance", "Interface style", "interface-style", .tiles(options([("Classic", "classic"), ("Glass", "glass")])),
                  keywords: "glass translucent blur"),
             bool(.interface, "Appearance", "Tint with theme", "interface-tint", help: "Glass takes the theme's color."),
+            item(.interface, "Language", "Language", "language", .popup(options([
+                ("As macOS uses", "auto"), ("English", "en"), ("简体中文", "zh-Hans"),
+            ])), help: "The interface's language. Takes effect when Libertty restarts.", keywords: "chinese english locale 中文"),
+            item(.interface, "Diffs", "Diff layout", "diff-layout", .segmented(options([
+                ("Auto", "auto"), ("Unified", "unified"), ("Side by Side", "split"),
+            ])), help: "Auto shows a diff side by side once there's room for it.", keywords: "split unified git"),
+            item(.interface, "Tabs", "Sidebar rows", "sidebar-rows", .segmented(options([
+                ("Comfortable", "comfortable"), ("Compact", "compact"),
+            ])), help: "Comfortable adds a second line: what the program reports, else its branch and changes, else its folder.",
+                 keywords: "two lines subtitle branch"),
+            bool(.interface, "Tabs", "Show git status", "git-status",
+                 help: "Branches and changes in pane headers and tab rows (Libertty runs git in panes' folders).",
+                 keywords: "branch changes diff"),
             item(.interface, "Tabs", "Tab style", "tab-bar", .segmented([
                 SettingsOption(label: "Above", value: "top", symbol: "rectangle.topthird.inset.filled"),
                 SettingsOption(label: "Left Side", value: "left", symbol: "sidebar.left", also: ["sidebar"]),
@@ -219,6 +235,10 @@ enum SettingsRegistry {
                 + ["-10%", "-5%", "5%", "10%", "15%", "20%", "25%", "30%", "40%", "50%"].map {
                     SettingsOption(label: $0.hasPrefix("-") ? "\($0) shorter" : "+\($0) taller", value: $0)
                 }), keywords: "cell height spacing"),
+            item(.terminal, "Typography", "Cell width", "adjust-cell-width", .popup([SettingsOption(label: "The font's own", value: "")]
+                + ["-10%", "-5%", "3%", "5%", "10%", "20%", "50%", "100%"].map {
+                    SettingsOption(label: $0.hasPrefix("-") ? "\($0) narrower" : "+\($0) wider", value: $0)
+                }), help: "Wider or narrower columns, the text's size unchanged.", keywords: "letter spacing columns"),
             custom(.terminal, "Typography", "Ligatures", id: "ligatures", keys: ["font-feature"], help: "Programming ligatures such as -> != ===.",
                    keywords: "calt liga"),
             item(.terminal, "Colors", "Minimum text contrast", "minimum-contrast", .popup(options([
@@ -278,10 +298,28 @@ enum SettingsRegistry {
                    help: "Installs a Libertty skill and session hooks for Claude Code and Codex.", keywords: "claude codex hooks skill"),
             bool(.integrations, "Coding Agents", "Let agents name sessions", "agent-session-names",
                  help: "The tab shows the name an agent gives its task.", keywords: "claude codex"),
+            bool(.integrations, "Coding Agents", "Tell agents' states from their screens", "agent-screen-status",
+                 help: "Working, waiting for you or done, from what Codex, Gemini, OpenCode, Amp and other agents show.",
+                 keywords: "status detect codex gemini opencode"),
+            bool(.integrations, "Coding Agents", "Resume conversations after a restart", "resume-agents",
+                 help: "A pane that comes back without its program picks up Claude Code's or Codex's conversation again.",
+                 keywords: "resume reboot claude codex history"),
+            item(.integrations, "Coding Agents", "Keep the Mac awake", "keep-awake", .popup(options([
+                ("Never", "never"), ("While agents work", "agents"), ("Always", "always"),
+            ])), help: "The display still sleeps.", keywords: "sleep caffeinate awake"),
+            item(.integrations, "Worktrees", "New worktrees branch from", "worktree-base", .popup(options([
+                ("The default branch", "default"), ("The branch you're on", "current"),
+            ])), help: "File ▸ New Tab in Worktree… (⌥⌘T) makes a branch in a folder of its own.", keywords: "git worktree branch"),
+            item(.integrations, "Worktrees", "Folder", "worktree-dir", .text(placeholder: ".libertty/worktrees"),
+                 help: "Relative to the repository, or a path. Inside it, git is told to ignore them (.git/info/exclude).",
+                 keywords: "git worktree folder"),
         ]
 
         // Notifications
         all += [
+            bool(.notifications, "System Notifications", "Show in the menu bar", "menu-bar-icon",
+                 help: "The icon fills while programs wait for you; its menu goes to them, and opens the Quick Terminal.",
+                 keywords: "tray status item menubar"),
             bool(.notifications, "System Notifications", "Terminal notifications", "desktop-notifications",
                  help: "Programs can send notifications with OSC 9 or OSC 777, and say when they need you.", keywords: "osc alerts"),
         ]
@@ -319,8 +357,27 @@ enum SettingsRegistry {
             bool(.advanced, "Rendering", "Sync to the display", "window-vsync",
                  help: "Never tears, but types up to two frames later.", keywords: "vsync latency"),
         ]
-        return all
+        return all.map(localized)
     }()
+
+    /// What it says, in the interface's language (L10n): its title, section,
+    /// help and choices; its keys and values as they are.
+    private static func localized(_ item: SettingsItem) -> SettingsItem {
+        var item = item
+        item.title = L10n.t(item.title)
+        item.section = L10n.t(item.section)
+        item.help = L10n.t(item.help)
+        func labels(_ options: [SettingsOption]) -> [SettingsOption] {
+            options.map { var o = $0; o.label = L10n.t(o.label); return o }
+        }
+        switch item.kind {
+        case .segmented(let o): item.kind = .segmented(labels(o))
+        case .popup(let o): item.kind = .popup(labels(o))
+        case .tiles(let o): item.kind = .tiles(labels(o))
+        default: break
+        }
+        return item
+    }
 
     static func items(on page: SettingsPage) -> [SettingsItem] { items.filter { $0.page == page } }
 
@@ -361,7 +418,7 @@ enum SettingsShortcuts {
     struct Entry { var title: String; var action: String }
     struct Group { var title: String; var actions: [Entry] }
 
-    private static func e(_ title: String, _ action: String) -> Entry { Entry(title: title, action: action) }
+    private static func e(_ title: String, _ action: String) -> Entry { Entry(title: L10n.t(title), action: action) }
 
     static let groups: [Group] = [
         Group(title: "Window", actions: [
@@ -393,6 +450,8 @@ enum SettingsShortcuts {
             e("Move Divider Up", "resize_split:up,10"), e("Move Divider Down", "resize_split:down,10"),
             e("Move Divider Left", "resize_split:left,10"), e("Move Divider Right", "resize_split:right,10"),
             e("Equalize Splits", "equalize_splits"), e("Zoom Split", "toggle_split_zoom"), e("Go to Pane…", "goto_pane"),
+            e("Jump to Pane Needing You", "goto_attention"), e("Resume Conversation…", "resume_conversation"),
+            e("New Tab in Worktree…", "new_tab_in_worktree"), e("Toggle Dark Mode", "toggle_appearance"),
             e("Restart Shell in Pane", "restart_surface"), e("Park Pane", "park_surface"), e("Unpark Pane", "unpark_surface"),
             e("Float Pane", "float_surface"), e("Move Pane to New Tab", "move_surface_to_new_tab"),
             e("Move Pane to New Window", "move_surface_to_new_window"), e("Broadcast Input to All Panes", "toggle_broadcast_input"),

@@ -79,6 +79,8 @@ struct SavedTab: Codable {
     var workspace: String?
     /// The front tab of its workspace.
     var front: Bool?
+    /// The git worktree it was made in (New Tab in Worktree…).
+    var worktree: WorktreeInfo?
 }
 
 struct SavedParked: Codable {
@@ -340,7 +342,7 @@ extension TerminalWindowController {
     private static func savedTab(_ tab: TerminalTab) -> SavedTab {
         if let doc = tab.document { return SavedTab(title: tab.titleOverride, document: Self.saved(doc.pageURL)) }
             let leaves = tab.container?.views ?? []
-            return SavedTab(title: tab.titleOverride.isEmpty ? nil : tab.titleOverride,
+            var saved = SavedTab(title: tab.titleOverride.isEmpty ? nil : tab.titleOverride,
                             paneTitle: tab.paneTitleOverride.isEmpty ? nil : tab.paneTitleOverride,
                             panes: tab.container.map { Self.save($0.root) },
                             focused: tab.focusedLeaf.flatMap { f in leaves.firstIndex { $0 === f } },
@@ -352,6 +354,8 @@ extension TerminalWindowController {
                                             card: entry.showsCard ? true : nil,
                                             corner: entry.showsCard ? (tab.container?.card?.corner.rawValue ?? entry.cardCorner) : nil)
                             })
+            saved.worktree = tab.worktree
+            return saved
     }
 
     /// A file's path, or a web page's address.
@@ -381,6 +385,8 @@ extension TerminalWindowController {
     /// nothing in it can be shown any more.
     static func restore(_ saved: SavedWindow, live: Set<String>, config: Config) -> TerminalWindowController? {
         var unstarted: [(TerminalView, String?)] = []
+        // What agents ran where (resume-agents): read once for the window.
+        let conversations = config.resumeAgents && saved.host == nil ? Conversations.load() : []
         let windowFontSize = saved.fontSize.map { CGFloat($0) }
 
         let host = saved.host.map(RemoteHost.named)
@@ -408,6 +414,13 @@ extension TerminalWindowController {
             var dir: ObjCBool = false
             let directory = leaf.directory.flatMap { FileManager.default.fileExists(atPath: $0, isDirectory: &dir) && dir.boolValue ? $0 : nil }
             unstarted.append((view, directory))
+            // Its session is gone (liberttyd ended, as at a reboot) while an
+            // agent ran in it: the new shell picks its conversation up again.
+            if let id = leaf.session, let conversation = Conversations.running(in: id, among: conversations),
+               let command = Conversations.resumeCommand(conversation) {
+                view.session.typeAtFirstPrompt(command)
+                view.resumedConversation = conversation
+            }
             return view
         }
 
@@ -454,6 +467,7 @@ extension TerminalWindowController {
             let tab = TerminalTab(root: root, focused: leaf(t.focused))
             tab.titleOverride = t.title ?? ""
             tab.paneTitleOverride = t.paneTitle ?? ""
+            tab.worktree = t.worktree
             tab.restoredWorkspace = t.workspace
             tab.restoredSelected = t.front == true
             for entry in t.parked ?? [] {

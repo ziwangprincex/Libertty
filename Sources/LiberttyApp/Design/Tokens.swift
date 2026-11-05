@@ -83,6 +83,8 @@ enum Layout {
     static var paneGap: CGFloat { compact ? 1 : 8 }
     /// A sidebar row (tabs): Rex's 32-point capsule.
     static let rowHeight: CGFloat = 32
+    /// A row with a second line (`sidebar-rows = comfortable`, Kero's).
+    static let twoLineRowHeight: CGFloat = 44
 }
 
 /// The interface's type: Geist (bundled, OFL), as Tern sets it, else the

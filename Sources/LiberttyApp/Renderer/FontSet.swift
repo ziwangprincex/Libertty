@@ -25,8 +25,10 @@ final class FontSet {
     static let preferredFamilies = [FontRegistry.bundledFamily, "JetBrains Mono", "SF Mono", "Menlo"]
 
     /// `family` comes first when given; a family that isn't installed falls
-    /// back to the bundled font. `cellHeightAdjust` is `adjust-cell-height`.
-    init(family: String = "", pointSize: CGFloat, scale: CGFloat, cellHeightAdjust: MetricAdjust = .none) {
+    /// back to the bundled font. `cellHeightAdjust` is `adjust-cell-height`,
+    /// `cellWidthAdjust` `adjust-cell-width`.
+    init(family: String = "", pointSize: CGFloat, scale: CGFloat, cellHeightAdjust: MetricAdjust = .none,
+         cellWidthAdjust: MetricAdjust = .none) {
         FontRegistry.registerBundledFonts()
         self.pointSize = pointSize
         self.scale = scale
@@ -75,7 +77,10 @@ final class FontSet {
         let ascent = CTFontGetAscent(regular)
         let descent = CTFontGetDescent(regular)
         let leading = CTFontGetLeading(regular)
-        cellWidth = max(1, Int(advance.width.rounded(.up)))
+        // `adjust-cell-width` (Ghostty's; Kero's cell width): wider or
+        // narrower columns, the glyphs at their left as they are, the text's
+        // size and the rows' height unchanged. Whole pixels.
+        cellWidth = max(1, cellWidthAdjust.applied(to: Int(advance.width.rounded(.up))))
         let natural = max(1, Int((ascent + descent + leading).rounded(.up)))
         cellHeight = max(1, cellHeightAdjust.applied(to: natural))
         // Split leading evenly above and below so text sits centered in the

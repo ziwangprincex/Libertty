@@ -120,7 +120,13 @@ extension TerminalWindowController {
         guard let tab = tab(containing: pane) else { return }
         let tabCloses = tab.panes.count == 1 && tab.parked.isEmpty
         confirmUnsaved(tabCloses ? documentsClosing(with: tab) : []) { [weak self] in
-            self?.confirmIfBusy([pane], noun: "pane") { self?.removePane(pane, unsavedAsked: true) }
+            self?.confirmIfBusy([pane], noun: "pane") {
+                guard tabCloses else { self?.removePane(pane, unsavedAsked: true); return }
+                // Its tab goes with it: a worktree's asks whether that goes too.
+                self?.confirmWorktree(tab) { removing in
+                    if removing { self?.removeTab(tab, undoable: false, unsavedAsked: true) } else { self?.removePane(pane, unsavedAsked: true) }
+                }
+            }
         }
     }
 

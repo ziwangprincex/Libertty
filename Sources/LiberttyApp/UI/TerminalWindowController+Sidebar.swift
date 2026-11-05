@@ -115,6 +115,11 @@ extension TerminalWindowController {
             let count = tab.container?.views.count ?? 0
             if count > 1 { parts.append(tab.container?.zoomed != nil ? "\(count) panes, zoomed" : "\(count) panes") }
             if !tab.parked.isEmpty { parts.append("\(tab.parked.count) parked") }
+            // The second line, when rows have one.
+            if config.sidebarRows == "comfortable" {
+                let second = subtitle(of: tab)
+                if !second.isEmpty { parts.append(second) }
+            }
             return parts.joined(separator: " · ")
         }
     }
@@ -141,11 +146,14 @@ extension TerminalWindowController {
                 label.detail = path == NSHomeDirectory() ? "~" : (path as NSString).lastPathComponent
             }
             // The row's ring says it rang; no bell glyph in its name.
-            return SidebarTabInfo(title: label.name, detail: label.detail, status: status(of: tab)?.state,
-                                  paneCount: tab.container?.views.count ?? 0, parked: tab.parked.count,
-                                  zoomed: tab.container?.zoomed != nil,
-                                  documentURL: tab.document?.url, progress: progress(of: tab), tiles: tiles(of: tab),
-                                  news: news(of: tab))
+            var info = SidebarTabInfo(title: label.name, detail: label.detail, status: status(of: tab)?.state,
+                                      paneCount: tab.container?.views.count ?? 0, parked: tab.parked.count,
+                                      zoomed: tab.container?.zoomed != nil,
+                                      documentURL: tab.document?.url, progress: progress(of: tab), tiles: tiles(of: tab),
+                                      news: news(of: tab))
+            info.subtitle = subtitle(of: tab)
+            info.panes = paneSummaries(of: tab)
+            return info
         }
         shownNews = infos.map(\.news)
         everyTab.forEach(updateNameTags(of:))
@@ -156,6 +164,7 @@ extension TerminalWindowController {
         sidebar.show(workspace: workspaces[activeWorkspace].name, of: workspaces.count)
         tabStrip.show(workspace: workspaces[activeWorkspace].name, of: workspaces.count)
         sidebar.show(tabsShown: config.tabBar.inSidebar)
+        sidebar.show(twoLineRows: config.sidebarRows == "comfortable")
         sidebar.show(tabs: infos, selected: selected)
         if config.tabBar == .top {
             // A top tab says it in one line (Rex's "zsh ~").
@@ -171,6 +180,57 @@ extension TerminalWindowController {
         sidebar.show(filesShown: config.sidebarFiles && local)
         if local { sidebar.show(directory: dir, showHidden: config.sidebarShowHiddenFiles) }
         inspector.show(directory: local ? focusedWorkingDirectory : nil, shellPID: focusedTerminal.session.shellPID)
+    }
+
+    /// A pane picked from a tab's list: gone to, zoomed or closed.
+    func choosePane(_ id: String, _ choice: SidebarViewController.PaneChoice) {
+        guard let pane = allPanes.first(where: { $0.paneID == id }), let tab = owningTab(of: pane) else { return }
+        switch choice {
+        case .focus:
+            reveal(pane, in: tab)
+        case .zoom:
+            reveal(pane, in: tab)
+            if tab.container?.zoomed !== pane { toggleZoom() }
+        case .close:
+            closeTerminalPane(pane)
+        }
+    }
+
+    /// A program state as a word ("waiting", "done").
+    static func stateWord(_ state: ProgramStatusStore.State) -> String {
+        switch state {
+        case .blocked: "waiting"
+        case .error: "failed"
+        default: state.name
+        }
+    }
+
+    /// A row's second line (Kero's): what its program reports (OSC 7501),
+    /// else its branch and changes, else its folder.
+    func subtitle(of tab: TerminalTab) -> String {
+        if let doc = tab.document {
+            return doc.url.isFileURL ? Self.shortDirectory(doc.url.deletingLastPathComponent().path) : (doc.url.host ?? "")
+        }
+        let panes = tab.panes
+        let reported = panes.compactMap { $0.session.programStatus.headline }.filter { !$0.message.isEmpty }
+            .max { $0.state < $1.state }
+        if let reported { return reported.message }
+        guard let pane = tab.focusedPane else { return "" }
+        if let repo = repoStatus(of: pane) { return repo.summary }
+        if let host = pane.session.host { return host.destination }
+        return Self.shortDirectory(pane.session.workingDirectory)
+    }
+
+    /// A split tab's panes, for its row's list (Kero's): each one's
+    /// program, where it is, and what it's doing.
+    func paneSummaries(of tab: TerminalTab) -> [PaneSummary] {
+        guard tab.panes.count > 1 else { return [] }
+        return tab.panes.map { pane in
+            let program = programs[ObjectIdentifier(pane.session)]?.name ?? Self.shellName
+            let place = repoStatus(of: pane)?.summary ?? Self.shortDirectory(pane.session.workingDirectory)
+            return PaneSummary(id: pane.paneID, program: program, place: place,
+                               status: pane.session.programStatus.headline?.state, focused: pane === tab.focusedPane)
+        }
     }
 
     /// The tiles of a tab's panes: each pane's program (Claude Code,
@@ -209,6 +269,8 @@ extension TerminalWindowController {
         guard !wanted.isEmpty else {
             programs.removeAll()
             identified.removeAll()
+            turnStates.removeAll()
+            agentWatches.removeAll()
             return
         }
         tilesScheduled = true
@@ -239,8 +301,32 @@ extension TerminalWindowController {
                 DispatchQueue.main.async {
                     guard let self else { return }
                     let changed = tiles != self.programs
+                    // An agent came or went: its screen says something else now.
+                    let agentsChanged = Set(tiles.keys).union(self.programs.keys)
+                        .filter { tiles[$0]?.agent != self.programs[$0]?.agent }
+                    // An agent left its pane: its conversation there is over, so
+                    // a reboot doesn't pick it up again (Conversations.endRunning).
+                    let left: [(session: String, agent: String)] = self.everyTab.flatMap(\.everyPane).compactMap { pane in
+                        let key = ObjectIdentifier(pane.session)
+                        guard agentsChanged.contains(key), let agent = self.programs[key]?.agent,
+                              let id = pane.session.persistentID else { return nil }
+                        return (id, agent)
+                    }
+                    if !left.isEmpty {
+                        DispatchQueue.global(qos: .utility).async {
+                            for (session, agent) in left { Conversations.endRunning(session: session, agent: agent) }
+                        }
+                    }
                     self.programs = tiles
                     self.identified = about
+                    // What was kept of sessions gone (keyed by their address, which
+                    // a new session may take): gone with them.
+                    let live = Set(wanted.map(\.0))
+                    self.turnStates = self.turnStates.filter { live.contains($0.key) }
+                    self.agentWatches = self.agentWatches.filter { live.contains($0.key) }
+                    for pane in self.allPanes where agentsChanged.contains(ObjectIdentifier(pane.session)) {
+                        self.pokeAgentScreen(pane)
+                    }
                     // A background tab started or stopped printing: that's
                     // news its row shows, whether or not a tile changed.
                     let news = self.tabs.map(self.news(of:))
@@ -248,6 +334,8 @@ extension TerminalWindowController {
                     // updateSidebar schedules the next poll; with nothing
                     // new to draw, only the poll needs doing.
                     if changed || newsChanged { self.updateSidebar() } else { self.scheduleTileRefresh() }
+                    // Repositories read again as they age (each answer that differs redraws).
+                    for tab in self.tabs { for pane in tab.panes { _ = self.repoStatus(of: pane) } }
                 }
             }
         }

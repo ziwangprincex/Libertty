@@ -74,6 +74,18 @@ enum ActionDispatcher {
         case .toggleSecureInput: SecureInput.shared.requested.toggle()
         case .toggleCommandPalette: CommandPalette.toggle(in: controller)
         case .gotoPane: CommandPalette.toggle(in: controller, panesOnly: true)
+        case .resumeConversation: CommandPalette.toggle(in: controller, scope: .conversations)
+        case .newTabInWorktree: controller?.newTabInWorktree()
+        case .toggleAppearance:
+            // The other one of what shows now, kept in the config (window-theme).
+            let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            MainActor.assumeIsolated { _ = SettingsModel.shared.write("window-theme", dark ? "light" : "dark") }
+            // At once, as the config's reload would.
+            NSApp.appearance = NSAppearance(named: dark ? .aqua : .darkAqua)
+        case .gotoAttention:
+            var all = app?.allControllers ?? []
+            if let controller, !all.contains(where: { $0 === controller }) { all.append(controller) }
+            return AttentionJump.go(from: view, in: all)
         case .gotoDirectory: CommandPalette.toggle(in: controller, scope: .folders)
         case .showTabs(let activity): controller?.showTabs(activity)
         case .restartSurface: controller?.restartFocusedPane()

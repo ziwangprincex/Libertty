@@ -1,0 +1,74 @@
+# Tabs in a git worktree of their own (tests/run.sh makes the repository
+# at @REPO@): New Tab in Worktree… asks a branch and opens a tab there;
+# closing it asks whether the worktree goes too. So does closing a tab
+# working in one the command line made; one you keep isn't asked about again.
+type:cd @REPO@
+key:enter
+wait:1.0
+action:new_tab_in_worktree
+wait:0.5
+expect-sheet:yes
+sheet-type:feat-x
+sheet:Create
+wait:1.5
+expect-tab-count:2
+expect-shell:git -C @REPO@ worktree list | grep -c feat-x ==> 1
+# Ignored through .git/info/exclude: the main checkout has nothing new.
+expect-shell:git -C @REPO@ status --porcelain | wc -l | tr -d ' ' ==> 0
+type:pwd
+key:enter
+wait:0.6
+expect:.libertty/worktrees/feat-x
+# Closing it with nothing uncommitted: Remove Worktree, and its merged branch goes.
+action:close_tab
+wait:0.5
+expect-sheet:yes
+sheet:Remove Worktree
+wait:2.0
+expect-tab-count:1
+expect-shell:git -C @REPO@ worktree list | grep -c feat-x ==> 0
+expect-shell:git -C @REPO@ branch --list feat-x | wc -l | tr -d ' ' ==> 0
+# From the command line: a session in one, and gone with --remove-worktree.
+type:id=$(libertty +new-session --worktree feat-y) && echo "MADE-$id"
+key:enter
+wait:3.0
+expect:MADE-
+expect-shell:git -C @REPO@ worktree list | grep -c feat-y ==> 1
+type:libertty +kill-session $id --remove-worktree; echo "DONE-$?"
+key:enter
+wait:5.0
+expect:DONE-0
+expect:removed
+expect-shell:git -C @REPO@ worktree list | grep -c feat-y ==> 0
+# One the command line made, worked in from another tab: closing that tab
+# asks too. Kept, it's yours: the next tab there closes without asking.
+type:id2=$(libertty +new-session --worktree feat-z) && echo "MADE2-$id2"
+key:enter
+wait:3.0
+expect:MADE2-
+tab:new
+wait:1.0
+type:cd @REPO@/.libertty/worktrees/feat-z
+key:enter
+wait:1.0
+action:close_tab
+wait:1.0
+expect-sheet:yes
+sheet:Keep Worktree
+wait:1.0
+expect-tab-count:1
+expect-shell:git -C @REPO@ worktree list | grep -c feat-z ==> 1
+tab:new
+wait:1.0
+type:cd @REPO@/.libertty/worktrees/feat-z
+key:enter
+wait:1.0
+action:close_tab
+wait:1.0
+expect-sheet:no
+expect-tab-count:1
+type:libertty +kill-session $id2 --remove-worktree; echo "DONE2-$?"
+key:enter
+wait:5.0
+expect:DONE2-0
+expect-shell:git -C @REPO@ worktree list | grep -c feat-z ==> 0

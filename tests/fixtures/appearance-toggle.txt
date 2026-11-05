@@ -1,0 +1,10 @@
+# View ▸ Toggle Dark Mode (⌘⇧L): the other appearance, kept in the config
+# as window-theme, one line.
+appearance:light
+settings:mark
+key:cmd+shift+l
+wait:0.6
+expect-config-change:window-theme = dark
+key:cmd+shift+l
+wait:0.6
+expect-config-change:window-theme = light

@@ -208,7 +208,7 @@ enum Action: Equatable {
     case toggleSidebar, toggleInspector, toggleMarkdownSource, toggleEditor
     case toggleFullscreen, toggleVisibility, toggleWindowFloatOnTop, resetWindowSize, toggleSecureInput
     case toggleCommandPalette, toggleQuickTerminal, toggleTabOverview, connectToHost, togglePictureInPicture
-    case gotoPane, gotoDirectory, showTabs(TabActivity), restartSurface, parkSurface, unparkSurface, floatSurface
+    case gotoPane, gotoAttention, resumeConversation, newTabInWorktree, toggleAppearance, gotoDirectory, showTabs(TabActivity), restartSurface, parkSurface, unparkSurface, floatSurface
     case moveSurfaceToNewTab, moveSurfaceToNewWindow, moveSurfaceToTab(Int), moveTabToNewWindow
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
@@ -239,7 +239,7 @@ enum Action: Equatable {
         ("toggle_secure_input", .toggleSecureInput),
         ("toggle_command_palette", .toggleCommandPalette), ("toggle_quick_terminal", .toggleQuickTerminal),
         ("toggle_tab_overview", .toggleTabOverview), ("connect_to_host", .connectToHost),
-        ("goto_pane", .gotoPane), ("go_to_directory", .gotoDirectory), ("restart_surface", .restartSurface),
+        ("goto_pane", .gotoPane), ("goto_attention", .gotoAttention), ("resume_conversation", .resumeConversation), ("new_tab_in_worktree", .newTabInWorktree), ("toggle_appearance", .toggleAppearance), ("go_to_directory", .gotoDirectory), ("restart_surface", .restartSurface),
         ("park_surface", .parkSurface), ("unpark_surface", .unparkSurface), ("float_surface", .floatSurface),
         ("move_surface_to_new_tab", .moveSurfaceToNewTab), ("move_surface_to_new_window", .moveSurfaceToNewWindow),
         ("move_tab_to_new_window", .moveTabToNewWindow),
@@ -381,6 +381,10 @@ enum Action: Equatable {
         ("toggle_secure_input", "Secure Keyboard Entry: keep other apps from reading keystrokes"),
         ("toggle_command_palette", "Search every command, tab, session and theme by name"),
         ("goto_pane", "Go to any pane of any window, by its program, folder or tab"),
+        ("toggle_appearance", "Switch between the light and the dark appearance (window-theme), whatever macOS uses"),
+        ("new_tab_in_worktree", "A new tab on a new branch, in a git worktree of its own (worktree-dir, worktree-base); closing it asks whether the worktree goes too"),
+        ("resume_conversation", "Pick up a coding agent's conversation that ran in a pane (Claude Code, Codex): the pane running it, or a new tab resuming it"),
+        ("goto_attention", "Go to the next pane that needs you, in any window: waiting for you, then failed, then finished, then with something unseen"),
         ("go_to_directory", "A new tab in a folder: where panes are, where shells have been, or a path typed (/ or ~)"),
         ("show_tabs:working|waiting|attention|all", "List only the tabs whose programs work, wait for you, or finished or failed (again: all)"),
         ("restart_surface", "End the focused pane's program and start a fresh shell in its place"),
@@ -504,7 +508,7 @@ struct Keybinds: Equatable {
             "cmd+n=new_window", "cmd+t=new_tab",
             "cmd+w=close_surface", "cmd+alt+w=close_tab", "cmd+shift+w=close_window",
             "cmd+alt+shift+w=close_all_windows",
-            "cmd+shift+r=prompt_tab_title", "cmd+p=goto_pane",
+            "cmd+shift+r=prompt_tab_title", "cmd+p=goto_pane", "cmd+j=goto_attention", "cmd+shift+o=resume_conversation", "cmd+alt+t=new_tab_in_worktree", "cmd+shift+l=toggle_appearance",
             "cmd+shift+bracket_left=previous_tab", "cmd+shift+bracket_right=next_tab",
             "ctrl+shift+tab=previous_tab", "ctrl+tab=next_tab", "cmd+9=last_tab",
             "cmd+d=new_split:right", "cmd+shift+d=new_split:down",

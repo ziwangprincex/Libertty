@@ -204,38 +204,159 @@
     return file.header.join("\n") + "\n" + hunk.header + "\n" + hunk.lines.join("\n") + "\n";
   }
 
-  function diffView(text, { actions, onOpen, empty = "No changes" } = {}) {
-    const files = parseDiff(text);
+  // The hunk alone, as a change to the file where it is now (Last Turn's
+  // Revert): `patchOf` keeps a renamed file's rename and a file's mode
+  // change, which `git apply -R` would undo with any one of its hunks.
+  // A new or deleted file keeps its header: its one hunk is the whole file.
+  function hunkPatchOf(file, hunk) {
+    const skip = /^(old mode|new mode|similarity index|dissimilarity index|rename from|rename to|copy from|copy to) /;
+    const head = file.header.filter((line) => !skip.test(line));
+    const moved = file.header.some((line) => /^(rename|copy) to /.test(line));
+    const plus = head.find((line) => line.startsWith("+++ "));
+    if (moved && plus) {
+      // Both sides the new path: git's b/ for a/, inside its quotes when it quoted it.
+      const to = plus.slice(4), name = to.replace(/\t$/, "");
+      const from = to.startsWith('"b/') ? '"a/' + to.slice(3) : to.startsWith("b/") ? "a/" + to.slice(2) : to;
+      for (let i = 0; i < head.length; i++) {
+        if (head[i].startsWith("diff --git ")) head[i] = "diff --git " + from.replace(/\t$/, "") + " " + name;
+        else if (head[i].startsWith("--- ")) head[i] = "--- " + from;
+      }
+    }
+    return head.join("\n") + "\n" + hunk.header + "\n" + hunk.lines.join("\n") + "\n";
+  }
+
+  // How diffs lay out (Kero's): unified while narrow, side by side once
+  // wide ("auto"), or one of them always ("unified", "split"); the button
+  // over the diffs switches, and the config keeps the choice (diff-layout).
+  let diffLayout = (window.__blockInit && window.__blockInit.prefs && window.__blockInit.prefs.diffLayout) || "auto";
+  const diffPrefs = {
+    get layout() { return diffLayout; },
+    set layout(v) {
+      diffLayout = v;
+      if (window.block && window.block.call) window.block.call("setDiffLayout", { layout: v }).catch(() => {});
+    },
+  };
+  const SPLIT_WIDTH = 900;
+  // A file with this many changed lines, or binary, starts folded.
+  const FOLD_LINES = 400;
+
+  // A hunk's lines as rows of two sides: context on both, a run of
+  // removals beside the additions that replaced them.
+  function pairLines(hunk, ways) {
+    const rows = [];
+    let o = hunk.oldStart, n = hunk.newStart, dels = [], adds = [];
+    const flush = () => {
+      for (let i = 0; i < Math.max(dels.length, adds.length); i++) rows.push({ left: dels[i] || null, right: adds[i] || null });
+      dels = []; adds = [];
+    };
+    for (const line of hunk.lines) {
+      if (line[0] === "\\") { flush(); rows.push({ note: line }); continue; }
+      const marks = line.slice(0, ways), code = line.slice(ways) || " ";
+      if (ways === 1 && marks === "-") dels.push({ ln: o++, code, cls: "del" });
+      else if (ways === 1 && marks === "+") adds.push({ ln: n++, code, cls: "add" });
+      else { flush(); rows.push({ left: { ln: o++, code, cls: "ctx" }, right: { ln: n++, code, cls: "ctx" } }); }
+    }
+    flush();
+    return rows;
+  }
+
+  function unifiedLines(file, hunk) {
+    let o = hunk.oldStart, n = hunk.newStart;
+    return hunk.lines.map((line) => {
+      if (line[0] === "\\") return h("div.line.note", h("span.ln", ""), h("span.ln", ""), h("span.code", line));
+      const marks = line.slice(0, file.ways);
+      let left = "", right = "", cls = "ctx";
+      if (file.ways > 1) {
+        // A conflicted file: only the result's lines are numbered.
+        if (marks.includes("-")) cls = "del"; else { right = n++; if (marks.includes("+")) cls = "add"; }
+      } else if (marks === "+") { right = n++; cls = "add"; }
+      else if (marks === "-") { left = o++; cls = "del"; }
+      else { left = o++; right = n++; }
+      return h("div.line." + cls, h("span.ln", left), h("span.ln", right), h("span.code", line.slice(file.ways) || " "));
+    });
+  }
+
+  function splitLines(file, hunk) {
+    const side = (x) => x ? [h("span.ln", x.ln), h("span.code." + x.cls, x.code)] : [h("span.ln", ""), h("span.code.none", "")];
+    return pairLines(hunk, file.ways).map((row) => row.note
+      ? h("div.sline.note", h("span.ln", ""), h("span.code", row.note))
+      : h("div.sline", side(row.left), side(row.right)));
+  }
+
+  // `hide(file, hunk)`: hunks to leave out (Last Turn's kept ones); a file
+  // left with none goes too.
+  function diffView(text, { actions, onOpen, hide, empty = "No changes" } = {}) {
+    let files = parseDiff(text);
+    if (hide) {
+      for (const f of files) {
+        const before = f.hunks.length;
+        f.hunks = f.hunks.filter((k) => !hide(f, k));
+        f.allHidden = before > 0 && !f.hunks.length;
+      }
+      files = files.filter((f) => !f.allHidden);
+    }
     if (!files.length) return h("div.empty", empty);
-    return h("div.diff", files.map((file) => {
+    const sections = [];
+    let split = false;
+    const renders = [];
+    const sectionsOf = files.map((file) => {
       const name = file.path || file.old;
       const renamed = file.old && file.old !== file.path && !file.created && !file.deleted;
-      return h("section.diff-file",
-        h("div.diff-file-head",
-          h("span.diff-path", { title: name, onclick: onOpen && !file.deleted ? () => onOpen(name) : null, class: onOpen && !file.deleted ? "link" : null }, name),
-          renamed ? h("span.diff-old", "from " + file.old) : null,
-          h("span.diff-count", h("span.add", "+" + file.added), " ", h("span.del", "−" + file.removed))),
-        file.binary ? h("div.empty", "Binary file") : null,
-        file.hunks.map((hunk) => {
-          let o = hunk.oldStart, n = hunk.newStart;
-          const buttons = actions && file.ways === 1 ? actions(file, hunk) : [];
-          return h("div.hunk",
-            h("div.hunk-head", h("span.hunk-range", hunk.header.replace(/ @@.*$/, " @@")),
-              h("span.hunk-context", hunk.context), h("span.hunk-actions", buttons)),
-            h("div.hunk-lines", hunk.lines.map((line) => {
-              if (line[0] === "\\") return h("div.line.note", h("span.ln", ""), h("span.ln", ""), h("span.code", line));
-              const marks = line.slice(0, file.ways);
-              let left = "", right = "", cls = "ctx";
-              if (file.ways > 1) {
-                // A conflicted file: only the result's lines are numbered.
-                if (marks.includes("-")) cls = "del"; else { right = n++; if (marks.includes("+")) cls = "add"; }
-              } else if (marks === "+") { right = n++; cls = "add"; }
-              else if (marks === "-") { left = o++; cls = "del"; }
-              else { left = o++; right = n++; }
-              return h("div.line." + cls, h("span.ln", left), h("span.ln", right), h("span.code", line.slice(file.ways) || " "));
-            })));
-        }));
-    }));
+      const big = file.binary || file.added + file.removed > FOLD_LINES;
+      const section = h("section.diff-file" + (big ? ".folded" : ""), { "data-path": name });
+      const head = h("div.diff-file-head", {
+        title: "Click to fold or unfold",
+        onclick: (e) => { if (!e.target.closest(".diff-path.link")) { section.classList.toggle("folded"); updateFoldButton(); } },
+      },
+        h("span.diff-fold", "▾"),
+        h("span.diff-path", { title: name, onclick: onOpen && !file.deleted ? () => onOpen(name) : null, class: onOpen && !file.deleted ? "link" : null }, name),
+        renamed ? h("span.diff-old", "from " + file.old) : null,
+        h("span.diff-count", h("span.add", "+" + file.added), " ", h("span.del", "−" + file.removed)));
+      const body = [file.binary ? h("div.empty", "Binary file") : null];
+      for (const hunk of file.hunks) {
+        const buttons = actions && file.ways === 1 ? actions(file, hunk) : [];
+        const lines = h("div.hunk-lines");
+        renders.push(() => clear(lines, split && file.ways === 1 ? splitLines(file, hunk) : unifiedLines(file, hunk)));
+        body.push(h("div.hunk",
+          h("div.hunk-head", h("span.hunk-range", hunk.header.replace(/ @@.*$/, " @@")),
+            h("span.hunk-context", hunk.context), h("span.hunk-actions", buttons)),
+          lines));
+      }
+      section.append(head, ...body.filter(Boolean));
+      sections.push(section);
+      return section;
+    });
+    const foldButton = h("button.button.quiet", { onclick: () => {
+      const fold = !sections.every((x) => x.classList.contains("folded"));
+      for (const x of sections) x.classList.toggle("folded", fold);
+      updateFoldButton();
+    } });
+    const layoutButton = h("button.button.quiet", { title: "Unified, or side by side", onclick: () => {
+      const order = ["auto", "split", "unified"];
+      diffPrefs.layout = order[(order.indexOf(diffPrefs.layout) + 1) % order.length];
+      relayout();
+    } });
+    function updateFoldButton() {
+      clear(foldButton, sections.every((x) => x.classList.contains("folded")) ? "Expand All" : "Collapse All");
+    }
+    const root = h("div.diff", h("div.diff-bar", h("span.diff-files", files.length + (files.length === 1 ? " file" : " files")),
+      h("span.spacer"), layoutButton, foldButton), sectionsOf);
+    function relayout() {
+      const layout = diffPrefs.layout;
+      const want = layout === "split" || (layout === "auto" && root.clientWidth >= SPLIT_WIDTH);
+      clear(layoutButton, { auto: "Layout: Auto", split: "Side by Side", unified: "Unified" }[layout] || "Layout");
+      if (want === split && root.dataset.laid) return;
+      split = want;
+      root.dataset.laid = "1";
+      root.classList.toggle("split", split);
+      for (const r of renders) r();
+    }
+    updateFoldButton();
+    // Laid out once it has a width, and again as the width crosses the line.
+    if (typeof ResizeObserver === "function") new ResizeObserver(() => relayout()).observe(root);
+    setTimeout(relayout, 0);
+    relayout();
+    return root;
   }
 
   // Saving a file block's file: a change is written a moment later; a save
@@ -319,7 +440,7 @@
     on(event, fn) { (listeners[event] = listeners[event] || []).push(fn); },
     _emit(event, payload) { for (const fn of listeners[event] || []) fn(payload); },
     setTheme(t) { applyTheme(t); },
-    h, clear, ago, date, toast, dialog, parseDiff, patchOf, diffView, fileDoc,
+    h, clear, ago, date, toast, dialog, parseDiff, patchOf, hunkPatchOf, diffView, fileDoc,
   };
   applyTheme(init.theme || {});
 })();

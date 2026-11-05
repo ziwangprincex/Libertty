@@ -1,0 +1,17 @@
+# language = zh-Hans (the config tests/run.sh writes): the palette and
+# Settings speak Chinese; the keys and values written stay the config's.
+key:cmd+shift+p
+wait:0.5
+type:jump to pane
+wait:0.3
+expect-palette:跳到需要你处理的面板
+shot:zh-palette.png
+key:escape
+wait:0.3
+key:cmd+,
+wait:0.8
+expect-settings:page=界面
+settings:mark
+settings:press:紧凑
+expect-config-change:sidebar-rows = compact
+shot:zh-settings.png

@@ -6,7 +6,7 @@ import LiberttyCore
 /// runs it. ⌘P opens it on the panes alone (Go to Pane, after GoRex).
 final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
     /// What an item is: the scope chips and the section headings follow it.
-    enum Kind: Equatable { case pane, folder, workspace, session, command, theme, setting, option }
+    enum Kind: Equatable { case pane, conversation, folder, workspace, session, command, theme, setting, option }
 
     struct Item {
         var title: String
@@ -25,16 +25,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var alternate: (() -> Void)?
         /// A config key typed in place (any key without a picker).
         var editKey: String?
+        /// More words it's found by, not shown: a translated command's English.
+        var keywords = ""
         var run: () -> Void
     }
 
     /// The chips under the field (Tern's All / Commands / Files / Sessions…).
     enum Scope: CaseIterable {
-        case all, panes, folders, commands, workspaces, sessions, themes, settings
+        case all, panes, conversations, folders, commands, workspaces, sessions, themes, settings
         var title: String {
-            switch self {
+            let english = switch self {
             case .all: "All"
             case .panes: "Panes"
+            case .conversations: "Conversations"
             case .folders: "Folders"
             case .commands: "Commands"
             case .workspaces: "Workspaces"
@@ -42,11 +45,13 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             case .themes: "Themes"
             case .settings: "Settings"
             }
+            return L10n.t(english)
         }
         func admits(_ kind: Kind) -> Bool {
             switch self {
             case .all: kind != .option
             case .panes: kind == .pane
+            case .conversations: kind == .conversation
             case .folders: kind == .folder
             case .commands: kind == .command
             case .workspaces: kind == .workspace
@@ -120,8 +125,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 60),
                            styleMask: [.borderless], backing: .buffered, defer: false)
         super.init()
-        all = panesOnly ? Self.panes(around: controller)
-            : Self.panes(around: controller) + Self.folders(around: controller) + items()
+        all = panesOnly ? Self.panes(around: controller) + Self.conversations(around: controller)
+            : Self.panes(around: controller) + Self.conversations(around: controller) + Self.folders(around: controller) + items()
         build()
         filter("")
     }
@@ -198,9 +203,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         weak var controller = self.controller
         var out: [Item] = []
         func command(_ title: String, _ action: Action, _ symbol: String) {
-            out.append(Item(title: title, symbol: symbol, shortcut: keybinds.trigger(for: action)?.displayString ?? "") {
+            var item = Item(title: L10n.t(title), symbol: symbol, shortcut: keybinds.trigger(for: action)?.displayString ?? "") {
                 ActionDispatcher.perform(action, in: controller?.focusedTerminal, controller: controller)
-            })
+            }
+            // In another language, the English finds it too.
+            if item.title != title { item.keywords = title }
+            out.append(item)
         }
         command("New Window", .newWindow, "macwindow.badge.plus")
         command("New Tab", .newTab, "plus.square")
@@ -244,13 +252,24 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Next Workspace", .nextWorkspace, "chevron.right.2")
         command("Previous Workspace", .previousWorkspace, "chevron.left.2")
         command("Go to Pane…", .gotoPane, "rectangle.3.group")
+        command("Jump to Pane Needing You", .gotoAttention, "exclamationmark.bubble")
+        command("Resume Conversation…", .resumeConversation, "bubble.left.and.text.bubble.right")
+        command("Toggle Dark Mode", .toggleAppearance, "circle.lefthalf.filled")
+        if controller?.host == nil { command("New Tab in Worktree…", .newTabInWorktree, "arrow.triangle.branch") }
+        // Keep the Mac awake (keep-awake), each choice but the one it is.
+        let awake = ConfigStore.shared.config.keepAwake
+        for (mode, title) in [(KeepAwake.Mode.always, "Always"), (.agents, "While Agents Work"), (.never, "Never")] where mode != awake {
+            out.append(Item(title: L10n.t("Keep Mac Awake: \(title)"), symbol: mode == .never ? "moon.zzz" : "cup.and.saucer") {
+                MainActor.assumeIsolated { _ = SettingsModel.shared.write("keep-awake", mode.rawValue) }
+            })
+        }
         command("Go to Directory…", .gotoDirectory, "folder")
         // The sidebar's activity filter, and back to every tab.
         // (Not the one it shows: show_tabs again would undo it.)
         if let shown = controller?.sidebarActivity {
             for (activity, title) in [(TabActivity.working, "Working Tabs"), (.waiting, "Tabs Waiting for You"),
                                       (.attention, "Finished or Failed Tabs"), (.all, "All Tabs")] where activity != shown {
-                command("Sidebar: \(title)", .showTabs(activity), "line.3.horizontal.decrease.circle")
+                command(L10n.t("Sidebar") + ": " + L10n.t(title), .showTabs(activity), "line.3.horizontal.decrease.circle")
             }
         }
         command("Zoom Split", .toggleSplitZoom, "arrow.up.left.and.arrow.down.right")
@@ -586,6 +605,15 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             // or a search): there are many. A picker lists its options.
             shown = inScope.filter { (scope == .themes || $0.kind != .theme) && (scope == .folders || $0.kind != .folder)
                 && (scope == .settings || $0.kind != .setting) }
+            // The last few conversations, but all of them under their chip (a search finds any).
+            if scope != .conversations {
+                var recent = 0
+                shown = shown.filter { item in
+                    guard item.kind == .conversation else { return true }
+                    recent += 1
+                    return recent <= Self.recentConversations
+                }
+            }
         } else {
             // A path being typed lists where it leads first (not in Go to Pane).
             let typed = scope.admits(.folder) && !panesOnly ? typedFolders(q) : []
@@ -593,7 +621,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             shown = typed + inScope.filter { $0.kind != .folder || !typedTitles.contains($0.title) }
                 .compactMap { item in
                     // A setting's subtitle is its value: what it's called is what's searched.
-                    Self.score(q, item.kind == .setting ? item.title : item.title + " " + item.subtitle).map { (item, $0) }
+                    Self.score(q, (item.kind == .setting ? item.title : item.title + " " + item.subtitle)
+                        + (item.keywords.isEmpty ? "" : " " + item.keywords)).map { (item, $0) }
                 }
                 .sorted { $0.1 > $1.1 }.prefix(60).map(\.0)
         }
@@ -608,7 +637,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             rows.append(.item(item))
         }
         noMatches = shown.isEmpty
-        noMatchesText = q.isEmpty ? "Nothing here" : "No matches"
+        noMatchesText = L10n.t(q.isEmpty ? "Nothing here" : "No matches")
         table.reloadData()
         // The quiet "No matches" row is never the one Return would run.
         // Browsing themes starts at the one in use (nothing changes yet).
@@ -625,9 +654,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         layout()
     }
 
-    private static func heading(_ kind: Kind) -> String {
+    private static func heading(_ kind: Kind) -> String { L10n.t(englishHeading(kind)) }
+
+    private static func englishHeading(_ kind: Kind) -> String {
         switch kind {
         case .pane: "Panes"
+        case .conversation: "Recent Conversations"
         case .folder: "Folders"
         case .workspace: "Workspaces"
         case .session: "Sessions"
@@ -743,8 +775,29 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         updateFooter()
     }
 
+    /// How many conversations show before a search or their chip asks for more.
+    static let recentConversations = 5
+
+    /// Agents' conversations that ran in panes (Kero's): the last to run
+    /// first; picking one goes to the pane running it, or resumes it in a
+    /// new tab. (This Mac's: a host's window lists none.)
+    private static func conversations(around controller: TerminalWindowController?) -> [Item] {
+        guard let controller, controller.host == nil else { return [] }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return Conversations.load().filter { Conversations.resumeCommand($0) != nil }.map { c in
+            let running = controller.pane(running: c) != nil
+            let folder = (c.directory as NSString).abbreviatingWithTildeInPath
+            let when = running ? "running" : formatter.localizedString(for: Date(timeIntervalSince1970: c.active), relativeTo: Date())
+            return Item(title: c.label, subtitle: [c.agentName, folder, when].joined(separator: " · "),
+                        symbol: c.agent == "codex" ? "wand.and.stars" : "sparkles", kind: .conversation) { [weak controller] in
+                controller?.resume(c)
+            }
+        }
+    }
+
     private static func placeholder(panesOnly: Bool) -> String {
-        panesOnly ? "Go to a pane: type its program, folder or tab" : "Run a command or go to a pane…"
+        L10n.t(panesOnly ? "Go to a pane: type its program, folder or tab" : "Run a command or go to a pane…")
     }
 
     /// The footer's words: a picker's options are tried and kept, Esc goes back.

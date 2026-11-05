@@ -1,5 +1,5 @@
 #!/bin/zsh
-# libertty +wait --until / +capture --ansi|--html / +events, against a private
+# libertty +wait --until / +capture --ansi|--html / +events / +prompt, against a private
 # liberttyd (tests/run.sh sets LIBERTTY_DAEMON_SOCKET): prints
 # "cli-wait: all passed" or what failed.
 #   tests/cli-wait-test.sh LIBERTTY_BINARY
@@ -49,6 +49,19 @@ $L +capture $ID --html > $T/page.html
 grep -q '<!doctype html>' $T/page.html && grep -q 'var(--vt-palette-1)' $T/page.html && grep -q -- '--vt-palette-1: #' $T/page.html \
   && ok "capture --html is a page with its colors" || bad "capture --html"
 $L +capture $ID --html --ansi > /dev/null 2>&1; [[ $? == 2 ]] && ok "--html and --ansi together: refused" || bad "both formats"
+
+# A program's report (OSC 7501): +events --for picks the state, --once the first.
+( $L +events $ID --for waiting --once --timeout 10 > $T/once; echo $? >> $T/once ) &
+sleep 0.5
+$L +send $ID "printf '\\033]7501;state=working:app=probe\\a'\\n"
+sleep 0.3
+$L +send $ID "printf '\\033]7501;state=blocked:app=probe:kind=permission\\a'\\n"
+sleep 1.5
+grep -q '"state":"blocked"' $T/once && ! grep -q '"state":"working"' $T/once && [[ $(tail -1 $T/once) == 0 ]] \
+  && ok "+events --for waiting --once: the first, then out" || bad "events --for/--once: $(cat $T/once)"
+$L +events --once --timeout 1 > /dev/null 2>&1; [[ $? == 124 ]] && ok "+events --timeout: 124" || bad "events timeout"
+# +prompt: typed, Return, its screen once quiet.
+$L +prompt $ID 'echo ANSWER-$((6*7))' --quiet 600 -n 12 | grep -q 'ANSWER-42' && ok "+prompt prints the answer" || bad "+prompt"
 
 ( $L +wait $ID --timeout 10; echo $? > $T/exit ) &
 sleep 0.3

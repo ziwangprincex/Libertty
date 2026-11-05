@@ -19,9 +19,28 @@ enum PaneRequests {
         case "list-panes":
             list(info, in: controllers)
             return true
+        case "resume":
+            resume(info, in: controllers)
+            return true
         default:
             return false
         }
+    }
+
+    /// `{agent, id}` (`+resume`): the pane running the conversation, or a new
+    /// tab resuming it in the window in front. Answers `made` with the pane's session.
+    private static func resume(_ info: [String: String], in controllers: [TerminalWindowController]) {
+        guard let c = Conversations.load().first(where: { $0.agent == info["agent"] && $0.id == info["id"] }) else {
+            return RemoteControl.answer(info, ["result": "error", "message": "no such conversation"])
+        }
+        let local = controllers.filter { $0.host == nil }
+        let controller = local.first { $0.pane(running: c) != nil }
+            ?? local.first { $0.window?.isKeyWindow == true } ?? local.first { !$0.isQuick }
+        guard let controller, let pane = controller.resume(c) else {
+            return RemoteControl.answer(info, ["result": "error", "message": "no window to resume it in"])
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        RemoteControl.answer(info, ["result": "made", "session": pane.session.persistentID ?? ""])
     }
 
     /// Every terminal pane of every window, one line each: where it is, its

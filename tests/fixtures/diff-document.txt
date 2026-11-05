@@ -1,0 +1,18 @@
+# A diff document (libertty +diff, .diff and .patch files): each file folds
+# on its own and all of them at once; unified while narrow, side by side once
+# wide (diff-layout = auto). All HTML and CSS: the page runs no script.
+size:900x700
+open:@ROOT@/tests/fixtures/sample.diff
+wait:1.0
+page-wait:go
+expect-page:main.swift
+expect-page:Collapse All
+shot:diff-narrow.png
+page-click:Collapse All
+wait:0.3
+expect-page:Expand All
+page-click:Expand All
+wait:0.3
+size:1800x800
+wait:0.8
+shot:diff-wide.png

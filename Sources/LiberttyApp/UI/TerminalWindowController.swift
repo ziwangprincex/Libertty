@@ -18,6 +18,10 @@ final class TerminalTab {
     var rang = false
     /// Broadcast Input: typing in one pane types in all of them.
     var broadcasting = false
+    /// The git worktree it was made in (New Tab in Worktree…): closing it asks whether that goes too.
+    var worktree: WorktreeInfo?
+    /// Closing it is asking about its worktree now (a second ⌘W waits for that).
+    var askingAboutWorktree = false
 
     init(pane: TerminalView) {
         container = SplitContainerView(pane: pane)
@@ -372,6 +376,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
             // (Where each was, whatever `working-directory` says for new ones.)
             for (pane, directory) in unstarted {
                 try? startSession(of: pane, command: nil, workingDirectory: directory, keepDirectory: directory != nil)
+                nameAfterConversation(pane)
             }
             unstarted = []
         } else {
@@ -532,6 +537,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// runtime itself: the program it starts may not be up yet.
     var identified: [ObjectIdentifier: Identified] = [:]
     var tilesScheduled = false
+    /// Each agent pane's look at its screen (`agent-screen-status`).
+    var agentWatches: [ObjectIdentifier: AgentScreenWatch] = [:]
+    /// Each pane's program state as last seen, to tell when an agent's turn starts (Last Turn).
+    var turnStates: [ObjectIdentifier: ProgramStatusStore.State] = [:]
 
     var overview: TabOverviewView?
 
@@ -662,6 +671,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     /// Unsaved documents were saved or let go for this close.
     var unsavedConfirmed = false
+
+    /// The window's worktrees were asked about for this close: nil not yet;
+    /// those to remove once it's closed (none: kept).
+    var worktreesOnClose: [(WorktreeInfo, force: Bool)]?
 
     /// The window was hidden for undo / brought back (the app keeps its list).
     var onHide: ((TerminalWindowController) -> Void)?

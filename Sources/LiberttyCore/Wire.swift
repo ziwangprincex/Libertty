@@ -52,6 +52,8 @@ public enum Wire {
         case events = 19      // {kinds?: [String]} → result {ok}, then `event` frames until the connection closes
         case rename = 20      // {id, label}: name a session ("" for none) → result {ok, label}
         case sendKey = 21     // {id, keys: ["ctrl+c", "enter", …]}: press them, encoded as the program wants → result {ok}
+        case report = 22      // {id, state, record?, app?}: a program's state the app read on the session's screen
+                              // (an agent's spinner, its permission dialog) → result {ok}; a `status` event
 
         // Daemon → client
         case welcome = 101    // {version, build, pid, features?}

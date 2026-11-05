@@ -27,9 +27,11 @@ final class PaneHeader: NSView {
         var floats = true
         /// Whether parking it would leave another terminal in view.
         var parks = false
+        /// Its repository's branch and changes ("fix-login +40 −2"), `git-status`.
+        var branch = ""
     }
 
-    enum Action { case focus, splitRight, splitDown, pictureInPicture, park, zoom, close }
+    enum Action { case focus, splitRight, splitDown, pictureInPicture, park, zoom, close, changes }
 
     static let height: CGFloat = 36
 
@@ -45,6 +47,8 @@ final class PaneHeader: NSView {
     private let name = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
     private let size = NSTextField(labelWithString: "")
+    /// The branch and its changes: a click shows them (Kero's).
+    private let branch = NSButton(title: "", target: nil, action: nil)
     private let right = PaneHeader.button("rectangle.split.2x1", "Split Right")
     private let down = PaneHeader.button("rectangle.split.1x2", "Split Down")
     private let pip = PaneHeader.button("square.on.square", "Float Pane")
@@ -75,6 +79,17 @@ final class PaneHeader: NSView {
         detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         name.setContentCompressionResistancePriority(.defaultLow + 1, for: .horizontal)
         size.isHidden = true  // Rex shows no size; the probe still reads it
+        branch.isBordered = false
+        branch.font = Typeface.ui(12)
+        branch.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Branch")
+        branch.imagePosition = .imageLeading
+        branch.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+        branch.lineBreakMode = .byTruncatingMiddle
+        branch.toolTip = "Show the changes"
+        branch.target = self
+        branch.action = #selector(showChanges)
+        branch.isHidden = true
+        branch.setContentCompressionResistancePriority(.defaultLow - 1, for: .horizontal)
         mark.wantsLayer = true
         mark.isHidden = true
         right.action = #selector(splitRightIt)
@@ -84,7 +99,7 @@ final class PaneHeader: NSView {
         close.action = #selector(closeIt)
         let stack = NSStackView(views: buttons)
         stack.spacing = 2
-        for v in [glyph, name, detail, size, stack, mark] {
+        for v in [glyph, name, detail, size, branch, stack, mark] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -98,7 +113,9 @@ final class PaneHeader: NSView {
             name.centerYAnchor.constraint(equalTo: centerYAnchor),
             detail.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 5),
             detail.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
-            detail.trailingAnchor.constraint(lessThanOrEqualTo: stack.leadingAnchor, constant: -10),
+            detail.trailingAnchor.constraint(lessThanOrEqualTo: branch.leadingAnchor, constant: -10),
+            branch.centerYAnchor.constraint(equalTo: centerYAnchor),
+            branch.trailingAnchor.constraint(equalTo: stack.leadingAnchor, constant: -8),
             size.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
             size.trailingAnchor.constraint(equalTo: stack.leadingAnchor, constant: -8),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -131,6 +148,8 @@ final class PaneHeader: NSView {
         name.stringValue = info.name
         detail.stringValue = info.detail
         size.stringValue = info.size
+        branch.title = info.branch
+        branch.isHidden = info.branch.isEmpty
         right.isHidden = !info.floats
         down.isHidden = !info.floats
         pip.isHidden = !info.floats
@@ -154,6 +173,10 @@ final class PaneHeader: NSView {
         name.textColor = focused ? s.content.nsColor : s.contentSecondary.nsColor
         glyph.contentTintColor = name.textColor
         detail.textColor = s.contentTertiary.nsColor
+        branch.contentTintColor = s.contentTertiary.nsColor
+        branch.attributedTitle = NSAttributedString(string: info?.branch ?? "", attributes: [
+            .font: Typeface.ui(12), .foregroundColor: s.contentTertiary.nsColor,
+        ])
         // Rex's buttons: faint on every pane, clear under the pointer.
         let tint = hovering ? s.contentSecondary.nsColor : s.contentTertiary.nsColor.withAlphaComponent(0.7)
         buttons.forEach { $0.contentTintColor = tint }
@@ -189,4 +212,5 @@ final class PaneHeader: NSView {
     @objc private func floatIt() { onAction?(.pictureInPicture) }
     @objc private func zoomIt() { onAction?(.zoom) }
     @objc private func closeIt() { onAction?(.close) }
+    @objc private func showChanges() { onAction?(.changes) }
 }

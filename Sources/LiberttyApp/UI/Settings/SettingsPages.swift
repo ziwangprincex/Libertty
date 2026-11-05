@@ -97,7 +97,7 @@ struct SectionFooter: View {
 
     var body: some View {
         switch (page, section) {
-        case (.integrations, "Coding Agents"):
+        case (.integrations, L10n.t("Coding Agents")):
             VStack(alignment: .leading, spacing: 4) {
                 Text("Teach Claude Code and Codex how to use Libertty: their tabs say when they work, wait for you or are done.")
                 if !model.agentReport.isEmpty { Text(model.agentReport).textSelection(.enabled) }
@@ -105,7 +105,7 @@ struct SectionFooter: View {
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-        case (.terminal, "Shell"):
+        case (.terminal, L10n.t("Shell")):
             Text("The startup command is an executable and its arguments, run through /bin/sh -c; empty runs your login shell.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

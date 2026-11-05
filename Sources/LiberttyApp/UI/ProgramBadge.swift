@@ -11,6 +11,8 @@ struct ProgramBadge {
     let symbol: String?
     /// The program's color, for `tab-icon-color`.
     let tint: Tint
+    /// A coding agent's name, as its screen's rules know it (AgentScreen).
+    var agent: String?
 
     /// System colors, so a light or dark sidebar shows each as it should.
     enum Tint: String { case none, orange, green, teal, blue, indigo, purple, pink, red, yellow, brown, gray, cyan
@@ -33,10 +35,42 @@ struct ProgramBadge {
         }
     }
 
-    init(name: String, symbol: String?, tint: Tint = .none) {
+    init(name: String, symbol: String?, tint: Tint = .none, agent: String? = nil) {
         self.name = name
         self.symbol = symbol
         self.tint = tint
+        self.agent = agent
+    }
+
+    /// Coding agents, by process name: what they show as, and that their
+    /// screens tell what they're doing (Kero's list).
+    static let agents: [String: ProgramBadge] = [
+        "claude": ProgramBadge(name: "Claude Code", symbol: "sparkles", tint: .orange, agent: "claude"),
+        "codex": ProgramBadge(name: "Codex", symbol: "wand.and.stars", tint: .teal, agent: "codex"),
+        "gemini": ProgramBadge(name: "Gemini", symbol: "sparkle", tint: .blue, agent: "gemini"),
+        "opencode": ProgramBadge(name: "OpenCode", symbol: "curlybraces", tint: .gray, agent: "opencode"),
+        "amp": ProgramBadge(name: "Amp", symbol: "bolt", tint: .red, agent: "amp"),
+        "cursor-agent": ProgramBadge(name: "Cursor Agent", symbol: "cursorarrow.rays", tint: .gray, agent: "cursor-agent"),
+        "droid": ProgramBadge(name: "Droid", symbol: "cpu", tint: .orange, agent: "droid"),
+        "qwen": ProgramBadge(name: "Qwen Code", symbol: "sparkle", tint: .purple, agent: "qwen"),
+        "copilot": ProgramBadge(name: "Copilot", symbol: "airplane", tint: .indigo, agent: "copilot"),
+        "kiro-cli": ProgramBadge(name: "Kiro", symbol: "sparkle", tint: .purple, agent: "kiro-cli"),
+        "cline": ProgramBadge(name: "Cline", symbol: "sparkle", tint: .gray, agent: "cline"),
+        "kimi": ProgramBadge(name: "Kimi", symbol: "moon.stars", tint: .indigo, agent: "kimi"),
+        "pi": ProgramBadge(name: "Pi", symbol: "sparkle", tint: .green, agent: "pi"),
+        "omp": ProgramBadge(name: "OMP", symbol: "sparkle", tint: .green, agent: "omp"),
+        "aider": ProgramBadge(name: "Aider", symbol: "sparkle", tint: .green),
+        "goose": ProgramBadge(name: "Goose", symbol: "bird", tint: .gray),
+        "crush": ProgramBadge(name: "Crush", symbol: "heart", tint: .pink),
+        "auggie": ProgramBadge(name: "Auggie", symbol: "sparkle", tint: .green),
+    ]
+
+    /// The agent a name is, as Kero tells it: the name, or the name with a
+    /// suffix ("claude-code", "gemini-cli"; not Pi's: "pi-hole" isn't Pi).
+    static func agentKey(_ name: String) -> String? {
+        let name = name.lowercased()
+        if agents[name] != nil { return name }
+        return agents.keys.sorted { $0.count > $1.count }.first { $0 != "pi" && name.hasPrefix($0 + "-") }
     }
 
     private static let shellNames: Set<String> = [
@@ -45,9 +79,8 @@ struct ProgramBadge {
 
     /// Known programs, by process name.
     private static let known: [String: ProgramBadge] = {
-        var t: [String: ProgramBadge] = [
-            "claude": ProgramBadge(name: "Claude Code", symbol: "sparkles", tint: .orange),
-            "codex": ProgramBadge(name: "Codex", symbol: "wand.and.stars", tint: .teal),
+        var t: [String: ProgramBadge] = agents
+        t.merge([
             "node": ProgramBadge(name: "Node", symbol: "hexagon", tint: .green),
             "bun": ProgramBadge(name: "Bun", symbol: "hare", tint: .brown),
             "deno": ProgramBadge(name: "Deno", symbol: "diamond", tint: .gray),
@@ -82,7 +115,7 @@ struct ProgramBadge {
             "swift": ProgramBadge(name: "Swift", symbol: "swift", tint: .orange),
             "less": ProgramBadge(name: "Pager", symbol: "doc.text", tint: .gray),
             "tail": ProgramBadge(name: "Log", symbol: "doc.text", tint: .gray),
-        ]
+        ]) { agent, _ in agent }
         // Other names for the same programs. A typo here would quietly drop
         // the alias, so it stops a debug build instead.
         for (alias, of) in [("python3", "python"), ("ipython", "python"), ("view", "vim"), ("vi", "vim"),
@@ -101,7 +134,7 @@ struct ProgramBadge {
     /// Programs often started through something else — a wrapper (tclaude),
     /// a launcher, npx — and worth finding behind it. By process name.
     static func isOftenWrapped(_ name: String) -> Bool {
-        ["claude", "codex"].contains(name.lowercased())
+        agentKey(name) != nil
     }
 
     /// The badge for a foreground process: its name, and its arguments when
@@ -112,6 +145,7 @@ struct ProgramBadge {
         if !arguments.isEmpty, runsAnotherProgram(name), let badge = scripted(arguments) { return badge }
         guard !name.isEmpty else { return shell("") }
         if let b = known[name.lowercased()] { return b }
+        if let key = agentKey(name), let b = agents[key] { return b }
         if shellNames.contains(name.lowercased()) { return shell(name) }
         // Anything else: its own name, drawn as its first letter.
         return ProgramBadge(name: name, symbol: nil)
@@ -133,10 +167,8 @@ struct ProgramBadge {
             names.append(package)
         }
         for name in names.map({ $0.lowercased() }) {
-            // "claude", or "claude-code".
-            if let key = ["claude", "codex"].first(where: { name == $0 || name.hasPrefix($0 + "-") }) {
-                return known[key]
-            }
+            // "claude", or "claude-code"; "gemini-cli".
+            if let key = agentKey(name) { return agents[key] }
         }
         return nil
     }
@@ -159,11 +191,14 @@ struct ProgramTile: Equatable {
     var tint: ProgramBadge.Tint = .none
     /// Where an ssh session went (its host), for the tab's label.
     var host: String?
+    /// A coding agent's name, when it is one.
+    var agent: String?
 
     init(_ badge: ProgramBadge, host: String? = nil) {
         name = badge.name
         symbol = badge.symbol
         tint = badge.tint
+        agent = badge.agent
         self.host = host
     }
 

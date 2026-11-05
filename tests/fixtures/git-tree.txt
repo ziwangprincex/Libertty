@@ -1,0 +1,23 @@
+# The Git block's changed files in their folders (tests/run.sh makes the
+# repository at @REPO@ with changes in src/ui, src/core and the top): a
+# folder with one folder in it reads as one, and a click folds it.
+size:1280x800
+type:cd @REPO@
+key:enter
+wait:0.6
+action:open_git
+wait:1.0
+page-wait:go
+expect-page:src
+expect-page:ui
+expect-page:view.swift
+expect-page:model.swift
+expect-page:README.md
+page-click:ui
+wait:0.4
+expect-page-not:view.swift
+expect-page:model.swift
+page-click:ui
+wait:0.4
+expect-page:view.swift
+shot:git-tree.png

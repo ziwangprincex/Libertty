@@ -6,6 +6,11 @@
 
   const state = {
     tab: "changes", // changes | history | branches | stashes
+    // What Changes shows since (Kero's): the last commit; the last turn of
+    // an agent here (its snapshot); where the branch left the default one.
+    base: "head", // head | turn | branch
+    baseInfo: null, baseData: null,
+    kept: new Set(), // Last Turn's hunks marked reviewed: tree + patch
     status: null,
     log: [], logDone: false, all: false,
     branches: null, stashes: [],
@@ -76,6 +81,7 @@
     try {
       state.status = await call("status");
     } catch (e) { return toast(String(e.message || e), true); }
+    if (state.base !== "head" && state.tab === "changes") return loadBase(true);
     if (all || state.tab !== "changes") await load();
     render();
     // What was shown may be gone (committed, dropped): then nothing is.
@@ -144,7 +150,7 @@
       return;
     }
     chips.hidden = false;
-    commitBox.hidden = state.tab !== "changes";
+    commitBox.hidden = state.tab !== "changes" || state.base !== "head";
     for (const b of [fetchButton, pullButton, pushButton]) { b.hidden = false; b.disabled = !!state.remote; }
     if (s) {
       clear(title, s.name);
@@ -207,25 +213,165 @@
       h("span.actions", actions));
   }
 
+  function baseSwitch() {
+    const bases = [["head", "Uncommitted"], ["turn", "Last Turn"], ["branch", "Branch"]];
+    return h("div.bases", bases.map(([id, name]) => h("button.chip" + (state.base === id ? ".on" : ""), {
+      title: { head: "Since the last commit", turn: "What an agent changed in its latest turn here",
+        branch: "Since this branch left the default one, as a pull request shows it" }[id],
+      onclick: () => setBase(id),
+    }, name)));
+  }
+
+  function setBase(id) {
+    if (state.base === id) return;
+    state.base = id;
+    state.baseInfo = state.baseData = null;
+    clearDetail();
+    render();
+    if (id === "head") refresh(false); else loadBase(false);
+  }
+
+  // Last Turn's or Branch's files and diff, read again as they change.
+  async function loadBase(keepDetail) {
+    const look = ++looking;
+    try {
+      state.baseInfo = await call("base", { base: state.base });
+      state.baseData = state.baseInfo ? await call("baseChanges", { tree: state.baseInfo.tree }) : null;
+    } catch (e) { if (look === looking) toast(String(e.message || e), true); return; }
+    if (look !== looking) return;
+    render();
+    if (state.baseData && (keepDetail ? state.selected?.kind === "base" : true)) showBase(keepDetail);
+  }
+
+  function keptKey(patch) { return (state.baseInfo?.tree || "") + "\0" + patch; }
+
+  // Changed files in their folders (Kero's tree), when they're in more
+  // than one: a folder with a single folder in it reads as one ("src/ui"),
+  // and a click folds it. `section` keeps each list's folds apart.
+  const foldedDirs = new Set();
+  function fileTree(items, row, section) {
+    const dirOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+    if (new Set(items.map((c) => dirOf(c.path))).size < 2) return items.map((c) => row(c));
+    const root = { dirs: new Map(), files: [] };
+    for (const c of items) {
+      let node = root;
+      for (const part of dirOf(c.path).split("/").filter(Boolean)) {
+        if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
+        node = node.dirs.get(part);
+      }
+      node.files.push(c);
+    }
+    const count = (n) => n.files.length + [...n.dirs.values()].reduce((a, d) => a + count(d), 0);
+    const out = [];
+    const walk = (node, depth, path) => {
+      for (const [name, child] of [...node.dirs.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+        let label = name, dir = child, full = path ? path + "/" + name : name;
+        while (dir.files.length === 0 && dir.dirs.size === 1) {
+          const [next, nextDir] = [...dir.dirs.entries()][0];
+          label += "/" + next; full += "/" + next; dir = nextDir;
+        }
+        const key = section + ":" + full, folded = foldedDirs.has(key);
+        out.push(h("div.row.folder" + (folded ? ".folded" : ""), {
+          title: full, style: `padding-left:${8 + depth * 14}px`,
+          onclick: () => { if (foldedDirs.has(key)) foldedDirs.delete(key); else foldedDirs.add(key); render(); },
+        }, h("span.fold", "▾"), h("span.main", label), h("span.count", count(dir))));
+        if (!folded) walk(dir, depth + 1, full);
+      }
+      for (const c of node.files) {
+        const el = row(c);
+        el.classList.add("in-tree");
+        el.style.paddingLeft = `${8 + depth * 14}px`;
+        out.push(el);
+      }
+    };
+    walk(root, 0, "");
+    return out;
+  }
+
+  function renderBase() {
+    const info = state.baseInfo, data = state.baseData;
+    const head = baseSwitch();
+    if (!info) {
+      return clear(list, head, h("div.empty", state.base === "turn"
+        ? "No agent has started a turn in this repository yet. Its next one shows here."
+        : "No default branch to compare with (origin/HEAD, main or master)."));
+    }
+    if (!data) return clear(list, head, h("div.empty", "Reading…"));
+    const since = state.base === "turn" ? "Since " + (info.agent || "the agent") + "'s turn began, " + ago(info.time)
+      : "Since " + info.name;
+    const shown = data.files;
+    clear(list, head,
+      h("div.section-head", since, h("span.count", shown.length)),
+      shown.length ? fileTree(shown, (f) => {
+        const name = f.path.split("/").pop(), dir = f.path.slice(0, f.path.length - name.length);
+        return h("div.row", { title: f.old ? `${f.old} → ${f.path}` : f.path, onclick: () => { showBase(); scrollToFile(f.path); } },
+          h("span.mark." + (f.mark === "?" ? "A" : f.mark), f.mark),
+          h("span.main", name, dir ? h("span.sub", "  " + dir) : null),
+          f.mark !== "D" ? h("span.actions", h("button.icon", { title: "Open", onclick: (e) => { e.stopPropagation(); openFile(f.path); } }, "↗")) : null);
+      }, state.base) : h("div.empty", state.base === "turn" ? "Nothing changed in this turn." : "No changes."));
+  }
+
+  function showBase(keepScroll) {
+    const data = state.baseData;
+    if (!data) return;
+    state.selected = { kind: "base" };
+    const top = detailBody.scrollTop;
+    const turn = state.base === "turn";
+    const actions = (file, hunk) => {
+      if (!turn || data.truncated || file.binary) return [];
+      const patch = block.patchOf(file, hunk);
+      // Revert puts back the hunk's lines only, never a rename or a mode with them.
+      return [h("button.button", { title: "Put the old lines back in the file", onclick: () => revert(block.hunkPatchOf(file, hunk)) }, "Revert"),
+        h("button.button.quiet", { title: "Mark it reviewed, and hide it", onclick: () => keep(patch) }, "Keep")];
+    };
+    const hide = turn ? (file, hunk) => state.kept.has(keptKey(block.patchOf(file, hunk))) : null;
+    setDetail(turn ? "Last turn" : "Since " + state.baseInfo.name,
+      diffView(data.diff, { actions, hide, onOpen: openFile, empty: turn ? "Nothing left to review in this turn." : "No changes." }),
+      truncatedNote(data));
+    if (keepScroll) detailBody.scrollTop = top;
+  }
+
+  async function revert(patch) {
+    if (state.busy) return;
+    state.busy = "revert";
+    app.classList.add("busy");
+    try {
+      await call("revert", { patch });
+      toast("Reverted");
+    } catch (e) {
+      toast(String(e.message || e), true);
+    } finally {
+      state.busy = null;
+      app.classList.remove("busy");
+    }
+    await loadBase(true);
+  }
+
+  function keep(patch) {
+    state.kept.add(keptKey(patch));
+    showBase(true);
+  }
+
   function renderChanges() {
+    if (state.base !== "head") return renderBase();
     const s = state.status;
-    if (!s) return clear(list, h("div.empty", "Reading…"));
-    const parts = [];
+    if (!s) return clear(list, baseSwitch(), h("div.empty", "Reading…"));
+    const parts = [baseSwitch()];
     if (s.conflicted.length) {
       parts.push(h("div.section-head", "Conflicts", h("span.count", s.conflicted.length)));
-      parts.push(s.conflicted.map((c) => fileRow(c, false, true)));
+      parts.push(fileTree(s.conflicted, (c) => fileRow(c, false, true), "conflicted"));
     }
     if (s.staged.length) {
       parts.push(h("div.section-head", "Staged", h("span.count", s.staged.length), h("span.spacer"),
         h("button.button.quiet", { onclick: () => act("unstageAll") }, "Unstage All")));
-      parts.push(s.staged.map((c) => fileRow(c, true)));
+      parts.push(fileTree(s.staged, (c) => fileRow(c, true), "staged"));
     }
     if (s.unstaged.length) {
       parts.push(h("div.section-head", "Changes", h("span.count", s.unstaged.length), h("span.spacer"),
         h("button.button.quiet", { onclick: () => act("stageAll") }, "Stage All")));
-      parts.push(s.unstaged.map((c) => fileRow(c, false)));
+      parts.push(fileTree(s.unstaged, (c) => fileRow(c, false), "unstaged"));
     }
-    if (!parts.length) parts.push(h("div.empty", "Nothing to commit — the working tree is clean."));
+    if (parts.length === 1) parts.push(h("div.empty", "Nothing to commit — the working tree is clean."));
     clear(list, parts);
   }
 
@@ -419,7 +565,12 @@
 
   function scrollToFile(path) {
     for (const el of detailBody.querySelectorAll(".diff-path")) {
-      if (el.textContent === path) { el.closest(".diff-file").scrollIntoView({ block: "start" }); return; }
+      if (el.textContent === path) {
+        const section = el.closest(".diff-file");
+        section.classList.remove("folded");
+        section.scrollIntoView({ block: "start" });
+        return;
+      }
     }
   }
 

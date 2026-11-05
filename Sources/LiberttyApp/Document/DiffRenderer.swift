@@ -5,9 +5,21 @@ import Foundation
 /// numbers, added and removed lines tinted, code highlighted for its
 /// language. Unknown lines (a commit message before the diff) show as text.
 enum DiffRenderer {
-    static func html(_ text: String) -> String {
-        var out = "<div class=\"diff\">"
-        var file: (name: String, language: String, rows: String, added: Int, removed: Int)?
+    /// A file with more changed lines than this starts folded.
+    static let foldLines = 400
+
+    /// One row of a file's diff, kept to be laid out two ways.
+    private struct Row {
+        var cls: String, old: String, new: String, sign: String, code: String
+    }
+
+    /// The page shows each file unified or side by side (`layout`: auto is
+    /// side by side once the page is wide), each foldable on its own — all
+    /// of it HTML and CSS: a document page runs no script.
+    static func html(_ text: String, layout: String = "auto") -> String {
+        var out = ""
+        var files = 0
+        var file: (name: String, language: String, rows: [Row], added: Int, removed: Int)?
         var preamble = ""
         var oldLine = 0, newLine = 0
         /// The current file has hunks already (so a `---` starts the next one).
@@ -29,14 +41,16 @@ enum DiffRenderer {
         }
         func flush() {
             guard let f = file else { return }
-            out += "<section class=\"file\"><header><span class=\"name\">\(esc(f.name))</span>"
-                + "<span class=\"stat\"><span class=\"add\">+\(f.added)</span> <span class=\"del\">−\(f.removed)</span></span></header>"
-                + "<table>\(f.rows)</table></section>"
+            files += 1
+            let open = f.added + f.removed > foldLines ? "" : " open"
+            out += "<details class=\"file\"\(open)><summary><span class=\"name\">\(esc(f.name))</span>"
+                + "<span class=\"stat\"><span class=\"add\">+\(f.added)</span> <span class=\"del\">−\(f.removed)</span></span></summary>"
+                + "<table class=\"u\">\(unified(f.rows))</table>"
+                + "<table class=\"sp\"><colgroup><col class=\"n\"><col><col class=\"n\"><col></colgroup>\(split(f.rows))</table></details>"
             file = nil
         }
         func row(_ cls: String, _ old: String, _ new: String, _ sign: String, _ code: String) {
-            file?.rows += "<tr class=\"\(cls)\"><td class=\"n\">\(old)</td><td class=\"n\">\(new)</td>"
-                + "<td class=\"s\">\(sign)</td><td class=\"c\">\(code)</td></tr>"
+            file?.rows.append(Row(cls: cls, old: old, new: new, sign: sign, code: code))
         }
         var lines = text.components(separatedBy: "\n")
         if lines.last == "" { lines.removeLast() }  // the final newline isn't a line
@@ -86,7 +100,7 @@ enum DiffRenderer {
                 // diff --git a/path b/path: the new name.
                 let parts = line.dropFirst("diff --git ".count).components(separatedBy: " b/")
                 let name = parts.count > 1 ? parts.last! : String(line.dropFirst("diff --git ".count))
-                file = (name, Highlighter.language(forFile: (name as NSString).lastPathComponent), "", 0, 0)
+                file = (name, Highlighter.language(forFile: (name as NSString).lastPathComponent), [], 0, 0)
                 inHunks = false
                 continue
             }
@@ -98,7 +112,7 @@ enum DiffRenderer {
                     counted = false
                     flush()
                     emitPreamble()
-                    file = (name, "", "", 0, 0)
+                    file = (name, "", [], 0, 0)
                     inHunks = false
                 }
                 let current = file?.name
@@ -160,8 +174,57 @@ enum DiffRenderer {
         }
         flush()
         emitPreamble()
-        if out == "<div class=\"diff\">" { out += "<p class=\"empty\">No changes.</p>" }
-        return out + "</div>"
+        if out.isEmpty { out = "<p class=\"empty\">No changes.</p>" }
+        // Fold or unfold every file at once: a checkbox the files follow (no script).
+        let bar = files > 1
+            ? "<input type=\"checkbox\" id=\"fold-all\" class=\"fold-all\"><div class=\"bar\"><span>\(files) files</span>"
+                + "<label for=\"fold-all\" class=\"fold-label\"><span class=\"unfolded\">Collapse All</span>"
+                + "<span class=\"folded\">Expand All</span></label></div>"
+            : ""
+        let mode = ["split", "unified"].contains(layout) ? layout : "auto"
+        return "<div class=\"diff layout-\(mode)\">" + bar + out + "</div>"
+    }
+
+    /// The rows as one column, old and new line numbers side by side.
+    private static func unified(_ rows: [Row]) -> String {
+        rows.map { r in
+            "<tr class=\"\(r.cls)\"><td class=\"n\">\(r.old)</td><td class=\"n\">\(r.new)</td>"
+                + "<td class=\"s\">\(r.sign)</td><td class=\"c\">\(r.code)</td></tr>"
+        }.joined()
+    }
+
+    /// The rows as two columns: context on both sides, a run of removals
+    /// beside the additions that replaced them; hunk and other lines across.
+    private static func split(_ rows: [Row]) -> String {
+        var out = "", dels: [Row] = [], adds: [Row] = []
+        func cell(_ r: Row?) -> String {
+            guard let r else { return "<td class=\"n\"></td><td class=\"c none\"></td>" }
+            let n = r.cls == "add" ? r.new : r.old
+            return "<td class=\"n\">\(n)</td><td class=\"c \(r.cls)\">\(r.code)</td>"
+        }
+        func pairs() {
+            for i in 0..<max(dels.count, adds.count) {
+                out += "<tr>" + cell(i < dels.count ? dels[i] : nil) + cell(i < adds.count ? adds[i] : nil) + "</tr>"
+            }
+            dels = []
+            adds = []
+        }
+        for r in rows {
+            switch r.cls {
+            case "del":
+                if !adds.isEmpty { pairs() }  // a removal after additions starts a new run
+                dels.append(r)
+            case "add": adds.append(r)
+            case "ctx":
+                pairs()
+                out += "<tr><td class=\"n\">\(r.old)</td><td class=\"c ctx\">\(r.code)</td><td class=\"n\">\(r.new)</td><td class=\"c ctx\">\(r.code)</td></tr>"
+            default:
+                pairs()
+                out += "<tr class=\"\(r.cls)\"><td colspan=\"4\">\(r.code)</td></tr>"
+            }
+        }
+        pairs()
+        return out
     }
 
     static func css(dark: Bool) -> String {
@@ -172,8 +235,28 @@ enum DiffRenderer {
         .diff { font: 12px/1.55 var(--mono); padding: 4px 0; margin: 0 -28px; }
         .diff .preamble { margin: 0 16px 16px; white-space: pre-wrap; opacity: .8; }
         .diff .file { margin: 0 12px 18px; border: 1px solid var(--l2); border-radius: 8px; overflow: hidden; }
-        .diff header { display: flex; justify-content: space-between; padding: 7px 12px; background: var(--l2);
-          font-weight: 600; position: sticky; top: 0; }
+        .diff summary { display: flex; gap: 12px; justify-content: space-between; padding: 7px 12px; background: var(--l2);
+          font-weight: 600; position: sticky; top: 0; z-index: 1; cursor: default; list-style: none; }
+        .diff summary::-webkit-details-marker { display: none; }
+        .diff summary .name::before { content: '▾'; display: inline-block; width: 14px; opacity: .5; transition: transform .12s; }
+        .diff details:not([open]) summary .name::before { transform: rotate(-90deg); }
+        .diff .bar { display: flex; justify-content: space-between; align-items: center; margin: 0 12px 10px; font: 12px var(--sans); opacity: .75; }
+        .diff .fold-all { display: none; }
+        .diff .fold-label { cursor: default; padding: 2px 8px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--l3); }
+        .diff .fold-label .folded, .diff .fold-all:checked ~ .bar .fold-label .unfolded { display: none; }
+        .diff .fold-all:checked ~ .bar .fold-label .folded { display: inline; }
+        .diff .fold-all:checked ~ .file > table { display: none; }
+        .diff .fold-all:checked ~ .file summary .name::before { transform: rotate(-90deg); }
+        .diff table.sp { display: none; table-layout: fixed; }
+        .diff table.sp col.n { width: 52px; }
+        .diff table.sp td.c { border-left: 0; }
+        .diff table.sp td.c.add { background: \(add); } .diff table.sp td.c.del { background: \(del); }
+        .diff table.sp td.c.none { background: var(--l1); }
+        .diff table.sp tr.hunk td, .diff table.sp tr.meta td { opacity: .6; }
+        .diff.layout-split table.u { display: none; } .diff.layout-split table.sp { display: table; }
+        @media (min-width: 1000px) {
+          .diff.layout-auto table.u { display: none; } .diff.layout-auto table.sp { display: table; }
+        }
         .diff .stat { font-weight: 500; } .diff .stat .add { color: \(addFg); } .diff .stat .del { color: \(delFg); }
         .diff table { border-collapse: collapse; width: 100%; }
         .diff td { padding: 0 8px; vertical-align: top; white-space: pre-wrap; word-break: break-all; }

@@ -26,6 +26,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     // Settings (see `apply`)
     private var fontFamily = ""
     private var cellHeightAdjust = MetricAdjust.none
+    private var cellWidthAdjust = MetricAdjust.none
     private var configFontSize: CGFloat?
     private(set) var padding = Config().padding
     private var unfocusedOpacity: CGFloat = 0.65
@@ -73,6 +74,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     /// Other panes that get what's typed here (Broadcast Input), set by the window.
     var broadcastPeers: (() -> [TerminalView])?
+    /// The agent's conversation this pane picks up again as it starts (resume-agents, Resume Conversation…).
+    var resumedConversation: Conversation?
 
     init(session: TerminalSession, config: Config) throws {
         self.session = session
@@ -164,8 +167,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
         let size = CGFloat(config.fontSize)
         let familyChanged = config.fontFamily != fontFamily || config.adjustCellHeight != cellHeightAdjust
+            || config.adjustCellWidth != cellWidthAdjust
         fontFamily = config.fontFamily
         cellHeightAdjust = config.adjustCellHeight
+        cellWidthAdjust = config.adjustCellWidth
         if configFontSize != size || resetFontSize {
             configFontSize = size
             if fontSize != size {
@@ -238,7 +243,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private func rebuildFonts() {
         let scale = window?.backingScaleFactor ?? 2
         metalLayer.contentsScale = scale
-        renderer.setFonts(FontSet(family: fontFamily, pointSize: fontSize, scale: scale, cellHeightAdjust: cellHeightAdjust))
+        renderer.setFonts(FontSet(family: fontFamily, pointSize: fontSize, scale: scale, cellHeightAdjust: cellHeightAdjust,
+                                  cellWidthAdjust: cellWidthAdjust))
         updateGrid()
     }
 
@@ -1517,7 +1523,43 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         return label
     }()
 
+    /// ⌘ over the cell at `col`, `row` (the UI probe): as a mouse moved there would.
+    func commandHover(col: Int, row: Int) {
+        guard let window else { return }
+        let cell = cellSizePoints, pad = padding
+        let point = convert(CGPoint(x: pad.left + (CGFloat(col) + 0.5) * cell.width,
+                                    y: pad.top + (CGFloat(row) + 0.5) * cell.height - smoothOffset), to: nil)
+        guard let event = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: .command, timestamp: 0,
+                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                             clickCount: 0, pressure: 0) else { return }
+        updateHoveredLink(event)
+    }
+
+    /// What the image peek shows now (the UI probe).
+    var peekedImage: String? { imagePeek.isHidden ? nil : imagePeek.showing.map { ($0.path as NSString).lastPathComponent } }
+
+    /// The image a ⌘-hovered path names, beside it (Kero's peek).
+    private lazy var imagePeek: ImagePeek = {
+        let peek = ImagePeek()
+        addSubview(peek)
+        return peek
+    }()
+
+    /// Where a link's first span is, in this view.
+    private func rect(of link: TerminalLink) -> CGRect {
+        guard let span = link.spans.first else { return .zero }
+        let cell = cellSizePoints, pad = padding
+        return CGRect(x: pad.left + CGFloat(span.columns.lowerBound) * cell.width,
+                      y: pad.top + CGFloat(span.row) * cell.height - smoothOffset,
+                      width: CGFloat(span.columns.count) * cell.width, height: cell.height)
+    }
+
     private func showLinkPreview(_ link: TerminalLink?) {
+        if let link, session.host == nil, let file = ImagePeek.imageFile(link) {
+            imagePeek.show(file, near: rect(of: link))
+        } else if imagePeek.showing != nil {
+            imagePeek.hide()
+        }
         guard let link else { linkPreview.isHidden = true; return }
         linkPreview.stringValue = " " + link.url + " "
         let size = linkPreview.fittingSize
@@ -1606,7 +1648,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     }
 
     @objc func paste(_ sender: Any?) {
-        guard !isReadOnly, let text = NSPasteboard.general.string(forType: .string) else { return }
+        guard !isReadOnly else { return }
+        let text: String
+        switch PasteContent.read(.general, allowsImage: session.host == nil) {
+        case .text(let t): text = t
+        case .paths(let paths):
+            // Files' paths, or a pasted image's: one quoted word each, nothing to confirm.
+            if session.paste(paths, allowUnsafe: true) == .pasted { setNeedsRender() }
+            return
+        case .nothing: return
+        }
         switch session.paste(text, allowUnsafe: false) {
         case .needsConfirmation:
             confirmUnsafePaste(text)
@@ -1637,12 +1688,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if item.action == #selector(contextAction(_:)), let action = (item.representedObject as? ActionBox)?.action {
             switch action {
             case .copyToClipboard: return session.selectedText()?.isEmpty == false
-            case .pasteFromClipboard: return !isReadOnly && NSPasteboard.general.string(forType: .string) != nil
+            case .pasteFromClipboard: return !isReadOnly && PasteContent.canPaste(.general, allowsImage: session.host == nil)
             default: return true
             }
         }
         if item.action == #selector(paste(_:)) {
-            return NSPasteboard.general.string(forType: .string) != nil
+            return PasteContent.canPaste(.general, allowsImage: session.host == nil)
         }
         if item.action == #selector(copy(_:)) {
             return session.selectedText() != nil

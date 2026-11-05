@@ -1,0 +1,12 @@
+# Resume Conversation… (⌘⇧O): the conversations agents' hooks recorded
+# (tests/run.sh writes one into the data folder). Picking
+# one opens a tab there whose shell types the agent's resume command (no
+# claude on this PATH: the shell says so, after the command it was given).
+key:cmd+shift+o
+wait:0.6
+expect-palette:fix-login
+key:enter
+wait:7
+expect-tab-count:2
+expect:claude --resume 13b9c2e4-probe
+expect-tab:fix-login

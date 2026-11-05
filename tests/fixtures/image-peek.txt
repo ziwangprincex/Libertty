@@ -1,0 +1,11 @@
+# ⌘ over an image's path shows the picture beside it (tests/run.sh puts
+# shot.png in @DIR@); over another file's path, nothing.
+type:cd @DIR@ && ls
+key:enter
+wait:1.0
+cmd-hover:shot.png
+wait:0.8
+expect-peek:shot.png
+cmd-hover:notes.txt
+wait:0.4
+expect-peek:none

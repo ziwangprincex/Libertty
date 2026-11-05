@@ -261,7 +261,9 @@ extension TerminalWindowController {
         guard tabs.indices.contains(index) else { return }
         let tab = tabs[index]
         confirmUnsaved(documentsClosing(with: tab)) { [weak self] in
-            self?.confirmIfBusy(tab.everyPane, noun: "tab") { [weak self] in self?.removeTab(tab, unsavedAsked: true) }
+            self?.confirmIfBusy(tab.everyPane, noun: "tab") { [weak self] in
+                self?.confirmWorktree(tab) { removing in self?.removeTab(tab, undoable: !removing, unsavedAsked: true) }
+            }
         }
     }
 

@@ -1,0 +1,15 @@
+# Sidebar rows' second line (sidebar-rows = comfortable, the default):
+# what a program reports, else the branch and its changes (tests/run.sh
+# makes the repository at @REPO@ with one line added), else the folder.
+# The pane header says the branch too.
+size:1100x600
+type:cd @REPO@
+key:enter
+wait:5.0
+expect-tab:main +1
+expect-header:main +1
+# A program's message comes first while it reports one.
+type:printf '\033]7501;state=working:app=probe:msg=TWVyZ2luZyB0aGUgYnJhbmNo\a'; sleep 30
+key:enter
+wait:1.5
+expect-tab:Merging the branch

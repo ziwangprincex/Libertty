@@ -1,0 +1,43 @@
+# Last Turn (Kero's): what an agent changed in its latest turn, and only
+# that, not what was edited before it began (tests/run.sh makes the
+# repository at @REPO@: a commit, then other.txt edited before the turn).
+# Claude Code's prompt hook starts the turn: it takes the snapshot itself,
+# before the agent edits anything. The turn edits app.txt, makes new.txt,
+# and renames list.txt to moved.txt with a line more.
+size:1280x800
+wait:0.5
+type:cd @REPO@ && printf '{"cwd":"%s"}' "$PWD" | libertty +agent-hook claude UserPromptSubmit && printf 'turn line\n' >> app.txt && printf 'made\n' > new.txt && mv list.txt moved.txt && printf 'seven\n' >> moved.txt && printf '\033]7501;state=done:app=claude-code\a'
+key:enter
+wait:3.0
+action:open_git
+wait:1.0
+page-wait:go
+page-click:Last Turn
+wait:1.2
+expect-page:turn began
+expect-page:new.txt
+expect-page:turn line
+expect-page:moved.txt
+expect-page-not:other.txt
+# Keep hides a change (app.txt's, the first).
+page-click:Keep
+wait:0.4
+expect-page-not:turn line
+expect-shell:grep -c 'turn line' @REPO@/app.txt ==> 1
+# Revert on moved.txt's line takes the line out and leaves the file where
+# the turn moved it: no rename back to list.txt.
+page-click:Revert
+wait:1.2
+expect-shell:cd @REPO@ && test -e moved.txt && test ! -e list.txt && echo still-moved ==> still-moved
+expect-shell:grep -q seven @REPO@/moved.txt && echo kept || echo taken-out ==> taken-out
+# Revert puts new.txt back as the turn found it: not there.
+page-click:Revert
+wait:1.2
+expect-shell:test -e @REPO@/new.txt || echo gone ==> gone
+# What's left is moved.txt's rename, with no lines to revert.
+expect-page-not:new.txt
+expect-page:moved.txt
+# Uncommitted still shows everything since the commit.
+page-click:Uncommitted
+wait:0.8
+expect-page:other.txt

@@ -26,3 +26,13 @@
   .columns:not(.showing-detail) .detail { display: none; }
   .back { display: inline-flex; }
 }
+/* Changes since: the last commit, an agent's last turn, the branch's start. */
+.bases { display: flex; gap: 4px; padding: 8px 10px 4px; }
+.bases .chip { font-size: 11.5px; }
+/* Changed files in their folders */
+.row.folder { min-height: 26px; color: var(--t2); }
+.row.folder .main { font-family: var(--mono); font-size: 12px; }
+.row.folder .fold { flex: none; width: 10px; color: var(--t4); font-size: 10px; transition: transform .12s; }
+.row.folder.folded .fold { transform: rotate(-90deg); }
+.row.folder .count { color: var(--t4); font-size: 11px; }
+.row.in-tree .sub { display: none; }

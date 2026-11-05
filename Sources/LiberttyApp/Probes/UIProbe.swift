@@ -78,6 +78,10 @@ import LiberttyCore
 ///   expect-file:PATH=TEXT the file on disk contains TEXT (`\n` for a newline)
 ///   shell:COMMAND         run COMMAND (sh -c), as another program changing files would
 ///   sheet:BUTTON          press BUTTON on the sheet over the window (Save, Don't Save, Cancel)
+///   sheet-type:TEXT       put TEXT in the sheet's text field (a name it asks for)
+///   expect-header:TEXT    the focused pane's header says TEXT (its name, folder or branch)
+///   cmd-hover:TEXT        ⌘ held with the pointer over TEXT's last showing in the focused pane
+///   expect-peek:NAME      the image peek shows the file NAME (none: nothing shows)
 ///   expect-sheet:yes|no   whether a sheet is up
 ///   wait-edit:TOKEN:PATH  open PATH in the editor as `+open --wait` does, waited on as TOKEN
 ///   expect-closed:TOKEN   the editor waited on as TOKEN has said it closed
@@ -137,6 +141,8 @@ enum UIProbe {
         app.setActivationPolicy(.accessory)  // no Dock icon, nothing in front
         Motion.forceReduced = true
         Probe.running = true
+        // English unless its config names a language (`language = zh-Hans`).
+        L10n.start(ConfigStore.shared.config.language)
 
         // `@FILE`: the script is in that file (one too long for an argument,
         // or one a debugger passes on).
@@ -420,6 +426,47 @@ enum UIProbe {
                             pump(0.5)
                         } else {
                             print("FAIL  ui-probe sheet: \(window.attachedSheet == nil ? "none up" : "no \(title) button")")
+                            failures += 1
+                        }
+                    case .commandHover(let text):
+                        let rows = controller.focusedTerminal.session.screenRows().split(separator: "\n", omittingEmptySubsequences: false)
+                        guard let row = rows.lastIndex(where: { $0.contains(text) }),
+                              let at = rows[row].range(of: text, options: .backwards) else {
+                            print("FAIL  ui-probe cmd-hover: no \(text) on screen")
+                            failures += 1
+                            break
+                        }
+                        let col = rows[row].distance(from: rows[row].startIndex, to: at.lowerBound) + 1
+                        controller.focusedTerminal.commandHover(col: col, row: row)
+                        pump(0.3)
+                    case .expectPeek(let name):
+                        let shown = controller.focusedTerminal.peekedImage ?? "none"
+                        if shown == name {
+                            print("ok    ui-probe peek shows \(name)")
+                        } else {
+                            print("FAIL  ui-probe peek: \(shown), not \(name)")
+                            failures += 1
+                        }
+                    case .expectHeader(let text):
+                        let leaf = controller.selectedTab.focusedPane as NSView?
+                        let info = leaf.map { leaf in MainActor.assumeIsolated { controller.headerInfo(for: leaf) } }
+                        let said = info.map { [$0.name, $0.detail, $0.branch].joined(separator: " · ") } ?? "(no pane)"
+                        if said.contains(text) {
+                            print("ok    ui-probe header says \(text)")
+                        } else {
+                            print("FAIL  ui-probe header: \"\(said)\", not \(text)")
+                            failures += 1
+                        }
+                    case .sheetType(let text):
+                        func field(in view: NSView?) -> NSTextField? {
+                            guard let view else { return nil }
+                            if let f = view as? NSTextField, f.isEditable { return f }
+                            return view.subviews.lazy.compactMap(field(in:)).first
+                        }
+                        if let sheet = window.attachedSheet, let f = field(in: sheet.contentView) {
+                            f.stringValue = text
+                        } else {
+                            print("FAIL  ui-probe sheet-type: \(window.attachedSheet == nil ? "no sheet up" : "no field on it")")
                             failures += 1
                         }
                     case .expectSheet(let want):
@@ -752,6 +799,14 @@ enum UIProbe {
                             print("FAIL  ui-probe focus: pane \(focused == 0 ? "none" : String(focused)), not \(n)")
                             failures += 1
                         }
+                    case .expectSelected(let text):
+                        // The tab in front, by its name (the window's title).
+                        if window.title.contains(text) {
+                            print("ok    ui-probe the tab in front is \(text)")
+                        } else {
+                            print("FAIL  ui-probe the tab in front: \"\(window.title)\", not \(text)")
+                            failures += 1
+                        }
                     case .expectSubtitle(let text):
                         let subtitle = window.subtitle
                         if subtitle.contains(text) {
@@ -993,12 +1048,12 @@ enum UIProbe {
     private enum Step {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
-        case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String)
+        case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         case hover(Int), expectFocus(Int)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
-        case sheet(String), expectSheet(Bool), waitEdit(token: String, path: String), expectClosed(String)
+        case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
         case settings(String), expectSettings(String), expectConfigChange(String)
@@ -1092,6 +1147,7 @@ enum UIProbe {
             case "expect-background": steps.append(.expectBackground(arg.lowercased()))
             case "expect-font": steps.append(.expectFont(Double(arg) ?? -1))
             case "expect-subtitle": steps.append(.expectSubtitle(arg))
+            case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))
             case "expect-windows": steps.append(.expectWindows(Int(arg) ?? -1))
@@ -1135,6 +1191,10 @@ enum UIProbe {
                 if parts.count == 2 { steps.append(.expectFile(parts[0], parts[1].replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\r", with: "\r"))) }
             case "shell": steps.append(.shell(arg))
             case "sheet": steps.append(.sheet(arg))
+            case "sheet-type": steps.append(.sheetType(arg))
+            case "expect-header": steps.append(.expectHeader(arg))
+            case "cmd-hover": steps.append(.commandHover(arg))
+            case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
             case "wait-edit":
                 let parts = arg.split(separator: ":", maxSplits: 1).map(String.init)

@@ -223,3 +223,27 @@ Tern 的三项终端功能，加上 11 个 workspace block（编号 11 的 AI �
 | Web 访问走 Tailscale | Serve over Tailscale | ✅ `web-access = tailscale`：`tailscale serve` HTTPS，链接是本机的 tailnet 名字；⚠️ 本机没装 Tailscale，用替身命令行验证 |
 | 屏幕上的视觉检查 | — | ✅ `tests/screen.sh`（`--screen-probe`）：ScreenCaptureKit 只录本进程的窗口，按 AppKit 画的标尺判断终端有没有被挤压；手动跑。⚠️ 在本机没能复现 0.3.7 修掉的那次挤压（去掉修复也没复现） |
 
+
+## 14. 借鉴 Kero（2026-11-05，Kero 2.1.33）
+
+Kero（github.com/egoist/kero，MIT）是给编程 agent 用的终端。下面是从它那里借来的功能，全部是 Libertty 自己的代码；只有 agent 屏幕识别规则用的是 herdr 的规则文件（Apache-2.0，Kero 也用它们），原样转换成 `Resources/agent-rules/rules.json`。
+
+| 功能 | Kero | Libertty |
+|---|---|---|
+| 跳到需要你处理的 pane | ⌘J | ✅ `goto_attention`（⌘J）：所有窗口里先等你的，再失败的、完成的、有未读动静的；连按往下走；`tests/fixtures/attention.txt` |
+| 从屏幕判断 agent 状态 | herdr 规则 | ✅ `AgentScreen`（规则引擎移植，13 个 agent）、`agent-screen-status`；Codex 一轮开始时终于显示“工作中”；hook/OSC 7501 报告优先；`AgentScreenTests`（Kero 的 Claude 屏幕样本）、`tests/fixtures/agent-screen.txt`（`fake-codex.c` 当替身）。⚠️ 真实 Codex/Gemini/OpenCode 没在本机跑过 |
+| 粘贴截图/Finder 里复制的文件 | ✅ | ✅ `PasteContent`：图片存成文件粘贴路径（7 天后清理），文件粘贴带引号的路径；远程 pane 不粘图片；`PasteTests` |
+| 防止睡眠 | Keep computer awake | ✅ `keep-awake = never/always/agents`（IOPMAssertion）；设置、命令面板、菜单栏图标；`KeepAwakeTests` 检查真实的断言 |
+| 恢复对话 | Resume Conversation | ✅ hook 记录 session id（Claude Code、Codex、Pi、OMP、OpenCode），`conversations.json` 保留 200 条；liberttyd 丢了会话（重启电脑）时 pane 自动续上（`resume-agents`）；⌘P 最近对话、⇧⌘O 全部；`+history`、`+resume`；`ConversationTests`、`tests/fixtures/resume.txt` |
+| 只看上一轮的改动 | Last Turn、Revert、Keep | ✅ agent 开始一轮时用临时 index 给工作区拍快照（不碰用户的 index）；Git 块 Changes 分 Uncommitted / Last Turn / Branch；逐块 Revert（agent 工作时拒绝、文件变了就失败）和 Keep；`+diff --turn/--branch`；`tests/fixtures/last-turn.txt` |
+| 独立 worktree 的会话 | New Session in Worktree | ✅ File ▸ New Tab in Worktree…（⌥⌘T），`.libertty/worktrees/<branch>` 经 `.git/info/exclude` 忽略；关标签时问是否删除（干净默认删、有改动默认留、别的 pane 在用就不问）；`+new-session --worktree`、`+kill-session --remove-worktree`；`WorktreeTests`、`tests/fixtures/worktree.txt` |
+| 命令行 | `kero prompt`、`events --once` | ✅ `+prompt`、`+events [ID] --for STATE --once --timeout`（liberttyd 新增 `status` 事件）；`+agent-setup --agent pi/omp/opencode`（Libertty 自己写的扩展/插件，⚠️ 本机没装 Pi/OpenCode，只验证了写入的文件）；启动时更新已安装的 skill/扩展；`tests/cli-wait-test.sh` |
+| 侧栏第二行、pane 列表 | Sidebar rows、pane count | ✅ `sidebar-rows = comfortable/compact`：程序报告的消息 > 分支和改动 > 文件夹；分屏标签的 pane 数是按钮，列出各 pane（点击前往、⌥ 放大、关闭）；`tests/fixtures/sidebar-rows.txt` |
+| pane 标题栏显示分支 | `fix-login +40 −2` | ✅ 分支、增删行数、merge/rebase 中；点击打开 Git 块；`git-status` 关掉；`RepoStatusTests` |
+| ⌘ 悬停图片路径预览 | peek | ✅ `ImagePeek`；`tests/fixtures/image-peek.txt` |
+| diff 并排/折叠 | 宽时并排、Collapse All | ✅ `+diff` 的文档页面（纯 HTML/CSS，文档页不跑脚本：`<details>` 折叠、复选框控制全部折叠、媒体查询切换并排）和 Git 块：空间够时并排，`diff-layout = auto/unified/split`（设置 ▸ 界面，Git 块的按钮也写这一行），逐文件折叠、全部折叠/展开，大文件默认折叠；`tests/fixtures/diff-document.txt` |
+| 改动文件按文件夹显示 | 文件树 | ✅ Git 块的 Changes、Last Turn、Branch：文件分布在多个文件夹时显示为树，单子文件夹合并成一行（`src/ui`），点击折叠；`tests/fixtures/git-tree.txt` |
+| 切换深浅色 | ⇧⌘L | ✅ `toggle_appearance`，写 `window-theme`；`tests/fixtures/appearance-toggle.txt` |
+| 列宽 | `cell-width` | ✅ `adjust-cell-width`（Ghostty 同名）；`tests/text-render-test.sh` 量像素 |
+| 菜单栏图标 | tray | ✅ `menu-bar-icon`（默认关）：有等你处理时实心并显示数量；菜单跳转、快捷终端、防睡眠、设置 |
+| 界面中文 | 日文、简体中文 | ✅ `language = auto/en/zh-Hans`（auto 跟随 macOS）：菜单、命令面板（英文名也能搜到）、设置、侧栏；`Resources/locales/zh-Hans.json`；测试探针固定英文；`L10nTests`、`tests/fixtures/chinese.txt`。命令行输出、错误提示、配置文档仍是英文 |

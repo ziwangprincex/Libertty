@@ -1221,9 +1221,32 @@ final class TerminalSession {
     /// OSC 52 paste request (with `lock` held): only when `clipboard-read = allow`.
     fileprivate var clipboardReadAllowed: Bool { clipboardRead }
 
+    /// A command typed once the shell shows its first prompt (a conversation
+    /// resumed): as you'd type it, so the shell has it in its history and is
+    /// there when it ends. A shell without Libertty's integration says
+    /// nothing of its prompt: it gets the command after a few seconds.
+    private(set) var commandAtFirstPrompt: String?
+
+    func typeAtFirstPrompt(_ command: String, fallback: TimeInterval = 5) {
+        commandAtFirstPrompt = command
+        DispatchQueue.main.asyncAfter(deadline: .now() + fallback) { [weak self] in self?.typePendingCommand() }
+    }
+
+    private func typePendingCommand() {
+        guard let command = commandAtFirstPrompt, !hasExited else { return }
+        // Not started yet (liberttyd is slow to answer): once it is.
+        guard pty != nil else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.typePendingCommand() }
+            return
+        }
+        commandAtFirstPrompt = nil
+        sendText(command + "\r")
+    }
+
     fileprivate func promptStarted() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            self.typePendingCommand()
             self.programStatus.programFinished()
             self.delegate?.sessionProgramStatusChanged(self)
             // Back at the prompt: a program that forgot to clear its progress is done.
@@ -1993,6 +2016,22 @@ extension TerminalSession {
     /// Everything: the scrollback and the screen, as plain text.
     func scrollbackText() -> String {
         lock.withLock { Snapshots.plainText(terminal, scrollback: true) }
+    }
+
+    /// The screen's rows as they show (wrapped lines apart), each ending in
+    /// a newline: what agents' screen rules read (AgentScreen).
+    func screenRows() -> String {
+        let text = lock.withLock { Snapshots.text(terminal, scrollback: false, format: .plain, unwrap: false) }
+        var rows = text.split(separator: "\n", omittingEmptySubsequences: false)
+        while rows.last?.isEmpty == true { rows.removeLast() }
+        return rows.isEmpty ? "" : rows.joined(separator: "\n") + "\n"
+    }
+
+    /// The last OSC 9;4 progress as the agents' rules read it, after "9;".
+    var progressCode: String {
+        guard let p = progress else { return "" }
+        let state = switch p.state { case .normal: 1; case .error: 2; case .indeterminate: 3; case .paused: 4 }
+        return p.percent.map { "4;\(state);\($0)" } ?? "4;\(state)"
     }
 }
 

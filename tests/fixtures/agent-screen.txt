@@ -1,0 +1,16 @@
+# Agents' states from their screens (agent-screen-status): a "codex"
+# (tests/fixtures/fake-codex.c, built into @DIR@ by tests/run.sh) shows a
+# turn's timer, then its prompt at rest: working, then done. What the
+# screen says reaches liberttyd too: `+events --for working` hears it.
+type:libertty +events --for working --once --timeout 20 > @DIR@/events.txt 2>&1 & sleep 0.5; @DIR@/codex
+key:enter
+wait:2.5
+expect-status:tab=working
+expect-shell:cat @DIR@/events.txt ==> "source":"screen"
+expect-shell:cat @DIR@/events.txt ==> "state":"working"
+wait:3.5
+expect-status:tab=done
+# A redraw of the same screen changes nothing.
+size:700x420
+wait:1.5
+expect-status:tab=done

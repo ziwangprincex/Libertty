@@ -10,13 +10,25 @@ struct ParsingTests {
         #expect(Trigger(spec) != nil, "\(text)")
     }
 
+    @Test func keroShortcuts() {
+        let binds = Keybinds.defaults.joined(separator: " ")
+        for b in ["cmd+j=goto_attention", "cmd+shift+o=resume_conversation", "cmd+alt+t=new_tab_in_worktree",
+                  "cmd+shift+l=toggle_appearance"] {
+            #expect(binds.contains(b), "\(b)")
+        }
+        // Each trigger once among the defaults.
+        let triggers = Keybinds.defaults.compactMap { $0.split(separator: "=").first.map(String.init) }
+        #expect(Set(triggers).count == triggers.count)
+    }
+
     @Test func badTriggers() {
         #expect(Trigger("cmd+nosuchkey") == nil)
         #expect(Keybinds.validate("cmd+d") != nil)
     }
 
     @Test(arguments: ["new_split:right", "new_split:auto", "goto_tab:3", "move_surface_to_tab:2", "open_theme_editor",
-                      "show_tabs:working", "resize_split:left,10", "text:hi"])
+                      "show_tabs:working", "resize_split:left,10", "text:hi", "goto_attention", "resume_conversation",
+                      "new_tab_in_worktree", "toggle_appearance"])
     func actionsRoundTrip(text: String) throws {
         let action = try #require(Action(text))
         #expect(Action(action.configString) == action)

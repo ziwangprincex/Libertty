@@ -123,7 +123,7 @@ enum AgentCLI {
     // MARK: +agent-hook
 
     /// The app name agents' reports carry (OSC 7501 `app`).
-    private static let claudeApp = "claude-code"
+    static let claudeApp = "claude-code"
 
     /// The record of a turn in progress (working, or waiting for you), apart
     /// from the agent's own (idle, done): a turn that ends without Stop — you
@@ -136,6 +136,7 @@ enum AgentCLI {
     /// program status. Inside Libertty only; elsewhere it does nothing.
     static func hook(_ args: [String]) -> Int32 {
         if args.first == "codex" { return codexHook(Array(args.dropFirst())) }
+        if let first = args.first, AgentExtensions.Agent(rawValue: first) != nil { return extensionHook(args) }
         guard args.count == 2, args[0] == "claude" else { fail("usage: libertty +agent-hook claude EVENT | codex notify JSON"); return 2 }
         guard ProcessInfo.processInfo.environment["TERM_PROGRAM"] == "Libertty" else { return 0 }
         func report(_ state: String, id: String = "", kind: String = "", message: String = "") -> String {
@@ -148,6 +149,14 @@ enum AgentCLI {
             return sequence
         }
         var reports: [String] = []
+        // Which conversation it is, so it can be resumed (Conversations).
+        let input = ["SessionStart", "UserPromptSubmit", "SessionEnd"].contains(args[1]) ? readInput() : [:]
+        if !input.isEmpty { noteConversation(agent: "claude", event: args[1], input: input) }
+        // A prompt, before the agent goes to work on it: where its turn begins
+        // (Last Turn). Here rather than in the app, which hears of the turn
+        // only once this hook has reported it and could find its first edits
+        // already made. Claude Code waits for the hook.
+        if args[1] == "UserPromptSubmit" { beginTurn(input: input) }
         switch args[1] {
         case "SessionStart":
             // What it hears at its start (a SessionStart hook's output is context).
@@ -203,6 +212,7 @@ enum AgentCLI {
             return sequence
         }
         var reports: [String] = []
+        if type == "agent-turn-complete" { noteConversation(agent: "codex", event: "turn", input: event) }
         if type == "agent-turn-complete" {
             reports = [report("clear", id: turn), report("done", message: event["last-assistant-message"] as? String ?? "")]
         } else if type.contains("approval") {
@@ -211,6 +221,48 @@ enum AgentCLI {
         }
         let sequence = reports.joined()
         if !sequence.isEmpty { _ = write(sequence) }
+        return 0
+    }
+
+    /// What a hook says of the agent's conversation, in the data folder's
+    /// conversations.json: Claude Code's `session_id` as it starts, its
+    /// first prompt, its end; Codex's `thread-id` as a turn ends.
+    static func noteConversation(agent: String, event: String, input: [String: Any],
+                                 environment: [String: String] = ProcessInfo.processInfo.environment,
+                                 at url: URL = Conversations.url) {
+        guard let session = environment["LIBERTTY_SESSION"], !session.isEmpty else { return }
+        let id = (input["session_id"] ?? input["thread-id"] ?? input["thread_id"] ?? input["session-id"]) as? String ?? ""
+        guard Conversations.isValidID(id) else { return }
+        let directory = input["cwd"] as? String ?? environment["PWD"] ?? ""
+        switch event {
+        case "SessionEnd":
+            Conversations.end(agent: agent, id: id, at: url)
+        default:
+            let prompt = input["prompt"] as? String ?? (input["input-messages"] as? [String])?.first ?? ""
+            Conversations.record(agent: agent, id: id, session: session, directory: directory, title: prompt, at: url)
+        }
+    }
+
+    /// Claude Code's turn begins (UserPromptSubmit): the repository its
+    /// session works in, as it is now, in turns.json for the Git block's
+    /// Last Turn and `+diff --turn`.
+    static func beginTurn(input: [String: Any], environment: [String: String] = ProcessInfo.processInfo.environment,
+                          at url: URL = Turns.url) {
+        let directory = input["cwd"] as? String ?? environment["PWD"] ?? ""
+        guard !directory.isEmpty else { return }
+        // The pane's own PATH finds git: no login shell started to read it.
+        LoginShell.adopt(environment["PATH"])
+        Turns.take(directory: directory, agent: "claude", session: environment["LIBERTTY_SESSION"] ?? "", at: url)
+    }
+
+    /// `+agent-hook pi|omp|opencode SessionStart`, run by Libertty's
+    /// extension or plugin with `{session_id, cwd}` on stdin: the
+    /// conversation recorded, and what the agent hears printed.
+    private static func extensionHook(_ args: [String]) -> Int32 {
+        guard args.count == 2, args[1] == "SessionStart" else { fail("usage: libertty +agent-hook pi|omp|opencode SessionStart"); return 2 }
+        guard ProcessInfo.processInfo.environment["TERM_PROGRAM"] == "Libertty" else { return 0 }
+        noteConversation(agent: args[0], event: "SessionStart", input: readInput())
+        print(context())
         return 0
     }
 
@@ -284,7 +336,7 @@ enum AgentCLI {
     /// each, after saying what changes (and asking, unless --yes). Without
     /// --agent: Claude Code, and Codex when it's set up here (~/.codex).
     static func setup(_ args: [String]) -> Int32 {
-        let usage = "usage: libertty +agent-setup [--agent claude|codex|all] [--claude-dir DIR] [--codex-dir DIR] [--remove] [--dry-run] [--yes]"
+        let usage = "usage: libertty +agent-setup [--agent claude|codex|pi|omp|opencode|all] [--claude-dir DIR] [--codex-dir DIR] [--remove] [--dry-run] [--yes]"
         var dir: String?, codexDir: String?, agent: String?
         var i = 0
         while i < args.count {
@@ -305,7 +357,8 @@ enum AgentCLI {
         switch agent {
         case "claude": agents = ["claude"]
         case "codex": agents = ["codex"]
-        case "all": agents = ["claude", "codex"]
+        case "pi", "omp", "opencode": agents = [agent!]
+        case "all": agents = ["claude", "codex"] + AgentExtensions.Agent.allCases.filter { $0.isInstalled(env) }.map(\.rawValue)
         case nil:
             // A folder given for one of them: that one alone.
             if dir != nil || codexDir != nil { agents = (dir != nil ? ["claude"] : []) + (codexDir != nil ? ["codex"] : []) }
@@ -317,6 +370,11 @@ enum AgentCLI {
         if agents.contains("codex") {
             if agents.count > 1 { print("") }
             status = max(status, setupCodex(args, root: codexRoot, given: codexDir != nil || env["CODEX_HOME"] != nil))
+        }
+        for other in AgentExtensions.Agent.allCases where agents.contains(other.rawValue) {
+            if agents.count > 1 { print("") }
+            status = max(status, AgentExtensions.setup(other, removing: args.contains("--remove"), dryRun: args.contains("--dry-run"),
+                                                       yes: args.contains("--yes"), skill: skill(), env: env))
         }
         return status
     }
@@ -556,12 +614,31 @@ enum AgentCLI {
     }
 
     /// The skill: what Libertty's command line does for an agent.
+    /// Where Claude Code's and Codex's skills go (`+agent-setup`).
+    static func installedSkillURLs(_ env: [String: String] = ProcessInfo.processInfo.environment) -> (claude: URL, codex: URL) {
+        func given(_ key: String) -> String? { env[key].flatMap { $0.isEmpty ? nil : $0 } }
+        let claude = URL(fileURLWithPath: ((given("CLAUDE_CONFIG_DIR") ?? "~/.claude") as NSString).expandingTildeInPath)
+        let codex = URL(fileURLWithPath: ((given("CODEX_HOME") ?? "~/.codex") as NSString).expandingTildeInPath)
+        return (claude.appendingPathComponent("skills/libertty/SKILL.md").resolvingSymlinksInPath(),
+                codex.appendingPathComponent("skills/libertty/SKILL.md").resolvingSymlinksInPath())
+    }
+
+    /// At launch (Kero keeps its skill current as it starts): what
+    /// `+agent-setup` installed brought up to this version, off the main thread.
+    static func refreshInstalled() {
+        DispatchQueue.global(qos: .utility).async {
+            let urls = installedSkillURLs()
+            AgentExtensions.refresh(skill: skill(), claudeSkill: urls.claude, codexSkill: urls.codex)
+        }
+    }
+
     static func skill() -> String {
         """
         ---
         name: libertty
         description: Use Libertty, the macOS terminal this session runs in ($TERM_PROGRAM is Libertty) — other terminal sessions (list them, read their screens, type into them, wait for a command or a prompt, start new ones), files, diffs and web pages shown to the user beside the terminal, and this session's name. Use when a task involves another terminal, a long-running command, a server or watcher in its own session, or showing the user something.
         ---
+        <!-- \(AgentExtensions.marker), which keeps it current as Libertty updates. Edit a copy, not this file. -->
 
         # Libertty
 
@@ -574,8 +651,10 @@ enum AgentCLI {
         - `libertty +split [--down] [--ratio PERCENT] [--no-focus] -e COMMAND` — a pane beside this one
           running COMMAND (a dev server, a watcher, tests), with PERCENT of the space; prints its session
           ID. `--no-focus` leaves the keyboard here. Without -e it's a shell.
-        - `libertty +new-session [--cwd DIR] -e COMMAND` — start COMMAND in a session of its own, in no
-          window; prints its ID. It shows as a tab the next time Libertty opens windows.
+        - `libertty +new-session [--cwd DIR] [--worktree BRANCH [--base REF]] -e COMMAND` — start COMMAND in
+          a session of its own, in no window; prints its ID. It shows as a tab the next time Libertty opens
+          windows. `--worktree`: in a git worktree of its own on a new branch, so two agents don't trip over
+          each other's changes; `+kill-session ID --remove-worktree` ends it and removes the worktree.
         - `libertty +move-pane ID --new-tab | --tab N | --new-window` — move a pane elsewhere.
         - `libertty +capture ID [--scrollback]` — print its screen (with --scrollback, its history too).
         - `libertty +send ID TEXT` — type TEXT into it; `\\n` is Return.
@@ -584,15 +663,19 @@ enum AgentCLI {
         - `libertty +wait ID --until prompt|exit|idle=MS [--timeout S]` — block until its shell shows a prompt
           again, its program ends (the exit status is returned), or its output has been quiet for MS ms;
           exit status 124 when the time runs out.
-        - `libertty +events [--filter KIND,...]` — what happens in sessions, one JSON object a line, until
-          interrupted: session-started, session-ended, command-started, command-finished, prompt, title,
-          directory, label, input-mode (echo, canonical), bell.
+        - `libertty +prompt ID TEXT` — ask another agent something: types TEXT, presses Return, waits until
+          its screen has been quiet a while, and prints its last lines.
+        - `libertty +events [ID] [--filter KIND,...] [--for STATE,...] [--once]` — what happens in sessions,
+          one JSON object a line, until interrupted: session-started, session-ended, command-started,
+          command-finished, prompt, title, directory, label, input-mode (echo, canonical), bell, and status
+          (what programs report: `--for waiting,error` only those). `--once`: the first, then exit.
         - `libertty +kill-session ID` — end its program. Only end sessions you started.
 
         ## Showing the user something
 
         - `libertty +open [--split] FILE[:LINE]` — a file in a tab, or with --split beside this terminal.
-        - `libertty +diff [GIT DIFF ARGS]` — this repository's changes, rendered beside the terminal.
+        - `libertty +diff [--turn | --branch] [GIT DIFF ARGS]` — this repository's changes, rendered beside the
+          terminal; `--turn`: only what changed since your turn began; `--branch`: since the default branch.
         - `libertty +browser open --split URL` — a page beside the terminal (e.g. the dev server).
         - `libertty +focus ID` — bring the pane showing a session to the front. Don't move the user around
           unless they asked.
@@ -605,7 +688,8 @@ enum AgentCLI {
           this pane's tab. Libertty's hooks already report Claude Code's states (Codex's when a turn ends or
           waits for approval); use it for a long piece of work of your own, e.g. a script that runs a while.
 
-        `libertty +help` lists every command.
+        `libertty +history` lists agents' past conversations in Libertty's panes; `libertty +resume ID` picks one
+        up again. `libertty +help` lists every command.
         """
     }
 }

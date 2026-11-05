@@ -48,7 +48,7 @@ enum GitCLI {
     /// Paths come back unquoted (`core.quotePath`). Hooks and helpers find
     /// what the login shell would (Homebrew's gpg, husky's node, git-lfs).
     static func execute(_ args: [String], in directory: String, input: Data? = nil,
-                        network: Bool = false) -> Result<String, Failure> {
+                        network: Bool = false, environment extra: [String: String] = [:]) -> Result<String, Failure> {
         guard let git = executable else { return .failure(Failure(message: missing)) }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: git)
@@ -59,6 +59,7 @@ enum GitCLI {
         // No terminal to ask at: a prompt fails instead of waiting forever
         // (ssh has no tty here either; its own settings stay the user's).
         if network { env["GIT_TERMINAL_PROMPT"] = "0" }
+        env.merge(extra) { _, given in given }
         p.environment = env
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
@@ -235,6 +236,15 @@ enum LoginShell {
         let found = read() ?? withoutShell
         cached = found
         return found
+    }
+
+    /// A process a shell started (an agent's hook) has that shell's PATH
+    /// already: it's taken as the login shell's, which isn't run.
+    static func adopt(_ path: String?) {
+        guard let path, !path.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        if cached == nil { cached = path }
     }
 
     /// Libertty's own PATH with Homebrew's folders: what's known without

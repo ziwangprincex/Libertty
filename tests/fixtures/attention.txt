@@ -1,0 +1,27 @@
+# Jump to the Pane Needing You (goto_attention, ⌘J), in any tab: waiting
+# for you first, then failed, then finished, then round again. A failed or
+# finished one is seen once you're there: the next press goes on from it.
+type:printf '\033]2;FINISHER\a\033]7501;state=done:app=probe\a'; sleep 60
+key:enter
+tab:new
+type:printf '\033]2;ASKER\a\033]7501;state=blocked:app=probe\a'; sleep 60
+key:enter
+tab:new
+type:printf '\033]2;BREAKER\a\033]7501;state=error:app=probe\a'; sleep 60
+key:enter
+tab:new
+type:printf '\033]2;IDLER\a'; sleep 60
+key:enter
+wait:1.5
+expect-selected:IDLER
+key:cmd+j
+expect-selected:ASKER
+key:cmd+j
+expect-selected:BREAKER
+key:cmd+j
+expect-selected:FINISHER
+key:cmd+j
+expect-selected:ASKER
+# Only the asker still needs you: the action (the palette's, a script's) stays.
+action:goto_attention
+expect-selected:ASKER

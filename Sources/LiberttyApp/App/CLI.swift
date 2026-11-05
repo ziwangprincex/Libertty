@@ -53,8 +53,11 @@ enum CLI {
         case "+update": status = update(rest)
         case "+wait": status = waitSession(rest)
         case "+events": status = events(rest)
+        case "+prompt": status = prompt(rest)
         case "+focus": status = focusSession(rest)
         case "+rename-session": status = renameSession(rest)
+        case "+history": status = history(rest)
+        case "+resume": status = resume(rest)
         case "+split": status = split(rest)
         case "+move-pane": status = movePane(rest)
         case "+swap-pane": status = swapPane(rest)
@@ -122,26 +125,36 @@ enum CLI {
           libertty +browser url | text | html | eval JS | click SELECTOR | type SELECTOR TEXT | screenshot FILE
                                          read and act in the browser in front (browser-automation = true)
           libertty +render-markdown FILE    print the HTML Libertty renders for a Markdown file
-          libertty +diff [GIT DIFF ARGS]    this repository's changes, rendered beside the terminal
+          libertty +diff [--turn | --branch] [GIT DIFF ARGS]
+                                         this repository's changes, rendered beside the terminal; --turn: what an
+                                         agent changed in its last turn here; --branch: since the default branch
 
         Sessions (kept by liberttyd; they outlive the app — see session-persistence):
           libertty +list-sessions [--json]  every session: id, process, size, windows showing it, directory, name
           libertty +list-panes           every pane of the running Libertty: session, text size and font, cell, scale, grid
-          libertty +new-session [--cwd DIR] [-e COMMAND...]  start one without a window (Libertty shows it at its next launch)
+          libertty +new-session [--cwd DIR] [--worktree BRANCH [--base REF]] [-e COMMAND...]
+                                         start one without a window (Libertty shows it at its next launch);
+                                         --worktree: in a git worktree of its own, on a new branch
           libertty +capture ID [--scrollback] [--ansi | --html]
                                          print a session's screen (and history): text, with its colors
                                          as terminal escapes (--ansi), or as a web page (--html)
           libertty +send ID TEXT...         type TEXT into a session (\n for Return)
           libertty +send-key ID KEY...      press keys in it, encoded as its program wants: ctrl+c, enter, shift+tab, up
-          libertty +kill-session ID         end a session's program
+          libertty +kill-session ID [--remove-worktree [--force]]
+                                         end a session's program (and remove its worktree; --force: with
+                                         uncommitted changes)
           libertty +wait ID [--until exit|prompt|idle=MS] [--timeout SECONDS]
                                          block until its program ends (exits with its status), its shell
                                          shows a prompt again, or its output has been quiet MS ms (0);
                                          124 when the time runs out
-          libertty +events [--filter KIND,...]
-                                         what happens in the sessions, a JSON object a line, until ^C:
-                                         session-started, session-ended, command-started,
-                                         command-finished, prompt, title, directory, label, input-mode, bell
+          libertty +events [ID] [--filter KIND,...] [--for STATE,...] [--once] [--timeout SECONDS]
+                                         what happens in the sessions (or session ID), a JSON object a line,
+                                         until ^C: session-started, session-ended, command-started,
+                                         command-finished, prompt, title, directory, label, input-mode, bell,
+                                         status (OSC 7501: --for working,waiting,done,error); --once: the first
+          libertty +prompt ID TEXT... [--quiet MS] [--timeout SECONDS] [-n LINES]
+                                         ask another agent: type TEXT and Return, wait until its screen has been
+                                         quiet MS ms (3000), print its last LINES lines (40)
           libertty +focus ID                bring the pane showing it to the front
           libertty +rename-session [ID] NAME
                                          name a session (this pane's without ID); its tab shows the name
@@ -157,6 +170,11 @@ enum CLI {
                                          move the divider on that side of the pane by POINTS; even out the split
           libertty +attach ID [--window]    show a session in a tab (or window) of the running Libertty; a session
                                          shown twice mirrors: both follow it, closing one leaves the other
+          libertty +history [QUERY] [-n N] [--json]
+                                         coding agents' conversations that ran in panes (Claude Code, Codex;
+                                         needs +agent-setup), the last to run first; QUERY matches names, folders, ids
+          libertty +resume ID|NAME          pick one up again: the pane running it, or a new tab resuming it
+                                         (claude --resume, codex resume); prints the pane's session ID
         Inside Libertty, $LIBERTTY_SESSION is the current pane's ID.
 
         Programs and agents:
@@ -662,6 +680,62 @@ enum CLI {
         }
     }
 
+    /// `+history [QUERY] [-n N] [--json]`: agents' conversations (Conversations).
+    private static func history(_ args: [String]) -> Int32 {
+        var query: [String] = [], limit = 20, json = false
+        var i = 0
+        while i < args.count {
+            switch args[i] {
+            case "--json": json = true
+            case "-n", "--limit":
+                guard i + 1 < args.count, let n = Int(args[i + 1]), n > 0 else { fail("usage: libertty +history [QUERY] [-n N] [--json]"); return 2 }
+                limit = n
+                i += 1
+            default: query.append(args[i])
+            }
+            i += 1
+        }
+        let list = Array(Conversations.matching(query.joined(separator: " "), among: Conversations.load()).prefix(limit))
+        if json {
+            let data = (try? JSONEncoder().encode(list)) ?? Data("[]".utf8)
+            print(String(decoding: data, as: UTF8.self))
+            return 0
+        }
+        guard !list.isEmpty else {
+            print("no conversations (libertty +agent-setup records Claude Code's and Codex's)")
+            return 0
+        }
+        let format = DateFormatter()
+        format.dateFormat = "yyyy-MM-dd HH:mm"
+        for c in list {
+            let when = format.string(from: Date(timeIntervalSince1970: c.active))
+            let folder = (c.directory as NSString).abbreviatingWithTildeInPath
+            print([String(c.id.prefix(8)), when, c.agentName, c.label, folder, c.ended ? "ended" : ""]
+                .filter { !$0.isEmpty }.joined(separator: "  "))
+        }
+        return 0
+    }
+
+    /// `+resume ID|NAME`: the running Libertty picks the conversation up again.
+    private static func resume(_ args: [String]) -> Int32 {
+        guard args.count == 1 else { fail("usage: libertty +resume ID|NAME"); return 2 }
+        guard let c = Conversations.find(args[0], among: Conversations.load()) else {
+            fail("no conversation \(args[0]) (libertty +history lists them)")
+            return 3
+        }
+        guard Conversations.resumeCommand(c) != nil else { fail("\(c.agentName)'s conversations can't be resumed"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        let answer = RemoteControl.request(["kind": "resume", "agent": c.agent, "id": c.id], timeout: 10)
+        switch answer?["result"] {
+        case "made":
+            if let id = answer?["session"], !id.isEmpty { print(id) }
+            return 0
+        default:
+            fail(answer?["message"] ?? "Libertty didn't answer")
+            return 1
+        }
+    }
+
     private static func listSessions(_ args: [String]) -> Int32 {
         guard let sessions = DaemonClient.sessions(address: daemon) else {
             let why = host.map { "can't reach \($0.destination)" + (($0.lastError as? LocalizedError)?.errorDescription.map { ": " + $0 } ?? "") }
@@ -698,6 +772,7 @@ enum CLI {
     private static func newSession(_ args: [String]) -> Int32 {
         var directory = FileManager.default.currentDirectoryPath
         var command: String?
+        var worktree: String?, base: String?
         var i = 0
         while i < args.count {
             switch args[i] {
@@ -705,12 +780,27 @@ enum CLI {
                 guard i + 1 < args.count else { fail("--cwd needs a directory"); return 2 }
                 directory = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath).standardizedFileURL.path
                 i += 2
+            case "--worktree", "--base":
+                guard i + 1 < args.count, !args[i + 1].hasPrefix("-") else { fail("\(args[i]) needs a branch"); return 2 }
+                if args[i] == "--worktree" { worktree = args[i + 1] } else { base = args[i + 1] }
+                i += 2
             case "-e":
                 command = args[(i + 1)...].joined(separator: " ")
                 i = args.count
             default:
                 fail("unknown option \(args[i])")
                 return 2
+            }
+        }
+        if base != nil, worktree == nil { fail("--base goes with --worktree"); return 2 }
+        // In a git worktree of its own, on a new branch (New Tab in Worktree…).
+        if let branch = worktree {
+            guard host == nil else { fail("--worktree is for this Mac's repositories"); return 2 }
+            guard let root = GitCLI.root(of: directory) else { fail("\(directory) isn't in a git repository"); return 1 }
+            let from = base ?? (store.config.worktreeBase == "current" ? "HEAD" : nil)
+            switch Worktrees.create(root: root, branch: branch, base: from, setting: store.config.worktreeDir) {
+            case .failure(let why): fail(why.message); return 1
+            case .success(let path): directory = path
             }
         }
         let id = Persistence.newSessionID()
@@ -898,10 +988,50 @@ enum CLI {
     /// `+events [--filter KIND,...]`: what happens in the sessions, one JSON
     /// object a line, until interrupted.
     private static func events(_ args: [String]) -> Int32 {
-        var kinds: [String]?
-        if let i = args.firstIndex(of: "--filter") {
-            guard i + 1 < args.count else { fail("usage: libertty +events [--filter KIND,...]"); return 2 }
-            kinds = args[i + 1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let usage = "usage: libertty +events [ID] [--filter KIND,...] [--for STATE,...] [--once] [--timeout SECONDS]"
+        var kinds: [String]?, states: Set<String>?, session: String?, once = false, timeout: Double?
+        var i = 0
+        func list(_ s: String) -> [String] {
+            let parts: [String] = s.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            return parts.filter { !$0.isEmpty }
+        }
+        while i < args.count {
+            let a = args[i], next = i + 1 < args.count ? args[i + 1] : nil
+            switch a {
+            case "--filter":
+                guard let next else { fail(usage); return 2 }
+                kinds = list(next)
+                i += 2
+            case "--for":
+                // Programs' states (OSC 7501, an agent's hooks): status events in them.
+                guard let next else { fail(usage); return 2 }
+                var named: Set<String> = []
+                for state in list(next) {
+                    switch state {
+                    case "waiting": named.insert("blocked")
+                    case "failed": named.insert("error")
+                    default: named.insert(state)
+                    }
+                }
+                states = named
+                i += 2
+            case "--once":
+                once = true
+                i += 1
+            case "--timeout":
+                guard let next, let seconds = Double(next), seconds > 0 else { fail(usage); return 2 }
+                timeout = seconds
+                i += 2
+            default:
+                guard !a.hasPrefix("-"), session == nil else { fail(usage); return 2 }
+                session = a
+                i += 1
+            }
+        }
+        if states != nil {
+            var all: [String] = kinds ?? []
+            if !all.contains("status") { all.append("status") }
+            kinds = all
         }
         guard let c = daemon.connect() else { fail("liberttyd isn't running"); return 1 }
         c.send(.hello, json: ["version": Wire.version])
@@ -915,12 +1045,80 @@ enum CLI {
         c.send(.events, json: request)
         guard let answer = c.receive(), answer.json["ok"] as? Bool == true else { return gone() }
         setvbuf(stdout, nil, _IOLBF, 0)
-        while let frame = c.receive() {
+        let start = Date()
+        while true {
+            if let timeout {
+                let left = timeout - Date().timeIntervalSince(start)
+                guard left > 0 else { return 124 }
+                c.setReceiveTimeout(left)
+            }
+            guard let frame = c.receive() else { return timedOut(start, timeout) ?? gone() }
             guard frame.kind == .event else { continue }
+            if session != nil || states != nil {
+                let event = frame.json
+                if let session, (event["id"] as? String) != session { continue }
+                if let states, event["event"] as? String == "status", !states.contains(event["state"] as? String ?? "") { continue }
+                // A session ending is what a script waiting on it would want to know.
+                if let session, event["event"] as? String == "session-ended", (event["id"] as? String) == session {
+                    print(String(decoding: frame.payload, as: UTF8.self))
+                    return once ? 1 : 0
+                }
+            }
             print(String(decoding: frame.payload, as: UTF8.self))
+            if once { return 0 }
         }
-        // liberttyd left (it was replaced, or the last session ended and it quit).
-        return gone()
+    }
+
+    /// `+prompt ID TEXT... [--quiet MS] [--timeout SECONDS] [-n LINES]`:
+    /// another agent asked something (Kero's `prompt`): TEXT typed and
+    /// Return pressed, then a wait until its screen has been quiet a while
+    /// (an agent's spinner stops with its turn), then its screen's last lines.
+    private static func prompt(_ args: [String]) -> Int32 {
+        let usage = "usage: libertty +prompt ID TEXT... [--quiet MS] [--timeout SECONDS] [-n LINES]"
+        var words: [String] = [], quiet = 3000, timeout: Double?, lines = 40
+        var i = 0
+        while i < args.count {
+            let a = args[i], next = i + 1 < args.count ? args[i + 1] : nil
+            switch a {
+            case "--quiet":
+                guard let next, let ms = Int(next), ms > 0 else { fail(usage); return 2 }
+                quiet = ms
+                i += 2
+            case "--timeout":
+                guard let next, Double(next) != nil else { fail(usage); return 2 }
+                timeout = Double(next)
+                i += 2
+            case "-n":
+                guard let next, let n = Int(next), n > 0 else { fail(usage); return 2 }
+                lines = n
+                i += 2
+            default:
+                words.append(a)
+                i += 1
+            }
+        }
+        guard words.count >= 2 else { fail(usage); return 2 }
+        let id = words[0], text = words.dropFirst().joined(separator: " ")
+        guard result(DaemonClient.request(.send, json: ["id": id, "text": text], address: daemon)) else { return 1 }
+        // Return apart from the text: an agent's input takes text typed at once as a paste.
+        usleep(300_000)
+        switch DaemonClient.request(.sendKey, json: ["id": id, "keys": ["enter"]], needing: "sendKey", address: daemon) {
+        case .answered: break
+        case .unsupported: _ = DaemonClient.request(.send, json: ["id": id, "text": "\r"], address: daemon)
+        case .unanswered: fail("liberttyd isn't running"); return 1
+        }
+        // Its answer starting: then quiet once it's over.
+        usleep(800_000)
+        var waitArgs: [String] = [id, "--until", "idle=" + String(quiet)]
+        if let timeout { waitArgs += ["--timeout", String(timeout)] }
+        let waited = waitSession(waitArgs)
+        guard waited == 0 || waited == 124 else { return waited }
+        let frame = DaemonClient.request(.capture, json: ["id": id, "scrollback": false, "format": "plain"], address: daemon)
+        guard result(frame), let screen = frame?.json["text"] as? String else { return 1 }
+        var rows = screen.split(separator: "\n", omittingEmptySubsequences: false)
+        while rows.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { rows.removeLast() }
+        print(rows.suffix(lines).joined(separator: "\n"))
+        return waited
     }
 
     private static func focusSession(_ args: [String]) -> Int32 {
@@ -934,8 +1132,31 @@ enum CLI {
     }
 
     private static func killSession(_ args: [String]) -> Int32 {
-        guard let id = args.first else { fail("usage: libertty +kill-session ID"); return 2 }
-        return result(DaemonClient.request(.kill, json: ["id": id], address: daemon)) ? 0 : 1
+        let usage = "usage: libertty +kill-session ID [--remove-worktree [--force]]"
+        let removing = args.contains("--remove-worktree"), force = args.contains("--force")
+        let rest = args.filter { $0 != "--remove-worktree" && $0 != "--force" }
+        guard rest.count == 1, let id = rest.first, force ? removing : true else { fail(usage); return 2 }
+        // Its worktree, found before the session (and what it says of its folder) goes.
+        var worktree: WorktreeInfo?
+        if removing {
+            guard host == nil else { fail("--remove-worktree is for this Mac's sessions"); return 2 }
+            let info = DaemonClient.sessions(address: daemon)?.first { $0.id == id }
+            guard let dir = info.flatMap({ SessionInfo.directory(fromPwd: $0.workingDirectory) }), let w = Worktrees.linked(at: dir) else {
+                fail("session \(id) isn't in a git worktree of its own")
+                return 1
+            }
+            if !force, Worktrees.uncommitted(w.path) > 0 {
+                fail("\(w.path) has uncommitted changes; --force removes them too")
+                return 1
+            }
+            worktree = w
+        }
+        guard result(DaemonClient.request(.kill, json: ["id": id], address: daemon)) else { return 1 }
+        guard let worktree else { return 0 }
+        usleep(500_000)  // its programs let go of the folder
+        if case .failure(let why) = Worktrees.remove(worktree, force: force) { fail(why.message); return 1 }
+        print("removed \(worktree.path)")
+        return 0
     }
 
     private static func renderDiff(_ args: [String]) -> Int32 {
@@ -956,14 +1177,34 @@ enum CLI {
     /// `libertty +diff [GIT DIFF ARGS]`: this repository's changes, rendered
     /// beside the terminal (again: refreshed).
     private static func diff(_ args: [String]) -> Int32 {
-        switch GitDiff.write(directory: FileManager.default.currentDirectoryPath, arguments: args) {
+        var args = args
+        let here = FileManager.default.currentDirectoryPath
+        // Since an agent's last turn began here, or since the branch left the
+        // default one (Last Turn, Branch): to the working tree as it is, new files too.
+        var name: String?
+        if let flag = args.first(where: { $0 == "--turn" || $0 == "--branch" }) {
+            args.removeAll { $0 == flag }
+            guard let root = GitCLI.root(of: here) else { fail("not a git repository"); return 1 }
+            let base: String
+            if flag == "--turn" {
+                guard let turn = Turns.last(root: root) else { fail("no agent has started a turn in \(root) yet"); return 1 }
+                base = turn.tree
+            } else {
+                guard let (commit, _) = WorkTree.branchBase(root: root) else { fail("no default branch to compare with"); return 1 }
+                base = commit
+            }
+            guard let now = WorkTree.snapshot(root: root) else { fail("couldn't read the working tree"); return 1 }
+            args = ["-M", base, now] + args
+            name = flag.dropFirst(2) + ""
+        }
+        switch GitDiff.write(directory: here, arguments: args, name: name) {
         case .failure(let why):
             fail(why.message)
             return 1
         case .success(let file):
             guard liberttyRunning else { fail("Libertty isn't running (the diff is in \(file.path))"); return 1 }
-            let name = (["git diff"] + args).joined(separator: " ")
-            RemoteControl.post(["kind": "open", "path": file.path, "line": "", "split": "1", "name": name])
+            let title = name.map { $0 == "turn" ? "Last turn" : "Since the default branch" } ?? (["git diff"] + args).joined(separator: " ")
+            RemoteControl.post(["kind": "open", "path": file.path, "line": "", "split": "1", "name": title])
             return 0
         }
     }

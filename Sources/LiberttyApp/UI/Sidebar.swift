@@ -18,6 +18,21 @@ struct SidebarTabInfo: Equatable {
     var tiles: [ProgramTile] = []
     /// What the tab did while you weren't looking at it (GoRex).
     var news: TabNews = .none
+    /// The row's second line (`sidebar-rows = comfortable`): what its
+    /// program reports, else its branch and changes, else its folder.
+    var subtitle = ""
+    /// A split tab's panes, listed from its pane count.
+    var panes: [PaneSummary] = []
+}
+
+/// One pane of a split tab, as its row's list shows it.
+struct PaneSummary: Equatable {
+    var id: String
+    var program: String
+    /// Its branch and changes, else its folder.
+    var place: String
+    var status: ProgramStatusStore.State?
+    var focused: Bool
 }
 
 /// Which tabs the sidebar lists by what their programs are doing (Rex's
@@ -28,10 +43,10 @@ enum TabActivity: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .all: return "All Tabs"
-        case .working: return "Working"
-        case .waiting: return "Waiting for You"
-        case .attention: return "Finished or Failed"
+        case .all: return L10n.t("All Tabs")
+        case .working: return L10n.t("Working")
+        case .waiting: return L10n.t("Waiting for You")
+        case .attention: return L10n.t("Finished or Failed")
         }
     }
 
@@ -504,13 +519,30 @@ final class SidebarViewController: NSViewController {
     private func fitTabsHeight() {
         let shown = tabs.filter(matches).count
         let folded = tabs.count - shown
-        tabsHeight.constant = CGFloat(shown) * (tabsTable.rowHeight + Self.rowSpacing)
+        tabsHeight.constant = CGFloat(shown) * (rowHeight + Self.rowSpacing)
             + CGFloat(folded) * (Self.foldedRowHeight + Self.rowSpacing) + 2
         // How many, and how many of them show while filtered: "1/4".
         tabCount.stringValue = folded > 0 ? "\(shown)/\(tabs.count)" : String(tabs.count)
     }
 
     private static let foldedRowHeight: CGFloat = 0.01
+
+    /// What a pane listed under a tab's count is picked for.
+    enum PaneChoice: String { case focus, zoom, close }
+
+    /// `sidebar-rows`: two lines a row (comfortable), or one (compact).
+    private var twoLineRows = true
+    private var rowHeight: CGFloat { twoLineRows ? Layout.twoLineRowHeight : Layout.rowHeight }
+
+    func show(twoLineRows on: Bool) {
+        guard on != twoLineRows || TabCell.twoLines != on else { return }
+        twoLineRows = on
+        TabCell.twoLines = on
+        tabsTable.rowHeight = rowHeight
+        tabsTable.reloadData()
+        fitTabsHeight()
+        placeSelectionCard()
+    }
 
     static func iconButton(_ symbol: String, _ tip: String, target: AnyObject, action: Selector) -> NSButton {
         let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!, target: target, action: action)
@@ -873,12 +905,13 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell = (tableView.makeView(withIdentifier: TabCell.identifier, owner: self) as? TabCell) ?? TabCell()
         cell.configure(tabs[row], index: row, count: tabs.count, closeTarget: self)
+        cell.onPane = { [weak self] id, choice in self?.controller?.choosePane(id, choice) }
         cell.isHidden = !matches(tabs[row])
         return cell
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        tabs.indices.contains(row) && !matches(tabs[row]) ? Self.foldedRowHeight : Layout.rowHeight
+        tabs.indices.contains(row) && !matches(tabs[row]) ? Self.foldedRowHeight : rowHeight
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { TabRowView() }
@@ -942,11 +975,22 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
 /// One tab: a status dot (OSC 7501), the title, and ⌘N or a close button on hover.
 private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     static let identifier = NSUserInterfaceItemIdentifier("TabCell")
+    /// `sidebar-rows = comfortable`: a second line under the name.
+    static var twoLines = true
     private let dot = StatusBadge()
     private let tiles = TileStack()
     /// Rex's 22-point rounded square behind the tab's glyph.
     private let well = NSView()
     private let title = NSTextField(labelWithString: "")
+    /// The second line (`sidebar-rows = comfortable`).
+    private let subtitle = NSTextField(labelWithString: "")
+    /// A split tab's pane count: a click lists its panes (Kero's).
+    private let paneCount = NSButton(title: "", target: nil, action: nil)
+    private var panes: [PaneSummary] = []
+    private var titleCenter: NSLayoutConstraint!
+    private var countCenter: NSLayoutConstraint!
+    /// Picks one of the listed panes: (pane id, what to do with it).
+    var onPane: ((String, SidebarViewController.PaneChoice) -> Void)?
     /// Printing (filled) or news waiting (ring): accent, no other color.
     private let news = CAShapeLayer()
     private let newsView = NSView()
@@ -980,7 +1024,26 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         well.layer?.cornerCurve = .continuous
         // Rex shows no key hints on its rows (the menu and ⌘1–9 still work).
         shortcut.alphaValue = 0
-        for v in [well, dot, tiles, title, newsView, shortcut, close] {
+        subtitle.font = Typeface.secondary
+        subtitle.textColor = .tertiaryLabelColor
+        subtitle.lineBreakMode = .byTruncatingTail
+        subtitle.maximumNumberOfLines = 1
+        subtitle.usesSingleLineMode = true
+        subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        subtitle.isHidden = true
+        paneCount.isBordered = false
+        paneCount.font = Typeface.secondary
+        paneCount.image = NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: "Panes")
+        paneCount.imagePosition = .imageLeading
+        paneCount.symbolConfiguration = .init(pointSize: 9, weight: .regular)
+        paneCount.contentTintColor = .tertiaryLabelColor
+        paneCount.toolTip = L10n.t("List this tab's panes")
+        paneCount.target = self
+        paneCount.action = #selector(listPanes(_:))
+        paneCount.isHidden = true
+        paneCount.setContentHuggingPriority(.required, for: .horizontal)
+        paneCount.setContentCompressionResistancePriority(.required, for: .horizontal)
+        for v in [well, dot, tiles, title, subtitle, paneCount, newsView, shortcut, close] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -995,8 +1058,11 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
             tiles.centerXAnchor.constraint(equalTo: well.centerXAnchor),
             tiles.centerYAnchor.constraint(equalTo: centerYAnchor),
             title.leadingAnchor.constraint(equalTo: well.trailingAnchor, constant: 8),
-            title.centerYAnchor.constraint(equalTo: centerYAnchor),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: newsView.leadingAnchor, constant: -4),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: paneCount.leadingAnchor, constant: -4),
+            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 0),
+            subtitle.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            paneCount.trailingAnchor.constraint(equalTo: newsView.leadingAnchor, constant: -4),
             newsView.widthAnchor.constraint(equalToConstant: 8), newsView.heightAnchor.constraint(equalToConstant: 8),
             newsView.centerYAnchor.constraint(equalTo: centerYAnchor),
             newsView.trailingAnchor.constraint(equalTo: shortcut.leadingAnchor, constant: -6),
@@ -1005,6 +1071,54 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
             close.centerXAnchor.constraint(equalTo: shortcut.centerXAnchor),
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        titleCenter = title.centerYAnchor.constraint(equalTo: centerYAnchor)
+        countCenter = paneCount.centerYAnchor.constraint(equalTo: centerYAnchor)
+        NSLayoutConstraint.activate([titleCenter, countCenter])
+    }
+
+    /// The count's list: each pane, its program, where it is and what it's
+    /// doing; a click goes to it, ⌥ zooms it; Close Pane closes one.
+    @objc private func listPanes(_ sender: NSButton) {
+        let menu = NSMenu()
+        func item(_ pane: PaneSummary, _ choice: SidebarViewController.PaneChoice) -> NSMenuItem {
+            let status = pane.status.map { " · " + TerminalWindowController.stateWord($0) } ?? ""
+            let verb = choice == .zoom ? "Zoom " : ""
+            let item = NSMenuItem(title: verb + pane.program + (pane.place.isEmpty ? "" : " — " + pane.place) + status,
+                                  action: #selector(pickPane(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = [pane.id, choice.rawValue]
+            item.state = pane.focused && choice == .focus ? .on : .off
+            item.image = NSImage(systemSymbolName: Self.symbol(for: pane.status), accessibilityDescription: nil)
+            return item
+        }
+        for pane in panes {
+            menu.addItem(item(pane, .focus))
+            let zoom = item(pane, .zoom)
+            zoom.isAlternate = true
+            zoom.keyEquivalentModifierMask = .option
+            menu.addItem(zoom)
+        }
+        menu.addItem(.separator())
+        let close = NSMenu()
+        for pane in panes { close.addItem(item(pane, .close)) }
+        menu.addItem(withTitle: L10n.t("Close Pane"), action: nil, keyEquivalent: "").submenu = close
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    @objc private func pickPane(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? [String], pair.count == 2,
+              let choice = SidebarViewController.PaneChoice(rawValue: pair[1]) else { return }
+        onPane?(pair[0], choice)
+    }
+
+    private static func symbol(for status: ProgramStatusStore.State?) -> String {
+        switch status {
+        case .blocked?: "exclamationmark.circle"
+        case .error?: "xmark.circle"
+        case .done?: "checkmark.circle"
+        case .working?: "circle.dotted"
+        default: "terminal"
+        }
     }
 
     @available(*, unavailable)
@@ -1050,11 +1164,22 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
             ? .byTruncatingMiddle : .byTruncatingTail
         var extra: [String] = []
         if !tab.detail.isEmpty { extra.append(tab.detail) }
-        if tab.paneCount > 1 { extra.append(tab.zoomed ? "\(tab.paneCount) panes, zoomed" : "\(tab.paneCount) panes") }
         if tab.parked > 0 { extra.append("\(tab.parked) parked") }
         shown = (tab.title, extra.joined(separator: " · "), paragraph)
         showTitle()
-        title.toolTip = ([tab.title] + extra).joined(separator: " · ")
+        let panesText = tab.paneCount > 1 ? (tab.zoomed ? "\(tab.paneCount) panes, zoomed" : "\(tab.paneCount) panes") : ""
+        title.toolTip = ([tab.title] + extra + (panesText.isEmpty ? [] : [panesText]) + (tab.subtitle.isEmpty ? [] : [tab.subtitle]))
+            .joined(separator: " · ")
+        // The pane count, a click from the list of them.
+        panes = tab.panes
+        paneCount.isHidden = tab.paneCount < 2
+        paneCount.title = tab.zoomed ? "\(tab.paneCount) zoomed" : String(tab.paneCount)
+        paneCount.setAccessibilityLabel(panesText)
+        // The second line.
+        subtitle.stringValue = tab.subtitle
+        subtitle.isHidden = !Self.twoLines || tab.subtitle.isEmpty
+        titleCenter.constant = subtitle.isHidden ? 0 : -8
+        countCenter.constant = subtitle.isHidden ? 0 : -8
         // ⌘1–⌘8 select those tabs and ⌘9 the last one, whatever its number.
         shortcut.stringValue = index < 8 ? "⌘\(index + 1)" : index == count - 1 ? "⌘9" : ""
         showNews(tab.news)
@@ -1688,7 +1813,7 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
         activityButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Show Tabs")
         activityButton.contentTintColor = filtering ? .labelColor : .tertiaryLabelColor
         activityButton.toolTip = filtering ? "Showing: \(activity.title)" : "Show Tabs by Activity"
-        let placeholder = filtering ? "Filter \(activity.word) tabs" : "Filter tabs"
+        let placeholder = filtering ? "Filter \(activity.word) tabs" : L10n.t("Filter tabs")
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
             .font: Typeface.row, .foregroundColor: NSColor.tertiaryLabelColor,
         ])

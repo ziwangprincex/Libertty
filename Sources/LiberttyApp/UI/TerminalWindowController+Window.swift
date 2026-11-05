@@ -102,8 +102,20 @@ extension TerminalWindowController {
             }
             return false
         }
-        // Undoable: hide it for `undo-timeout`, then really close it.
-        guard CloseUndo.shared.enabled, !isQuick, allPanes.contains(where: { !$0.session.hasExited }) else {
+        // Its worktrees: whether they go too, asked once the rest is settled
+        // (Cancel keeps the window as it was). Quitting and Close All don't
+        // come here: their sessions' worktrees stay.
+        if worktreesOnClose == nil, confirmWindowWorktrees(cancelled: { [weak self] in self?.skipCloseConfirmation = false }, then: { [weak self] in
+            // Again from the top, with what was asked already answered.
+            self?.unsavedConfirmed = true
+            _ = self?.windowShouldClose(sender)
+        }) {
+            return false
+        }
+        // Undoable: hide it for `undo-timeout`, then really close it — not
+        // when its worktrees are to go with it.
+        guard CloseUndo.shared.enabled, !isQuick, (worktreesOnClose ?? []).isEmpty,
+              allPanes.contains(where: { !$0.session.hasExited }) else {
             if skipCloseConfirmation { sender.close() }
             return !skipCloseConfirmation
         }
@@ -114,6 +126,7 @@ extension TerminalWindowController {
             guard let window = self.window else { return nil }
             // Back as it was: its next close asks as any close does.
             self.skipCloseConfirmation = false
+            self.worktreesOnClose = nil
             self.onUnhide?(self)
             window.makeKeyAndOrderFront(nil)
             // Redo closes it again, the usual way; it doesn't keep the window alive.
@@ -135,6 +148,8 @@ extension TerminalWindowController {
 
     func windowWillClose(_ notification: Notification) {
         documentsClosed(documents(in: everyTab))
+        // The worktrees it was asked to take with it, once its programs end.
+        removeWorktreesOnClose()
         if let observer = inboxObserver { NotificationCenter.default.removeObserver(observer) }
         inboxObserver = nil
         allPanes.forEach { $0.session.terminate() }

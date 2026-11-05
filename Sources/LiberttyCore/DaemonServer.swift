@@ -114,7 +114,7 @@ public final class DaemonServer {
     /// What this liberttyd does beyond protocol 1's beginnings, in `welcome`:
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
-    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey"]
+    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report"]
 
     private init(path: String) {
         self.path = path
@@ -300,6 +300,18 @@ public final class DaemonServer {
                     fail("\(names[silent]) sends nothing to this program; no keys sent")
                     continue
                 }
+                connection.send(.result, json: ["ok": true])
+            case .report:
+                // What the app reads on an agent's screen (it has the rules): a
+                // `status` event as an OSC 7501 report's, for `+events --for`.
+                let json = frame.json
+                guard let id = json["id"] as? String, session(id) != nil else { fail("no such session"); continue }
+                let states: Set<String> = ["idle", "working", "blocked", "done", "error", "clear"]
+                guard let state = json["state"] as? String, states.contains(state) else { fail("no such state"); continue }
+                DaemonEvents.shared.publish("status", session: id, [
+                    "state": state, "record": json["record"] as? String ?? "", "app": json["app"] as? String ?? "",
+                    "message": "", "title": "", "source": "screen",
+                ])
                 connection.send(.result, json: ["ok": true])
             case .rename:
                 let json = frame.json
@@ -576,6 +588,8 @@ final class DaemonSession {
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PWD_CHANGED,
                                  unsafeBitCast(daemonPwdChanged, to: UnsafeRawPointer.self))
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_BELL, unsafeBitCast(daemonBell, to: UnsafeRawPointer.self))
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PROGRAM_STATUS,
+                                 unsafeBitCast(daemonProgramStatus, to: UnsafeRawPointer.self))
         TerminalDefaults.apply(to: terminal, scrollback: scrollback)
         KittyGraphics.enableForDaemon(on: terminal)
         // Snapshots must work mid-sequence: remember unfinished input.
@@ -663,6 +677,10 @@ final class DaemonSession {
     }
 
     fileprivate func rang() { pendingEvents.append(("bell", [:])) }
+
+    /// A program's report of what it does (OSC 7501): `status` events, which
+    /// `+events --for blocked,…` follows.
+    fileprivate func programStatus(_ fields: [String: Any]) { pendingEvents.append(("status", fields)) }
 
     /// Under `lock`: drop the windows whose outboxes hung up.
     private func forgetLost() {
@@ -1123,6 +1141,30 @@ private let daemonTitleChanged: GhosttyTerminalTitleChangedFn = { _, userdata in
 private let daemonPwdChanged: GhosttyTerminalPwdChangedFn = { _, userdata in daemonSession(userdata)?.pwdChanged() }
 private let daemonBell: GhosttyTerminalBellFn = { _, userdata in daemonSession(userdata)?.rang() }
 
+private let daemonProgramStatus: GhosttyTerminalProgramStatusFn = { _, userdata, report in
+    guard let report = report?.pointee, let s = daemonSession(userdata) else { return }
+    let state = switch report.state {
+    case GHOSTTY_PROGRAM_STATUS_STATE_CLEAR: "clear"
+    case GHOSTTY_PROGRAM_STATUS_STATE_WORKING: "working"
+    case GHOSTTY_PROGRAM_STATUS_STATE_DONE: "done"
+    case GHOSTTY_PROGRAM_STATUS_STATE_BLOCKED: "blocked"
+    case GHOSTTY_PROGRAM_STATUS_STATE_ERROR: "error"
+    default: "idle"
+    }
+    let kind = switch report.kind {
+    case GHOSTTY_PROGRAM_STATUS_KIND_PERMISSION: "permission"
+    case GHOSTTY_PROGRAM_STATUS_KIND_QUESTION: "question"
+    case GHOSTTY_PROGRAM_STATUS_KIND_AUTH: "auth"
+    default: ""
+    }
+    // Strings are only valid during this call: copied now.
+    var fields: [String: Any] = ["state": state, "record": String(borrowed: report.id), "app": String(borrowed: report.app),
+                                 "message": String(borrowed: report.message), "title": String(borrowed: report.title)]
+    if !kind.isEmpty { fields["kind"] = kind }
+    if report.progress >= 0 { fields["progress"] = Int(report.progress) }
+    s.programStatus(fields)
+}
+
 private let daemonWritePty: GhosttyTerminalWritePtyFn = { _, userdata, data, len in
     guard let userdata, let data, len > 0 else { return }
     Unmanaged<DaemonSession>.fromOpaque(userdata).takeUnretainedValue().terminalWantsToReply(data, len)
@@ -1221,7 +1263,7 @@ public enum Snapshots {
     }
 
     /// The screen (and optionally the scrollback) as text in `format`, wrapped lines joined.
-    public static func text(_ terminal: GhosttyTerminal, scrollback: Bool, format: TextFormat) -> String {
+    public static func text(_ terminal: GhosttyTerminal, scrollback: Bool, format: TextFormat, unwrap: Bool = true) -> String {
         var options = GhosttyFormatterTerminalOptions()
         options.size = MemoryLayout<GhosttyFormatterTerminalOptions>.size
         options.emit = switch format {
@@ -1229,7 +1271,7 @@ public enum Snapshots {
         case .ansi: GHOSTTY_FORMATTER_FORMAT_VT
         case .html: GHOSTTY_FORMATTER_FORMAT_HTML
         }
-        options.unwrap = true
+        options.unwrap = unwrap
         options.trim = true
         options.extra.size = MemoryLayout<GhosttyFormatterTerminalExtra>.size
         options.extra.screen.size = MemoryLayout<GhosttyFormatterScreenExtra>.size

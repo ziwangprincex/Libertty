@@ -99,7 +99,8 @@ enum Snapshot {
                                wait: Double = 0, settle: Double = 0) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw TerminalError.libghostty("no Metal device") }
         let scale: CGFloat = 2
-        let fonts = FontSet(family: config.fontFamily, pointSize: fontSize, scale: scale, cellHeightAdjust: config.adjustCellHeight)
+        let fonts = FontSet(family: config.fontFamily, pointSize: fontSize, scale: scale, cellHeightAdjust: config.adjustCellHeight,
+                            cellWidthAdjust: config.adjustCellWidth)
         let initStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         let renderer = try TerminalRenderer(device: device, fonts: fonts)
         renderer.selectionColor = config.resolvedTheme.selection

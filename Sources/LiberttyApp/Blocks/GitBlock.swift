@@ -140,6 +140,46 @@ final class GitBlock: BlockService {
                 self.titleMayChange()
                 return true
             }
+        case "setDiffLayout":
+            // The diffs' layout button: kept in the config (diff-layout), as +diff's pages read it.
+            guard let layout = params["layout"] as? String, ["auto", "unified", "split"].contains(layout) else {
+                return reply(.failure(BlockError("auto, unified or split")))
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { _ = SettingsModel.shared.write("diff-layout", layout) }
+                reply(.success(true))
+            }
+        case "base":
+            // Last Turn's or Branch's base: what the changes are since, and its name.
+            let which = params["base"] as? String ?? ""
+            blockWork(reply) { try self.base(which) as Any? ?? NSNull() }
+        case "baseChanges":
+            // The files changed since a base, and the whole diff of them (Last Turn, Branch).
+            guard let tree = params["tree"] as? String, WorkTree.isObjectID(tree) else { return reply(.failure(BlockError("since when?"))) }
+            blockWork(reply) { try self.changes(since: tree) }
+        case "revert":
+            // A hunk of Last Turn put back as it was: never under an agent
+            // at work (it would race its edits), and only to a file still as
+            // the diff shows it (git apply checks).
+            guard let patch = params["patch"] as? String, patch.hasPrefix("diff --git ") else {
+                return reply(.failure(BlockError("not a patch")))
+            }
+            func agentWorks() -> Bool {
+                guard let root else { return false }
+                return TerminalWindowController.agentWorks(in: root, among: (NSApp.delegate as? AppDelegate)?.allControllers ?? [])
+            }
+            let busy = BlockError("An agent is working here: revert once it's done.")
+            if agentWorks() { return reply(.failure(busy)) }
+            blockWork(reply) {
+                // Again just before git touches the file: one may have started meanwhile.
+                if DispatchQueue.main.sync(execute: agentWorks) { throw busy }
+                do {
+                    try self.git(["apply", "-R", "--recount", "--whitespace=nowarn", "-"], input: Data(patch.utf8))
+                } catch {
+                    throw BlockError("The file changed since: it shows anew. (\(error.localizedDescription))")
+                }
+                return true
+            }
         case "openFile":
             guard let root, let url = Self.inside(root, paths[0]) else { return reply(.failure(BlockError("no such file"))) }
             guard FileManager.default.fileExists(atPath: url.path) else { return reply(.failure(BlockError("It isn't there anymore."))) }
@@ -338,6 +378,63 @@ final class GitBlock: BlockService {
             return Self.capped(String(decoding: data, as: UTF8.self))
         }
         return Self.capped(try git(["diff", "--no-color", "--no-ext-diff", "-M", "--src-prefix=a/", "--dst-prefix=b/"] + (staged ? ["--cached"] : []) + ["--"] + paths))
+    }
+
+    /// A base the changes are shown since: the last turn of an agent here
+    /// (its snapshot), or where the branch left the default one.
+    private func base(_ which: String) throws -> [String: Any]? {
+        let root = try repository()
+        switch which {
+        case "turn":
+            guard let turn = Turns.last(root: root) else { return nil }
+            return ["tree": turn.tree, "time": turn.time, "agent": turn.agent, "name": "last turn"]
+        case "branch":
+            guard let (commit, branch) = WorkTree.branchBase(root: root),
+                  let tree = GitCLI.run(["rev-parse", commit + "^{tree}"], in: root), WorkTree.isObjectID(tree) else { return nil }
+            return ["tree": tree, "commit": commit, "name": branch]
+        default:
+            throw BlockError("no such base")
+        }
+    }
+
+    /// The working tree's snapshot, taken again only when it changed
+    /// (WorkTree.stateKey): the block reads Last Turn and Branch again after
+    /// every command in any terminal.
+    private func workingTree(root: String) throws -> String {
+        let key = WorkTree.stateKey(root: root)
+        if let key, let tree = snapshotLock.withLock({ snapshot?.key == key ? snapshot?.tree : nil }) { return tree }
+        guard let tree = WorkTree.snapshot(root: root) else { throw BlockError("couldn't read the working tree") }
+        if let key { snapshotLock.withLock { snapshot = (key, tree) } }
+        return tree
+    }
+    private let snapshotLock = NSLock()
+    private var snapshot: (key: String, tree: String)?
+
+    /// What changed since `tree` in the working tree as it is now, its new
+    /// files too: each file with its mark, and the diff of them all.
+    private func changes(since tree: String) throws -> [String: Any] {
+        let root = try repository()
+        let now = try workingTree(root: root)
+        let names = try git(["diff", "--name-status", "-z", "-M", tree, now])
+        let fields = names.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
+        var files: [[String: Any]] = []
+        var i = 0
+        while i < fields.count {
+            let status = fields[i]
+            i += 1
+            guard !status.isEmpty, i < fields.count else { break }
+            if status.hasPrefix("R") || status.hasPrefix("C"), i + 1 < fields.count {
+                files.append(["mark": String(status.prefix(1)), "old": fields[i], "path": fields[i + 1]])
+                i += 2
+            } else {
+                files.append(["mark": String(status.prefix(1)), "path": fields[i]])
+                i += 1
+            }
+        }
+        var result = Self.capped(try git(["diff", "--no-color", "--no-ext-diff", "-M", "--src-prefix=a/", "--dst-prefix=b/", tree, now]))
+        result["files"] = files
+        result["now"] = now
+        return result
     }
 
     private func branches() throws -> [String: Any] {

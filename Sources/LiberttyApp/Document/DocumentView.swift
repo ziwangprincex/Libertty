@@ -335,7 +335,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         let content = WKUserContentController()
         content.addScriptMessageHandler(BlockBridge(service), contentWorld: .page, name: "block")
-        let start: [String: Any] = ["theme": Blocks.theme(theme), "params": [:]]
+        let start: [String: Any] = ["theme": Blocks.theme(theme), "params": [:],
+                                    "prefs": ["diffLayout": ConfigStore.shared.config.diffLayout]]
         if let data = try? JSONSerialization.data(withJSONObject: start), let json = String(data: data, encoding: .utf8) {
             content.addUserScript(WKUserScript(source: "window.__blockInit = \(json);", injectionTime: .atDocumentStart,
                                                forMainFrameOnly: true))
@@ -965,7 +966,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                 var renderer = MarkdownRenderer { code, lang in Highlighter.html(code, language: lang) }
                 body = "<article class=\"md\">\(renderer.render(text))</article>"
             } else if isDiff {
-                body = DiffRenderer.html(text)
+                body = DiffRenderer.html(text, layout: ConfigStore.shared.config.diffLayout)
             } else {
                 body = Self.codeView(text, language: Highlighter.language(forFile: url.lastPathComponent))
             }
