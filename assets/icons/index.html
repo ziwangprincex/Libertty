@@ -1,0 +1,97 @@
+<!doctype html>
+<!-- Copyright (c) 2026 Kubai087. Licensed under the Kubai Icons License; see LICENSE. -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Libertty icons</title>
+<meta name="description" content="Libertty's app icon and feature icons, drawn in the Kubai Icons style.">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one control bar (palette segmented control, demo switch) above a 6-column wall (3 on phones, 11 on wide screens) of large gray frames on a white page, each holding one small icon. A single light look, chosen for judging colour. */
+:root {
+  --page: #FFFFFF;
+  --frame: #F2F3F5;
+  --knob: #FFFFFF;
+  --ink: #23262D;
+  --sub: #6B707A;
+  --track: #EEEFF2;
+  --on: #23262D;
+  --font: 'Open Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--font); font-size: 13px; }
+main {
+  max-width: 1180px; margin: 0 auto; display: grid; gap: 24px;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Segmented control */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 12px; background: var(--track); }
+.seg button {
+  font: inherit; font-weight: 400; color: var(--sub); background: transparent; border: 0; cursor: pointer;
+  height: 30px; padding: 0 12px; border-radius: 9px; display: inline-flex; align-items: center; gap: 7px;
+  transition: background-color .16s, color .16s, box-shadow .16s;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-checked="true"] { background: var(--knob); color: var(--ink); box-shadow: 0 1px 2px rgba(20, 24, 32, .12); }
+.dots { display: inline-flex; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; margin-left: -3px; box-shadow: 0 0 0 1.5px var(--track); }
+.seg button[aria-checked="true"] .dots i { box-shadow: 0 0 0 1.5px var(--knob); }
+.dots i:first-child { margin-left: 0; }
+
+/* Switch */
+.switch {
+  font: inherit; font-weight: 600; color: var(--ink); background: transparent; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 10px; padding: 4px;
+}
+.switch .track { position: relative; width: 38px; height: 22px; border-radius: 999px; background: var(--track); transition: background-color .2s; }
+.switch .track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: #FFFFFF; box-shadow: 0 1px 2px rgba(20, 24, 32, .25); transition: transform .28s cubic-bezier(.32, .72, 0, 1);
+}
+.switch[aria-checked="true"] .track { background: var(--on); }
+.switch[aria-checked="true"] .track::after { transform: translateX(16px); }
+.seg button:focus-visible, .switch:focus-visible, .tile:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Wall */
+/* Every column count divides the number of icons, so no row is left short. */
+.grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: clamp(8px, 1.4vw, 16px); }
+@media (max-width: 560px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* Wide screens: 11 columns, narrowed when needed so all six rows fit one screen height. */
+@media (min-width: 1600px) {
+  main { max-width: min(2200px, calc((100vh - 188px) * 11 / 6 + 288px)); padding-block: 24px; padding-inline: 64px; }
+  .grid { grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 16px; }
+}
+.tile {
+  aspect-ratio: 1; max-width: 100%; border-radius: 14%; background: var(--frame);
+  display: grid; place-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.ic { width: 28%; display: block; }
+.ic svg { width: 100%; height: auto; overflow: visible; display: block; }
+.ol { fill: none; stroke-width: 2; }
+.ln { fill: none; stroke-width: 1.6; stroke-linecap: round; }
+svg text { font-family: var(--font); }
+@media (prefers-reduced-motion: reduce) { .switch .track::after, .seg button { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <div class="seg" id="palette" role="radiogroup" aria-label="色板"></div>
+    <button class="switch" id="demo" type="button" role="switch" aria-checked="false">演示<span class="track" aria-hidden="true"></span></button>
+  </div>
+  <div class="grid" id="grid" aria-label="图标"></div>
+</main>
+<script src="src/engine.js"></script>
+<script src="src/icons.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>

@@ -210,12 +210,27 @@ struct SidebarPageRow: View {
     }
 }
 
-/// A page's icon as Rex draws its own: a symbol on a rounded square of color.
+/// A page's icon: Libertty's own picture of it (`FeatureIcon`), else, as Rex draws
+/// its own, a symbol on a rounded square of color.
 struct SettingsIcon: View {
     let page: SettingsPage
     var size: CGFloat = 22
 
     var body: some View {
+        if let image = FeatureIcon.image(for: page) {
+            // The picture keeps room for its shadow round the icon: it spills past the frame.
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size * FeatureIcon.bleed, height: size * FeatureIcon.bleed)
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
                 .fill(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom))

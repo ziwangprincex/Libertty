@@ -13,6 +13,7 @@ release goes out. The README covers building and using it.
 | `Sources/LiberttyCore/`, `Sources/liberttyd/` | What the app and the daemon share; the daemon. |
 | `tests/LiberttyTests/` | Unit tests (swift-testing). |
 | `tests/` | The headless suite (`run.sh`), its fixtures, and the checks run by hand. |
+| `assets/icons/` | Libertty's feature icons, drawn in the Kubai Icons style: the Settings pages and the palette's tools, in `src/icons.js`. `node assets/icons/scripts/build.mjs` writes `Resources/icons/*.png` (needs Chrome); `node assets/icons/scripts/check.mjs` renders them for review, `index.html` shows them all. The engine (`src/engine.js`, the scripts) is Kubai087's, under `assets/icons/LICENSE`. The app icon is the pixel sprite in `assets/icon/build-app-icon.mjs` (`node assets/icon/build-app-icon.mjs [--preview FILE]` writes its icns, PNGs, SVG and favicon). |
 
 ## Tests, from fastest to slowest
 

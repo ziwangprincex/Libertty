@@ -1210,7 +1210,13 @@ private final class PaletteCell: NSTableCellView {
     }
 
     func show(_ item: CommandPalette.Item, dim: Bool = false) {
-        icon.image = item.symbol.isEmpty ? nil : NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
+        // A tool or a document: Libertty's own picture, near the tile's size; else its symbol.
+        if let picture = FeatureIcon.image(forSymbol: item.symbol)?.copy() as? NSImage {
+            picture.size = NSSize(width: 18 * FeatureIcon.bleed, height: 18 * FeatureIcon.bleed)
+            icon.image = picture
+        } else {
+            icon.image = item.symbol.isEmpty ? nil : NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
+        }
         // A picker's options: a tile for the one in use (its check) only.
         tile.isHidden = item.symbol.isEmpty
         title.font = item.font ?? Typeface.row
