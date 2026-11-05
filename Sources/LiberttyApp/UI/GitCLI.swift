@@ -73,7 +73,7 @@ enum GitCLI {
             // take Libertty down with SIGPIPE.
             let writer = stdin.fileHandleForWriting
             _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
-            DispatchQueue.global(qos: .userInitiated).async {
+            Drain.onThreadOfItsOwn {
                 try? writer.write(contentsOf: input)
                 try? writer.close()
             }
@@ -82,7 +82,7 @@ enum GitCLI {
         // ends after two minutes rather than holding the block.
         var timedOut = false
         if network {
-            DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
+            Drain.timers.asyncAfter(deadline: .now() + 120) {
                 if p.isRunning { timedOut = true; p.terminate() }
             }
         }
@@ -206,16 +206,33 @@ enum GitCLI {
 
 /// A pipe read to its end on a thread of its own: two pipes read one after
 /// the other deadlock when the process fills the second first (git's warnings).
+///
+/// Its own thread, not a global queue's: whoever waits for it holds a thread
+/// of that pool, and with as many waiting as the pool has (many git calls at
+/// once on a Mac with few cores: CI's three, the Git block with the sidebar
+/// and a turn's snapshot) a queued read would never get one: all would wait.
 final class Drain: @unchecked Sendable {
     private var data = Data()
     private let done = DispatchSemaphore(value: 0)
 
     init(_ handle: FileHandle) {
-        DispatchQueue.global(qos: .utility).async {
+        Self.onThreadOfItsOwn {
             self.data = handle.readDataToEndOfFile()
             self.done.signal()
         }
     }
+
+    /// `work` on a new thread: it runs whatever the pools are doing.
+    static func onThreadOfItsOwn(_ work: @escaping @Sendable () -> Void) {
+        let thread = Thread(block: work)
+        thread.name = "libertty.git-pipe"
+        thread.stackSize = 1 << 18
+        thread.start()
+    }
+
+    /// Timers git's calls set (a remote's two minutes): a serial queue of
+    /// GCD's own gets a thread when the global pool has none to give.
+    static let timers = DispatchQueue(label: "libertty.git-timers")
 
     func wait() -> Data {
         done.wait()
@@ -255,8 +272,13 @@ enum LoginShell {
         return (extra + [base]).joined(separator: ":")
     }
 
-    private static func read() -> String? {
-        let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
+    /// The login shell's PATH, or nil when it doesn't say within `timeout`.
+    /// The deadline holds whatever the shell does: an interactive shell
+    /// ignores SIGTERM, so it gets SIGKILL; and what it printed is read once
+    /// it has exited, not at the pipe's end, which a program its rc files
+    /// started (an agent, a daemon) can hold open for as long as it runs.
+    static func read(shell given: String? = nil, timeout: TimeInterval = 3) -> String? {
+        let shell = given ?? ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
         let p = Process()
         p.executableURL = URL(fileURLWithPath: shell)
         // -i too: many put PATH in .zshrc. The marker keeps a chatty rc's output out.
@@ -265,10 +287,24 @@ enum LoginShell {
         p.standardOutput = out
         p.standardError = FileHandle.nullDevice
         p.standardInput = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in exited.signal() }
         do { try p.run() } catch { return nil }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 3) { if p.isRunning { p.terminate() } }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
+        guard exited.wait(timeout: .now() + timeout) == .success else {
+            kill(p.processIdentifier, SIGKILL)
+            _ = exited.wait(timeout: .now() + 1)
+            return nil
+        }
+        // What's in the pipe now, without waiting for its end.
+        let fd = out.fileHandleForReading.fileDescriptor
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 65536)
+        while true {
+            let n = Darwin.read(fd, &buffer, buffer.count)
+            guard n > 0 else { break }
+            data.append(buffer, count: n)
+        }
         let text = String(decoding: data, as: UTF8.self)
         guard let range = text.range(of: "__LIBERTTY_PATH__", options: .backwards) else { return nil }
         let path = text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)

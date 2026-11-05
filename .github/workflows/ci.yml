@@ -36,6 +36,8 @@ jobs:
       - name: libghostty-vt
         run: ZIG=zig scripts/build-libghostty-vt.sh
       - name: Unit tests
+        # Well under a second once built: a hang fails here, not at the job's 45 minutes.
+        timeout-minutes: 10
         run: swift test
       - name: Headless suite
         # A runner has three cores: fewer checks at once, more patience.
