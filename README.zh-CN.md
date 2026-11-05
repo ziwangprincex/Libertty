@@ -10,10 +10,11 @@ macOS 上的终端。VT 解析和终端状态由 [libghostty-vt](https://github.
 
 ## 状态
 
-- 版本 0.4.1。需要 macOS 14 或更高版本，Apple silicon。
+- 版本 0.5.0。需要 macOS 14 或更高版本，Apple silicon。
 - 没有经过 Apple 公证。更新包用内置的 Ed25519 公钥校验签名。
 - 发布在 [GitHub](https://github.com/ziwangprincex/Libertty/releases)（DMG、zip），也可以用 Homebrew 安装。
-- 已知不足：屏幕共享只能在本机看；陷入死循环的插件会一直占着它的线程，直到重启；Notebook 不渲染 ipywidgets。
+- 已知不足：屏幕共享只能在本机看；陷入死循环的插件会一直占着它的线程，直到重启；Notebook 不渲染 ipywidgets；
+  从屏幕判断 agent 的状态需要 App 开着（hook 和 OSC 7501 的报告不需要）。
 
 ## 安装
 
@@ -70,8 +71,14 @@ Terminal，关闭 pane、标签或窗口后可以撤销。
 | 性能分析、屏幕 | 用 speedscope 查看 `sample` 的结果；通过 ScreenCaptureKit 显示屏幕或窗口 |
 | 插件 | `~/.config/libertty/plugins/` 里的 JavaScript，启用前不运行 |
 
-**编程 Agent。** `libertty +agent-setup` 给 Claude Code 和 Codex 加上 hook，它们的标签会显示在运行、
-在等你或已完成，会话也会按任务命名。`--remove` 可以撤掉。
+**编程 Agent。** `libertty +agent-setup` 给 Claude Code 和 Codex 加上 hook（给 Pi、OMP、OpenCode 装扩展），
+它们的标签会显示在运行、在等你或已完成，会话按任务命名，重启后能接着之前的对话（文件 ▸ 恢复对话…，⇧⌘O）。
+其他 agent 的状态从屏幕上判断。⌘J 跳到需要你处理的 pane；Git 块的 Last Turn 只显示 agent 上一轮改了什么，
+可以逐块撤回或标为看过；文件 ▸ 在工作树中新建标签…（⌥⌘T）给 agent 一个独立的分支和文件夹。侧栏和 pane
+标题栏显示分支和改动。截图粘贴进 pane 时粘贴的是图片文件的路径。`keep-awake = agents` 让 Mac 在 agent
+工作时不睡眠。`--remove` 可以撤掉 hook。
+
+**语言。** 英文，或在 macOS 使用简体中文时显示简体中文（`language = auto | en | zh-Hans`）。
 
 ## 配置
 
@@ -100,6 +107,11 @@ libertty +send ID 'make test\n' ; libertty +send-key ID ctrl+c
 libertty +capture ID [--scrollback] [--ansi | --html]
 libertty +wait ID --until exit|prompt|idle=MS
 libertty +split [ID] [--down] [-e COMMAND]
+libertty +prompt ID 'review src/auth'      # 问另一个 agent，打印它的回答
+libertty +events --for waiting --once      # 等到有程序在等你
+libertty +new-session --worktree fix-login -e claude
+libertty +history ; libertty +resume ID   # agent 以前的对话
+libertty +diff --turn                      # agent 上一轮改了什么
 ```
 
 会话相关的命令都支持 `--host HOST`。`$LIBERTTY_SESSION` 是当前 pane 的会话 ID。

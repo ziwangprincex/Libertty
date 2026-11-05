@@ -12,12 +12,13 @@ browser and more.
 
 ## Status
 
-- Version 0.4.1. macOS 14 or later, Apple silicon.
+- Version 0.5.0. macOS 14 or later, Apple silicon.
 - Not notarized. Updates are checked against an Ed25519 signature built into the app.
 - Releases: [GitHub](https://github.com/ziwangprincex/Libertty/releases) (DMG, zip) and a
   Homebrew cask.
 - Known gaps: screen sharing works on this Mac only; a plugin stuck in a loop holds its
-  thread until restart; notebooks don't render ipywidgets.
+  thread until restart; notebooks don't render ipywidgets; agents' states read from their
+  screens need the app open (hooks' and OSC 7501 reports don't).
 
 ## Install
 
@@ -82,9 +83,17 @@ browser, behind a secret link. `web-access-input = false` makes it read-only.
 | Profiler, Screen | `sample` shown in speedscope; a display or window via ScreenCaptureKit |
 | Plugins | JavaScript in `~/.config/libertty/plugins/`, off until enabled |
 
-**Coding agents.** `libertty +agent-setup` adds hooks for Claude Code and Codex, so their
-tabs show working, waiting or done, and sessions are named after their task. `--remove`
-takes them out.
+**Coding agents.** `libertty +agent-setup` adds hooks for Claude Code and Codex (and an
+extension for Pi, OMP and OpenCode), so their tabs show working, waiting or done, sessions are
+named after their task, and their conversations resume after a restart (File ▸ Resume
+Conversation…, ⇧⌘O). Other agents' states are read from their screens. ⌘J jumps to the pane
+that needs you; the Git block's Last Turn shows what an agent changed in its latest turn, to
+revert or keep hunk by hunk; File ▸ New Tab in Worktree… (⌥⌘T) gives an agent a branch and a
+folder of its own. Sidebar rows and pane headers show each pane's branch and changes. A
+screenshot pasted into a pane pastes as its file's path. `keep-awake = agents` keeps the Mac
+awake while they work. `--remove` takes the hooks out.
+
+**Language.** English, or Simplified Chinese when macOS uses it (`language = auto | en | zh-Hans`).
 
 ## Configuration
 
@@ -113,6 +122,11 @@ libertty +send ID 'make test\n' ; libertty +send-key ID ctrl+c
 libertty +capture ID [--scrollback] [--ansi | --html]
 libertty +wait ID --until exit|prompt|idle=MS
 libertty +split [ID] [--down] [-e COMMAND]
+libertty +prompt ID 'review src/auth'      # ask another agent; prints its answer
+libertty +events --for waiting --once      # until a program waits for you
+libertty +new-session --worktree fix-login -e claude
+libertty +history ; libertty +resume ID   # agents' past conversations
+libertty +diff --turn                      # what an agent changed in its last turn
 ```
 
 Session commands take `--host HOST`. `$LIBERTTY_SESSION` is the current pane's session.
