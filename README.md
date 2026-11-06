@@ -10,16 +10,6 @@ renderer. Shells run in a separate daemon, `liberttyd`, so they keep running whe
 app quits. A window can also hold documents and tools: an editor, a Git client, a
 browser and more.
 
-## Status
-
-- Version 0.5.0. macOS 14 or later, Apple silicon.
-- Not notarized. Updates are checked against an Ed25519 signature built into the app.
-- Releases: [GitHub](https://github.com/ziwangprincex/Libertty/releases) (DMG, zip) and a
-  Homebrew cask.
-- Known gaps: screen sharing works on this Mac only; a plugin stuck in a loop holds its
-  thread until restart; notebooks don't render ipywidgets; agents' states read from their
-  screens need the app open (hooks' and OSC 7501 reports don't).
-
 ## Install
 
 ```sh
