@@ -28,7 +28,10 @@ release goes out. The README covers building and using it.
 
 CI (`.github/workflows/ci.yml`) runs the unit tests and the suite on a Mac and
 builds liberttyd for Linux with Swift's static Linux SDK, starting it on
-x86_64 and aarch64 runners; the binaries are the run's artifact.
+x86_64 and aarch64 runners; the binaries are the run's artifact. The Mac
+job takes libghostty-vt and SwiftPM's `.build` from earlier runs (cached by
+Ghostty's commit, Zig's version and Xcode's build): it rebuilds only the
+sources whose contents changed since.
 
 ## Fixing a bug
 
@@ -71,9 +74,13 @@ installed liberttyd takes the sessions back:
 ## Releasing
 
 1. A `## VERSION` section in `docs/CHANGELOG.md`, its first line a `>` summary.
-2. Push; wait for CI to pass on the commit.
-3. `scripts/fetch-linux-liberttyd.sh`, and commit `Resources/remote` if it
-   changed (the daemon's sources changed since the binaries were built).
+2. Push; wait for CI's two Linux jobs (`linux-liberttyd`,
+   `linux-liberttyd-arm`) to pass on the commit, about five minutes. The mac
+   job needn't be done: step 4 runs its unit tests and suite here again.
+3. `scripts/fetch-linux-liberttyd.sh` (it takes a run whose Linux jobs
+   passed, and checks the binaries were built from this commit's daemon
+   sources), and commit `Resources/remote` if it changed (the daemon's
+   sources changed since the binaries were built).
 4. `scripts/release.sh VERSION`: refuses a Linux liberttyd that isn't this
    commit's, runs the unit tests and the suite, builds, signs and stages,
    then shows the staged app on the real screen (`tests/screen-check.sh`,

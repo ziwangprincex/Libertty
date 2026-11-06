@@ -2,7 +2,7 @@
 # headless suite (tests/run.sh), and liberttyd for Linux (x86_64, aarch64),
 # built with Swift's static Linux SDK and started on Linux. The Linux
 # binaries are kept as the run's artifact: scripts/fetch-linux-liberttyd.sh
-# takes them into Resources/remote for a release.
+# takes them into Resources/remote for a release once both Linux jobs pass.
 name: CI
 
 on:
@@ -24,21 +24,101 @@ jobs:
         with:
           submodules: true
       - name: The newest Xcode on the runner
+        id: xcode
         run: |
           ls -d /Applications/Xcode*.app
           XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
           sudo xcode-select -s $XCODE
           swift --version
+          # What the caches below are keyed by: the runner's image, this
+          # Xcode's build, Ghostty's commit.
+          echo "image=$ImageOS-$(uname -m)" >> $GITHUB_OUTPUT
+          echo "build=$(xcodebuild -version | awk '/Build version/ {print $3}')" >> $GITHUB_OUTPUT
+          echo "ghostty=$(git rev-parse HEAD:vendor/ghostty)" >> $GITHUB_OUTPUT
+      # libghostty-vt changes only with Ghostty's commit, Zig and the script
+      # that builds it: built once (3 minutes), saved at once (whatever the
+      # tests say later), then taken from the cache.
+      - name: libghostty-vt, from an earlier run
+        id: vt
+        uses: actions/cache/restore@v4
+        with:
+          path: vendor/ghostty/zig-out
+          key: libghostty-vt-${{ steps.xcode.outputs.image }}-zig-${{ env.ZIG_VERSION }}-${{ steps.xcode.outputs.ghostty }}-${{ hashFiles('scripts/build-libghostty-vt.sh') }}
       - name: Zig
+        if: steps.vt.outputs.cache-hit != 'true'
         run: |
           curl -fsSL https://ziglang.org/download/$ZIG_VERSION/zig-aarch64-macos-$ZIG_VERSION.tar.xz | tar xJ -C $RUNNER_TEMP
           echo "$RUNNER_TEMP/zig-aarch64-macos-$ZIG_VERSION" >> $GITHUB_PATH
       - name: libghostty-vt
+        if: steps.vt.outputs.cache-hit != 'true'
         run: ZIG=zig scripts/build-libghostty-vt.sh
+      - name: libghostty-vt, for later runs
+        if: steps.vt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor/ghostty/zig-out
+          key: ${{ steps.vt.outputs.cache-primary-key }}
+      # SwiftPM's .build from the newest run before this one (this commit's
+      # parent, or main's for a pull request), saved again once it builds
+      # (failing tests or not). Not across Xcodes or Ghostty commits: the
+      # library is linked by path (Package.swift), so SwiftPM wouldn't
+      # relink for a new one.
+      - name: SwiftPM's build, from an earlier run
+        id: swiftpm
+        uses: actions/cache/restore@v4
+        with:
+          path: .build
+          key: swiftpm-${{ steps.xcode.outputs.image }}-xcode-${{ steps.xcode.outputs.build }}-${{ steps.xcode.outputs.ghostty }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            swiftpm-${{ steps.xcode.outputs.image }}-xcode-${{ steps.xcode.outputs.build }}-${{ steps.xcode.outputs.ghostty }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+            swiftpm-${{ steps.xcode.outputs.image }}-xcode-${{ steps.xcode.outputs.build }}-${{ steps.xcode.outputs.ghostty }}-
+      - name: Sources' times
+        # SwiftPM (llbuild, swift-driver) rebuilds a source whose time isn't
+        # the one it built, and whatever imports a header newer than its last
+        # build: a checkout gives every file now, and would rebuild it all.
+        # So each file gets the time it had when the restored .build was
+        # built (its list of git blobs and times, kept in it), and those
+        # whose blob changed since get now, and are rebuilt. Without a
+        # cached build, every file gets one old time; with one but no list,
+        # now. (tests/run.sh relinks liberttyd for an Info.plist newer than
+        # it the same way.)
+        env:
+          TZ: UTC
+        run: |
+          export LC_ALL=C
+          now=$(date +%Y%m%d%H%M.%S)
+          git -c core.quotePath=false ls-files -s | sort > $RUNNER_TEMP/blobs
+          if [[ -f .build/ci-sources ]]; then
+            awk -F'\t' -v now=$now 'NR == FNR { t[$1 FS $2] = $3; next } { print $0 FS (($0 in t) ? t[$0] : now) }' \
+              .build/ci-sources $RUNNER_TEMP/blobs > $RUNNER_TEMP/sources
+            echo "$(awk -F'\t' -v now=$now '$3 == now' $RUNNER_TEMP/sources | wc -l | tr -d ' ') files changed since the cached build:"
+            awk -F'\t' -v now=$now '$3 == now { print "  " $2 }' $RUNNER_TEMP/sources | head -50
+          elif [[ -d .build ]]; then
+            # Times it didn't record can't be trusted: everything is new to it.
+            echo "a cached build without its list of sources: building every file again"
+            awk -v OFS='\t' -v now=$now '{ print $0, now }' $RUNNER_TEMP/blobs > $RUNNER_TEMP/sources
+          else
+            echo "no cached build: every file gets one old time"
+            awk -v OFS='\t' '{ print $0, "200001010000.00" }' $RUNNER_TEMP/blobs > $RUNNER_TEMP/sources
+          fi
+          for t in $(cut -f3 $RUNNER_TEMP/sources | sort -u); do
+            awk -F'\t' -v t=$t '$3 == t { print $2 }' $RUNNER_TEMP/sources | tr '\n' '\0' | xargs -0 touch -h -t $t
+          done
+          find vendor/ghostty/include -exec touch -h -t 200001010000.00 {} +
+          mkdir -p .build
+          cp $RUNNER_TEMP/sources .build/ci-sources
+      - name: Build
+        run: swift build --build-tests
+      - name: SwiftPM's build, for later runs
+        if: steps.swiftpm.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build
+          key: ${{ steps.swiftpm.outputs.cache-primary-key }}
       - name: Unit tests
         # Well under a second once built: a hang fails here, not at the job's 45 minutes.
         timeout-minutes: 10
-        run: swift test
+        run: swift test --skip-build
       - name: Headless suite
         # A runner has three cores: fewer checks at once, more patience.
         env:
