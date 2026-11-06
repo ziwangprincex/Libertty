@@ -197,12 +197,27 @@ extension TerminalWindowController {
         chrome.show(unread: Notifier.shared.unread > 0)
         chrome.sidebarToggle.toolTip = Self.tip(sidebarShown ? "Hide Sidebar" : "Show Sidebar", .toggleSidebar)
         let trailingInSidebar = sidebarShown && config.tabBar.inSidebar
+        let clearance = leftColumn ? WindowChrome.trafficLightRoom + 10 : 9
         sidebar.setChrome(leading: leftColumn ? chrome.leading : nil, trailing: trailingInSidebar ? chrome.trailing : nil, mid: mid,
-                          clearance: leftColumn ? WindowChrome.trafficLightRoom + 10 : 9)
+                          clearance: clearance)
+        // Never narrower than its top row's buttons: at 180 points, Show
+        // Activity sat on the sidebar's toggle. (A host's chip makes it wider.)
+        let minimum = Self.sidebarMinimum(clearance: clearance, leading: leftColumn ? chrome.leading.fittingSize.width : nil,
+                                          trailing: trailingInSidebar ? chrome.trailing.fittingSize.width : nil)
+        if sidebarItem.minimumThickness != minimum { sidebarItem.minimumThickness = minimum }
         area.setBand(left: leftColumn ? nil : chrome.leading, middle: config.tabBar == .top ? tabStrip : nil,
                      right: trailingInSidebar ? nil : chrome.trailing)
         (splitController.splitView as? FrameSplitView)?.line = Layout.compact ? Surfaces.current.stroke.nsColor : nil
         everyTab.forEach { $0.container?.glassBehind = config.glass }
+    }
+
+    /// The sidebar's least width: 180 points, or what its top row needs for
+    /// the buttons it holds, from `clearance` (after the traffic lights):
+    /// the leading group, a gap, the trailing group, the edge's margin.
+    static func sidebarMinimum(clearance: CGFloat, leading: CGFloat?, trailing: CGFloat?) -> CGFloat {
+        guard let trailing else { return 180 }
+        let start = clearance + (leading.map { $0 + 8 } ?? 0)
+        return max(180, (start + trailing + 9).rounded(.up))
     }
 
     /// The room around the grid as `updateStage` lays it out: the band or

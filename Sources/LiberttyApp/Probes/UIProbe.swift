@@ -26,6 +26,9 @@ import LiberttyCore
 ///   expect-palette:TEXT  the open palette's first row contains TEXT
 ///   expect-scope:TEXT    the open palette's chips, e.g. `[All] Panes`, contain TEXT
 ///   expect-tab:TEXT      a sidebar row (name, detail, pane count) contains TEXT
+///   expect-tab-not:TEXT  no sidebar row contains TEXT (a row's second line reads "2: …")
+///   sidebar-width:N      drag the sidebar's edge to N points (it stops at its least width);
+///                        its top row's buttons mustn't overlap
 ///   workspace:new[:NAME]  a workspace of its own; workspace:N shows workspace N; workspace:close ends the one in front
 ///   expect-workspace:TEXT the workspaces' names, the one showing in [brackets], contain TEXT
 ///                         (`=TEXT`: are exactly TEXT)
@@ -320,6 +323,14 @@ enum UIProbe {
                         } else {
                             print("FAIL  ui-probe tab: no row shows \(text); rows: \(rows)")
                             failures += 1
+                        }
+                    case .expectTabNot(let text):
+                        let rows = controller.sidebarRows
+                        if let row = rows.first(where: { $0.contains(text) }) {
+                            print("FAIL  ui-probe tab: a row shows \(text): \(row)")
+                            failures += 1
+                        } else {
+                            print("ok    ui-probe no tab shows \(text)")
                         }
                     case .workspace(let which):
                         if which == "new" || which.hasPrefix("new:") {
@@ -956,6 +967,20 @@ enum UIProbe {
                             print("FAIL  ui-probe sidebar shows \(shown), not \(n)" + (text.isEmpty ? "" : " with \(text)"))
                             failures += 1
                         }
+                    case .sidebarWidth(let w):
+                        let split = controller.splitController.splitView
+                        split.setPosition(CGFloat(w), ofDividerAt: 0)
+                        split.layoutSubtreeIfNeeded()
+                        controller.window?.layoutIfNeeded()
+                        let width = controller.sidebar.view.frame.width
+                        let lead = controller.chrome.leading, trail = controller.chrome.trailing
+                        let a = lead.convert(lead.bounds, to: nil), b = trail.convert(trail.bounds, to: nil)
+                        if lead.window != nil, trail.window != nil, a.intersects(b) {
+                            print("FAIL  ui-probe sidebar \(Int(width)) wide: its buttons overlap (\(Int(a.maxX)) past \(Int(b.minX)))")
+                            failures += 1
+                        } else {
+                            print("ok    ui-probe sidebar \(Int(width)) wide (asked \(Int(w))): its buttons apart")
+                        }
                     case .expectTabCount(let n):
                         if controller.tabs.count == n {
                             print("ok    ui-probe \(n) tabs")
@@ -1047,7 +1072,7 @@ enum UIProbe {
 
     private enum Step {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
-        case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String)
+        case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         case hover(Int), expectFocus(Int)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
@@ -1118,6 +1143,7 @@ enum UIProbe {
             case "expect-palette": steps.append(.expectPalette(arg))
             case "expect-scope": steps.append(.expectScope(arg))
             case "expect-tab": steps.append(.expectTab(arg))
+            case "expect-tab-not": steps.append(.expectTabNot(arg))
             case "expect-strip": steps.append(.expectStrip(arg))
             case "expect-status": steps.append(.expectStatus(arg))
             case "expect-float": steps.append(.expectFloat(arg == "yes"))
@@ -1125,6 +1151,7 @@ enum UIProbe {
             case "roundtrip": steps.append(.roundtrip)
             case "expect-workspace": steps.append(.expectWorkspace(arg))
             case "expect-tab-count": steps.append(.expectTabCount(Int(arg) ?? -1))
+            case "sidebar-width": steps.append(.sidebarWidth(Double(arg) ?? 0))
             case "expect-shown":
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 steps.append(.expectShown(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))

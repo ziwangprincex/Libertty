@@ -50,9 +50,13 @@ let configDir = home.appendingPathComponent("config/libertty")
 try! FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
 let configFile = configDir.appendingPathComponent("config")
 
-/// Every scenario's config: the defaults but for what makes shots comparable.
+/// Every scenario's config: the defaults but for what makes shots comparable,
+/// and English: the check finds menu items, windows and buttons by their
+/// English names, whatever language this Mac uses (`language = auto` would
+/// follow it).
 func writeConfig(_ lines: [String]) {
-    let base = ["theme = light:Libertty Light,dark:Libertty Dark", "confirm-close = false", "window-columns = 110", "window-rows = 30"]
+    let base = ["theme = light:Libertty Light,dark:Libertty Dark", "confirm-close = false", "window-columns = 110", "window-rows = 30",
+                "language = en"]
     try! (base + lines).joined(separator: "\n").appending("\n").write(to: configFile, atomically: true, encoding: .utf8)
 }
 writeConfig(["window-theme = dark"])

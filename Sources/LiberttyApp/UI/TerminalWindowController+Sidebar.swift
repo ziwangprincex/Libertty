@@ -109,7 +109,7 @@ extension TerminalWindowController {
     /// What each sidebar row says (`--ui-probe` checks it).
     var sidebarRows: [String] {
         tabs.map { tab in
-            let label = label(of: tab)
+            let label = rowLabel(of: tab)
             var parts = [label.name]
             if !label.detail.isEmpty { parts.append(label.detail) }
             let count = tab.container?.views.count ?? 0
@@ -117,8 +117,8 @@ extension TerminalWindowController {
             if !tab.parked.isEmpty { parts.append("\(tab.parked.count) parked") }
             // The second line, when rows have one.
             if config.sidebarRows == "comfortable" {
-                let second = subtitle(of: tab)
-                if !second.isEmpty { parts.append(second) }
+                let second = subtitle(of: tab, firstLine: label)
+                if !second.isEmpty { parts.append("2: " + second) }
             }
             return parts.joined(separator: " · ")
         }
@@ -138,20 +138,14 @@ extension TerminalWindowController {
         let live = Set(allPanes.map(ObjectIdentifier.init))
         attention.formIntersection(live)
         let infos = tabs.map { tab -> SidebarTabInfo in
-            var label = self.label(of: tab)
-            // At a prompt a tab is its shell and its folder (Rex's "zsh ~").
-            if label.detail.isEmpty, tab.document == nil, let path = tab.focusedPane?.session.workingDirectory,
-               label.name == Self.shortDirectory(path) {
-                label.name = host == nil ? Self.shellName : "shell"
-                label.detail = path == NSHomeDirectory() ? "~" : (path as NSString).lastPathComponent
-            }
+            let label = rowLabel(of: tab)
             // The row's ring says it rang; no bell glyph in its name.
             var info = SidebarTabInfo(title: label.name, detail: label.detail, status: status(of: tab)?.state,
                                       paneCount: tab.container?.views.count ?? 0, parked: tab.parked.count,
                                       zoomed: tab.container?.zoomed != nil,
                                       documentURL: tab.document?.url, progress: progress(of: tab), tiles: tiles(of: tab),
                                       news: news(of: tab))
-            info.subtitle = subtitle(of: tab)
+            info.subtitle = subtitle(of: tab, firstLine: label)
             info.panes = paneSummaries(of: tab)
             return info
         }
@@ -205,11 +199,27 @@ extension TerminalWindowController {
         }
     }
 
+    /// A row's first line: its name and, fainter, where it runs. At a prompt
+    /// a tab is its shell and its folder (Rex's "zsh ~").
+    func rowLabel(of tab: TerminalTab) -> (name: String, detail: String) {
+        var label = self.label(of: tab)
+        if label.detail.isEmpty, tab.document == nil, let path = tab.focusedPane?.session.workingDirectory,
+           label.name == Self.shortDirectory(path) {
+            label.name = host == nil ? Self.shellName : "shell"
+            label.detail = path == NSHomeDirectory() ? "~" : (path as NSString).lastPathComponent
+        }
+        return label
+    }
+
     /// A row's second line (Kero's): what its program reports (OSC 7501),
-    /// else its branch and changes, else its folder.
-    func subtitle(of tab: TerminalTab) -> String {
+    /// else its branch and changes, else its folder (or host) — unless the
+    /// first line says that already ("zsh ~" over "~").
+    func subtitle(of tab: TerminalTab, firstLine: (name: String, detail: String)) -> String {
+        func unlessSaid(_ place: String) -> String {
+            Self.says(place, [firstLine.name, firstLine.detail]) ? "" : place
+        }
         if let doc = tab.document {
-            return doc.url.isFileURL ? Self.shortDirectory(doc.url.deletingLastPathComponent().path) : (doc.url.host ?? "")
+            return unlessSaid(doc.url.isFileURL ? Self.shortDirectory(doc.url.deletingLastPathComponent().path) : (doc.url.host ?? ""))
         }
         let panes = tab.panes
         let reported = panes.compactMap { $0.session.programStatus.headline }.filter { !$0.message.isEmpty }
@@ -217,8 +227,19 @@ extension TerminalWindowController {
         if let reported { return reported.message }
         guard let pane = tab.focusedPane else { return "" }
         if let repo = repoStatus(of: pane) { return repo.summary }
-        if let host = pane.session.host { return host.destination }
-        return Self.shortDirectory(pane.session.workingDirectory)
+        if let host = pane.session.host { return unlessSaid(host.destination) }
+        return unlessSaid(Self.shortDirectory(pane.session.workingDirectory))
+    }
+
+    /// Whether `firstLine` already says `place`: a folder in full ("~/src",
+    /// "…/src/app") or by its last part ("app", "~"), or a host as it's
+    /// named ("me@devbox" said as "devbox").
+    static func says(_ place: String, _ firstLine: [String]) -> Bool {
+        guard !place.isEmpty else { return true }
+        let last = (place as NSString).lastPathComponent
+        return firstLine.contains { said in
+            !said.isEmpty && (said == place || said == last || place.hasSuffix("@" + said) || said.hasSuffix(place))
+        }
     }
 
     /// A split tab's panes, for its row's list (Kero's): each one's

@@ -74,3 +74,19 @@ struct AnimatorTests {
         #expect(captured == nil)
     }
 }
+
+/// The sidebar never gets narrower than its top row's buttons: the toggle
+/// after the traffic lights, then Show Activity, the palette and New Tab.
+@MainActor struct SidebarMinimumTests {
+    @Test func itsButtonsFit() {
+        let clearance = WindowChrome.trafficLightRoom + 10, toggle = WindowChrome.buttonSize.width
+        let group = WindowChrome.buttonSize.width * 3 + 2
+        let minimum = TerminalWindowController.sidebarMinimum(clearance: clearance, leading: toggle, trailing: group)
+        // The toggle ends before the group begins, with room between.
+        #expect(clearance + toggle + 8 <= minimum - 9 - group)
+        #expect(minimum > 180)
+        // On the right (no traffic lights to clear), and without its buttons: 180.
+        #expect(TerminalWindowController.sidebarMinimum(clearance: 9, leading: nil, trailing: group) == 180)
+        #expect(TerminalWindowController.sidebarMinimum(clearance: clearance, leading: toggle, trailing: nil) == 180)
+    }
+}

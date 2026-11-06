@@ -1,8 +1,15 @@
 # Sidebar rows' second line (sidebar-rows = comfortable, the default):
 # what a program reports, else the branch and its changes (tests/run.sh
-# makes the repository at @REPO@ with one line added), else the folder.
+# makes the repository at @REPO@ with one line added), else the folder
+# (when the first line doesn't say it already).
 # The pane header says the branch too.
 size:1100x600
+# A shell at its prompt says its folder once: "zsh ~", no second "~" under it.
+type:cd ~
+key:enter
+wait:1.5
+expect-tab:zsh · ~
+expect-tab-not:2: ~
 type:cd @REPO@
 key:enter
 wait:5.0
@@ -13,3 +20,6 @@ type:printf '\033]7501;state=working:app=probe:msg=TWVyZ2luZyB0aGUgYnJhbmNo\a'; 
 key:enter
 wait:1.5
 expect-tab:Merging the branch
+# At its least width the sidebar still fits its top row: the toggle after the
+# traffic lights, Show Activity, the palette and New Tab, none on another.
+sidebar-width:120
