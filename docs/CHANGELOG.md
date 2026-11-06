@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
+
+> A program's title no longer stays on its tab after it quits: the tab is its shell and folder again.
 
 - Fixed: a program's title stayed on its tab after it quit (OMP's "π > tmp" over "~"): a title set while a command runs is that program's, and once the shell's prompt is back the tab is the shell and its folder again ("zsh ~"). A title the shell sets at its prompt still counts.
 
