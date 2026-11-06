@@ -4,11 +4,12 @@
 # (when the first line doesn't say it already).
 # The pane header says the branch too.
 size:1100x600
-# A shell at its prompt says its folder once: "zsh ~", no second "~" under it.
+# A shell at its prompt says its folder once: "zsh ~" (bash on CI), no
+# second "~" under it.
 type:cd ~
 key:enter
 wait:1.5
-expect-tab:zsh · ~
+expect-tab: · ~
 expect-tab-not:2: ~
 type:cd @REPO@
 key:enter
