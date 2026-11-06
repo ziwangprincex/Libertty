@@ -8,14 +8,6 @@ macOS 上的终端。VT 解析和终端状态由 [libghostty-vt](https://github.
 负责，应用本身用 Swift 和 AppKit 写，渲染器基于 Metal 自己实现。Shell 运行在独立的守护进程
 `liberttyd` 里，应用退出后程序照常运行。窗口里还能打开文档和工具：编辑器、Git 客户端、浏览器等。
 
-## 状态
-
-- 版本 0.5.0。需要 macOS 14 或更高版本，Apple silicon。
-- 没有经过 Apple 公证。更新包用内置的 Ed25519 公钥校验签名。
-- 发布在 [GitHub](https://github.com/ziwangprincex/Libertty/releases)（DMG、zip），也可以用 Homebrew 安装。
-- 已知不足：屏幕共享只能在本机看；陷入死循环的插件会一直占着它的线程，直到重启；Notebook 不渲染 ipywidgets；
-  从屏幕判断 agent 的状态需要 App 开着（hook 和 OSC 7501 的报告不需要）。
-
 ## 安装
 
 ```sh
