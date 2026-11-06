@@ -22,7 +22,7 @@ extension TerminalView {
     override func accessibilityRole() -> NSAccessibility.Role? { .textArea }
     override func accessibilityRoleDescription() -> String? { "terminal" }
     override func accessibilityLabel() -> String? {
-        let title = session.title.isEmpty ? (session.workingDirectory.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "") : session.title
+        let title = session.liveTitle.isEmpty ? (session.workingDirectory.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "") : session.liveTitle
         return title.isEmpty ? "Terminal" : "Terminal, \(title)"
     }
     override func isAccessibilityEnabled() -> Bool { true }

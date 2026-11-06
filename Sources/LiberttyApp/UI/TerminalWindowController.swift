@@ -569,7 +569,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     }
 
     static func title(ofPane pane: TerminalView) -> String {
-        let program = ProgramStatusStore.sanitize(pane.session.title)
+        let program = ProgramStatusStore.sanitize(pane.session.liveTitle)
         if !program.isEmpty { return program }
         return pane.session.workingDirectory.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "Libertty"
     }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: a program's title stayed on its tab after it quit (OMP's "π > tmp" over "~"): a title set while a command runs is that program's, and once the shell's prompt is back the tab is the shell and its folder again ("zsh ~"). A title the shell sets at its prompt still counts.
+
 ## 0.5.0
 
 > For coding agents, after Kero: ⌘J to the pane that needs you, agents' states read from their screens, conversations picked up again after a reboot, the Git block's Last Turn, tabs in a worktree of their own, and an interface in Simplified Chinese when macOS speaks it; a redrawn pixel icon.

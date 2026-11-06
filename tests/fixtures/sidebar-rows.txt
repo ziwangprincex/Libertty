@@ -11,6 +11,24 @@ key:enter
 wait:1.5
 expect-tab: · ~
 expect-tab-not:2: ~
+# A program's title names the tab while it runs, and goes when it does
+# (OMP's "π > tmp" stayed after quitting it): the shell and folder again.
+type:printf '\033]2;OMP > tmp\a'; sleep 2
+key:enter
+wait:1.0
+expect-tab:OMP > tmp
+wait:2.5
+expect-tab-not:OMP > tmp
+expect-tab: · ~
+expect-tab-not:2: ~
+# A title a background job sets at the prompt is the shell's: it stays.
+type:(sleep 0.5; printf '\033]2;MINE\a') &
+key:enter
+wait:2.0
+expect-tab:MINE
+type:printf '\033]2;\a'
+key:enter
+wait:1.0
 type:cd @REPO@
 key:enter
 wait:5.0

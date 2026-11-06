@@ -394,7 +394,7 @@ extension TerminalWindowController {
         if !session.label.isEmpty {
             return (session.label, programs[ObjectIdentifier(session)]?.name ?? directory)
         }
-        let title = ProgramStatusStore.sanitize(session.title).trimmingCharacters(in: .whitespaces)
+        let title = ProgramStatusStore.sanitize(session.liveTitle).trimmingCharacters(in: .whitespaces)
         let ownTitle = !title.isEmpty && !Self.isShellTitle(title, directory: session.workingDirectory)
         if let tile = programs[ObjectIdentifier(session)] {
             if let host = tile.host { return ("SSH", host) }

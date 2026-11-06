@@ -58,6 +58,14 @@ final class TerminalSession {
 
     let programStatus = ProgramStatusStore()
     private(set) var title = ""
+    /// The title was set while a command ran (OSC 133): a program's. Once
+    /// the shell's prompt is back it's that program's leftover (OMP's
+    /// "π > tmp" after you quit it), which names nothing: the shell set none
+    /// since, and a shell that does sets it at its prompt, not during a command.
+    private var titleFromProgram = false
+    private(set) var titleIsLeftover = false
+    /// The title as it names the pane: none for a finished program's leftover.
+    var liveTitle: String { titleIsLeftover ? "" : title }
     private(set) var size: GridSize
     /// The shell's working directory as it last reported it (OSC 7), for
     /// opening new panes and windows in the same place.
@@ -1130,9 +1138,13 @@ final class TerminalSession {
         var s = GhosttyString()
         let title = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_TITLE, &s) == GHOSTTY_SUCCESS
             ? String(s) : ""
+        // (`lock` is held: promptState is as the output so far left it.)
+        let byProgram = promptState == .running
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.title = title
+            self.titleFromProgram = byProgram
+            self.titleIsLeftover = false
             self.delegate?.sessionTitleChanged(self, title: title)
         }
     }
@@ -1247,6 +1259,11 @@ final class TerminalSession {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.typePendingCommand()
+            // The program that set the title has ended: its title goes with it.
+            if self.titleFromProgram, !self.title.isEmpty, !self.titleIsLeftover {
+                self.titleIsLeftover = true
+                self.delegate?.sessionTitleChanged(self, title: self.title)
+            }
             self.programStatus.programFinished()
             self.delegate?.sessionProgramStatusChanged(self)
             // Back at the prompt: a program that forgot to clear its progress is done.
@@ -1302,6 +1319,8 @@ final class TerminalSession {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.title = ""
+            self.titleFromProgram = false
+            self.titleIsLeftover = false
             self.delegate?.sessionTitleChanged(self, title: "")
         }
     }
