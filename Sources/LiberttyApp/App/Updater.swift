@@ -199,9 +199,11 @@ enum Updater {
         if let aside { try? fm.removeItem(at: aside) }
     }
 
-    /// After install: start the app at `path` once this process has quit.
-    static func relaunch(_ path: String) {
-        let script = "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.1; done; /usr/bin/open \"$0\""
+    /// After install: start the app at `path` once this process has quit;
+    /// `inBackground`, behind the app in front (`open -g`).
+    static func relaunch(_ path: String, inBackground: Bool = false) {
+        let open = inBackground ? "/usr/bin/open -g" : "/usr/bin/open"
+        let script = "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.1; done; \(open) \"$0\""
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", script, path]

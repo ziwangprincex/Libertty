@@ -86,6 +86,47 @@ final class SplitContainerView: NSView {
     /// The pane filling the whole container (toggle_split_zoom), if any.
     private(set) var zoomed: NSView?
 
+    // MARK: Active border (active-border)
+
+    private lazy var activeBorder: ActiveBorderView = ActiveBorderView(frame: bounds)
+    /// The pane the border is round, and how it looks; nil: no border.
+    private var bordered: (leaf: NSView, look: ActiveBorderView.Look)?
+    /// Where the border is now, in this view (the UI probe reads it).
+    var activeBorderFrame: CGRect? { activeBorder.superview == nil ? nil : activeBorder.frameShown }
+    /// Whether the border draws over every pane and header (the UI probe checks).
+    var activeBorderOnTop: Bool {
+        guard let index = subviews.firstIndex(of: activeBorder) else { return false }
+        let panes = Set((views + headerViews.values.map { $0 as NSView }).map(ObjectIdentifier.init))
+        return !subviews[(index + 1)...].contains { panes.contains(ObjectIdentifier($0)) }
+    }
+
+    /// The border round `leaf`'s card, in `look`; nil for none. Only where
+    /// another pane shows beside it: one alone needs no telling apart.
+    func showActiveBorder(on leaf: NSView?, look: ActiveBorderView.Look?) {
+        let new: (leaf: NSView, look: ActiveBorderView.Look)? = leaf.flatMap { leaf in look.map { (leaf, $0) } }
+        let moved = new?.leaf !== bordered?.leaf
+        bordered = new
+        placeActiveBorder(animated: moved)
+    }
+
+    private func placeActiveBorder(animated: Bool) {
+        guard let bordered, root.find(bordered.leaf) != nil, zoomed == nil, views.count > 1, !bordered.leaf.isHidden else {
+            if activeBorder.superview != nil { activeBorder.show(nil, look: bordered?.look ?? .init(color: .clear, opacity: 1, animation: "off"), radius: 0, animated: animated) }
+            return
+        }
+        // Over every pane and header, under a floating card.
+        let panes = Set((views + headerViews.values.map { $0 as NSView }).map(ObjectIdentifier.init))
+        let topPane = subviews.lastIndex { panes.contains(ObjectIdentifier($0)) } ?? -1
+        if activeBorder.superview !== self || (subviews.firstIndex(of: activeBorder) ?? -1) < topPane {
+            activeBorder.removeFromSuperview()
+            if let card { addSubview(activeBorder, positioned: .below, relativeTo: card) } else { addSubview(activeBorder) }
+        }
+        activeBorder.frame = bounds
+        var frame = bordered.leaf.frame
+        if let header = headerViews[ObjectIdentifier(bordered.leaf)], !header.isHidden { frame = frame.union(header.frame) }
+        activeBorder.show(frame, look: bordered.look, radius: Radius.pane, animated: animated)
+    }
+
     // MARK: Floating card (in-window picture in picture)
 
     /// A parked pane shown live in a corner, if one is.
@@ -451,6 +492,8 @@ final class SplitContainerView: NSView {
         updateHeaders()
         rebuildDividers()
         dividers.forEach { $0.isHidden = zoomed != nil }
+        // The border follows its pane's card where it went, at once.
+        placeActiveBorder(animated: false)
         // Glass panes: the frame's holes follow the cards.
         var above = superview
         while let view = above, !(view is TerminalAreaView) { above = view.superview }

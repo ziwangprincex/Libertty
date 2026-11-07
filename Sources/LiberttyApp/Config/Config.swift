@@ -29,7 +29,21 @@ struct Config: Equatable {
     enum PaneStyle: String, CaseIterable { case comfortable, compact }
 
     var theme = ThemeSpec(light: "Libertty Light", dark: Theme.defaultName)
-    var fontFamily = ""  // empty: the bundled JetBrains Mono Nerd Font
+    /// `font-family` lines since the last empty one, as in Ghostty: the font,
+    /// then fallbacks for characters it lacks. None: the bundled JetBrains
+    /// Mono Nerd Font.
+    var fontFamilies: [String] = []
+    var fontFamily: String { fontFamilies.first ?? "" }
+    var fontFallbacks: [String] { Array(fontFamilies.dropFirst()) }
+
+    /// The font as Settings or the palette set it: the first `font-family`,
+    /// the fallbacks after it kept (empty: the bundled font, by its name
+    /// when there are fallbacks to keep after it).
+    mutating func setPrimaryFont(_ family: String) {
+        let rest = fontFallbacks
+        if family.isEmpty, rest.isEmpty { fontFamilies = []; return }
+        fontFamilies = [family.isEmpty ? FontRegistry.bundledFamily : family] + rest
+    }
     /// Ghostty's `font-feature` lines; `-calt`/`-liga` turn ligatures off.
     var fontFeatures: [String] = []
     var ligatures: Bool {
@@ -223,6 +237,22 @@ struct Config: Equatable {
     var mouseHideWhileTyping = false
     /// Trackpad scrolling moves the content by points, not whole rows.
     var scrollSmooth = true
+    /// Trackpad gestures over a terminal: pinch to zoom a pane, swipe for the sidebar (Rex's).
+    var trackpadGestures = true
+    var sidebarSwipe = TrackpadGestures.SidebarSwipe.option
+    /// A border round the focused pane of a split (Rex's active pane highlight).
+    var activeBorder = false
+    /// accent, text, or a color.
+    var activeBorderColor = "accent"
+    var activeBorderOpacity: Double = 0.8
+    var activeBorderAnimation = "move"
+    /// A downloaded update: ask before restarting into it, or restart when idle.
+    var autoUpdateRestart = "ask"
+    /// Draw the font with a heavier stroke (Ghostty's font-thicken).
+    var fontThicken = false
+    var fontThickenStrength = 255
+    /// A short fading trail behind the cursor as it moves.
+    var cursorTrail = false
     /// Ghostty's `bell-features`: system (the macOS alert sound), attention
     /// (bounce the Dock icon), title (🔔 in the tab title), border (flash the pane).
     var bellFeatures: Set<String> = ["attention", "title"]
@@ -298,12 +328,12 @@ struct Config: Equatable {
 
     // MARK: Keys
 
-    static let repeatable: Set<String> = ["palette", "keybind", "config-file", "font-feature"]
+    static let repeatable: Set<String> = ["palette", "keybind", "config-file", "font-feature", "font-family"]
 
     /// Every key, in documentation order, with its help text.
     static let documentation: [(key: String, doc: String)] = [
         ("theme", "A theme name (libertty +list-themes), or light:NAME,dark:NAME to follow the system appearance."),
-        ("font-family", "A monospaced font family (libertty +list-fonts). Empty: the bundled JetBrainsMono Nerd Font."),
+        ("font-family", "A monospaced font family (libertty +list-fonts). Repeatable, as in Ghostty: the first is the font, the ones after it fallbacks for characters it lacks; an empty one starts over. None: the bundled JetBrainsMono Nerd Font."),
         ("font-feature", "As in Ghostty: -calt (or -liga) turns programming ligatures (-> != ===) off. Repeatable."),
         ("font-size", "Points, 6–72."),
         ("adjust-cell-height", "Make the line height taller or shorter, as in Ghostty: a number of pixels (2, -1) or a percentage (20%) added to the font's own; the text stays centered, and box drawing and powerline glyphs follow the cell."),
@@ -393,6 +423,16 @@ struct Config: Equatable {
         ("web-access-input", "Whether a browser may type into panes (false: watch only)."),
         ("mouse-hide-while-typing", "Hide the mouse pointer while you type; moving it brings it back."),
         ("scroll-smooth", "Trackpad scrolling follows your fingers point by point (true) or moves whole rows (false)."),
+        ("trackpad-gestures", "Trackpad gestures over a terminal: spread two fingers over a pane of a split to zoom it, pinch to restore it, and swipe sideways, either way, to show or hide the sidebar (sidebar-swipe)."),
+        ("sidebar-swipe", "How a two-finger swipe sideways over a terminal shows or hides the sidebar: option (with Option held, the default), swipe (any swipe), or off."),
+        ("active-border", "Draw a border round the focused pane of a split (in place of the line along its top), in active-border-color."),
+        ("active-border-color", "The focused pane's border: accent (default), text (the terminal's text color), or a color such as #FF9F0A."),
+        ("active-border-opacity", "How strongly the focused pane's border draws, 0.1 to 1 (default 0.8); halved while the window isn't in front."),
+        ("active-border-animation", "How the border goes to a newly focused pane: move (glides there, the default), fade (crossfades), or off."),
+        ("auto-update-restart", "When an update has downloaded (auto-update = download): ask (default; Libertty ▸ Restart to Update), or idle: restart into it once no program is running in a pane and Libertty isn't in front. Sessions keep running either way."),
+        ("font-thicken", "Draw text with a heavier stroke, as Ghostty's font-thicken does: thin fonts on a low-resolution screen read better."),
+        ("font-thicken-strength", "How much heavier font-thicken draws, 0 to 255 (default 255)."),
+        ("cursor-trail", "A short trail fades behind the cursor as it moves, so a jump is easy to follow. Off while Reduce Motion is on."),
         ("bell-features", "What the bell (BEL) does, comma-separated, no- turns one off: system (the alert sound), attention (bounce the Dock icon), title (🔔 in the tab title until you look), border (flash the pane's edge). Default attention,title."),
         ("scrollbar", "system (an overlay scrollbar while scrolling, or when the pointer is at the right edge) or never."),
         ("auto-update", "check (default), download or off: look for a new Libertty once a day and offer it; download fetches and verifies it in the background, then waits for Restart to Update. Libertty ▸ Check for Updates… works either way."),
@@ -414,7 +454,7 @@ struct Config: Equatable {
         func num(_ d: Double) -> String { d == d.rounded() ? String(Int(d)) : String(d) }
         switch key {
         case "theme": return [theme.configString]
-        case "font-family": return [fontFamily]
+        case "font-family": return fontFamilies
         case "font-feature": return fontFeatures
         case "font-size": return [num(fontSize)]
         case "adjust-cell-height": return [adjustCellHeight.configString]
@@ -508,6 +548,16 @@ struct Config: Equatable {
         case "web-access-input": return [String(webAccessInput)]
         case "mouse-hide-while-typing": return [String(mouseHideWhileTyping)]
         case "scroll-smooth": return [String(scrollSmooth)]
+        case "trackpad-gestures": return [String(trackpadGestures)]
+        case "sidebar-swipe": return [sidebarSwipe.rawValue]
+        case "active-border": return [String(activeBorder)]
+        case "active-border-color": return [activeBorderColor]
+        case "active-border-opacity": return [num(activeBorderOpacity)]
+        case "active-border-animation": return [activeBorderAnimation]
+        case "auto-update-restart": return [autoUpdateRestart]
+        case "font-thicken": return [String(fontThicken)]
+        case "font-thicken-strength": return [String(fontThickenStrength)]
+        case "cursor-trail": return [String(cursorTrail)]
         case "bell-features": return [["system", "attention", "title", "border"].filter(bellFeatures.contains).joined(separator: ",")]
         case "scrollbar": return [scrollbar]
         case "auto-update": return [autoUpdate.rawValue]
@@ -656,7 +706,9 @@ struct Config: Equatable {
                 return "no theme named “\(name)” (libertty +list-themes)"
             }
             theme = spec
-        case "font-family": fontFamily = v
+        case "font-family":
+            if reset { fontFamilies = []; return nil }
+            if !fontFamilies.contains(v) { fontFamilies.append(v) }
         case "font-feature":
             if reset { fontFeatures = []; return nil }
             fontFeatures.append(v)
@@ -909,6 +961,38 @@ struct Config: Equatable {
         case "scroll-smooth":
             if reset { scrollSmooth = defaults.scrollSmooth; return nil }
             guard let x = bool() else { return "true or false" }; scrollSmooth = x
+        case "trackpad-gestures":
+            if reset { trackpadGestures = defaults.trackpadGestures; return nil }
+            guard let x = bool() else { return "true or false" }; trackpadGestures = x
+        case "sidebar-swipe":
+            if reset { sidebarSwipe = defaults.sidebarSwipe; return nil }
+            guard let x = TrackpadGestures.SidebarSwipe(rawValue: v.lowercased()) else { return "option, swipe or off" }; sidebarSwipe = x
+        case "active-border":
+            if reset { activeBorder = defaults.activeBorder; return nil }
+            guard let x = bool() else { return "true or false" }; activeBorder = x
+        case "active-border-color":
+            if reset { activeBorderColor = defaults.activeBorderColor; return nil }
+            let lower = v.lowercased()
+            guard lower == "accent" || lower == "text" || RGB(string: v) != nil else { return "accent, text or a color" }
+            activeBorderColor = lower == "accent" || lower == "text" ? lower : v
+        case "active-border-opacity":
+            if reset { activeBorderOpacity = defaults.activeBorderOpacity; return nil }
+            guard let x = double(0.1...1) else { return "a number from 0.1 to 1" }; activeBorderOpacity = x
+        case "active-border-animation":
+            if reset { activeBorderAnimation = defaults.activeBorderAnimation; return nil }
+            guard ["move", "fade", "off"].contains(v.lowercased()) else { return "move, fade or off" }; activeBorderAnimation = v.lowercased()
+        case "auto-update-restart":
+            if reset { autoUpdateRestart = defaults.autoUpdateRestart; return nil }
+            guard ["ask", "idle"].contains(v.lowercased()) else { return "ask or idle" }; autoUpdateRestart = v.lowercased()
+        case "font-thicken":
+            if reset { fontThicken = defaults.fontThicken; return nil }
+            guard let x = bool() else { return "true or false" }; fontThicken = x
+        case "font-thicken-strength":
+            if reset { fontThickenStrength = defaults.fontThickenStrength; return nil }
+            guard let x = int(0...255) else { return "a whole number from 0 to 255" }; fontThickenStrength = x
+        case "cursor-trail":
+            if reset { cursorTrail = defaults.cursorTrail; return nil }
+            guard let x = bool() else { return "true or false" }; cursorTrail = x
         case "bell-features":
             if reset { bellFeatures = defaults.bellFeatures; return nil }
             var features = defaults.bellFeatures
@@ -1100,6 +1184,12 @@ final class ConfigStore {
         reload()
     }
 
+    /// A store of another file, never watched (unit tests edit a file of their own).
+    init(url: URL, watch: Bool) {
+        self.url = url
+        reload()
+    }
+
     var theme: Theme { config.resolvedTheme }
 
     /// Call `handler` now and on every change until the returned token is released.
@@ -1176,9 +1266,12 @@ final class ConfigStore {
     private func previewed(_ base: Config) -> Config {
         guard !previews.isEmpty else { return base }
         var c = base
-        // A repeatable key tried out replaces the files' lines of it.
-        for key in Set(previews.map(\.key)) where Config.repeatable.contains(key) { _ = c.set(key, "") }
-        for (key, value) in previews { _ = c.set(key, value) }
+        // A repeatable key tried out replaces the files' lines of it (a
+        // font tried out, the first: its fallbacks stay).
+        for key in Set(previews.map(\.key)) where Config.repeatable.contains(key) && key != "font-family" { _ = c.set(key, "") }
+        for (key, value) in previews {
+            if key == "font-family" { c.setPrimaryFont(value) } else { _ = c.set(key, value) }
+        }
         return c
     }
 
@@ -1199,6 +1292,7 @@ final class ConfigStore {
     /// Set `key` (replacing its line in place), or with nil remove it.
     /// For repeatable keys this replaces every line with one.
     func set(_ key: String, _ value: String?) {
+        if key == "font-family" { return setPrimaryFont(value ?? "") }
         edit { lines in
             if let i = lines.firstIndex(where: { Self.key(of: $0) == key }) {
                 if let value { lines[i] = "\(key) = \(value)" } else { lines.remove(at: i) }
@@ -1208,6 +1302,28 @@ final class ConfigStore {
             } else if let value {
                 Self.append("\(key) = \(value)", to: &lines)
             }
+        }
+    }
+
+    /// The font (Settings, the palette's picker, `+set font-family=`): the
+    /// first `font-family` line, the fallbacks' lines after it as they were.
+    private func setPrimaryFont(_ family: String) {
+        var probe = savedConfig
+        probe.setPrimaryFont(family)
+        edit { lines in
+            guard let primary = probe.fontFamilies.first else {
+                lines.removeAll { Self.key(of: $0) == "font-family" }
+                return
+            }
+            // The font is the first line naming one after the last empty one.
+            var first: Int?, last: Int?
+            for (i, line) in lines.enumerated() where Self.key(of: line) == "font-family" {
+                last = i
+                if Self.value(of: line).isEmpty { first = nil } else if first == nil { first = i }
+            }
+            if let first { lines[first] = "font-family = \(primary)" }
+            else if let last { lines.insert("font-family = \(primary)", at: last + 1) }
+            else { Self.append("font-family = \(primary)", to: &lines) }
         }
     }
 

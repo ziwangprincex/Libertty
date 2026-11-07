@@ -51,5 +51,15 @@ LIBERTTY_PROBES=1 LIBERTTY_APP=$T/gui/Libertty.app scripts/bundle.sh release > /
 out=$($T/gui/Libertty.app/Contents/MacOS/Libertty --ui-probe $'update:install\nexpect-app-version:99.0.0' $T/probe 2>&1)
 [[ $out == *"ok    ui-probe app is 99.0.0"* ]] && ok "Check for Updates, Install and Restart installs it" \
   || bad "the dialog's install: $(print -r -- $out | grep -v '^(no LIBERTTY')"
+# auto-update = download, auto-update-restart = idle: fetched in the
+# background, then installed on its own once nobody would notice (the
+# probe's app is never in front; --persist keeps its sessions through it).
+LIBERTTY_PROBES=1 LIBERTTY_APP=$T/idle/Libertty.app scripts/bundle.sh release > /dev/null 2>&1
+mkdir -p $T/idle-config/libertty
+printf 'auto-update = download\nauto-update-restart = idle\n' > $T/idle-config/libertty/config
+out=$(env XDG_CONFIG_HOME=$T/idle-config $T/idle/Libertty.app/Contents/MacOS/Libertty \
+  --ui-probe $'update-background:go\nexpect-app-version:99.0.0' $T/probe-idle --persist 2>&1)
+[[ $out == *"ok    ui-probe app is 99.0.0"* ]] && ok "downloaded in the background, installed when idle" \
+  || bad "the restart when idle: $(print -r -- $out | grep -E 'FAIL|update' | head -5)"
 (( fails == 0 )) && echo "all passed"
 exit $(( fails > 0 ))

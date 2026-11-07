@@ -75,6 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // What Finder opened as Libertty launched came before the saved
         // windows: it goes back in front of them.
         let openedAtLaunch = controllers
+        // Libertty used on this Mac before: a config, or windows it saved.
+        let hadUsedBefore = FileManager.default.fileExists(atPath: Restoration.url.path)
+            || FileManager.default.fileExists(atPath: ConfigStore.shared.url.path)
         if !oneShot { restoreWindows() }
         restoring = false
         if openedDocument { openedAtLaunch.forEach { $0.window?.makeKeyAndOrderFront(nil) } }
@@ -86,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         opens.forEach(handleOpen)
         if !oneShot {
+            MainActor.assumeIsolated { WelcomeWindowController.showIfNew(hadUsedBefore: hadUsedBefore) }
             MainActor.assumeIsolated { WebAccess.shared.apply(ConfigStore.shared.config) }
             saveTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.saveWindows() }
             MainActor.assumeIsolated { UpdateController.shared.start() }
@@ -356,6 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         if NSApp.appearance?.name != appearance?.name { NSApp.appearance = appearance }
         if launched { updateKeepAwake() }
+        if launched, !oneShot { MainActor.assumeIsolated { UpdateController.shared.restartSettingChanged() } }
         if launched, !oneShot { MainActor.assumeIsolated { MenuBarIcon.shared.apply(store.config.menuBarIcon) } }
         if launched, !oneShot { MainActor.assumeIsolated { WebAccess.shared.apply(store.config) } }
         let keybinds = store.keybinds
@@ -674,6 +679,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             NSWorkspace.shared.activateFileViewerSelecting([store.url])
         }
     }
+
+    /// Help ▸ Get Started with Libertty…: the welcome guide.
+    @objc func showWelcome(_ sender: Any?) { MainActor.assumeIsolated { WelcomeWindowController.shared.show() } }
+
+    /// Help ▸ Migrate Keybindings with an Agent…: the prompt, to copy.
+    @objc func showMigrationPrompt(_ sender: Any?) { MainActor.assumeIsolated { MigrationPrompt.copy() } }
 
     /// Help ▸ Libertty Help: every option, action and default keybind, as a text file.
     @objc func showHelp(_ sender: Any?) {
@@ -1159,6 +1170,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
         let help = submenu("Help", in: main)
         item("Libertty Help", selector: #selector(showHelp(_:)), key: "?", in: help).target = self
+        item("Get Started with Libertty…", selector: #selector(showWelcome(_:)), in: help).target = self
+        item("Migrate Keybindings with an Agent…", selector: #selector(showMigrationPrompt(_:)), in: help).target = self
         NSApp.helpMenu = help
 
         return main

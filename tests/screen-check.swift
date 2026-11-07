@@ -270,6 +270,7 @@ scenario("compact-dark", config: ["window-theme = dark", "pane-style = compact"]
 scenario("glass-dark", config: ["window-theme = dark", "interface-style = glass"])
 scenario("classic-light", config: ["window-theme = light"], seam: true)
 scenario("tabs-above", config: ["window-theme = dark", "tab-bar = top"])
+scenario("active-border", config: ["window-theme = dark", "active-border = true"])
 
 /// A window the app opens from its menu: on screen and within its visible part.
 func panel(_ name: String, menu: String, title: String, close: String?) {

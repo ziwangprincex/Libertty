@@ -396,6 +396,26 @@ expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empt
 # Jump to the pane that needs you (⌘J).
 expect attention 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/attention.txt)" $OUT
+# active-border: a border round the focused pane of a split, following focus.
+mkdir -p $PRIVATE/border-config/libertty
+print 'active-border = true' > $PRIVATE/border-config/libertty/config
+expect active-border 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/border-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/active-border.txt)" $OUT
+# Activity By State: panes under Waiting for You, Failed, Working, Done.
+expect activity-by-state 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/activity-by-state.txt)" $OUT
+# Settings ▸ liberttyd ▸ System Permissions: liberttyd reports its own.
+expect permissions 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/permissions.txt)" $OUT --persist
+# Help ▸ Get Started with Libertty: the welcome guide's four pages.
+expect welcome 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/welcome.txt)" $OUT
+# Trackpad gestures: pinch to zoom a pane, swipe for the sidebar.
+expect gestures 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/gestures.txt)" $OUT
+# Closing where an agent works or waits on you says so by its name.
+expect close-warning 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-warning.txt)" $OUT
 # An agent's state from its screen: a stand-in Codex, built here.
 mkdir -p $PRIVATE/agent-screen
 cc -o $PRIVATE/agent-screen/codex $ROOT/tests/fixtures/fake-codex.c

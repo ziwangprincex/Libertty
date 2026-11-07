@@ -1,0 +1,18 @@
+# Activity By State (Rex's Group by priority): every pane whose program says
+# how it's doing, under Waiting for you, Failed, Working and Done, the most
+# pressing first, with what it last said (else its folder); idle panes
+# aren't listed. (Reports: OSC 7501, msg in base64; a report goes when its
+# program does, so each stays running.)
+expect-activity:
+type:cd /tmp; printf '\033]7501;state=working:app=claude-code:msg=UmVhZGluZyBmaWxlcw==\a'; sleep 60
+key:enter
+action:new_split:right
+wait:0.8
+type:cd /tmp; printf '\033]7501;state=blocked:app=codex\a'; sleep 60
+key:enter
+action:new_split:down
+wait:0.8
+type:printf '\033]7501;state=error:app=probe:msg=bWFrZSBmYWlsZWQ=\a'; sleep 60
+key:enter
+wait:1.5
+expect-activity:Waiting for you (1)|  Codex — /tmp|Failed (1)|  sleep — make failed|Working (1)|  Claude Code — Reading files

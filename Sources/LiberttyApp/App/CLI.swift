@@ -34,6 +34,7 @@ enum CLI {
         case "+validate-config": status = validate(rest)
         case "+edit-config": status = editConfig()
         case "+import-ghostty": status = GhosttyImport.run(rest)
+        case "+migrate-prompt": status = MigrationPrompt.run(rest)
         case "+action": status = action(rest)
         case "+new-window", "+new-tab": status = newWindow(rest, tab: command == "+new-tab")
         case "+open": status = openFiles(rest)
@@ -106,6 +107,8 @@ enum CLI {
           libertty +import-ghostty [--from FILE] [--dry-run] [--yes]
                                          Ghostty's settings into this file: those Libertty knows and doesn't
                                          set itself; says what it adds and asks first
+          libertty +migrate-prompt [--from ghostty|iterm2|tmux]…
+                                         a prompt for a coding agent that brings your keybindings over
           libertty +update [--check]        install the newest version (signature-checked); --check only reports
 
           libertty +list-themes [--path]    built-in themes, ~/.config/libertty/themes, and Rex's and Ghostty's if installed

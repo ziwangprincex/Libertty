@@ -45,17 +45,75 @@ extension TerminalWindowController {
         }
         let alert = NSAlert()
         alert.messageText = "\(verb) this \(noun)?"
-        alert.informativeText = "A program is still running and will be ended."
+        alert.informativeText = Self.closeWarning(panes.filter { $0.session.hasForegroundProgram }.map(running(in:)))
         alert.addButton(withTitle: verb)
         alert.addButton(withTitle: "Cancel")
+        lastCloseWarning = alert.informativeText
         alert.beginSheetModal(for: window) { response in
             if response == .alertFirstButtonReturn { proceed() }
         }
     }
 
+    /// What runs in a pane, as a close's question names it: the program, and
+    /// whether it's a coding agent at work or waiting on you.
+    struct Running: Equatable {
+        var program: String
+        var agent: Bool
+        var state: ProgramStatusStore.State?
+    }
+
+    func running(in pane: TerminalView) -> Running {
+        let key = ObjectIdentifier(pane.session)
+        let headline = pane.session.programStatus.headline
+        let reportedAgent = headline.flatMap { ProgramBadge.agentKey(pane.session.programStatus.effectiveApp(of: $0)) }
+        let tile = programs[key]
+        let agent = tile?.agent ?? reportedAgent
+        // An agent its report names, under another program in front (its
+        // hook's shell, a wrapper): by the agent's name.
+        let name = tile?.agent != nil ? tile?.name : (agent.flatMap { ProgramBadge.agents[$0]?.name } ?? tile?.name)
+        return Running(program: name ?? Self.title(ofPane: pane), agent: agent != nil, state: headline?.state)
+    }
+
+    /// This window's panes whose programs say how they're doing, as
+    /// Activity's By State lists them: the program (an agent by its name)
+    /// and what it last said, else the folder it's in.
+    func activityItems() -> [ActivityItem] {
+        allPanes.compactMap { pane -> ActivityItem? in
+            guard let record = pane.session.programStatus.headline, record.state != .idle else { return nil }
+            let said = [record.message, record.title].map(ProgramStatusStore.sanitize).first { !$0.isEmpty }
+            let folder = pane.session.workingDirectory.map { ($0 as NSString).abbreviatingWithTildeInPath }
+            return ActivityItem(paneID: pane.paneID, title: running(in: pane).program,
+                                detail: said ?? folder ?? "", state: record.state)
+        }
+    }
+
+    /// What a close would end, said plainly (Rex's "Did you mean to close"):
+    /// an agent still working, or waiting on your answer, by name; else that
+    /// a program is running.
+    static func closeWarning(_ running: [Running]) -> String {
+        var agents: [String] = []
+        for r in running where r.agent {
+            switch r.state {
+            case .blocked?: agents.append("\(r.program) is waiting for your answer.")
+            case .working?: agents.append("\(r.program) is still working.")
+            default: break
+            }
+        }
+        guard !agents.isEmpty else {
+            return running.count > 1 ? "\(running.count) programs are still running and will be ended."
+                : "A program is still running and will be ended."
+        }
+        var said = Array(agents.prefix(2))
+        if agents.count > 2 { said.append("\(agents.count - 2) more agents are working or waiting.") }
+        let rest = running.count - agents.count
+        let ended = rest > 0 ? " \(rest) other program\(rest == 1 ? "" : "s") will be ended too." : ""
+        return said.joined(separator: " ") + " Closing ends \(agents.count == 1 ? "it" : "them")." + ended
+    }
+
     // MARK: NSWindowDelegate
 
     func windowDidBecomeKey(_ notification: Notification) {
+        updateDimming()  // the active border draws at its full strength
         focusedTerminal.session.setFocused(true)
         // The pane with the keyboard tells its program (focus reporting).
         (window?.firstResponder as? TerminalView)?.session.reportFocus(true)
@@ -68,6 +126,7 @@ extension TerminalWindowController {
     func windowDidExitFullScreen(_ notification: Notification) { allPanes.forEach { $0.updateDisplaySync() } }
 
     func windowDidResignKey(_ notification: Notification) {
+        updateDimming()  // the active border fades
         (window?.firstResponder as? TerminalView)?.session.reportFocus(false)
         selectedTab.panes.forEach { $0.setNeedsRender(force: true) }
         autohideIfAway()

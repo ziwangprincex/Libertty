@@ -78,21 +78,14 @@ enum GhosttyImport {
         var plan = Plan()
         let known = Set(Config.documentation.map(\.key))
         // Ghostty: the last of a key wins (an empty value: its default);
-        // repeatable ones add up. font-family repeats for fallbacks:
-        // Libertty has one font, the first since the last reset.
+        // repeatable ones add up (font-family: the font, then its fallbacks).
         var single: [String: (String, String)] = [:], order: [String] = []
         var repeated: [(String, String, String)] = []
-        var fontFamily: (String, String)?
         for (key, value, raw) in entries {
             if Config.repeatable.contains(key) { repeated.append((key, value, raw)); continue }
             if !order.contains(key) { order.append(key) }
-            if key == "font-family" {
-                if value.isEmpty { fontFamily = nil } else if fontFamily == nil { fontFamily = (value, raw) }
-                continue
-            }
             single[key] = (value, raw)
         }
-        if let fontFamily { single["font-family"] = fontFamily }
         var scratch = Config()
         for key in order {
             guard known.contains(key), key != "browser-automation" else { plan.unknown.append(key); continue }
@@ -117,6 +110,11 @@ enum GhosttyImport {
             }
             if key == "keybind", let trigger = Keybinds.trigger(of: value), ownTriggers.contains(trigger) {
                 plan.kept.append("keybind \(value.split(separator: "=").first ?? "")")
+                continue
+            }
+            // A font of Libertty's own: Ghostty's would only come after it, as fallbacks.
+            if key == "font-family", libertty.keys.contains("font-family") {
+                if !plan.kept.contains("font-family") { plan.kept.append("font-family") }
                 continue
             }
             if key == "palette", let index = paletteIndex(value), ownColors.contains(index) {

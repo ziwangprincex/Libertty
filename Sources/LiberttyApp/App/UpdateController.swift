@@ -32,10 +32,15 @@ final class UpdateController: NSObject {
     }
 
     private func backgroundCheck() {
-        let mode = ConfigStore.shared.config.autoUpdate
-        guard mode != .off, !busy, ready == nil, installed == nil else { return }
         let last = UserDefaults.standard.object(forKey: Self.lastCheckKey) as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 23 * 3600 else { return }
+        checkInBackground()
+    }
+
+    /// What the daily check does (and the UI probe's `update:background`, at once).
+    func checkInBackground() {
+        let mode = ConfigStore.shared.config.autoUpdate
+        guard mode != .off, !busy, ready == nil, installed == nil else { return }
         busy = true
         task = Task { @MainActor in
             do {
@@ -52,6 +57,7 @@ final class UpdateController: NSObject {
                     ready = (release, zip)
                     busy = false
                     announceReady(release)
+                    watchForIdle()
                 } else {
                     // The check is over before the question: Install starts
                     // what comes next (it would find the check still busy).
@@ -145,9 +151,53 @@ final class UpdateController: NSObject {
     /// Installed over this copy, the restart into it cancelled.
     private var installed: String?
 
+    // MARK: Restarting when idle (auto-update-restart = idle)
+
+    private var idleTimer: Timer?
+
+    /// `auto-update-restart` changed: a downloaded update waits for an idle
+    /// moment now, or for Restart to Update.
+    func restartSettingChanged() { watchForIdle() }
+
+    /// A downloaded update waits for a moment nobody would notice a restart.
+    private func watchForIdle() {
+        idleTimer?.invalidate()
+        guard ready != nil, ConfigStore.shared.config.autoUpdateRestart == "idle" else { return }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.restartIfIdle() }
+        }
+    }
+
+    /// Restart into the update now if nobody would notice: Libertty isn't
+    /// in front, every pane is at its prompt, nothing is unsaved, no sheet
+    /// asks anything, and liberttyd keeps the sessions through it — every
+    /// one of them (a pane it doesn't hold, its shell in Libertty, would end).
+    func restartIfIdle() {
+        guard let ready, !busy, ConfigStore.shared.config.autoUpdateRestart == "idle" else { return }
+        let controllers = (NSApp.delegate as? AppDelegate)?.allControllers ?? []
+        let allKept = Persistence.enabled && !controllers.contains {
+            $0.allPanes.contains { $0.session.persistentID == nil && $0.session.host == nil && !$0.session.hasExited }
+        }
+        guard Self.mayRestart(appInFront: NSApp.isActive, sessionsKept: allKept,
+                              programsRunning: controllers.contains { $0.allPanes.contains { $0.session.hasForegroundProgram } },
+                              unsaved: controllers.contains { !$0.unsavedDocuments.isEmpty },
+                              asking: NSApp.modalWindow != nil || NSApp.windows.contains { $0.attachedSheet != nil })
+        else { return }
+        idleTimer?.invalidate()
+        idleTimer = nil
+        install(ready.release, quietly: true)
+    }
+
+    /// When a restart into a downloaded update goes unnoticed.
+    static func mayRestart(appInFront: Bool, sessionsKept: Bool, programsRunning: Bool, unsaved: Bool, asking: Bool) -> Bool {
+        !appInFront && sessionsKept && !programsRunning && !unsaved && !asking
+    }
+
     // MARK: Installing
 
-    private func install(_ release: Updater.Release) {
+    /// `quietly`: no progress window, and the new version opens behind
+    /// whatever is in front (a restart when idle).
+    private func install(_ release: Updater.Release, quietly: Bool = false) {
         // One at a time (a second would share the first's staging folder).
         guard !busy else { return }
         busy = true
@@ -164,7 +214,7 @@ final class UpdateController: NSObject {
                         Task { @MainActor in UpdateController.shared.progressBar?.doubleValue = fraction }
                     }
                 }
-                showProgress("Installing…", indeterminate: true)
+                if !quietly { showProgress("Installing…", indeterminate: true) }
                 try await Task.detached { try Updater.install(zip, release: release, over: app) }.value
                 try? FileManager.default.removeItem(at: zip)
                 // A probe checks what's on disk; nothing to restart into.
@@ -172,7 +222,7 @@ final class UpdateController: NSObject {
                     probeLog.append("installed \(release.version) over \(app.path)")
                     return hideProgress()
                 }
-                Updater.relaunch(app.path)
+                Updater.relaunch(app.path, inBackground: quietly)
                 NSApp.terminate(nil)
                 // Still here: the quit was cancelled (unsaved text, running
                 // programs). The new version is on disk and opens once Libertty

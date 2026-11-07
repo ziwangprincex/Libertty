@@ -1,0 +1,6 @@
+# Help ▸ Get Started with Libertty (Rex's onboarding): four pages — the
+# look, permissions, agents and old config, keys worth knowing.
+welcome:0
+welcome:1
+welcome:2
+welcome:3

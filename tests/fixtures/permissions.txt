@@ -1,0 +1,9 @@
+# Settings ▸ liberttyd ▸ System Permissions (Rex's): what macOS lets the
+# programs in your terminals get at, as liberttyd reports it for itself
+# (Local Network: macOS has no way to ask). Statuses vary by Mac; this one doesn't.
+key:cmd+,
+wait:0.8
+settings:page:liberttyd
+wait:1.5
+expect-settings:Local Network=macOS doesn't say
+shot:settings-permissions.png

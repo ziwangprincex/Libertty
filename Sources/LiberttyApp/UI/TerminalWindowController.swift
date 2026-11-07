@@ -672,6 +672,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// Unsaved documents were saved or let go for this close.
     var unsavedConfirmed = false
 
+    /// What the last close's question said (the UI probe reads it).
+    var lastCloseWarning = ""
+
     /// The window's worktrees were asked about for this close: nil not yet;
     /// those to remove once it's closed (none: kept).
     var worktreesOnClose: [(WorktreeInfo, force: Bool)]?
@@ -703,6 +706,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         inbox.onReveal = { [weak self] pane in
             self?.inboxPopover.performClose(nil)
             _ = (NSApp.delegate as? AppDelegate)?.reveal(paneID: pane)
+        }
+        inbox.livePanes = { [weak self] in
+            var all = (NSApp.delegate as? AppDelegate)?.allControllers ?? []
+            if let self, !all.contains(where: { $0 === self }) { all.append(self) }
+            return all.flatMap { $0.activityItems() }
         }
         popover.contentViewController = inbox
         popover.behavior = .transient

@@ -1,0 +1,18 @@
+# active-border (tests/run.sh's config turns it on): a border round the
+# focused pane of a split, following focus; none for a pane alone or one
+# zoomed to fill its tab.
+wait:0.5
+expect-active-border:no
+action:new_split:right
+wait:0.8
+expect-active-border:yes
+action:goto_split:previous
+wait:0.5
+expect-active-border:yes
+action:toggle_split_zoom
+wait:0.5
+expect-active-border:no
+action:toggle_split_zoom
+wait:0.5
+expect-active-border:yes
+shot:active-border.png

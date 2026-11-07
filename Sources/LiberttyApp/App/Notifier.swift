@@ -24,7 +24,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// What was notified, newest first (the toolbar's inbox).
-    struct Entry {
+    struct Entry: Equatable {
         var title: String
         var body: String
         var pane: String

@@ -168,6 +168,8 @@ enum SettingsRegistry {
             item(.liberttyd, "Web Access", "Port", "web-access-port", .text(placeholder: "7682")),
             bool(.liberttyd, "Web Access", "Allow typing from the browser", "web-access-input"),
             custom(.liberttyd, "Web Access", "Link and QR code", id: "web-access-link", keywords: "qr code url"),
+            custom(.liberttyd, "System Permissions", "System Permissions", id: "permissions",
+                   keywords: "privacy full disk access screen recording camera microphone local network tcc grant"),
         ]
 
         // Interface
@@ -211,6 +213,19 @@ enum SettingsRegistry {
             item(.interface, "Panes", "Inactive pane opacity", "unfocused-split-opacity", .slider(0.3...1, step: 0.05, percent: true),
                  keywords: "unfocused dim"),
             bool(.interface, "Panes", "Focus follows mouse", "focus-follows-mouse", help: "The pane under the pointer gets the keyboard, without a click."),
+            bool(.interface, "Active Pane", "Highlight the active pane's edges", "active-border",
+                 help: "A border round the focused pane of a split that follows focus; fainter while the window isn't in front.",
+                 keywords: "focus border outline highlight"),
+            item(.interface, "Active Pane", "Highlight color", "active-border-color", .popup(options([("Accent", "accent"), ("Text", "text")]))),
+            item(.interface, "Active Pane", "Highlight opacity", "active-border-opacity", .slider(0.1...1, step: 0.05, percent: true)),
+            item(.interface, "Active Pane", "Highlight animation", "active-border-animation",
+                 .segmented(options([("Move", "move"), ("Fade", "fade"), ("Off", "off")])),
+                 help: "Move glides it to the newly focused pane, Fade crossfades it there, Off switches at once."),
+            bool(.interface, "Gestures", "Use trackpad gestures", "trackpad-gestures",
+                 help: "Spread two fingers over a pane to zoom it and pinch them to restore it.", keywords: "pinch zoom swipe magnify"),
+            item(.interface, "Gestures", "Swipe for the sidebar", "sidebar-swipe",
+                 .popup(options([("Option-swipe", "option"), ("Swipe", "swipe"), ("Off", "off")])),
+                 help: "A two-finger swipe sideways over a terminal shows or hides the sidebar.", keywords: "gesture"),
             bool(.interface, "Sidebar", "Show the sidebar in new windows", "window-sidebar"),
             bool(.interface, "Sidebar", "Show files in the sidebar", "sidebar-files", keywords: "file tree"),
             item(.interface, "Animation", "Animation style", "animation", .segmented(options([("Snappy", "snappy"), ("Natural", "natural"), ("Off", "off")])),
@@ -241,6 +256,8 @@ enum SettingsRegistry {
                 }), help: "Wider or narrower columns, the text's size unchanged.", keywords: "letter spacing columns"),
             custom(.terminal, "Typography", "Ligatures", id: "ligatures", keys: ["font-feature"], help: "Programming ligatures such as -> != ===.",
                    keywords: "calt liga"),
+            bool(.terminal, "Typography", "Thicken text", "font-thicken",
+                 help: "Draws text with a heavier stroke: thin fonts read better on a low-resolution screen.", keywords: "bold weight stroke"),
             item(.terminal, "Colors", "Minimum text contrast", "minimum-contrast", .popup(options([
                 ("Off", "1"), ("1.1 · no invisible text", "1.1"), ("3 · easy to read", "3"), ("4.5 · WCAG AA", "4.5"), ("7 · WCAG AAA", "7"),
             ])), help: "Text that reads worse than this against its background is drawn white or black.", keywords: "improve readable"),
@@ -249,6 +266,8 @@ enum SettingsRegistry {
             ]))),
             item(.terminal, "Cursor", "Blinking", "cursor-style-blink", .popup(options([("As programs ask", ""), ("Blink", "true"), ("Steady", "false")])),
                  keywords: "cursor blink"),
+            bool(.terminal, "Cursor", "Cursor trail", "cursor-trail",
+                 help: "A short trail fades behind the cursor as it moves. Off while Reduce Motion is on.", keywords: "animation effect"),
             item(.terminal, "Keyboard", "Option key", "macos-option-as-alt", .popup(options([
                 ("Types characters", "false"), ("Acts as Alt", "true"), ("Left Option is Alt", "left"), ("Right Option is Alt", "right"),
             ])), help: "Which Option keys act as Alt (Meta) instead of typing accents and symbols.", keywords: "meta alt"),
@@ -349,6 +368,10 @@ enum SettingsRegistry {
             item(.advanced, "Updates", "Updates", "auto-update", .popup(options([
                 ("Check and offer", "check"), ("Download in the background", "download"), ("Off", "off"),
             ])), keywords: "update version"),
+            item(.advanced, "Updates", "Install a downloaded update", "auto-update-restart",
+                 .popup(options([("When I restart", "ask"), ("When idle", "idle")])),
+                 help: "When idle: Libertty restarts into it once no program runs in a pane and it isn't in front. Sessions keep running.",
+                 keywords: "relaunch automatic"),
             bool(.advanced, "Sessions", "Keep sessions running in liberttyd", "session-persistence",
                  help: "Programs keep running when Libertty quits, crashes or updates. Takes effect at the next launch.", keywords: "persist daemon"),
             item(.advanced, "Sessions", "Reopen windows", "window-save-state", .popup(options([

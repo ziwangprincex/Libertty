@@ -86,6 +86,15 @@ import LiberttyCore
 ///   cmd-hover:TEXT        ⌘ held with the pointer over TEXT's last showing in the focused pane
 ///   expect-peek:NAME      the image peek shows the file NAME (none: nothing shows)
 ///   expect-sheet:yes|no   whether a sheet is up
+///   expect-sheet-text:TEXT the sheet up says TEXT (its message or informative text)
+///   update-background:go  the daily update check now (auto-update = download), then restart if idle
+///   pinch:N              a two-finger pinch of N (spread +, pinch -) over the focused pane
+///   swipe:DX             a two-finger swipe of DX points sideways (fingers right +) over it
+///   expect-zoomed:yes|no, expect-sidebar-shown:yes|no
+///   trackpad-swipe:DX[:option]  a two-finger swipe as the trackpad sends it (scroll events, began to ended) over the focused pane
+///   expect-active-border:yes|no  a border round the focused pane's card (and no other), or none
+///   expect-activity:LINES  Activity By State lists LINES (`|` between them: `Working (1)|  Claude Code`)
+///   welcome:N             the welcome guide (Help ▸ Get Started) open at page N (0 first), drawn to welcome-N.png
 ///   wait-edit:TOKEN:PATH  open PATH in the editor as `+open --wait` does, waited on as TOKEN
 ///   expect-closed:TOKEN   the editor waited on as TOKEN has said it closed
 ///   page-wait:go          until the block (or page) in front has drawn
@@ -480,6 +489,19 @@ enum UIProbe {
                             print("FAIL  ui-probe sheet-type: \(window.attachedSheet == nil ? "no sheet up" : "no field on it")")
                             failures += 1
                         }
+                    case .expectSheetText(let text):
+                        let alert = window.attachedSheet.flatMap { sheet in
+                            sheet.contentView.map { root -> String in
+                                var words: [String] = []
+                                func walk(_ v: NSView) { if let f = v as? NSTextField { words.append(f.stringValue) }; v.subviews.forEach(walk) }
+                                walk(root)
+                                return words.joined(separator: " | ")
+                            }
+                        } ?? ""
+                        if alert.contains(text) { print("ok    ui-probe sheet says \(text)") } else {
+                            print("FAIL  ui-probe sheet: no \(text) in \(alert.isEmpty ? "(no sheet)" : alert)")
+                            failures += 1
+                        }
                     case .expectSheet(let want):
                         let up = window.attachedSheet != nil
                         if up == want { print("ok    ui-probe sheet \(up ? "up" : "gone")") } else {
@@ -826,6 +848,20 @@ enum UIProbe {
                             print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
                             failures += 1
                         }
+                    case .updateInBackground:
+                        // auto-update = download's daily check, now; then, with
+                        // auto-update-restart = idle, the restart when nobody's looking.
+                        MainActor.assumeIsolated {
+                            let updates = UpdateController.shared
+                            updates.checkInBackground()
+                            let deadline = Date().addingTimeInterval(60)
+                            repeat { pump(0.1) } while updates.isBusy && Date() < deadline
+                            print(updates.isReady ? "ok    ui-probe update downloaded" : "FAIL  ui-probe update: none downloaded")
+                            if !updates.isReady { failures += 1 }
+                            updates.restartIfIdle()
+                            repeat { pump(0.1) } while updates.isBusy && Date() < deadline
+                            for line in updates.probeLog { print("update: \(line.replacingOccurrences(of: "\n", with: " "))") }
+                        }
                     case .update(let install):
                         // Libertty ▸ Check for Updates…, its dialog answered (Install
                         // and Restart, or Later); up to a minute for the download.
@@ -967,6 +1003,82 @@ enum UIProbe {
                             print("FAIL  ui-probe sidebar shows \(shown), not \(n)" + (text.isEmpty ? "" : " with \(text)"))
                             failures += 1
                         }
+                    case .pinch(let total):
+                        // `pinch:N` then `=zoomed` or `=unzoomed`: what it should leave.
+                        controller.focusedTerminal.pinched(CGFloat(total))
+                        pump(0.5)
+                        print("ok    ui-probe pinch \(total): \(controller.isZoomed ? "zoomed" : "unzoomed")")
+                    case .swipe(let dx):
+                        controller.focusedTerminal.swiped(dx: CGFloat(dx), dy: 0)
+                        pump(0.5)
+                        print("ok    ui-probe swipe \(dx): sidebar \(controller.isSidebarShown ? "shown" : "hidden")")
+                    case .expectActiveBorder(let want):
+                        pump(0.4)
+                        let container = controller.selectedTab.container
+                        let border = container?.activeBorderFrame
+                        let leaf = controller.selectedTab.focusedLeaf
+                        // Round the focused pane: its frame inside the border, the border within a few points of it.
+                        let round = border.flatMap { b in leaf.map { l in b.insetBy(dx: -1, dy: -1).contains(l.frame) && l.frame.insetBy(dx: -4, dy: -40).contains(b) } } ?? false
+                        if want, container?.activeBorderOnTop != true {
+                            print("FAIL  ui-probe active border: under a pane or header"); failures += 1
+                        }
+                        if want ? round : border == nil {
+                            print("ok    ui-probe active border \(want ? "round the focused pane" : "none")")
+                        } else {
+                            print("FAIL  ui-probe active border: \(border.map { "\($0)" } ?? "none"), focused pane at \(leaf.map { "\($0.frame)" } ?? "none")")
+                            failures += 1
+                        }
+                    case .expectZoomed(let want):
+                        if controller.isZoomed == want { print("ok    ui-probe \(want ? "zoomed" : "not zoomed")") } else {
+                            print("FAIL  ui-probe zoom: \(controller.isZoomed ? "zoomed" : "not zoomed"), wanted the other"); failures += 1
+                        }
+                    case .trackpadSwipe(let dx, let option):
+                        // Ten events, as a trackpad sends a swipe: began, changed, ended.
+                        let pane = controller.focusedTerminal
+                        let steps = 10
+                        for i in 0..<steps {
+                            let phase: Int64 = i == 0 ? 1 : i == steps - 1 ? 4 : 2
+                            let delta = i == steps - 1 ? 0 : dx / Double(steps - 1)
+                            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0,
+                                                   wheel2: Int32(delta.rounded()), wheel3: 0) else { continue }
+                            cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+                            cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+                            cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: delta)
+                            if option { cg.flags = .maskAlternate }
+                            guard let event = NSEvent(cgEvent: cg) else { continue }
+                            if i == 0 {
+                                print("info  ui-probe trackpad event: precise \(event.hasPreciseScrollingDeltas) phase \(event.phase.rawValue) "
+                                      + "momentum \(event.momentumPhase.rawValue) dx \(event.scrollingDeltaX) option \(event.modifierFlags.contains(.option)) "
+                                      + "inverted \(event.isDirectionInvertedFromDevice)")
+                            }
+                            pane.scrollWheel(with: event)
+                        }
+                        pump(0.5)
+                        print("ok    ui-probe trackpad swipe \(dx)\(option ? " with Option" : ""): sidebar \(controller.isSidebarShown ? "shown" : "hidden")")
+                    case .welcome(let page):
+                        let welcome = WelcomeWindowController.shared
+                        welcome.show()
+                        welcome.state.page = page
+                        pump(0.6)
+                        if let w = welcome.openWindow {
+                            let file = output + "/welcome-\(page).png"
+                            capture(w, to: file)
+                            print("ok    ui-probe welcome page \(page) (\(w.title)) drawn to \(file)")
+                        } else {
+                            print("FAIL  ui-probe welcome: no window"); failures += 1
+                        }
+                    case .expectActivity(let want):
+                        let inbox = controller.inboxPopover.contentViewController as! InboxViewController
+                        _ = inbox.view
+                        inbox.show(byState: true)
+                        let got = inbox.shownRows.joined(separator: "|")
+                        if got == want { print("ok    ui-probe activity by state: \(got)") } else {
+                            print("FAIL  ui-probe activity by state: '\(got)', wanted '\(want)'"); failures += 1
+                        }
+                    case .expectSidebarShown(let want):
+                        if controller.isSidebarShown == want { print("ok    ui-probe sidebar \(want ? "shown" : "hidden")") } else {
+                            print("FAIL  ui-probe sidebar: \(controller.isSidebarShown ? "shown" : "hidden"), wanted the other"); failures += 1
+                        }
                     case .sidebarWidth(let w):
                         let split = controller.splitController.splitView
                         split.setPosition(CGFloat(w), ofDividerAt: 0)
@@ -1072,7 +1184,7 @@ enum UIProbe {
 
     private enum Step {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
-        case shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double)
+        case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         case hover(Int), expectFocus(Int)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
@@ -1152,6 +1264,17 @@ enum UIProbe {
             case "expect-workspace": steps.append(.expectWorkspace(arg))
             case "expect-tab-count": steps.append(.expectTabCount(Int(arg) ?? -1))
             case "sidebar-width": steps.append(.sidebarWidth(Double(arg) ?? 0))
+            case "pinch": steps.append(.pinch(Double(arg) ?? 0))
+            case "update-background": steps.append(.updateInBackground)
+            case "swipe": steps.append(.swipe(Double(arg) ?? 0))
+            case "expect-zoomed": steps.append(.expectZoomed(arg == "yes"))
+            case "expect-active-border": steps.append(.expectActiveBorder(arg == "yes"))
+            case "expect-sidebar-shown": steps.append(.expectSidebarShown(arg == "yes"))
+            case "expect-activity": steps.append(.expectActivity(arg))
+            case "welcome": steps.append(.welcome(Int(arg) ?? 0))
+            case "trackpad-swipe":
+                let p = arg.split(separator: ":").map(String.init)
+                steps.append(.trackpadSwipe(Double(p.first ?? "") ?? 0, p.dropFirst().contains("option")))
             case "expect-shown":
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 steps.append(.expectShown(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
@@ -1223,6 +1346,7 @@ enum UIProbe {
             case "cmd-hover": steps.append(.commandHover(arg))
             case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
+            case "expect-sheet-text": steps.append(.expectSheetText(arg))
             case "wait-edit":
                 let parts = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 if parts.count == 2 { steps.append(.waitEdit(token: parts[0], path: parts[1])) }

@@ -1,0 +1,27 @@
+# Trackpad gestures (trackpad-gestures): spread two fingers over a pane of
+# a split to zoom it, pinch to restore it; a swipe sideways (sidebar-swipe)
+# either way shows or hides it.
+action:new_split:right
+wait:0.8
+pinch:0.1
+expect-zoomed:no
+pinch:0.4
+expect-zoomed:yes
+pinch:-0.4
+expect-zoomed:no
+expect-sidebar-shown:yes
+swipe:-150
+expect-sidebar-shown:no
+swipe:150
+expect-sidebar-shown:yes
+# Too short a swipe: nothing.
+swipe:-40
+expect-sidebar-shown:yes
+# The same as the trackpad sends it: scroll events, began to ended, with
+# Option held; either way toggles. Without Option it's a scroll.
+trackpad-swipe:-200:option
+expect-sidebar-shown:no
+trackpad-swipe:-200:option
+expect-sidebar-shown:yes
+trackpad-swipe:200
+expect-sidebar-shown:yes

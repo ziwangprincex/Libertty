@@ -21,17 +21,21 @@ final class FontSet {
     let strikethroughPosition: Int
 
     private let fonts: [UInt8: CTFont]
+    /// `font-thicken`: how much heavier to draw (0 none, 1 the most); the
+    /// rasterizer strokes glyphs by it.
+    let thicken: CGFloat
 
     static let preferredFamilies = [FontRegistry.bundledFamily, "JetBrains Mono", "SF Mono", "Menlo"]
 
     /// `family` comes first when given; a family that isn't installed falls
     /// back to the bundled font. `cellHeightAdjust` is `adjust-cell-height`,
     /// `cellWidthAdjust` `adjust-cell-width`.
-    init(family: String = "", pointSize: CGFloat, scale: CGFloat, cellHeightAdjust: MetricAdjust = .none,
-         cellWidthAdjust: MetricAdjust = .none) {
+    init(family: String = "", fallbacks: [String] = [], pointSize: CGFloat, scale: CGFloat, cellHeightAdjust: MetricAdjust = .none,
+         cellWidthAdjust: MetricAdjust = .none, thicken: CGFloat = 0) {
         FontRegistry.registerBundledFonts()
         self.pointSize = pointSize
         self.scale = scale
+        self.thicken = max(0, min(1, thicken))
         let pixelSize = pointSize * scale
 
         let families = family.isEmpty ? Self.preferredFamilies : [family] + Self.preferredFamilies
@@ -45,14 +49,17 @@ final class FontSet {
             }
             .first ?? CTFontCreateUIFontForLanguage(.userFixedPitch, pixelSize, nil)!
 
-        // Prompt themes draw Nerd Font icons and Powerline arrows from the
-        // Private Use Area, which ordinary fonts lack; try the bundled Nerd
-        // Font first before the system fallback.
-        if (CTFontCopyFamilyName(regular) as String) != FontRegistry.bundledFamily {
-            let nerd = CTFontDescriptorCreateWithAttributes(
-                [kCTFontFamilyNameAttribute: FontRegistry.bundledFamily] as CFDictionary)
+        // Characters the font lacks: the `font-family` fallbacks in their
+        // order, then the bundled Nerd Font (prompt themes draw its icons and
+        // Powerline arrows from the Private Use Area, which ordinary fonts
+        // lack), then the system's own fallback.
+        let primary = CTFontCopyFamilyName(regular) as String
+        var cascade = fallbacks.filter { !$0.isEmpty && $0.caseInsensitiveCompare(primary) != .orderedSame }
+        if primary != FontRegistry.bundledFamily, !cascade.contains(FontRegistry.bundledFamily) { cascade.append(FontRegistry.bundledFamily) }
+        if !cascade.isEmpty {
+            let list = cascade.map { CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: $0] as CFDictionary) }
             let descriptor = CTFontDescriptorCreateCopyWithAttributes(
-                CTFontCopyFontDescriptor(regular), [kCTFontCascadeListAttribute: [nerd]] as CFDictionary)
+                CTFontCopyFontDescriptor(regular), [kCTFontCascadeListAttribute: list] as CFDictionary)
             regular = CTFontCreateWithFontDescriptor(descriptor, pixelSize, nil)
         }
 

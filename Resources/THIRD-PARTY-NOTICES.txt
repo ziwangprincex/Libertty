@@ -60,3 +60,23 @@ agent's screen whether it works, waits for you or sits idle, one manifest per
 agent, as Kero (github.com/egoist/kero) ships them. Apache License 2.0; the
 license is in agent-rules/LICENSE. Converted to agent-rules/rules.json by
 scripts/update-agent-rules.py; the rules themselves are unchanged.
+
+== Coding agents' logos (logos/) ==
+Each coding agent's tab shows its maker's own logo, taken unchanged from
+where its maker publishes it. Every logo is a trademark of its owner, shown
+only to say which program runs in a pane; Libertty isn't affiliated with or
+endorsed by any of them.
+  claude.svg        Claude, Anthropic PBC: claude.ai/favicon.svg
+  codex.png         OpenAI: the openai organization's avatar on GitHub
+  gemini.svg        Gemini, Google LLC: the Gemini sparkle on gstatic.com
+  opencode.svg      opencode, github.com/sst/opencode (MIT): packages/app/public/favicon-v3.svg
+  amp.svg           Amp: ampcode.com/favicon.svg
+  cursor-agent.svg  Cursor, Anysphere Inc.: cursor.com/favicon.svg
+  droid.svg         Droid, Factory: factory.ai/favicon.svg
+  qwen.svg          Qwen Code, github.com/QwenLM/qwen-code (Apache-2.0): packages/desktop/bootstrap/qwen-code-logo.svg
+  copilot.svg       GitHub Copilot: Primer Octicons, github.com/primer/octicons (MIT), icons/copilot-24.svg
+  kiro-cli.svg      Kiro, Amazon Web Services: kiro.dev/icon.svg
+  cline.svg         Cline: cline.bot/assets/branding/logos/cline-icon-dark.svg
+  kimi.png          Kimi, Moonshot AI: github.com/MoonshotAI/kimi-cli (Apache-2.0), web/public/logo.png
+  pi.svg            pi, github.com/badlogic/pi-mono (MIT): apps/p2/public/icons/favicon.svg
+  omp.svg           oh-my-pi, github.com/can1357/oh-my-pi (MIT): assets/icon.svg

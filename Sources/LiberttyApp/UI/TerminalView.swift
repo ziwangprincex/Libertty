@@ -25,6 +25,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     // Settings (see `apply`)
     private var fontFamily = ""
+    private var fontFallbacks: [String] = []
+    private var fontThicken: CGFloat = 0
     private var cellHeightAdjust = MetricAdjust.none
     private var cellWidthAdjust = MetricAdjust.none
     private var configFontSize: CGFloat?
@@ -51,6 +53,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// content is moved up, in points (0 ≤ it < a row).
     private(set) var smoothOffset: CGFloat = 0
     var smoothScrolling = true
+    /// `trackpad-gestures` and `sidebar-swipe`, and where this gesture has got to.
+    private var gestures = true
+    private var sidebarSwipe = TrackpadGestures.SidebarSwipe.option
+    private var pinchTotal: CGFloat = 0, pinchDone = false
+    private var swipeDX: CGFloat = 0, swipeDY: CGFloat = 0, swipeDone = false
     /// When VoiceOver last heard about new output (TerminalAccessibility).
     var lastAccessibilityAnnouncement: CFTimeInterval = 0
 
@@ -145,6 +152,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         renderer.selectionColor = theme.selection
         renderer.selectionForeground = theme.selectionForeground
         renderer.cursorText = theme.cursorText
+        renderer.cursorTrail = config.cursorTrail
         renderer.ligatures = config.ligatures
         renderer.backgroundOpacity = config.paneOpacity
         renderer.paddingColor = config.windowPaddingColor
@@ -164,11 +172,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         hideMouseWhileTyping = config.mouseHideWhileTyping
         smoothScrolling = config.scrollSmooth
         if !smoothScrolling { setSmoothOffset(0) }
+        gestures = config.trackpadGestures
+        sidebarSwipe = config.sidebarSwipe
 
         let size = CGFloat(config.fontSize)
+        let thicken = config.fontThicken ? CGFloat(config.fontThickenStrength) / 255 : 0
         let familyChanged = config.fontFamily != fontFamily || config.adjustCellHeight != cellHeightAdjust
-            || config.adjustCellWidth != cellWidthAdjust
+            || config.adjustCellWidth != cellWidthAdjust || config.fontFallbacks != fontFallbacks || thicken != fontThicken
         fontFamily = config.fontFamily
+        fontFallbacks = config.fontFallbacks
+        fontThicken = thicken
         cellHeightAdjust = config.adjustCellHeight
         cellWidthAdjust = config.adjustCellWidth
         if configFontSize != size || resetFontSize {
@@ -243,8 +256,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private func rebuildFonts() {
         let scale = window?.backingScaleFactor ?? 2
         metalLayer.contentsScale = scale
-        renderer.setFonts(FontSet(family: fontFamily, pointSize: fontSize, scale: scale, cellHeightAdjust: cellHeightAdjust,
-                                  cellWidthAdjust: cellWidthAdjust))
+        renderer.setFonts(FontSet(family: fontFamily, fallbacks: fontFallbacks, pointSize: fontSize, scale: scale,
+                                  cellHeightAdjust: cellHeightAdjust, cellWidthAdjust: cellWidthAdjust, thicken: fontThicken))
         updateGrid()
     }
 
@@ -325,6 +338,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             presented = renderer.render(session, into: metalLayer, focused: isFocused, force: forceRedraw)
         }
         forceRedraw = false
+        // A cursor trail fades over the next frames: they're drawn too.
+        if renderer.isAnimating { idleFrames = 0; displayLink?.isPaused = false }
         if presented {
             idleFrames = 0
             renderedOnce = true
@@ -606,6 +621,61 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         CATransaction.setCompletionBlock { ring.removeFromSuperlayer() }
         ring.add(group, forKey: "halo")
         CATransaction.commit()
+    }
+
+    // MARK: Trackpad gestures (trackpad-gestures)
+
+    /// `LIBERTTY_GESTURE_TRACE=1`: each gesture's events and what came of
+    /// them, on standard error (for a trackpad that doesn't do as expected).
+    static let traceGestures = ProcessInfo.processInfo.environment["LIBERTTY_GESTURE_TRACE"] != nil
+    static func trace(_ line: @autoclosure () -> String) {
+        if traceGestures { FileHandle.standardError.write(Data("gesture: \(line())\n".utf8)) }
+    }
+
+    /// Spread two fingers to zoom this pane; pinch them to restore it.
+    override func magnify(with event: NSEvent) {
+        Self.trace("magnify phase \(event.phase.rawValue) by \(event.magnification) on \(gestures ? "" : "(gestures off) ")\(paneID.prefix(8))")
+        guard gestures else { return super.magnify(with: event) }
+        if event.phase.contains(.began) { pinchTotal = 0; pinchDone = false }
+        pinchTotal += event.magnification
+        if !pinchDone, pinched(pinchTotal) {
+            pinchDone = true
+            Self.trace("pinch \(pinchTotal): done")
+        }
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled) { pinchTotal = 0; pinchDone = false }
+    }
+
+    /// A pinch of `total` so far: whether it did something (the UI probe calls it too).
+    @discardableResult
+    func pinched(_ total: CGFloat) -> Bool {
+        guard let controller = window?.windowController as? TerminalWindowController else { return false }
+        return controller.pinch(self, total: total)
+    }
+
+    /// A two-finger swipe sideways (`sidebar-swipe`): the sidebar comes or
+    /// goes, once a gesture. True when the event was the swipe's, not a scroll.
+    private func sidebarSwipeScroll(_ event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.option) {
+            Self.trace("scroll with Option: precise \(event.hasPreciseScrollingDeltas) phase \(event.phase.rawValue) momentum \(event.momentumPhase.rawValue)")
+        }
+        guard gestures, sidebarSwipe != .off, event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty else { return false }
+        if event.phase.contains(.began) { swipeDX = 0; swipeDY = 0; swipeDone = false }
+        defer { if event.phase.contains(.ended) || event.phase.contains(.cancelled) { swipeDX = 0; swipeDY = 0; swipeDone = false } }
+        guard sidebarSwipe == .swipe || event.modifierFlags.contains(.option) else { return false }
+        swipeDX += TrackpadGestures.fingersDX(event)
+        swipeDY += TrackpadGestures.fingersDY(event)
+        // Mostly sideways so far: the history doesn't scroll under it.
+        let sideways = abs(swipeDX) > abs(swipeDY)
+        if !swipeDone, swiped(dx: swipeDX, dy: swipeDY) { swipeDone = true }
+        Self.trace("swipe phase \(event.phase.rawValue) dx \(swipeDX) dy \(swipeDY)\(swipeDone ? ": done" : "")")
+        return sideways || swipeDone
+    }
+
+    /// Fingers moved `dx`, `dy` in a swipe: whether the sidebar came or went.
+    @discardableResult
+    func swiped(dx: CGFloat, dy: CGFloat) -> Bool {
+        guard let controller = window?.windowController as? TerminalWindowController else { return false }
+        return controller.swipeSidebar(dx: dx, dy: dy)
     }
 
     /// A three-finger swipe (trackpad set to swipe between pages with three
@@ -1704,6 +1774,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     // MARK: Scrolling
 
     override func scrollWheel(with event: NSEvent) {
+        if sidebarSwipeScroll(event) { return }
         let rowHeight = cellSizePoints.height
         if smoothScrolling, event.hasPreciseScrollingDeltas, !reportsMouse(event), !session.isAlternateScreen {
             return smoothScroll(by: event.scrollingDeltaY, rowHeight: rowHeight)

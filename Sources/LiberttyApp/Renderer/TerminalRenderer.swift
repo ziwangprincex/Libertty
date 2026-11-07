@@ -100,6 +100,16 @@ final class TerminalRenderer {
     var selectionForeground: RGB?
     /// The text under a block cursor (`cursor-text`); nil: the background.
     var cursorText: RGB?
+    /// `cursor-trail`: a short fading trail behind the cursor as it moves.
+    var cursorTrail = false
+    /// The cursor's cell rect and grid place last frame, and the trail
+    /// being drawn: from where it was to where it went, since when.
+    private var lastCursorRect: SIMD4<Float>?
+    private var lastCursorCell: (column: Int, row: Int)?
+    private var trail: (from: SIMD4<Float>, to: SIMD4<Float>, start: CFTimeInterval)?
+    /// A trail is fading: the view keeps drawing frames until it's gone.
+    var isAnimating: Bool { trail != nil }
+    static let trailDuration: CFTimeInterval = 0.16
     /// Below 1 the default background is translucent (`background-opacity`);
     /// cells with their own background color stay opaque.
     var backgroundOpacity: Double = 1
@@ -264,9 +274,10 @@ final class TerminalRenderer {
         // they point at overwritten space, every one of them.
         let atlasMoved = atlas.generation != rowsGeneration
         let changed = dirty != GHOSTTY_RENDER_STATE_DIRTY_FALSE || force || highlightsChanged || imagesChanged || atlasMoved
-        guard changed || offsetChanged else { return false }
-        // Only the offset moved: the instances stand; the shader shifts them.
-        if !changed, pixelOffset == 0 || belowRow != nil {
+        guard changed || offsetChanged || trail != nil else { return false }
+        // Only the offset moved, or a trail fades: the rows stand; the
+        // instances are put together again (the shader shifts them).
+        if !changed, pixelOffset == 0 || belowRow != nil || (trail != nil && !offsetChanged) {
             if pixelOffset == 0 { belowRow = nil }
             assembleInstances(colors: defaultColors(), focused: lastFocused)
             return true
@@ -739,6 +750,8 @@ final class TerminalRenderer {
 
         var cursorGlyph: GlyphInstance?
         cursorBlinks = cursor.blinking && focused && preedit.isEmpty
+        // A trail runs out even while the cursor isn't drawn (a blink's off half).
+        if let t = trail, CACurrentMediaTime() - t.start >= Self.trailDuration { trail = nil }
         if !preedit.isEmpty, cursor.viewport_has_value {
             appendPreedit(at: cursor, colors: colors)
         } else if cursorBlinks, !blinkOn {
@@ -756,6 +769,33 @@ final class TerminalRenderer {
             let width = cw * cells
             let color = colors.cursor.packed()
             let thin = max(1, Float(fonts.scale * 1.5).rounded())
+
+            // `cursor-trail`: where it moved from fades out behind it.
+            let cell = SIMD4(left, top, width, ch)
+            let place = (column: Int(column), row: Int(cursor.viewport_y))
+            if cursorTrail, focused, !Motion.reduced {
+                let now = CACurrentMediaTime()
+                // A jump of the cursor itself: not the cells changing size
+                // (a font zoom, a resize), nor typing or output going on.
+                if let last = lastCursorRect, let from = lastCursorCell, last.z == cell.z, last.w == cell.w,
+                   Self.isJump(from: from, to: place) {
+                    trail = (last, cell, now)
+                }
+                lastCursorRect = cell
+                lastCursorCell = place
+                if let t = trail {
+                    let progress = Float((now - t.start) / Self.trailDuration)
+                    if progress >= 1 {
+                        trail = nil
+                    } else {
+                        scratchRects += Self.trailRects(from: t.from, to: cell, progress: progress, color: colors.cursor)
+                    }
+                }
+            } else {
+                lastCursorRect = nil
+                lastCursorCell = nil
+                trail = nil
+            }
 
             var style = cursor.visual_style
             if !focused { style = GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW }
@@ -787,6 +827,33 @@ final class TerminalRenderer {
         if let belowRow { scratchGlyphs.append(contentsOf: belowRow.glyphs) }
         if let cursorGlyph { scratchGlyphs.append(cursorGlyph) }
         if !preedit.isEmpty { scratchGlyphs.append(contentsOf: preeditGlyphs) }
+    }
+
+    /// Whether the cursor going `from` one cell `to` another is a jump worth
+    /// a trail: not a step along its row (typing, output, a backspace, a wide
+    /// character), nor a return to the line's start on its row or the next
+    /// (a newline, output scrolling the screen, a progress bar redrawn).
+    static func isJump(from: (column: Int, row: Int), to: (column: Int, row: Int)) -> Bool {
+        if from == to { return false }
+        if to.row == from.row, abs(to.column - from.column) <= 2 { return false }
+        if to.column <= 1, to.row == from.row || to.row == from.row + 1 { return false }
+        return true
+    }
+
+    /// The trail `progress` (0 to 1) of the way through: cell-sized
+    /// rects from its tail to the cursor, the tail catching up as it goes,
+    /// fainter toward the tail and as a whole as it fades.
+    static func trailRects(from: SIMD4<Float>, to: SIMD4<Float>, progress: Float, color: RGB, steps: Int = 8) -> [RectInstance] {
+        let p = max(0, min(1, progress))
+        let eased = 1 - (1 - p) * (1 - p)
+        let tail = from + (to - from) * eased
+        guard abs(tail.x - to.x) + abs(tail.y - to.y) > 0.5 else { return [] }
+        return (0..<steps).map { k in
+            let f = Float(k) / Float(steps)
+            let rect = tail + (to - tail) * f
+            let alpha = (1 - p) * 0.45 * (Float(k) + 1) / Float(steps)
+            return RectInstance(rect: rect, color: color.packed(alpha: UInt8(max(0, min(255, alpha * 255)))))
+        }
     }
 
     // MARK: GPU

@@ -107,6 +107,9 @@ final class GlyphAtlas {
         return entry
     }
 
+    /// `font-thicken` at its strongest: a stroke this percent of the font's size.
+    static let thickenPercent: CGFloat = 3
+
     private func rasterize(_ text: String, style: FontSet.Style, span: Int) -> Entry? {
         rasterize(text, glyph: nil, style: style, span: span)
     }
@@ -121,11 +124,17 @@ final class GlyphAtlas {
         let slotW = cellW * span + padX * 2
         let slotH = cellH + pad * 2
 
-        let attrs: [NSAttributedString.Key: Any] = [
+        var attrs: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): fonts.font(style),
             NSAttributedString.Key(kCTForegroundColorAttributeName as String):
                 CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1),
         ]
+        // `font-thicken`: filled and stroked, the stroke a few percent of
+        // the font's size (negative: fill as well as stroke).
+        if fonts.thicken > 0 {
+            attrs[NSAttributedString.Key(kCTStrokeWidthAttributeName as String)] = -Self.thickenPercent * fonts.thicken
+            attrs[NSAttributedString.Key(kCTStrokeColorAttributeName as String)] = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+        }
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text ?? " ", attributes: attrs))
         // Center wide glyphs (CJK, emoji) in their two cells instead of
         // pinning them left, so full-width text spaces evenly.
@@ -157,6 +166,11 @@ final class GlyphAtlas {
                 var g = glyph
                 var position = origin
                 ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+                if fonts.thicken > 0 {
+                    ctx.setTextDrawingMode(.fillStroke)
+                    ctx.setStrokeColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+                    ctx.setLineWidth(CTFontGetSize(fonts.font(style)) * Self.thickenPercent / 100 * fonts.thicken)
+                }
                 CTFontDrawGlyphs(fonts.font(style), &g, &position, 1, ctx)
             } else {
                 ctx.textPosition = origin

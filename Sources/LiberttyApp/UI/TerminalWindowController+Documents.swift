@@ -171,6 +171,31 @@ extension TerminalWindowController {
         updateSidebar()  // the row says "zoomed"
     }
 
+    /// Two fingers spread over `pane` (it's focused, then fills its tab) or
+    /// pinched (its tab's panes come back): `trackpad-gestures`.
+    func pinch(_ pane: TerminalView, total: CGFloat) -> Bool {
+        guard let tab = tab(containing: pane), tab === selectedTab else { return false }
+        let zoomed = tab.container?.zoomed != nil
+        switch TrackpadGestures.pinch(total, zoomed: zoomed, panes: tab.container?.views.count ?? 0) {
+        case .zoom?:
+            focusLeaf(pane)
+            toggleZoom()
+        case .restore?:
+            toggleZoom()
+        case nil:
+            return false
+        }
+        return true
+    }
+
+    /// A sideways swipe over a terminal (`sidebar-swipe`): the sidebar
+    /// comes or goes.
+    func swipeSidebar(dx: CGFloat, dy: CGFloat) -> Bool {
+        guard config.tabBar.inSidebar || config.sidebarFiles, TrackpadGestures.isSidebarSwipe(dx: dx, dy: dy) else { return false }
+        toggleSidebar()
+        return true
+    }
+
     /// Sidebar ▸ cd Here, Go to Directory's ⌥↵: type the command at the
     /// focused pane's prompt (a space first keeps it out of the history; the
     /// line there cleared first, as ⌃U does). With a program in front of the
@@ -233,6 +258,19 @@ extension TerminalWindowController {
         }
     }
 
+    /// `active-border`'s look now, or nil when it's off: fainter while the
+    /// window isn't in front.
+    var activeBorderLook: ActiveBorderView.Look? {
+        guard config.activeBorder else { return nil }
+        let color: NSColor = switch config.activeBorderColor {
+        case "accent": Accent.color
+        case "text": config.resolvedTheme.foreground.nsColor
+        default: RGB(string: config.activeBorderColor)?.nsColor ?? Accent.color
+        }
+        let front = window?.isKeyWindow ?? false
+        return .init(color: color, opacity: config.activeBorderOpacity * (front ? 1 : 0.5), animation: config.activeBorderAnimation)
+    }
+
     func updateDimming() {
         for tab in everyTab {
             let split = (tab.container?.views.count ?? 0) > 1
@@ -242,14 +280,15 @@ extension TerminalWindowController {
                 // A header has its own close button and says the pane's name.
                 pane.showsCloseButton = split && tab.container?.showsHeader(for: pane) != true
                 // Under a header, the header's top carries the mark.
-                pane.showsFocusLine = split && pane === focused && tab.container?.showsHeader(for: pane) != true
+                pane.showsFocusLine = split && pane === focused && tab.container?.showsHeader(for: pane) != true && !config.activeBorder
             }
             updateNameTags(of: tab)
+            tab.container?.showActiveBorder(on: focused, look: activeBorderLook)
             for doc in tab.documentPanes {
                 doc.setDimmed(split && doc !== focused, opacity: config.unfocusedSplitOpacity,
                               color: config.resolvedTheme.background.nsColor)
                 doc.showsCloseButton = split && tab.container?.showsHeader(for: doc) != true
-                doc.showsFocusLine = split && doc === focused && tab.container?.showsHeader(for: doc) != true
+                doc.showsFocusLine = split && doc === focused && tab.container?.showsHeader(for: doc) != true && !config.activeBorder
             }
         }
     }

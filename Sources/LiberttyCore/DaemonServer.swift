@@ -114,7 +114,7 @@ public final class DaemonServer {
     /// What this liberttyd does beyond protocol 1's beginnings, in `welcome`:
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
-    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report"]
+    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions"]
 
     private init(path: String) {
         self.path = path
@@ -313,6 +313,9 @@ public final class DaemonServer {
                     "message": "", "title": "", "source": "screen",
                 ])
                 connection.send(.result, json: ["ok": true])
+            case .permissions:
+                // What macOS lets it (and so its sessions' programs) get at.
+                connection.send(.result, json: ["ok": true, "access": PrivacyAccess.report()])
             case .rename:
                 let json = frame.json
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }

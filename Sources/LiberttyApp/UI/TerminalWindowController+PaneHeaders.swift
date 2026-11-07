@@ -19,12 +19,12 @@ extension TerminalWindowController: PaneHeaderSource {
                 detail = directory
             }
             return PaneHeader.Info(name: name, detail: detail, size: size, focused: focused,
-                                   marked: split && focused, floats: true, parks: split,
+                                   marked: split && focused && !config.activeBorder, floats: true, parks: split,
                                    branch: repoStatus(of: pane)?.summary ?? "")
         }
         if let doc = leaf as? DocumentView {
             let folder = doc.url.isFileURL ? Self.shortDirectory(doc.url.deletingLastPathComponent().path) : (doc.url.host ?? "")
-            return PaneHeader.Info(name: doc.title, detail: folder, focused: focused, marked: split && focused, floats: false)
+            return PaneHeader.Info(name: doc.title, detail: folder, focused: focused, marked: split && focused && !config.activeBorder, floats: false)
         }
         return PaneHeader.Info(name: "", detail: "")
     }

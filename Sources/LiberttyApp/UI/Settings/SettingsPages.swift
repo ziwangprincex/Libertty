@@ -1,4 +1,5 @@
 import AppKit
+import LiberttyCore
 import SwiftUI
 
 /// SwiftUI's `State` as the property wrapper it is: from macOS 27's SDK `@State`
@@ -484,6 +485,8 @@ struct CustomRow: View {
         switch item.id {
         case "daemon":
             DaemonCard(model: model)
+        case "permissions":
+            PermissionsCard(model: model)
         case "web-access-link":
             LabeledContent {
                 Button("Show Link…") { WebAccessPanel.shared.show(nil) }
@@ -563,6 +566,114 @@ struct DaemonCard: View {
         case .notPersisting: "Not in use: shells end when Libertty quits (Advanced ▸ Sessions)"
         case .running(let n): "Running · \(n) session\(n == 1 ? "" : "s")"
         case .stopped: "Not running"
+        }
+    }
+}
+
+/// Rex's System Permissions: what macOS lets the programs in your terminals
+/// get at. They run under liberttyd, so it's liberttyd that macOS asks
+/// about: each permission with its status, a button to its list in System
+/// Settings, and liberttyd's icon to drag into that list.
+struct PermissionsCard: View {
+    @ObservedObject var model: SettingsModel
+
+    struct Kind: Identifiable {
+        var id: String
+        var title: String
+        var detail: String
+        var symbol: String
+        /// Its list in System Settings ▸ Privacy & Security.
+        var anchor: String
+    }
+
+    static let kinds: [Kind] = [
+        Kind(id: "full-disk", title: "Full Disk Access",
+             detail: "Lets programs in your terminals open files in protected folders and other apps' data.",
+             symbol: "externaldrive.fill", anchor: "Privacy_AllFiles"),
+        Kind(id: "screen", title: "Screen & System Audio Recording",
+             detail: "Lets programs and agents in your terminals capture the screen, windows and system audio.",
+             symbol: "rectangle.dashed.badge.record", anchor: "Privacy_ScreenCapture"),
+        Kind(id: "camera", title: "Camera", detail: "Lets programs and agents in your terminals use the camera.",
+             symbol: "camera.fill", anchor: "Privacy_Camera"),
+        Kind(id: "microphone", title: "Microphone", detail: "Lets programs and agents in your terminals record from the microphone.",
+             symbol: "mic.fill", anchor: "Privacy_Microphone"),
+        Kind(id: "local-network", title: "Local Network",
+             detail: "Lets programs and agents in your terminals reach devices on your local network.",
+             symbol: "network", anchor: "Privacy_LocalNetwork"),
+    ]
+
+    /// What answers to macOS for the programs: liberttyd, or Libertty itself.
+    private var holder: String { Persistence.enabled ? "liberttyd" : "Libertty" }
+    private var holderPath: String? { Persistence.enabled ? Persistence.daemonExecutable : Bundle.main.bundlePath }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 36, height: 36)
+                    .onDrag { holderPath.flatMap { NSItemProvider(contentsOf: URL(fileURLWithPath: $0)) } ?? NSItemProvider() }
+                    .help(L10n.t("Drag into the list in System Settings to grant access."))
+                    .accessibilityLabel("\(holder) icon")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L10n.t("Programs in your terminals ask macOS as \(holder), so these are \(holder)'s permissions."))
+                        .font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(L10n.t("Drag this icon into a list in System Settings to grant access. Some take effect once \(holder) restarts."))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if model.permissions == .tooOld {
+                Text(L10n.t("This liberttyd is too old to report its permissions. You can still grant them; their status shows once it updates."))
+                    .font(.system(size: 11)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(Self.kinds) { kind in
+                HStack(spacing: 10) {
+                    Image(systemName: kind.symbol)
+                        .frame(width: 20)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(L10n.t(kind.title)).font(.system(size: 12, weight: .medium))
+                        Text(L10n.t(kind.detail)).font(.system(size: 11)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    let status = status(of: kind.id)
+                    Text(L10n.t(status.label))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(status.color)
+                        .accessibilityLabel(kind.title)
+                        .accessibilityValue(status.label)
+                        .probeAnchor(kind.title, value: status.label)
+                    Button(L10n.t("Open")) {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(kind.anchor)") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .controlSize(.small)
+                    .accessibilityLabel("Open \(kind.title) in System Settings")
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .onAppear { model.refreshPermissions() }
+        // Back from System Settings to this: what changed there. (Its window
+        // closed, the view lives on: then nothing.)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            let front = NSApp.keyWindow?.windowController
+            if front is SettingsWindowController || front is WelcomeWindowController { model.refreshPermissions() }
+        }
+    }
+
+    private func status(of kind: String) -> (label: String, color: Color) {
+        guard case .report(let access) = model.permissions else { return ("", .secondary) }
+        switch access[kind].flatMap(PrivacyAccess.Status.init(rawValue:)) {
+        case .granted?: return ("Granted", .green)
+        case .denied?: return ("Not granted", .secondary)
+        case .notAsked?: return ("Not asked yet", .secondary)
+        case .unknown?, nil: return (kind == "local-network" ? "macOS doesn't say" : "Unknown", .secondary)
         }
     }
 }

@@ -1,0 +1,30 @@
+# Closing a pane where a coding agent works, or waits on you, says so by
+# its name (Rex's "Did you mean to close"), not just "a program is running".
+# The reports are Claude Code's own (OSC 7501, app claude-code).
+type:printf '\033]7501;state=working:app=claude-code\a'; sleep 60
+key:enter
+wait:1.5
+action:close_surface
+wait:0.6
+expect-sheet:yes
+expect-sheet-text:Claude Code is still working.
+sheet:Cancel
+wait:0.4
+key:ctrl+c
+type:printf '\033]7501;state=blocked:app=claude-code\a'; sleep 60
+key:enter
+wait:1.5
+action:close_surface
+wait:0.6
+expect-sheet-text:Claude Code is waiting for your answer.
+sheet:Cancel
+wait:0.4
+# Any other program: as before.
+key:ctrl+c
+type:printf '\033]7501;state=clear:app=claude-code\a'; sleep 60
+key:enter
+wait:1.5
+action:close_surface
+wait:0.6
+expect-sheet-text:A program is still running and will be ended.
+sheet:Cancel

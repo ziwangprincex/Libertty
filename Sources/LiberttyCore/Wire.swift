@@ -54,6 +54,7 @@ public enum Wire {
         case sendKey = 21     // {id, keys: ["ctrl+c", "enter", …]}: press them, encoded as the program wants → result {ok}
         case report = 22      // {id, state, record?, app?}: a program's state the app read on the session's screen
                               // (an agent's spinner, its permission dialog) → result {ok}; a `status` event
+        case permissions = 23 // → result {ok, access: {full-disk|screen|camera|microphone|local-network: granted|denied|not-asked|unknown}}
 
         // Daemon → client
         case welcome = 101    // {version, build, pid, features?}

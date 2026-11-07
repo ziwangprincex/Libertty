@@ -27,7 +27,8 @@ export XDG_CONFIG_HOME=$T/cfg
 out=$($L +import-ghostty --from $T/ghostty/config.ghostty --yes)
 f=$T/cfg/libertty/config
 grep -qx 'font-family = "JetBrains Mono"' $f && ok "the first font-family" || bad "font-family: $(grep font-family $f)"
-grep -q 'Symbols Nerd Font' $f && bad "a fallback font came over" || ok "fallback fonts stay out"
+# font-family repeats for fallbacks, as in Ghostty: they come over after the font, in order.
+[[ $(grep '^font-family' $f | tail -1) == *'Symbols Nerd Font'* ]] && ok "the fallback font after it" || bad "fallback: $(grep font-family $f)"
 [[ $(grep -c '^font-size' $f) == 1 ]] && grep -qx 'font-size = 13' $f && ok "Libertty's own font-size kept" || bad "font-size"
 grep -qx 'window-padding-x = 12' $f && grep -qx 'palette = 1=#ff0000' $f && ok "the included file's settings" || bad "include"
 [[ $(grep -c 'cmd+shift+k' $f) == 1 ]] && ok "a keybind already there isn't doubled" || bad "keybind doubled"

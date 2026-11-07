@@ -57,10 +57,17 @@ final class SettingsModel: ObservableObject {
     enum DaemonStatus: Equatable { case unknown, notPersisting, running(sessions: Int), stopped }
     @Published private(set) var daemon = DaemonStatus.unknown
 
+    /// What macOS lets the programs in your terminals get at, as liberttyd
+    /// (or, without it, Libertty) reports it: kind → `PrivacyAccess.Status`.
+    enum PermissionsStatus: Equatable { case unknown, tooOld, unanswered, report([String: String]) }
+    @Published private(set) var permissions = PermissionsStatus.unknown
+
     enum AgentStatus: Equatable { case unknown, installed, notInstalled, busy }
     @Published private(set) var agents = AgentStatus.unknown
     /// What `+agent-setup` said last.
     @Published private(set) var agentReport = ""
+    /// What `+import-ghostty` said last (the welcome guide's).
+    @Published private(set) var ghosttyReport = ""
 
     struct ThemeChoice: Identifiable {
         var name: String
@@ -241,6 +248,23 @@ final class SettingsModel: ObservableObject {
             let sessions = DaemonClient.sessions()
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self?.daemon = sessions.map { .running(sessions: $0.count) } ?? .stopped }
+            }
+        }
+    }
+
+    /// Ask again (Settings opened, or you came back from System Settings).
+    /// Programs run under liberttyd ask macOS as liberttyd; without it, as Libertty.
+    func refreshPermissions() {
+        guard Persistence.enabled else { permissions = .report(PrivacyAccess.report()); return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let status: PermissionsStatus
+            switch DaemonClient.request(.permissions, needing: "permissions", timeout: 3) {
+            case .answered(let frame): status = (frame.json["access"] as? [String: String]).map { .report($0) } ?? .unanswered
+            case .unsupported: status = .tooOld
+            case .unanswered: status = .unanswered
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { if self?.permissions != status { self?.permissions = status } }
             }
         }
     }
@@ -573,6 +597,31 @@ final class SettingsModel: ObservableObject {
     }
 
     /// The `libertty` command line (this very executable), its output back on the main thread.
+    /// Ghostty's settings into the config (`+import-ghostty`): what it would
+    /// add, asked first, then added.
+    func importGhostty(in window: NSWindow?) {
+        Self.runCLI(["+import-ghostty", "--dry-run"]) { [weak self] status, plan in
+            guard let self else { return }
+            guard status == 0, plan.contains("--dry-run: nothing written") else {
+                self.ghosttyReport = plan.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").last ?? ""
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = "Bring over your Ghostty settings?"
+            alert.informativeText = plan.replacingOccurrences(of: "(--dry-run: nothing written)", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            alert.addButton(withTitle: "Import")
+            alert.addButton(withTitle: "Cancel")
+            let go = { (response: NSApplication.ModalResponse) in
+                guard response == .alertFirstButtonReturn else { return }
+                Self.runCLI(["+import-ghostty", "--yes"]) { _, output in
+                    self.ghosttyReport = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").last ?? ""
+                }
+            }
+            if let window { alert.beginSheetModal(for: window) { r in MainActor.assumeIsolated { go(r) } } } else { go(alert.runModal()) }
+        }
+    }
+
     private static func runCLI(_ args: [String], then: @escaping @MainActor (Int32, String) -> Void) {
         guard let exe = Bundle.main.executableURL else { return }
         DispatchQueue.global(qos: .userInitiated).async {

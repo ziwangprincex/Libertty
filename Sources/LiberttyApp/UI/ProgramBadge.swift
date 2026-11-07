@@ -267,8 +267,14 @@ final class TileStack: NSView {
         for (i, tile) in shown.enumerated() {
             // Front to back: the last one is the focused pane's.
             let color = Self.colored ? tile.tint.color : nil
+            let rect = NSRect(x: CGFloat(i) * Self.step, y: 0, width: Self.size, height: Self.size)
+            // A coding agent: its own logo, a gap clear of the one in front.
+            if let agent = tile.agent, let logo = AgentLogo.image(agent) {
+                let front = i + 1 < shown.count ? rect.offsetBy(dx: Self.step, dy: 0) : nil
+                AgentLogo.draw(logo, agent: agent, in: rect, under: front, color: color ?? .secondaryLabelColor)
+                continue
+            }
             if let symbol = tile.symbol {
-                let rect = NSRect(x: CGFloat(i) * Self.step, y: 0, width: Self.size, height: Self.size)
                 Self.drawSymbol(symbol, in: rect, size: 11, color: color)
             } else {
                 Self.drawLetter(tile.name, at: CGFloat(i) * Self.step, color: color)
@@ -301,6 +307,62 @@ final class TileStack: NSView {
         ])
         let box = letter.size()
         letter.draw(at: NSPoint(x: x + 2, y: (Self.size - box.height) / 2))
+    }
+}
+
+/// Coding agents' own logos, as their makers publish them (Resources/logos,
+/// by agent; where each came from is in THIRD-PARTY-NOTICES.txt): on the
+/// tabs in place of a glyph, drawn as they are. Each is its maker's
+/// trademark, shown only to say which program runs in the pane.
+enum AgentLogo {
+    /// One-color marks: drawn in the label's color, as a glyph is.
+    private static let monochrome: Set<String> = ["copilot", "cline"]
+    /// Made for a dark background (its white would vanish on a light
+    /// sidebar): drawn on that dark.
+    private static let onDark: [String: NSColor] = ["omp": NSColor(srgbRed: 0x0d / 255, green: 0x0d / 255, blue: 0x0d / 255, alpha: 1)]
+    /// A square picture (an avatar): its corners rounded, as an app icon's.
+    private static let squarePicture: Set<String> = ["codex"]
+    nonisolated(unsafe) private static var cache: [String: NSImage] = [:]
+    nonisolated(unsafe) private static var missing: Set<String> = []
+
+    static func image(_ agent: String) -> NSImage? {
+        if let image = cache[agent] { return image }
+        guard !missing.contains(agent) else { return nil }
+        let url = ["svg", "png"].lazy.compactMap { AppResources.url("logos/\(agent).\($0)") }.first
+        guard let url, let image = NSImage(contentsOf: url) else {
+            missing.insert(agent)
+            return nil
+        }
+        cache[agent] = image
+        return image
+    }
+
+    /// `image` fitted into `rect`; `under`: the logo in front of it, which
+    /// it stays a gap clear of, so each reads as its own.
+    static func draw(_ image: NSImage, agent: String, in rect: NSRect, under front: NSRect?, color: NSColor) {
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let radius = (rect.width * 0.22).rounded()
+        if let front {
+            let gap: CGFloat = 1.5
+            let clip = NSBezierPath(rect: rect.insetBy(dx: -2, dy: -2))
+            clip.append(NSBezierPath(roundedRect: front.insetBy(dx: -gap, dy: -gap), xRadius: radius + gap, yRadius: radius + gap))
+            clip.windingRule = .evenOdd
+            clip.addClip()
+        }
+        var box = rect
+        if let plate = onDark[agent] {
+            plate.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            box = rect.insetBy(dx: rect.width * 0.12, dy: rect.width * 0.12)
+        }
+        if squarePicture.contains(agent) { NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).addClip() }
+        // Its own proportions, centered.
+        let size = image.size
+        let scale = min(box.width / max(size.width, 1), box.height / max(size.height, 1))
+        let fitted = NSRect(x: box.midX - size.width * scale / 2, y: box.midY - size.height * scale / 2,
+                            width: size.width * scale, height: size.height * scale)
+        (monochrome.contains(agent) ? image.tinting(color) : image).draw(in: fitted)
     }
 }
 

@@ -41,8 +41,12 @@ extension TerminalWindowController {
             documents(in: everyTab).forEach { $0.applyEditorSettings() }
         }
         applyWindowStyle()
-        // Pane headers and dimmed documents are in the theme's colors.
-        if themeChanged { updateDimming() }
+        // Pane headers and dimmed documents are in the theme's colors; the
+        // focused pane's border (or line) follows its settings.
+        let borderChanged = config.activeBorder != old.activeBorder || config.activeBorderColor != old.activeBorderColor
+            || config.activeBorderOpacity != old.activeBorderOpacity || config.activeBorderAnimation != old.activeBorderAnimation
+        if themeChanged || borderChanged || looksChanged { updateDimming() }
+        if borderChanged { everyTab.forEach { $0.container?.updateHeaders() } }
         if looksChanged { refreshLooks() }
         // The sidebar and inspector follow their settings when those change.
         if config.windowSidebar != old.windowSidebar {

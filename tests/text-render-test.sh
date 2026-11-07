@@ -73,4 +73,13 @@ selected() {  # SELECTION_FOREGROUND → the first cell's pixels, everything sel
 }
 [[ $(selected '#00ff00') == *'#00ff00'* ]] && ok "selection-foreground: selected text in its color" || bad "selection-foreground: no #00ff00 in the selection"
 [[ $(selected '') != *'#00ff00'* ]] && ok "selection-foreground unset: selected text keeps its color" || bad "selection-foreground unset: changed"
+# font-thicken: a row across thin strokes ("llll") has more ink drawn heavier.
+inked() {  # THICKEN → how many of the row's points are bright
+  local row=""; for x in {20..60}; do row="$row;$x,30"; done
+  $L --snapshot $OUT/thicken-$1.png --cols 6 --rows 2 --font-size 13 --set window-padding-x=10 --set window-padding-y=6 \
+    --set font-thicken=$1 --pixels ${row#;} -- "printf '\033[?25lllll'; sleep 0.2" \
+    | awk '/^pixel/ { print $3 }' | python3 -I -c "import sys; print(sum(1 for l in sys.stdin if int(l.strip()[1:3], 16) > 100))"
+}
+thin=$(inked false) thick=$(inked true)
+(( thick > thin )) && ok "font-thicken: heavier strokes ($thin → $thick bright points)" || bad "font-thicken: $thin → $thick"
 (( fails == 0 )) && echo "text-render: all passed"
