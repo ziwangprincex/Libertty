@@ -29,18 +29,21 @@ Libertty 会自己更新。它的 shell 里可以直接用 `libertty` 命令，H
 **终端。** Metal 渲染；制表符、Powerline 和盲文字符按网格绘制；支持 kitty 图像协议和连字。
 `TERM=xterm-ghostty`，自带 terminfo（`ssh` 时改发 `xterm-256color`）。zsh、bash、fish 的 shell
 集成。支持 OSC 8 链接、OSC 9/777 通知、OSC 9;4 进度、OSC 52 剪贴板（默认禁止读取）、OSC 7501
-程序状态。⌘-点击打开网址和 `文件:行:列`。
+程序状态。⌘-点击打开网址和 `文件:行:列`。支持 fallback 字体（`font-family` 可写多行，同 Ghostty）、
+`font-thicken` 加粗，以及可选的光标拖尾（`cursor-trail`）。
 
 **窗口。** 布局参照 Rex：标签放在左侧栏、右侧栏或顶部（`tab-bar`）；每个 pane 是一张卡片，带标题栏
 （分屏、浮动、放大、关闭）；`pane-style = compact` 让 pane 铺满；`interface-style = glass` 让窗口
 半透明。另有分屏、工作区、收起和浮动 pane、在窗口之间移动 pane 和标签、命令面板（⌘⇧P）、Quick
-Terminal，关闭 pane、标签或窗口后可以撤销。
+Terminal，关闭 pane、标签或窗口后可以撤销。触控板上双指张开放大 pane、捏合恢复；按住 Option 横向轻扫
+显示或隐藏侧边栏。`active-border` 给当前 pane 画一圈边框。
 
 **程序状态。** 标签上显示程序是在运行、在等你、已完成还是失败了（来自 OSC 7501，或者检测到在等密码）。
-每种状态可以分别设置是否显示在标签上、是否通知、是否计入 Dock 角标、是否播放声音。
+每种状态可以分别设置是否显示在标签上、是否通知、是否计入 Dock 角标、是否播放声音。动态弹窗可以按状态列出所有 pane。
 
 **会话。** 退出、崩溃或更新时，程序在 liberttyd 里继续运行；下次启动恢复窗口、分屏、屏幕内容和回滚
-历史。新版 liberttyd 会接管旧版的会话，不会中断。
+历史。新版 liberttyd 会接管旧版的会话，不会中断。设了 `auto-update-restart = idle` 时，下载好的更新会在你
+不用的时候自动安装。设置 ▸ liberttyd ▸ 系统权限显示 macOS 允许你的程序访问什么（完全磁盘访问、录屏、摄像头、麦克风）。
 
 **远程主机。** 文件 ▸ Connect to Host…（`libertty +connect HOST`）让一个窗口的 pane 通过你的 `ssh`
 运行在另一台机器上。主机上会装一份自己的 liberttyd（在 `~/.libertty`，不需要 root），断线后程序继续
@@ -68,7 +71,12 @@ Terminal，关闭 pane、标签或窗口后可以撤销。
 其他 agent 的状态从屏幕上判断。⌘J 跳到需要你处理的 pane；Git 块的 Last Turn 只显示 agent 上一轮改了什么，
 可以逐块撤回或标为看过；文件 ▸ 在工作树中新建标签…（⌥⌘T）给 agent 一个独立的分支和文件夹。侧栏和 pane
 标题栏显示分支和改动。截图粘贴进 pane 时粘贴的是图片文件的路径。`keep-awake = agents` 让 Mac 在 agent
-工作时不睡眠。`--remove` 可以撤掉 hook。
+工作时不睡眠。`--remove` 可以撤掉 hook。标签上显示各 agent 的官方 logo；关闭有 agent 在工作或在等你的
+pane 时，会直接说出是哪个 agent。
+
+**上手。** 第一次启动时有一份简短的引导（帮助 ▸ 开始使用 Libertty）：外观、权限、agent 设置、导入 Ghostty
+设置、几个常用快捷键。`libertty +migrate-prompt`（或帮助 ▸ 用 Agent 迁移快捷键…）生成一段 prompt，让 agent
+把你在 Ghostty、iTerm2 或 tmux 里的快捷键搬过来。
 
 **语言。** 英文，或在 macOS 使用简体中文时显示简体中文（`language = auto | en | zh-Hans`）。
 
@@ -104,6 +112,7 @@ libertty +events --for waiting --once      # 等到有程序在等你
 libertty +new-session --worktree fix-login -e claude
 libertty +history ; libertty +resume ID   # agent 以前的对话
 libertty +diff --turn                      # agent 上一轮改了什么
+libertty +migrate-prompt --from tmux       # 生成让 agent 迁移快捷键的 prompt
 ```
 
 会话相关的命令都支持 `--host HOST`。`$LIBERTTY_SESSION` 是当前 pane 的会话 ID。
@@ -154,4 +163,4 @@ open build/Libertty.app
 ## 第三方组件
 
 libghostty-vt（MIT）、带 Nerd Fonts 图标的 JetBrains Mono（OFL-1.1）、Geist（OFL-1.1）、CodeMirror 6
-（MIT）、Excalidraw 和 React（MIT）、speedscope（MIT）。完整声明见 `Resources/THIRD-PARTY-NOTICES.txt`。
+（MIT）、Excalidraw 和 React（MIT）、speedscope（MIT）。完整声明见 `Resources/THIRD-PARTY-NOTICES.txt`。标签上各编程 agent 的 logo（`Resources/logos`）是各自厂商的商标，只用来标明面板里运行的是哪个程序；每个 logo 的来源也列在该文件里。

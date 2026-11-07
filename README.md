@@ -35,21 +35,26 @@ Access) as "Libertty Sessions". For Full Disk Access, add
 kitty graphics; ligatures. `TERM=xterm-ghostty` with its terminfo (`ssh` sends
 `xterm-256color`). Shell integration for zsh, bash and fish. OSC 8 links, OSC 9/777
 notifications, OSC 9;4 progress, OSC 52 clipboard (reading off by default), OSC 7501
-program status. ⌘-click opens URLs and `file:line:col`.
+program status. ⌘-click opens URLs and `file:line:col`. Fallback fonts (`font-family`
+repeats, as in Ghostty), `font-thicken`, and an optional cursor trail (`cursor-trail`).
 
 **Window.** Laid out after Rex: tabs in a sidebar on the left or right, or along the top
 (`tab-bar`); panes as cards, each with a header (split, float, zoom, close);
 `pane-style = compact` for edge-to-edge panes; `interface-style = glass` for a translucent
 window. Splits, workspaces, parked and floating panes, moving panes and tabs between
 windows, command palette (⌘⇧P), Quick Terminal, undo for closing a pane, tab or window.
+On a trackpad, spread two fingers to zoom a pane and pinch to restore it; Option-swipe
+sideways shows or hides the sidebar. `active-border` draws a border round the focused pane.
 
 **Program status.** Tabs show whether a program is working, waiting for you, done or
 failed (OSC 7501, or a password prompt). Each state can show on tabs, notify, count in the
-Dock badge or play a sound.
+Dock badge or play a sound. The Activity popup lists every pane by state.
 
 **Sessions.** Quitting, a crash or an update leaves programs running in liberttyd; the
 next launch restores windows, splits, screens and scrollback. A newer liberttyd takes over
-without ending sessions.
+without ending sessions. With `auto-update-restart = idle`, a downloaded update installs
+itself while you're away. Settings ▸ liberttyd ▸ System Permissions shows what macOS lets
+your programs reach (Full Disk Access, screen recording, camera, microphone).
 
 **Remote hosts.** File ▸ Connect to Host… (`libertty +connect HOST`) runs a window's panes
 on another machine over your `ssh`. The host gets its own liberttyd in `~/.libertty` (no
@@ -81,7 +86,13 @@ that needs you; the Git block's Last Turn shows what an agent changed in its lat
 revert or keep hunk by hunk; File ▸ New Tab in Worktree… (⌥⌘T) gives an agent a branch and a
 folder of its own. Sidebar rows and pane headers show each pane's branch and changes. A
 screenshot pasted into a pane pastes as its file's path. `keep-awake = agents` keeps the Mac
-awake while they work. `--remove` takes the hooks out.
+awake while they work. `--remove` takes the hooks out. Tabs show each agent's own logo,
+and closing a pane where one is working or waiting says so by name.
+
+**Getting started.** A short guide on first launch (Help ▸ Get Started with Libertty):
+the look, permissions, agent setup, Ghostty's settings, a few keys. `libertty +migrate-prompt`
+(or Help ▸ Migrate Keybindings with an Agent…) gives an agent a prompt to bring over your
+Ghostty, iTerm2 or tmux keybindings.
 
 **Language.** English, or Simplified Chinese when macOS uses it (`language = auto | en | zh-Hans`).
 
@@ -117,6 +128,7 @@ libertty +events --for waiting --once      # until a program waits for you
 libertty +new-session --worktree fix-login -e claude
 libertty +history ; libertty +resume ID   # agents' past conversations
 libertty +diff --turn                      # what an agent changed in its last turn
+libertty +migrate-prompt --from tmux       # a prompt that has an agent move your keybindings over
 ```
 
 Session commands take `--host HOST`. `$LIBERTTY_SESSION` is the current pane's session.
@@ -170,4 +182,5 @@ and the Homebrew tap. The steps are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md
 
 libghostty-vt (MIT), JetBrains Mono with Nerd Fonts symbols (OFL-1.1), Geist (OFL-1.1),
 CodeMirror 6 (MIT), Excalidraw and React (MIT), speedscope (MIT). Notices:
-`Resources/THIRD-PARTY-NOTICES.txt`.
+`Resources/THIRD-PARTY-NOTICES.txt`. The coding agents' logos on the tabs (`Resources/logos`) are their
+makers' trademarks, shown only to say which program runs in a pane; where each came from is listed there too.

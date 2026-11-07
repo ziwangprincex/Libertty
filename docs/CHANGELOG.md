@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0
+
+> After Rex Beta's latest builds: a close that names the agent it would interrupt, pinch and swipe, a border round the active pane, updates that install themselves while you're away, System Permissions, a welcome guide, agents' own logos on the tabs, fallback fonts and thicker text, Activity by state, a cursor trail, and a prompt that has an agent migrate your keybindings.
+
+- **A close says what it would interrupt** (after Rex's "Did you mean to close"): closing a pane, tab or window where a coding agent works or waits on you names it — "Claude Code is still working.", "Codex is waiting for your answer." (two by name, then how many more) — instead of only "a program is running".
+- **Trackpad gestures** (`trackpad-gestures`, on; Settings ▸ Interface ▸ Gestures): spread two fingers over a pane of a split to zoom it, pinch to restore it; swipe sideways to show or hide the sidebar (`sidebar-swipe = option | swipe | off`, with Option held by default, so scrolling sideways in a program is left alone).
+- **A border round the active pane** (`active-border`, off; Settings ▸ Interface ▸ Active Pane): a line round the focused pane of a split, header and all, in place of the line along its top; `active-border-color` (accent, text, or a color), `active-border-opacity`, and `active-border-animation = move | fade | off` (glides to the newly focused pane, crossfades, or switches). It draws at half strength while the window isn't in front, and switches at once with Reduce Motion.
+- **Updates that install while you're away** (`auto-update-restart = ask | idle`; Settings ▸ Advanced ▸ Updates): with `auto-update = download`, `idle` restarts into a downloaded update once Libertty isn't in front, no program runs in a pane, nothing is unsaved and no question is up. Sessions keep running in liberttyd; Libertty comes back in the background.
+- **System Permissions** (Settings ▸ liberttyd): what macOS lets the programs in your terminals get at — Full Disk Access, Screen & System Audio Recording, Camera, Microphone, Local Network. They run under liberttyd, so liberttyd reports its own status (a new `permissions` request); each has a button to its list in System Settings, and liberttyd's icon drags into that list. Without session persistence it's Libertty's own.
+- **Get Started with Libertty** (Help ▸, and once on a Mac that has never run Libertty): the look (color scheme, interface style, tab style, the active border), the permissions, setting up coding agents, importing Ghostty's settings, and a few keys worth knowing from your keymap.
+- **Migrate your keybindings with an agent** (Help ▸ Migrate Keybindings with an Agent…, the welcome guide, `libertty +migrate-prompt [--from ghostty|iterm2|tmux]`): a prompt to paste into Claude Code, Codex or another agent in Libertty; it reads your Ghostty, iTerm2 and tmux bindings, finds Libertty's actions, and appends `keybind` lines to the config in place after keeping a copy, then checks it with `+validate-config`. Themes, fonts and other settings aren't touched.
+- **Fallback fonts**: `font-family` is repeatable, as in Ghostty — the first is the terminal's font, the rest are tried in order for characters it lacks, before the bundled Nerd Font. Settings and `+set font-family` change only the first; Ghostty's import keeps your own list.
+- **Thicker text** (`font-thicken`, `font-thicken-strength` 0–255, as in Ghostty; Settings ▸ Terminal): a heavier stroke, for thin fonts on a low-resolution screen.
+- **Activity by state**: the activity popup's By State lists every pane whose program says how it's doing under Waiting for You, Failed, Working and Done, each with its agent's name and what it last said; a click goes to the pane. Recent is the notifications, as before; the choice is remembered.
+- **Agents' own logos on the tabs**: Claude Code, Codex, Gemini, OpenCode, Amp, Cursor, Droid, Qwen Code, Copilot, Kiro, Cline, Kimi, Pi and OMP show their makers' logos, as published, in place of a glyph (Rex's tab icons); a stack of them keeps a gap between each. Other programs keep their glyphs. Where each logo came from is in `THIRD-PARTY-NOTICES.txt`; each is its owner's trademark.
+- **Cursor trail** (`cursor-trail`, off; Settings ▸ Terminal ▸ Cursor): a short trail fades behind the cursor as it moves, so a jump is easy to follow. Off with Reduce Motion.
+- Inside: liberttyd has a new request, so its build changes; a liberttyd from before reports no permissions (Settings says so) until it's replaced.
+
 ## 0.5.1
 
 > A program's title no longer stays on its tab after it quits: the tab is its shell and folder again.
