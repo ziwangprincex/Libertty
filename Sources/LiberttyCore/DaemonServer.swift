@@ -128,12 +128,26 @@ public final class DaemonServer {
 
     // MARK: Serving
 
+    /// The socket file it made (device, inode): what it removes as it goes.
+    private var bound: (dev_t, ino_t)?
+
+    /// Its socket file, gone with it — only if the path is still its own: one
+    /// removed under it (its folder cleaned, a test starting over) may hold
+    /// another liberttyd's by now, which must stay reachable.
+    private func removeOwnSocket() {
+        var st = stat()
+        guard let bound, stat(path, &st) == 0, st.st_dev == bound.0, st.st_ino == bound.1 else { return }
+        unlink(path)
+    }
+
     private func serve() -> Never {
         listener = libertty_sock_listen(path)
         guard listener >= 0 else {
             Self.log("can't listen on \(path): \(String(cString: strerror(errno)))")
             exit(1)
         }
+        var st = stat()
+        if stat(path, &st) == 0 { bound = (st.st_dev, st.st_ino) }
         Self.log("listening on \(path) (build \(build), \(sessions.count) sessions)")
         scheduleExitIfIdle()
         keepFilesFresh()
@@ -195,7 +209,7 @@ public final class DaemonServer {
             lock.unlock()
             guard idle else { return }
             Self.log("idle, exiting")
-            unlink(path)
+            removeOwnSocket()
             exit(0)
         }
         exitTimer = timer
@@ -396,7 +410,7 @@ public final class DaemonServer {
                 all.forEach { $0.terminate() }
                 connection.send(.result, json: ["ok": true])
                 Self.log("shutdown requested; ended \(all.count) sessions")
-                unlink(path)
+                removeOwnSocket()
                 exit(0)
             default:
                 fail("unexpected \(frame.kind)")

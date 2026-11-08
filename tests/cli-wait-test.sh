@@ -31,6 +31,9 @@ s=$(now); $L +wait $ID --until prompt --timeout 10; r=$?; d=$(took $s)
 $L +send $ID 'for i in 1 2 3; do echo tick; sleep 0.3; done\n'
 s=$(now); $L +wait $ID --until idle=600 --timeout 10; r=$?; d=$(took $s)
 (( r == 0 && d >= 1.2 )) && ok "quiet for 600 ms (${d}s)" || bad "idle: exit $r in ${d}s"
+# Quiet isn't at the prompt: a busy machine draws it after (CI saw the
+# prompt come late, and the next line's wait took it for the one after).
+$L +wait $ID --until prompt --timeout 10
 
 $L +send $ID 'sleep 4\n'
 s=$(now); $L +wait $ID --until prompt --timeout 1; r=$?; d=$(took $s)
