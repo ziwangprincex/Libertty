@@ -112,29 +112,26 @@ public struct KeySpec: Equatable {
         if mods == GhosttyMods(GHOSTTY_MODS_SHIFT), flags & 0b1000 == 0, let text, !text.isEmpty {
             return Array(text.utf8)
         }
-        ghostty_key_encoder_setopt_from_terminal(encoder, terminal)
+        _ = ghostty_key_encoder_set_from_terminal(encoder, terminal)
         // Alt is Alt here: option-as-alt (there's no keyboard layout to compose with).
         var alt = GHOSTTY_OPTION_AS_ALT_TRUE
-        ghostty_key_encoder_setopt(encoder, GHOSTTY_KEY_ENCODER_OPT_MACOS_OPTION_AS_ALT, &alt)
+        _ = ghostty_key_encoder_set(encoder, GHOSTTY_KEY_ENCODER_OPT_MACOS_OPTION_AS_ALT, &alt)
         ghostty_key_event_set_action(event, GHOSTTY_KEY_ACTION_PRESS)
         ghostty_key_event_set_key(event, key)
         ghostty_key_event_set_mods(event, mods)
         ghostty_key_event_set_consumed_mods(event, 0)
         ghostty_key_event_set_composing(event, false)
         ghostty_key_event_set_unshifted_codepoint(event, unshiftedCodepoint)
-        var out = [CChar](repeating: 0, count: 128)
+        var out = [UInt8](repeating: 0, count: 128)
         var len = 0
-        let ok: Bool
-        if let text, !text.isEmpty {
-            ok = text.withCString { ptr in
-                ghostty_key_event_set_utf8(event, ptr, text.utf8.count)
-                return ghostty_key_encoder_encode(encoder, event, &out, out.count, &len) == GHOSTTY_SUCCESS
-            }
-        } else {
-            ghostty_key_event_set_utf8(event, nil, 0)
-            ok = ghostty_key_encoder_encode(encoder, event, &out, out.count, &len) == GHOSTTY_SUCCESS
+        // The event doesn't copy its text: encode while it's still there.
+        var utf8 = Array((text ?? "").utf8)
+        let ok = utf8.withUnsafeMutableBufferPointer { bytes in
+            _ = ghostty_key_event_set_utf8(event, GhosttyString(ptr: bytes.baseAddress, len: bytes.count))
+            defer { _ = ghostty_key_event_set_utf8(event, GhosttyString()) }
+            return ghostty_key_encoder_encode(encoder, event, &out, out.count, &len) == GHOSTTY_SUCCESS
         }
         guard ok, len > 0 else { return [] }
-        return out[..<len].map { UInt8(bitPattern: $0) }
+        return Array(out[..<len])
     }
 }

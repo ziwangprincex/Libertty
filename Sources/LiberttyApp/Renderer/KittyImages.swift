@@ -87,9 +87,9 @@ enum KittyImages {
                 _ = ghostty_kitty_graphics_placement_get(iterator, GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_PLACEMENT_ID, &placementID)
                 _ = ghostty_kitty_graphics_placement_get(iterator, GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_COLUMNS, &columns)
                 _ = ghostty_kitty_graphics_placement_get(iterator, GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_ROWS, &rows)
-                _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_WIDTH, &width)
-                _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_HEIGHT, &height)
-                _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_GENERATION, &generation)
+                _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_WIDTH, &width)
+                _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_HEIGHT, &height)
+                _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_GENERATION, &generation)
                 virtuals.append(.init(imageID: imageID, placementID: placementID, columns: columns, rows: rows, z: z,
                                       width: width, height: height, generation: generation))
                 if pixels[imageID] == nil, width > 0, height > 0, needs(imageID, generation),
@@ -103,9 +103,9 @@ enum KittyImages {
             guard ghostty_kitty_graphics_placement_render_info(iterator, image, terminal, &info) == GHOSTTY_SUCCESS,
                   info.viewport_visible, info.pixel_width > 0, info.pixel_height > 0 else { continue }
             var width: UInt32 = 0, height: UInt32 = 0, generation: UInt64 = 0
-            _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_WIDTH, &width)
-            _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_HEIGHT, &height)
-            _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_GENERATION, &generation)
+            _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_WIDTH, &width)
+            _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_HEIGHT, &height)
+            _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_GENERATION, &generation)
             guard width > 0, height > 0 else { continue }
 
             let x = Float(info.viewport_col) * cellW + Float(xOffset)

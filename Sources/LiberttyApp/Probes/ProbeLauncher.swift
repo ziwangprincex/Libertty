@@ -108,7 +108,9 @@ enum ProbeLauncher {
         if let i = args.firstIndex(of: "--scrollback-bytes"), i + 1 < args.count, var bytes = Int(args[i + 1]) {
             _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, &bytes)
         } else {
-            _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, nil)
+            // No byte cap: SIZE_MAX (since libghostty-vt 1.0, NULL is its 10 000-byte default).
+            var unlimited = UInt.max
+            _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, &unlimited)
         }
 
         // Same chunking as the pty reader: 64 KiB writes.

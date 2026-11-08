@@ -45,7 +45,7 @@ enum KittyPlaceholders {
 
     /// A color as a protocol ID: a palette index, or the RGB as 24 bits.
     private static func id(_ color: GhosttyStyleColor) -> UInt32 {
-        switch color.tag {
+        switch color.kind {
         case GHOSTTY_STYLE_COLOR_PALETTE: UInt32(color.value.palette)
         case GHOSTTY_STYLE_COLOR_RGB: UInt32(color.value.rgb.r) << 16 | UInt32(color.value.rgb.g) << 8 | UInt32(color.value.rgb.b)
         default: 0

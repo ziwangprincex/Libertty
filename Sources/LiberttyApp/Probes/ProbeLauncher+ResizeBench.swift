@@ -13,7 +13,9 @@ extension ProbeLauncher {
         guard ghostty_terminal_new(nil, &terminal, 120, 40) == GHOSTTY_SUCCESS, let terminal else { exit(1) }
         var lines = 10_000
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_LINES, &lines)
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, nil)
+        // No byte cap: SIZE_MAX (since libghostty-vt 1.0, NULL is its 10 000-byte default).
+        var unlimited = UInt.max
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, &unlimited)
         // Fill the scrollback with wrapped, styled lines like real output.
         var text = ""
         for i in 0..<12_000 {

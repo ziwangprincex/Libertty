@@ -557,7 +557,7 @@ final class TerminalSession {
         // gets what it asked for.
         var plain: String?
         var flags: UInt8 = 0
-        var out = [CChar](repeating: 0, count: 128)
+        var out = [UInt8](repeating: 0, count: 128)
         var len = 0
         let ok: Bool = lock.withLock {
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_KITTY_KEYBOARD_FLAGS, &flags)
@@ -568,9 +568,9 @@ final class TerminalSession {
                 plain = text
                 return true
             }
-            ghostty_key_encoder_setopt_from_terminal(keyEncoder, terminal)
+            _ = ghostty_key_encoder_set_from_terminal(keyEncoder, terminal)
             // Reset by the call above: it can't be read from terminal state.
-            ghostty_key_encoder_setopt(keyEncoder, GHOSTTY_KEY_ENCODER_OPT_MACOS_OPTION_AS_ALT, &optionAsAlt)
+            _ = ghostty_key_encoder_set(keyEncoder, GHOSTTY_KEY_ENCODER_OPT_MACOS_OPTION_AS_ALT, &optionAsAlt)
             ghostty_key_event_set_action(keyEvent, key.action)
             ghostty_key_event_set_key(keyEvent, key.key)
             ghostty_key_event_set_mods(keyEvent, key.mods)
@@ -580,14 +580,13 @@ final class TerminalSession {
             let encode = { () -> Bool in
                 ghostty_key_encoder_encode(self.keyEncoder, self.keyEvent, &out, out.count, &len) == GHOSTTY_SUCCESS
             }
-            if let text = key.text, !text.isEmpty {
-                return text.withCString { ptr in
-                    ghostty_key_event_set_utf8(keyEvent, ptr, strlen(ptr))
-                    return encode()
-                }
+            // The event doesn't copy its text: encode while it's still there.
+            var utf8 = Array((key.text ?? "").utf8)
+            return utf8.withUnsafeMutableBufferPointer { bytes in
+                _ = ghostty_key_event_set_utf8(keyEvent, GhosttyString(ptr: bytes.baseAddress, len: bytes.count))
+                defer { _ = ghostty_key_event_set_utf8(keyEvent, GhosttyString()) }
+                return encode()
             }
-            ghostty_key_event_set_utf8(keyEvent, nil, 0)
-            return encode()
         }
         if let text = plain {
             scrollToBottom()
@@ -643,7 +642,7 @@ final class TerminalSession {
     func scroll(rows delta: Int) {
         guard delta != 0 else { return }
         var behavior = GhosttyTerminalScrollViewport()
-        behavior.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA
+        behavior.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_DELTA
         behavior.value.delta = delta
         lock.withLock { ghostty_terminal_scroll_viewport(terminal, behavior) }
         markRenderPending()
@@ -651,14 +650,14 @@ final class TerminalSession {
 
     func scrollToBottom() {
         var behavior = GhosttyTerminalScrollViewport()
-        behavior.tag = GHOSTTY_SCROLL_VIEWPORT_BOTTOM
+        behavior.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_BOTTOM
         lock.withLock { ghostty_terminal_scroll_viewport(terminal, behavior) }
         markRenderPending()
     }
 
     func scrollToTop() {
         var behavior = GhosttyTerminalScrollViewport()
-        behavior.tag = GHOSTTY_SCROLL_VIEWPORT_TOP
+        behavior.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_TOP
         lock.withLock { ghostty_terminal_scroll_viewport(terminal, behavior) }
         markRenderPending()
     }
@@ -670,7 +669,7 @@ final class TerminalSession {
     /// top; needs the shell's OSC 133 marks.
     func jumpToPrompt(_ delta: Int) {
         var behavior = GhosttyTerminalScrollViewport()
-        behavior.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA_PROMPT
+        behavior.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_DELTA_PROMPT
         behavior.value.delta_prompt = delta
         lock.withLock { ghostty_terminal_scroll_viewport(terminal, behavior) }
         markRenderPending()
@@ -752,14 +751,14 @@ final class TerminalSession {
         var out = [CChar](repeating: 0, count: 64)
         var len = 0
         let ok: Bool = lock.withLock {
-            ghostty_mouse_encoder_setopt_from_terminal(mouseEncoder, terminal)
+            _ = ghostty_mouse_encoder_set_from_terminal(mouseEncoder, terminal)
             var surface = input.surface
             surface.size = MemoryLayout<GhosttyMouseEncoderSize>.size
-            ghostty_mouse_encoder_setopt(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &surface)
+            _ = ghostty_mouse_encoder_set(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &surface)
             var pressed = input.anyButtonPressed
-            ghostty_mouse_encoder_setopt(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED, &pressed)
+            _ = ghostty_mouse_encoder_set(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED, &pressed)
             var trackLastCell = true  // motion reports only when the cell changes
-            ghostty_mouse_encoder_setopt(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, &trackLastCell)
+            _ = ghostty_mouse_encoder_set(mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, &trackLastCell)
 
             ghostty_mouse_event_set_action(mouseEvent, input.action)
             if let button = input.button {
@@ -831,7 +830,6 @@ final class TerminalSession {
             }
 
             var selection = GhosttySelection()
-            selection.size = MemoryLayout<GhosttySelection>.size
             let result = ghostty_selection_gesture_event(gesture, terminal, event, &selection)
             if result == GHOSTTY_SUCCESS {
                 _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SELECTION, &selection)
@@ -866,7 +864,6 @@ final class TerminalSession {
             var block = rectangle
             _ = ghostty_selection_gesture_event_set(gestureTick, GHOSTTY_SELECTION_GESTURE_EVENT_OPT_RECTANGLE, &block)
             var selection = GhosttySelection()
-            selection.size = MemoryLayout<GhosttySelection>.size
             if ghostty_selection_gesture_event(gesture, terminal, gestureTick, &selection) == GHOSTTY_SUCCESS {
                 _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SELECTION, &selection)
             }
@@ -880,7 +877,6 @@ final class TerminalSession {
         defer { markRenderPending() }
         return lock.withLock {
             var current = GhosttySelection()
-            current.size = MemoryLayout<GhosttySelection>.size
             guard ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_SELECTION, &current) == GHOSTTY_SUCCESS,
                   let click = viewportRef(pointer) else { return false }
             // Screen order: row, then column, as one number.
@@ -894,7 +890,6 @@ final class TerminalSession {
             let (first, last) = a <= b ? (current.start, current.end) : (current.end, current.start)
             let firstAt = min(a, b)
             var extended = GhosttySelection()
-            extended.size = MemoryLayout<GhosttySelection>.size
             extended.rectangle = current.rectangle
             // Clicked before the selection: keep its end, else keep its start.
             if c < firstAt { (extended.start, extended.end) = (click, last) } else { (extended.start, extended.end) = (first, click) }
@@ -910,7 +905,6 @@ final class TerminalSession {
             x: UInt16(clamping: max(0, min(pointer.col, Int(size.cols) - 1))),
             y: UInt32(clamping: max(0, min(pointer.row, Int(size.rows) - 1))))
         var ref = GhosttyGridRef()
-        ref.size = MemoryLayout<GhosttyGridRef>.size
         return ghostty_terminal_grid_ref(terminal, point, &ref) == GHOSTTY_SUCCESS ? ref : nil
     }
 
@@ -924,7 +918,6 @@ final class TerminalSession {
     func selectAll() {
         lock.withLock {
             var selection = GhosttySelection()
-            selection.size = MemoryLayout<GhosttySelection>.size
             if ghostty_terminal_select_all(terminal, &selection) == GHOSTTY_SUCCESS {
                 _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SELECTION, &selection)
             }
@@ -941,19 +934,19 @@ final class TerminalSession {
     /// when nothing is selected.
     func selectedText() -> String? {
         lock.withLock {
-            var options = GhosttyTerminalSelectionFormatOptions()
-            options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
-            options.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN
-            options.unwrap = true
-            options.trim = true
-            options.selection = nil  // the terminal's active selection
-            var ptr: UnsafeMutablePointer<UInt8>?
-            var len = 0
-            guard ghostty_terminal_selection_format_alloc(terminal, nil, options, &ptr, &len) == GHOSTTY_SUCCESS,
-                  let ptr else { return nil }
-            defer { ghostty_free(nil, ptr, len) }
-            return String(decoding: UnsafeBufferPointer(start: ptr, count: len), as: UTF8.self)
+            guard let selection = activeSelectionLocked(),
+                  let text = Snapshots.format(terminal, emit: GHOSTTY_FORMATTER_FORMAT_PLAIN, unwrap: true, trim: true,
+                                              selection: selection) else { return nil }
+            return String(decoding: text, as: UTF8.self)
         }
+    }
+
+    /// The terminal's active selection (libghostty-vt 1.0 dropped
+    /// `ghostty_terminal_selection_format_*`, which read it themselves).
+    /// Call with the lock held.
+    private func activeSelectionLocked() -> GhosttySelection? {
+        var selection = GhosttySelection()
+        return ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_SELECTION, &selection) == GHOSTTY_SUCCESS ? selection : nil
     }
 
     func setFocused(_ focused: Bool) {
@@ -1006,11 +999,11 @@ final class TerminalSession {
         var colors = theme.fullPalette.map { GhosttyColorRgb(r: $0.r, g: $0.g, b: $0.b) }
         var fg = GhosttyColorRgb(theme.foreground), bg = GhosttyColorRgb(theme.background)
         var cursor = GhosttyColorRgb(theme.cursor)
-        var style: GhosttyTerminalCursorStyle = switch config.cursorStyle {
-        case .block: GHOSTTY_TERMINAL_CURSOR_STYLE_BLOCK
-        case .bar: GHOSTTY_TERMINAL_CURSOR_STYLE_BAR
-        case .underline: GHOSTTY_TERMINAL_CURSOR_STYLE_UNDERLINE
-        case .block_hollow: GHOSTTY_TERMINAL_CURSOR_STYLE_BLOCK_HOLLOW
+        var style: GhosttyCursorStyle = switch config.cursorStyle {
+        case .block: GHOSTTY_CURSOR_STYLE_BLOCK
+        case .bar: GHOSTTY_CURSOR_STYLE_BAR
+        case .underline: GHOSTTY_CURSOR_STYLE_UNDERLINE
+        case .block_hollow: GHOSTTY_CURSOR_STYLE_BLOCK_HOLLOW
         }
         lock.withLock {
             set(GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, &fg)
@@ -1593,7 +1586,7 @@ extension TerminalSession {
             }
             _ = ghostty_search_run(search)
             // Start at the newest match, as find bars do from the prompt.
-            _ = ghostty_search_set(search, GHOSTTY_SEARCH_OPT_SELECT_NEXT, nil)
+            _ = ghostty_search_select_next(search)
             refreshSearchLocked()
         }
         markRenderPending()
@@ -1603,7 +1596,7 @@ extension TerminalSession {
     func findNext(older: Bool) {
         lock.withLock {
             guard let search, searchResult.active else { return }
-            _ = ghostty_search_set(search, older ? GHOSTTY_SEARCH_OPT_SELECT_NEXT : GHOSTTY_SEARCH_OPT_SELECT_PREV, nil)
+            _ = older ? ghostty_search_select_next(search) : ghostty_search_select_prev(search)
             refreshSearchLocked()
         }
         markRenderPending()
@@ -1650,7 +1643,6 @@ extension TerminalSession {
 
         var selectedRange: (GhosttyPointCoordinate, GhosttyPointCoordinate)?
         var selected = GhosttySelection()
-        selected.size = MemoryLayout<GhosttySelection>.size
         if ghostty_search_get(search, GHOSTTY_SEARCH_DATA_SELECTED_MATCH, &selected) == GHOSTTY_SUCCESS {
             selectedRange = viewportRange(selected)
         }
@@ -1659,7 +1651,6 @@ extension TerminalSession {
         _ = ghostty_search_get(search, GHOSTTY_SEARCH_DATA_VIEWPORT_MATCHES, &buffer)
         if buffer.len > 0 {
             var matches = [GhosttySelection](repeating: GhosttySelection(), count: buffer.len)
-            for i in matches.indices { matches[i].size = MemoryLayout<GhosttySelection>.size }
             matches.withUnsafeMutableBufferPointer { ptr in
                 buffer = GhosttySelectionBuffer(ptr: ptr.baseAddress, cap: ptr.count, len: 0)
                 _ = ghostty_search_get(search, GHOSTTY_SEARCH_DATA_VIEWPORT_MATCHES, &buffer)
@@ -1767,7 +1758,6 @@ extension TerminalSession {
                 point.tag = GHOSTTY_POINT_TAG_VIEWPORT
                 point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
                 var r = GhosttyGridRef()
-                r.size = MemoryLayout<GhosttyGridRef>.size
                 return ghostty_terminal_grid_ref(terminal, point, &r) == GHOSTTY_SUCCESS ? r : nil
             }
             func wraps(_ y: Int) -> Bool {
@@ -1903,7 +1893,6 @@ extension TerminalSession {
                     point.tag = GHOSTTY_POINT_TAG_VIEWPORT
                     point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
                     var ref = GhosttyGridRef()
-                    ref.size = MemoryLayout<GhosttyGridRef>.size
                     guard ghostty_terminal_grid_ref(terminal, point, &ref) == GHOSTTY_SUCCESS else { continue }
                     var raw: GhosttyCell = 0
                     var wide = GHOSTTY_CELL_WIDE_NARROW
@@ -1947,7 +1936,7 @@ extension TerminalSession {
     /// Put `row` (0 is the oldest line) at the top of the viewport.
     func scroll(toRow row: UInt64) {
         var behavior = GhosttyTerminalScrollViewport()
-        behavior.tag = GHOSTTY_SCROLL_VIEWPORT_ROW
+        behavior.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_ROW
         behavior.value.row = Int(row)
         lock.withLock { ghostty_terminal_scroll_viewport(terminal, behavior) }
         markRenderPending()
@@ -1981,7 +1970,6 @@ extension TerminalSession {
                 point.tag = GHOSTTY_POINT_TAG_SCREEN
                 point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
                 var r = GhosttyGridRef()
-                r.size = MemoryLayout<GhosttyGridRef>.size
                 return ghostty_terminal_grid_ref(terminal, point, &r) == GHOSTTY_SUCCESS ? r : nil
             }
             func state(_ y: Int) -> GhosttyRowSemanticPrompt {
@@ -2007,7 +1995,6 @@ extension TerminalSession {
             let first = y + 1
             guard y >= 0, first <= last, let start = ref(first), let end = ref(last, Int(size.cols) - 1) else { return false }
             var selection = GhosttySelection()
-            selection.size = MemoryLayout<GhosttySelection>.size
             selection.start = start
             selection.end = end
             return ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SELECTION, &selection) == GHOSTTY_SUCCESS
@@ -2017,18 +2004,10 @@ extension TerminalSession {
     /// The selection as HTML (colors and styles), for rich-text pasting.
     func selectedHTML() -> String? {
         lock.withLock {
-            var options = GhosttyTerminalSelectionFormatOptions()
-            options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
-            options.emit = GHOSTTY_FORMATTER_FORMAT_HTML
-            options.unwrap = true
-            options.trim = true
-            options.selection = nil
-            var ptr: UnsafeMutablePointer<UInt8>?
-            var len = 0
-            guard ghostty_terminal_selection_format_alloc(terminal, nil, options, &ptr, &len) == GHOSTTY_SUCCESS,
-                  let ptr, len > 0 else { return nil }
-            defer { ghostty_free(nil, ptr, len) }
-            return String(decoding: UnsafeBufferPointer(start: ptr, count: len), as: UTF8.self)
+            guard let selection = activeSelectionLocked(),
+                  let html = Snapshots.format(terminal, emit: GHOSTTY_FORMATTER_FORMAT_HTML, unwrap: true, trim: true,
+                                              selection: selection) else { return nil }
+            return String(decoding: html, as: UTF8.self)
         }
     }
 
@@ -2075,29 +2054,16 @@ extension TerminalSession {
                 point.tag = GHOSTTY_POINT_TAG_ACTIVE
                 point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
                 var r = GhosttyGridRef()
-                r.size = MemoryLayout<GhosttyGridRef>.size
                 return ghostty_terminal_grid_ref(terminal, point, &r) == GHOSTTY_SUCCESS ? r : nil
             }
             guard let start = ref(0, 0), let end = ref(cols - 1, rows - 1) else { return nil }
             var selection = GhosttySelection()
-            selection.size = MemoryLayout<GhosttySelection>.size
             selection.start = start
             selection.end = end
             selection.rectangle = false
-            var options = GhosttyTerminalSelectionFormatOptions()
-            options.size = MemoryLayout<GhosttyTerminalSelectionFormatOptions>.size
-            options.emit = GHOSTTY_FORMATTER_FORMAT_HTML
-            options.unwrap = false
-            options.trim = true
-            var ptr: UnsafeMutablePointer<UInt8>?
-            var len = 0
-            let ok = withUnsafePointer(to: &selection) { sel -> Bool in
-                options.selection = sel
-                return ghostty_terminal_selection_format_alloc(terminal, nil, options, &ptr, &len) == GHOSTTY_SUCCESS
-            }
-            guard ok, let ptr else { return nil }
-            defer { ghostty_free(nil, ptr, len) }
-            let html = String(decoding: UnsafeBufferPointer(start: ptr, count: len), as: UTF8.self)
+            guard let formatted = Snapshots.format(terminal, emit: GHOSTTY_FORMATTER_FORMAT_HTML, unwrap: false, trim: true,
+                                                   selection: selection) else { return nil }
+            let html = String(decoding: formatted, as: UTF8.self)
             var visible = true
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_VISIBLE, &visible)
             var cx: UInt16 = 0, cy: UInt16 = 0

@@ -347,7 +347,7 @@ final class TerminalRenderer {
     /// SGR 58: the underline's own color, when a program set one (Neovim's diagnostics).
     private func underlineColor(_ style: GhosttyStyle) -> UInt32? {
         let c = style.underline_color
-        switch c.tag {
+        switch c.kind {
         case GHOSTTY_STYLE_COLOR_PALETTE:
             let p = framePalette[Int(c.value.palette)]
             return RGB(p.r, p.g, p.b).packed()
@@ -543,7 +543,6 @@ final class TerminalRenderer {
 
             let graphemes = cells.graphemeCount
             var style = GhosttyStyle()
-            style.size = MemoryLayout<GhosttyStyle>.size
             _ = cells.style(&style)
             // The cell's code points, read once (a single one without the array).
             var cp: UInt32 = 0
@@ -653,14 +652,14 @@ final class TerminalRenderer {
     private func appendDecorations(style: GhosttyStyle, color: UInt32, left: Float, top: Float,
                                    width: Float, into row: inout Row) {
         let thickness = Float(fonts.underlineThickness)
-        if style.underline != Int32(GHOSTTY_SGR_UNDERLINE_NONE.rawValue) {
+        if style.underline != GHOSTTY_SGR_UNDERLINE_NONE {
             let y = top + Float(fonts.underlinePosition)
             let line = underlineColor(style) ?? color
             switch style.underline {
-            case Int32(GHOSTTY_SGR_UNDERLINE_DOUBLE.rawValue):
+            case GHOSTTY_SGR_UNDERLINE_DOUBLE:
                 row.rects.append(RectInstance(rect: SIMD4(left, y, width, thickness), color: line))
                 row.rects.append(RectInstance(rect: SIMD4(left, y - thickness * 2, width, thickness), color: line))
-            case Int32(GHOSTTY_SGR_UNDERLINE_CURLY.rawValue):
+            case GHOSTTY_SGR_UNDERLINE_CURLY:
                 // A wave, one period per cell, in steps a pixel or two wide.
                 let step = max(1, Float(fonts.scale)), amplitude = max(thickness, Float(fonts.cellHeight) / 16)
                 let period = Float(fonts.cellWidth)
@@ -671,8 +670,8 @@ final class TerminalRenderer {
                     row.rects.append(RectInstance(rect: SIMD4(left + x, y - dy, min(step, width - x), thickness), color: line))
                     x += step
                 }
-            case Int32(GHOSTTY_SGR_UNDERLINE_DOTTED.rawValue), Int32(GHOSTTY_SGR_UNDERLINE_DASHED.rawValue):
-                let dotted = style.underline == Int32(GHOSTTY_SGR_UNDERLINE_DOTTED.rawValue)
+            case GHOSTTY_SGR_UNDERLINE_DOTTED, GHOSTTY_SGR_UNDERLINE_DASHED:
+                let dotted = style.underline == GHOSTTY_SGR_UNDERLINE_DOTTED
                 let on = dotted ? max(thickness, Float(fonts.scale)) : Float(fonts.cellWidth) / 2
                 let gap = dotted ? on : Float(fonts.cellWidth) / 4
                 var x: Float = 0
@@ -798,9 +797,9 @@ final class TerminalRenderer {
             }
 
             var style = cursor.visual_style
-            if !focused { style = GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW }
+            if !focused { style = GHOSTTY_CURSOR_STYLE_BLOCK_HOLLOW }
             switch style {
-            case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK:
+            case GHOSTTY_CURSOR_STYLE_BLOCK:
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, width, ch), color: color))
                 // Redraw the glyph under the block in the background color (or
                 // `cursor-text`) so it stays legible.
@@ -809,9 +808,9 @@ final class TerminalRenderer {
                     if g.flags & 1 == 0 { g.color = (cursorText ?? colors.background).packed() }
                     cursorGlyph = g
                 }
-            case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR:
+            case GHOSTTY_CURSOR_STYLE_BAR:
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, thin, ch), color: color))
-            case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE:
+            case GHOSTTY_CURSOR_STYLE_UNDERLINE:
                 scratchRects.append(RectInstance(rect: SIMD4(left, top + ch - thin, width, thin), color: color))
             default:  // hollow block
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, width, thin), color: color))
@@ -1099,22 +1098,16 @@ private struct StateRowCells: RowCellSource {
     }
 
     func firstCodepoint() -> UInt32 {
-        // The call writes the whole cluster: a buffer that holds it all.
-        let count = Int(graphemeCount)
-        guard count > 1 else {
-            var cp: UInt32 = 0
-            if count == 1 { _ = ghostty_render_state_row_cells_get(cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, &cp) }
-            return cp
-        }
-        var all = [UInt32](repeating: 0, count: count)
-        _ = all.withUnsafeMutableBufferPointer {
-            ghostty_render_state_row_cells_get(cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, $0.baseAddress)
-        }
-        return all[0]
+        // The call writes as much of the cluster as fits: the first is enough.
+        var cp: UInt32 = 0
+        withUnsafeMutablePointer(to: &cp) { codepoints(UnsafeMutableBufferPointer(start: $0, count: 1)) }
+        return cp
     }
 
     func codepoints(_ buffer: UnsafeMutableBufferPointer<UInt32>) {
-        _ = ghostty_render_state_row_cells_get(cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, buffer.baseAddress)
+        // (Since libghostty-vt 1.0 the key takes a GhosttyCodepointBuffer, not a bare pointer.)
+        var graphemes = GhosttyCodepointBuffer(ptr: buffer.baseAddress, cap: buffer.count, len: 0)
+        _ = ghostty_render_state_row_cells_get(cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, &graphemes)
     }
 }
 
@@ -1145,7 +1138,6 @@ private struct GridRowCells: RowCellSource {
         point.tag = GHOSTTY_POINT_TAG_SCREEN
         point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: y)
         ref = GhosttyGridRef()
-        ref.size = MemoryLayout<GhosttyGridRef>.size
         raw = 0
         count = 0
         cellStyle = nil
@@ -1156,7 +1148,6 @@ private struct GridRowCells: RowCellSource {
         var styled = false
         if ghostty_cell_get(raw, GHOSTTY_CELL_DATA_HAS_STYLING, &styled) == GHOSTTY_SUCCESS, styled {
             var s = GhosttyStyle()
-            s.size = MemoryLayout<GhosttyStyle>.size
             if ghostty_grid_ref_style(&ref, &s) == GHOSTTY_SUCCESS { cellStyle = s }
         }
         return true
@@ -1171,7 +1162,7 @@ private struct GridRowCells: RowCellSource {
     }
 
     private func resolve(_ color: GhosttyStyleColor) -> RGB? {
-        switch color.tag {
+        switch color.kind {
         case GHOSTTY_STYLE_COLOR_PALETTE:
             let c = palette[Int(color.value.palette)]
             return RGB(c.r, c.g, c.b)

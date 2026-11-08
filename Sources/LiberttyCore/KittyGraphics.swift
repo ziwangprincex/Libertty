@@ -47,13 +47,13 @@ public enum KittyGraphics {
     /// An image's pixels as RGBA8 (from RGB, gray and gray+alpha too).
     public static func rgba(_ image: GhosttyKittyGraphicsImage, width: Int, height: Int) -> [UInt8]? {
         var format = GHOSTTY_KITTY_IMAGE_FORMAT_RGBA, compression = GHOSTTY_KITTY_IMAGE_COMPRESSION_NONE
-        var data: UnsafePointer<UInt8>?
-        var length = 0
-        _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_FORMAT, &format)
-        _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_COMPRESSION, &compression)
-        _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_DATA_PTR, &data)
-        _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_IMAGE_DATA_DATA_LEN, &length)
-        guard let data, compression == GHOSTTY_KITTY_IMAGE_COMPRESSION_NONE else { return nil }
+        var pixels = GhosttyString()
+        _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_FORMAT, &format)
+        _ = ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_COMPRESSION, &compression)
+        // (No value while its pixels are still on the way.)
+        guard ghostty_kitty_graphics_image_get(image, GHOSTTY_KITTY_GRAPHICS_IMAGE_DATA_PIXELS, &pixels) == GHOSTTY_SUCCESS,
+              let data = pixels.ptr, compression == GHOSTTY_KITTY_IMAGE_COMPRESSION_NONE else { return nil }
+        let length = pixels.len
         let count = width * height
         let source = UnsafeBufferPointer(start: data, count: length)
         var out = [UInt8](repeating: 255, count: count * 4)

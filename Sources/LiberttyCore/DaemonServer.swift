@@ -1248,24 +1248,9 @@ public enum Snapshots {
     /// where the cursor is — onto a cleared screen. Bytes any terminal
     /// parses, unlike `encode`'s binary snapshot, which only `decode` reads.
     public static func screenVT(_ terminal: GhosttyTerminal) -> Data {
-        var options = GhosttyFormatterTerminalOptions()
-        options.size = MemoryLayout<GhosttyFormatterTerminalOptions>.size
-        options.emit = GHOSTTY_FORMATTER_FORMAT_VT
-        options.extra.size = MemoryLayout<GhosttyFormatterTerminalExtra>.size
-        options.extra.screen.size = MemoryLayout<GhosttyFormatterScreenExtra>.size
-        options.extra.screen.cursor = true
-        options.extra.screen.style = true
-        options.extra.screen.hyperlink = true
-        options.extra.screen.charsets = true
-        var formatter: GhosttyFormatter?
-        guard ghostty_formatter_terminal_new(nil, &formatter, terminal, options) == GHOSTTY_SUCCESS, let formatter
-        else { return Data() }
-        defer { ghostty_formatter_free(formatter) }
-        var ptr: UnsafeMutablePointer<UInt8>?
-        var len = 0
-        guard ghostty_formatter_format_alloc(formatter, nil, &ptr, &len) == GHOSTTY_SUCCESS, let ptr else { return Data() }
-        defer { ghostty_free(nil, ptr, len) }
-        return Data(bytes: ptr, count: len)
+        format(terminal, emit: GHOSTTY_FORMATTER_FORMAT_VT, unwrap: false, trim: false,
+               extras: GHOSTTY_FORMATTER_EXTRA_CURSOR | GHOSTTY_FORMATTER_EXTRA_STYLE
+                   | GHOSTTY_FORMATTER_EXTRA_HYPERLINK | GHOSTTY_FORMATTER_EXTRA_CHARSETS) ?? Data()
     }
 
     /// The screen (and optionally the scrollback) as plain text, wrapped lines joined.
@@ -1281,41 +1266,49 @@ public enum Snapshots {
 
     /// The screen (and optionally the scrollback) as text in `format`, wrapped lines joined.
     public static func text(_ terminal: GhosttyTerminal, scrollback: Bool, format: TextFormat, unwrap: Bool = true) -> String {
-        var options = GhosttyFormatterTerminalOptions()
-        options.size = MemoryLayout<GhosttyFormatterTerminalOptions>.size
-        options.emit = switch format {
+        let emit = switch format {
         case .plain: GHOSTTY_FORMATTER_FORMAT_PLAIN
         case .ansi: GHOSTTY_FORMATTER_FORMAT_VT
         case .html: GHOSTTY_FORMATTER_FORMAT_HTML
         }
-        options.unwrap = unwrap
-        options.trim = true
-        options.extra.size = MemoryLayout<GhosttyFormatterTerminalExtra>.size
-        options.extra.screen.size = MemoryLayout<GhosttyFormatterScreenExtra>.size
-        if format != .plain {
-            options.extra.screen.style = true
-            options.extra.screen.hyperlink = true
-        }
+        var extras = GHOSTTY_FORMATTER_EXTRAS_NONE
+        if format != .plain { extras |= GHOSTTY_FORMATTER_EXTRA_STYLE | GHOSTTY_FORMATTER_EXTRA_HYPERLINK }
         // A page's palette colors are CSS variables (var(--vt-palette-1)): the
         // page must define them, or they're no color at all.
-        if format == .html { options.extra.palette = true }
+        if format == .html { extras |= GHOSTTY_FORMATTER_EXTRA_PALETTE }
+        var all = GhosttySelection()
+        let selection = scrollback && ghostty_terminal_select_all(terminal, &all) == GHOSTTY_SUCCESS ? all : nil
+        guard let data = Self.format(terminal, emit: emit, unwrap: unwrap, trim: true, extras: extras, selection: selection)
+        else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// What libghostty-vt's formatter makes of `terminal`, or of `selection`
+    /// in it; `extras` nil keeps the formatter's own (palette, style and
+    /// link: what `ghostty_terminal_selection_format_*` used before 1.0).
+    /// Nil when there's nothing, or it failed.
+    public static func format(_ terminal: GhosttyTerminal, emit: GhosttyFormatterFormat, unwrap: Bool, trim: Bool,
+                              extras: GhosttyFormatterExtras? = nil, selection: GhosttySelection? = nil) -> Data? {
         var formatter: GhosttyFormatter?
-        var selection = GhosttySelection()
-        selection.size = MemoryLayout<GhosttySelection>.size
-        let all = scrollback && ghostty_terminal_select_all(terminal, &selection) == GHOSTTY_SUCCESS
-        let make: (UnsafePointer<GhosttySelection>?) -> Bool = { sel in
-            options.selection = sel
-            return ghostty_formatter_terminal_new(nil, &formatter, terminal, options) == GHOSTTY_SUCCESS
-        }
-        let ok = all ? withUnsafePointer(to: &selection) { make($0) } : make(nil)
-        guard ok, let formatter else { return "" }
+        guard ghostty_formatter_terminal_new(nil, &formatter, terminal) == GHOSTTY_SUCCESS, let formatter else { return nil }
         defer { ghostty_formatter_free(formatter) }
+        var emit = emit, unwrap = unwrap, trim = trim
+        guard ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_EMIT, &emit) == GHOSTTY_SUCCESS,
+              ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_UNWRAP, &unwrap) == GHOSTTY_SUCCESS,
+              ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_TRIM, &trim) == GHOSTTY_SUCCESS
+        else { return nil }
+        if var extras, ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_EXTRAS, &extras) != GHOSTTY_SUCCESS {
+            return nil
+        }
+        if var selection, ghostty_formatter_set(formatter, GHOSTTY_FORMATTER_OPT_SELECTION, &selection) != GHOSTTY_SUCCESS {
+            return nil
+        }
         var ptr: UnsafeMutablePointer<UInt8>?
         var len = 0
-        guard ghostty_formatter_format_alloc(formatter, nil, &ptr, &len) == GHOSTTY_SUCCESS else { return "" }
+        guard ghostty_formatter_format_alloc(formatter, nil, &ptr, &len) == GHOSTTY_SUCCESS else { return nil }
         defer { ghostty_free(nil, ptr, len) }
-        guard let ptr, len > 0 else { return "" }
-        return String(decoding: UnsafeBufferPointer(start: ptr, count: len), as: UTF8.self)
+        guard let ptr, len > 0 else { return nil }
+        return Data(bytes: ptr, count: len)
     }
 }
 
