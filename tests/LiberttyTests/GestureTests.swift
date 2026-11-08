@@ -89,3 +89,23 @@ struct GestureTests {
         #expect(AgentLogo.image("not-an-agent") == nil)
     }
 }
+
+@Suite struct AgentRecognitionTests {
+    @Test func newAgentsByProcessScriptOrPackage() {
+        #expect(ProgramBadge.forProcess("codebuddy").agent == "codebuddy")
+        #expect(ProgramBadge.forProcess("node", arguments: "/opt/homebrew/lib/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy").agent == "codebuddy")
+        #expect(ProgramBadge.forProcess("node", arguments: "/usr/local/bin/iflow").agent == "iflow")
+        #expect(ProgramBadge.forProcess("python3", arguments: "/Users/me/.local/bin/trae-cli interactive").agent == "trae")
+        #expect(ProgramBadge.forProcess("pdx").agent == "plandex")
+        #expect(ProgramBadge.forProcess("aider").agent == "aider")
+        // Not an agent: a name that only starts like one.
+        #expect(ProgramBadge.forProcess("vibes").agent == nil)
+    }
+
+    @Test func anIdleProgramShowsAsItself() {
+        // An agent that has only said it's idle (just started): its logo, not a gray dot.
+        #expect(StatusBadge.look(status: .idle, progress: nil, programs: true) == .none)
+        #expect(StatusBadge.look(status: .idle, progress: nil, programs: false) != .none)
+        #expect(StatusBadge.look(status: .working, progress: nil, programs: true) != .none)
+    }
+}

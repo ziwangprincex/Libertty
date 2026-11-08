@@ -71,8 +71,9 @@ Terminal，关闭 pane、标签或窗口后可以撤销。触控板上双指张�
 其他 agent 的状态从屏幕上判断。⌘J 跳到需要你处理的 pane；Git 块的 Last Turn 只显示 agent 上一轮改了什么，
 可以逐块撤回或标为看过；文件 ▸ 在工作树中新建标签…（⌥⌘T）给 agent 一个独立的分支和文件夹。侧栏和 pane
 标题栏显示分支和改动。截图粘贴进 pane 时粘贴的是图片文件的路径。`keep-awake = agents` 让 Mac 在 agent
-工作时不睡眠。`--remove` 可以撤掉 hook。标签上显示各 agent 的官方 logo；关闭有 agent 在工作或在等你的
-pane 时，会直接说出是哪个 agent。
+工作时不睡眠。`--remove` 可以撤掉 hook。标签上显示各 agent 的官方 logo（共 30 个：Claude Code、Codex、
+Gemini、CodeBuddy、Qwen Code、Kimi、Copilot、Cursor、Aider……）；关闭有 agent 在工作或在等你的 pane 时，
+会直接说出是哪个 agent。
 
 **上手。** 第一次启动时有一份简短的引导（帮助 ▸ 开始使用 Libertty）：外观、权限、agent 设置、导入 Ghostty
 设置、几个常用快捷键。`libertty +migrate-prompt`（或帮助 ▸ 用 Agent 迁移快捷键…）生成一段 prompt，让 agent

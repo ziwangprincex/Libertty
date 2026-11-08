@@ -59,10 +59,22 @@ struct ProgramBadge {
         "kimi": ProgramBadge(name: "Kimi", symbol: "moon.stars", tint: .indigo, agent: "kimi"),
         "pi": ProgramBadge(name: "Pi", symbol: "sparkle", tint: .green, agent: "pi"),
         "omp": ProgramBadge(name: "OMP", symbol: "sparkle", tint: .green, agent: "omp"),
-        "aider": ProgramBadge(name: "Aider", symbol: "sparkle", tint: .green),
-        "goose": ProgramBadge(name: "Goose", symbol: "bird", tint: .gray),
-        "crush": ProgramBadge(name: "Crush", symbol: "heart", tint: .pink),
-        "auggie": ProgramBadge(name: "Auggie", symbol: "sparkle", tint: .green),
+        "aider": ProgramBadge(name: "Aider", symbol: "sparkle", tint: .green, agent: "aider"),
+        "goose": ProgramBadge(name: "Goose", symbol: "bird", tint: .gray, agent: "goose"),
+        "crush": ProgramBadge(name: "Crush", symbol: "heart", tint: .pink, agent: "crush"),
+        "auggie": ProgramBadge(name: "Auggie", symbol: "sparkle", tint: .green, agent: "auggie"),
+        "codebuddy": ProgramBadge(name: "CodeBuddy", symbol: "sparkle", tint: .indigo, agent: "codebuddy"),
+        "iflow": ProgramBadge(name: "iFlow", symbol: "sparkle", tint: .blue, agent: "iflow"),
+        "qodercli": ProgramBadge(name: "Qoder", symbol: "sparkle", tint: .gray, agent: "qodercli"),
+        "kilocode": ProgramBadge(name: "Kilo Code", symbol: "sparkle", tint: .yellow, agent: "kilocode"),
+        "jules": ProgramBadge(name: "Jules", symbol: "sparkle", tint: .purple, agent: "jules"),
+        "junie": ProgramBadge(name: "Junie", symbol: "sparkle", tint: .green, agent: "junie"),
+        "letta": ProgramBadge(name: "Letta Code", symbol: "sparkle", tint: .gray, agent: "letta"),
+        "vibe": ProgramBadge(name: "Mistral Vibe", symbol: "sparkle", tint: .orange, agent: "vibe"),
+        "cn": ProgramBadge(name: "Continue", symbol: "sparkle", tint: .gray, agent: "cn"),
+        "trae": ProgramBadge(name: "Trae Agent", symbol: "sparkle", tint: .green, agent: "trae"),
+        "openhands": ProgramBadge(name: "OpenHands", symbol: "hand.raised", tint: .gray, agent: "openhands"),
+        "plandex": ProgramBadge(name: "Plandex", symbol: "sparkle", tint: .teal, agent: "plandex"),
     ]
 
     /// The agent a name is, as Kero tells it: the name, or the name with a
@@ -119,7 +131,7 @@ struct ProgramBadge {
         // Other names for the same programs. A typo here would quietly drop
         // the alias, so it stops a debug build instead.
         for (alias, of) in [("python3", "python"), ("ipython", "python"), ("view", "vim"), ("vi", "vim"),
-                            ("man", "less"), ("more", "less"), ("bunx", "bun")] {
+                            ("man", "less"), ("more", "less"), ("bunx", "bun"), ("pdx", "plandex")] {
             assert(t[of] != nil, "alias \(alias) of a program that isn't there: \(of)")
             t[alias] = t[of]
         }
@@ -316,7 +328,7 @@ final class TileStack: NSView {
 /// trademark, shown only to say which program runs in the pane.
 enum AgentLogo {
     /// One-color marks: drawn in the label's color, as a glyph is.
-    private static let monochrome: Set<String> = ["copilot", "cline"]
+    private static let monochrome: Set<String> = ["copilot", "cline", "auggie"]
     /// Made for a dark background (its white would vanish on a light
     /// sidebar): drawn on that dark.
     private static let onDark: [String: NSColor] = ["omp": NSColor(srgbRed: 0x0d / 255, green: 0x0d / 255, blue: 0x0d / 255, alpha: 1)]

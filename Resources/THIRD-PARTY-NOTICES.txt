@@ -80,3 +80,19 @@ endorsed by any of them.
   kimi.png          Kimi, Moonshot AI: github.com/MoonshotAI/kimi-cli (Apache-2.0), web/public/logo.png
   pi.svg            pi, github.com/badlogic/pi-mono (MIT): apps/p2/public/icons/favicon.svg
   omp.svg           oh-my-pi, github.com/can1357/oh-my-pi (MIT): assets/icon.svg
+  codebuddy.svg     CodeBuddy, Tencent: the logo codebuddy.ai links as its icon
+  iflow.png         iFlow: the icon iflow.cn links
+  qodercli.png      Qoder: the icon qoder.com links
+  kilocode.svg      Kilo Code: kilocode.ai/favicon/favicon.svg
+  jules.svg         Jules, Google LLC: jules.google/favicon.svg
+  junie.svg         Junie, JetBrains s.r.o.: JetBrains' brand logos, Junie_icon.svg
+  letta.png         Letta: letta.com's web clip icon
+  vibe.png          Mistral Vibe, Mistral AI: mistral.ai/favicon.ico, as a PNG
+  cn.svg            Continue, github.com/continuedev/continue (Apache-2.0): the JetBrains plugin's icon
+  trae.png          TRAE, ByteDance: the icon trae.ai links
+  aider.png         Aider, github.com/Aider-AI/aider (Apache-2.0): aider/website/assets/icons/apple-touch-icon.png
+  auggie.svg        Auggie, Augment Code: augmentcode.com/favicon.svg
+  openhands.svg     OpenHands, All Hands AI: all-hands.dev/favicon.svg
+  plandex.png       Plandex, github.com/plandex-ai/plandex (MIT): docs/static/img/plandex-logo-thumb.png, made smaller
+  goose.svg         goose, Block, github.com/block/goose (Apache-2.0): ui/desktop/src/images/icon.svg
+  crush.png         Crush, Charmbracelet: github.com/charmbracelet/crush, internal/ui/notification/crush-icon-solo.png, made smaller

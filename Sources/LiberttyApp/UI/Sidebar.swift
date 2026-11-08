@@ -876,8 +876,8 @@ extension NSPasteboard.PasteboardType {
 
 extension StatusBadge {
     /// What a tab's badge shows for its programs' state (sidebar row or top tab).
-    static func look(status: ProgramStatusStore.State?, progress: TerminalProgress?) -> Look {
-        TabCell.look(status: status, progress: progress)
+    static func look(status: ProgramStatusStore.State?, progress: TerminalProgress?, programs: Bool = false) -> Look {
+        TabCell.look(status: status, progress: progress, programs: programs)
     }
 }
 
@@ -1190,14 +1190,17 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         close.target = closeTarget
         close.action = #selector(SidebarViewController.closeTab(_:))
         // A status badge (OSC 7501, OSC 9;4) when a program reports one, else a terminal glyph.
-        let look = Self.look(status: tab.status, progress: tab.progress)
+        let look = Self.look(status: tab.status, progress: tab.progress, programs: !tab.tiles.isEmpty)
         dot.show(look)
         dot.isHidden = look == .none
         tiles.isHidden = look != .none
         toolTip = tab.status.map { TerminalWindowController.label(for: $0) }
     }
 
-    static func look(status: ProgramStatusStore.State?, progress: TerminalProgress?) -> StatusBadge.Look {
+    /// `programs`: the tab has programs to show (their logos or glyphs): a
+    /// program that only says it's idle (an agent just started, between
+    /// turns) shows as itself, not as a gray dot.
+    static func look(status: ProgramStatusStore.State?, progress: TerminalProgress?, programs: Bool = false) -> StatusBadge.Look {
         // Needing you beats everything; then failure, then work in progress.
         switch status {
         case .blocked?: return .symbol("exclamationmark.circle.fill", .systemOrange)
@@ -1215,7 +1218,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         switch status {
         case .working?: return .ring(percent: nil, color: .systemBlue)
         case .done?: return .symbol("checkmark.circle.fill", .systemGreen)
-        case .idle?: return .dot(.secondaryLabelColor)
+        case .idle?: return programs ? .none : .dot(.secondaryLabelColor)
         default: return .none
         }
     }

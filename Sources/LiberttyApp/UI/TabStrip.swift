@@ -387,7 +387,7 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         tiles.tiles = tab.tiles
         tiles.fallbackSymbol = tab.documentURL
             .map(DocumentView.symbol(for:)) ?? "apple.terminal"
-        let look = StatusBadge.look(status: tab.status, progress: tab.progress)
+        let look = StatusBadge.look(status: tab.status, progress: tab.progress, programs: !tab.tiles.isEmpty)
         badge.show(look)
         showsBadge = look != .none
         badge.isHidden = !showsBadge

@@ -86,7 +86,8 @@ that needs you; the Git block's Last Turn shows what an agent changed in its lat
 revert or keep hunk by hunk; File ▸ New Tab in Worktree… (⌥⌘T) gives an agent a branch and a
 folder of its own. Sidebar rows and pane headers show each pane's branch and changes. A
 screenshot pasted into a pane pastes as its file's path. `keep-awake = agents` keeps the Mac
-awake while they work. `--remove` takes the hooks out. Tabs show each agent's own logo,
+awake while they work. `--remove` takes the hooks out. Tabs show each agent's own logo
+(30 of them: Claude Code, Codex, Gemini, CodeBuddy, Qwen Code, Kimi, Copilot, Cursor, Aider…),
 and closing a pane where one is working or waiting says so by name.
 
 **Getting started.** A short guide on first launch (Help ▸ Get Started with Libertty):
