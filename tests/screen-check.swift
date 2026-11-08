@@ -91,12 +91,20 @@ func quit() -> Never {
         exit(failures.isEmpty ? 0 : 1)
     }
     app.forceTerminate()
-    // Its liberttyd too: it's ours, in the private folder.
-    let kill = Process()
-    kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-    kill.arguments = ["-f", "liberttyd.*\(home.lastPathComponent)|\(home.path)"]
-    try? kill.run()
-    kill.waitUntilExit()
+    // Its liberttyd too: it's ours, in the private folder. Found by the
+    // socket's lock it holds — its command line is only "liberttyd", so a
+    // match on the folder's path (as this did) never finds it.
+    let find = Process()
+    find.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+    find.arguments = ["-t", "\(home.path)/d.sock.lock"]
+    let out = Pipe()
+    find.standardOutput = out
+    find.standardError = FileHandle.nullDevice
+    if (try? find.run()) != nil {
+        let pids = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        find.waitUntilExit()
+        for pid in pids.split(whereSeparator: \.isNewline).compactMap({ Int32($0) }) { kill(pid, SIGTERM) }
+    }
     try? FileManager.default.removeItem(at: home)
     exit(failures.isEmpty ? 0 : 1)
 }
