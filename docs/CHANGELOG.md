@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.6.1
+
+> Ghostty's terminal core at its first stable release, libghostty-vt 1.0.0, and liberttyd no longer cuts off another liberttyd's sessions as it exits.
 
 - libghostty-vt 1.0.0 (`vt-1.0.0`, was Ghostty 1.4.0's): the first stable release of Ghostty's terminal core, with a frozen C ABI, semantic versioning and releases of its own. Its terminal changes since 1.4.0: DECIC, DECDC, DECBI and DECFI; triple-click selection keeps going over blank lines; printing honors the right margin after a wrap; when kitty images are over the storage limit, the oldest sent goes first; faster printing of styled and mixed-width text, and of scrolling a region. Libertty is adapted to 1.0's API (setters named `_set`, styles as flags, selected text through the formatter); nothing it shows or sends is meant to change, with one exception: Libertty no longer answers the Glyph Protocol's queries (1.0 leaves it off unless a terminal opts in), as it never drew the glyphs a program registered.
+- Fixed: a liberttyd leaving (idle, or told to shut down) removed the socket at its path even when another liberttyd had made a new one there since (its folder cleaned under it), so nothing could reach that one's sessions. It removes only the socket it made now.
 - Inside: liberttyd's build changes (new terminal core), so a running one is replaced as for any update. Its sessions' snapshots keep their format, so an older liberttyd's sessions open as before.
 
 ## 0.6.0
