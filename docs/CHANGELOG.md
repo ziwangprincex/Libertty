@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2
+
+> Thirty coding agents' own logos on the tabs, sixteen of them new, and an agent's logo from the moment it starts.
+
+- More coding agents known by name, with their own logos on the tabs: CodeBuddy, iFlow, Qoder, Kilo Code, Jules, Junie, Letta Code, Mistral Vibe, Continue (`cn`), Trae Agent, OpenHands and Plandex, and now with logos Aider, Goose, Crush and Auggie. Closing where one runs, and Activity, name them too. Where each logo came from is in `THIRD-PARTY-NOTICES.txt`.
+- An agent's logo shows as soon as it starts: one that has only said it's idle (Claude Code at its first prompt, between turns) showed a gray dot in its place until its first answer.
+
 ## 0.6.1
 
 > Ghostty's terminal core at its first stable release, libghostty-vt 1.0.0, and liberttyd no longer cuts off another liberttyd's sessions as it exits.
