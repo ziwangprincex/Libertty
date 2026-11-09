@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.3
+
+> Choose the font's faces for regular, bold and italic text, and see every typography setting in a preview the terminal draws itself.
+
+- Settings ▸ Terminal's typography preview is drawn by the terminal itself now, as wide as the preview: the font and its fallbacks, its size, line height, cell width, ligatures and thickening show there as a pane will draw them. Before, it was ordinary text in the font alone, and changing the rest showed nothing.
+- **Font styles** (`font-style`, `font-style-bold`, `font-style-italic`, `font-style-bold-italic`, as in Ghostty; Settings ▸ Terminal ▸ Typography): which of the font's faces ordinary, bold, italic and bold italic text use, by style name — Light or Medium text, SemiBold or ExtraBold for bold, Light Italic — or `false` to draw bold or italic in the regular face. Each lists the chosen font's own faces. `libertty +list-fonts --styles` names them; Ghostty's import brings them over.
+- Fixed: choosing a font in Settings said "Couldn't change ~/.config/libertty/config" although the font had changed (since 0.6.0, where `font-family` became repeatable).
+
 ## 0.6.2
 
 > Thirty coding agents' own logos on the tabs, sixteen of them new, and an agent's logo from the moment it starts.
