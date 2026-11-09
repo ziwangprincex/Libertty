@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.5
+
+> The cursor moves on screen the moment it moves: ← and → through a command no longer lag a keystroke behind (and Backspace deletes where the cursor shows). ⌘⇧P opens faster too.
+
+- Fixed: the cursor showed where it had been. A key that only moves it (← and →, ⌃A and ⌃E, a program putting it elsewhere) drew no frame, so the screen lagged a keystroke behind until the next key or the blink — moving through a pasted command felt sluggish, and Backspace seemed to delete in the wrong place. A cursor that moves, hides, shows or changes shape is drawn at once now.
+- Every key no longer redraws the whole pane before its echo arrives: that frame went out a moment before the echo's and pushed it back. One frame per key now, drawn when the echo comes (or at once, when typing clears a selection).
+- ⌘⇧P opens about twice as fast (some 35 ms, from 80): the monospaced fonts and the themes are read once, in the background after launch, not on every open; the font picker's faces are made when it's opened.
+- Inside: `--latency-trace --arrows` times ← and → instead of typing.
+
 ## 0.6.4
 
 > Settings no longer says "Couldn't change" under every setting you change.
