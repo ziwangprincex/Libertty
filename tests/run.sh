@@ -410,6 +410,11 @@ expect permissions 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-con
 # Help ▸ Get Started with Libertty: the welcome guide's four pages.
 expect welcome 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/welcome.txt)" $OUT
+# Settings ▸ Terminal: the font's faces for regular, bold and italic text.
+mkdir -p $PRIVATE/styles-config/libertty
+printf 'font-family = Menlo\nfont-style-bold = false\n' > $PRIVATE/styles-config/libertty/config
+expect font-styles 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/styles-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/font-styles.txt)" $OUT
 # Trackpad gestures: pinch to zoom a pane, swipe for the sidebar.
 expect gestures 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/gestures.txt)" $OUT

@@ -497,6 +497,8 @@ struct CustomRow: View {
             FontPreview(config: model.config)
         case "font-family":
             FontRow(model: model, item: item)
+        case "font-style", "font-style-bold", "font-style-italic", "font-style-bold-italic":
+            FontStyleRow(model: model, item: item)
         case "ligatures":
             Toggle(isOn: Binding(get: { model.config.ligatures }, set: { model.setLigatures($0) })) {
                 RowLabel(model: model, item: item)
@@ -701,6 +703,48 @@ struct FontRow: View {
     }
 }
 
+/// Which of the font's faces a kind of text uses (`font-style`, `-bold`,
+/// `-italic`, `-bold-italic`): Automatic (the font's own), one of its
+/// faces, or for bold and italic, the regular face.
+struct FontStyleRow: View {
+    @ObservedObject var model: SettingsModel
+    let item: SettingsItem
+    nonisolated(unsafe) private static var cache: [String: [FontSet.Face]] = [:]
+
+    static func faces(of family: String) -> [FontSet.Face] {
+        if let faces = cache[family] { return faces }
+        let faces = FontSet.faces(of: family)
+        cache[family] = faces
+        return faces
+    }
+
+    var body: some View {
+        let key = item.id
+        let family = model.config.fontFamily.isEmpty ? FontRegistry.bundledFamily : model.config.fontFamily
+        let all = Self.faces(of: family)
+        // Slanted faces for the italic kinds, upright ones for the rest (all
+        // of them where the font has none of that kind).
+        let slanted = key.hasSuffix("italic")
+        let fitting = all.filter { $0.italic == slanted }
+        let faces = fitting.isEmpty ? all : fitting
+        let current = model.config.values(of: key).first ?? ""
+        var options: [(label: String, value: String)] = [(L10n.t("Automatic"), "")]
+        options += faces.map { ($0.style, $0.style) }
+        if key != "font-style" { options.append((L10n.t("As regular"), "false")) }
+        // A style the file names that this font hasn't: as itself.
+        if !options.contains(where: { $0.value.caseInsensitiveCompare(current) == .orderedSame }) { options.append((current, current)) }
+        let selected = options.first { $0.value.caseInsensitiveCompare(current) == .orderedSame }?.value ?? current
+        return Picker(selection: Binding(get: { selected }, set: { model.write(key, $0, item: key) })) {
+            ForEach(options, id: \.value) { option in Text(option.label).tag(option.value) }
+        } label: {
+            RowLabel(model: model, item: item)
+        }
+        .pickerStyle(.menu)
+        .accessibilityLabel(item.title)
+        .probeAnchor(item.title, value: options.first { $0.value == selected }?.label ?? selected)
+    }
+}
+
 /// The monospaced families, each in its own face, to search and pick.
 struct FontChooser: View {
     @ObservedObject var model: SettingsModel
@@ -751,29 +795,31 @@ enum SettingsFonts {
     }
 }
 
-/// A few lines of a terminal in the font, size and theme in use.
+/// The typography as a pane draws it (TerminalPreview): the terminal's own
+/// renderer, so every setting under it shows here as it will in a pane.
 struct FontPreview: View {
     let config: Config
+    @ViewState private var width: CGFloat = 0
+    @Environment(\.displayScale) private var scale
 
     var body: some View {
         let t = config.resolvedTheme
-        let size = CGFloat(min(max(config.fontSize, 10), 16))
-        let family = config.fontFamily.isEmpty ? FontRegistry.bundledFamily : config.fontFamily
-        let fg = Color(t.foreground)
-        VStack(alignment: .leading, spacing: 3) {
-            Text("~/libertty").foregroundColor(Color(t.ansi[4])) + Text(" main").foregroundColor(Color(t.ansi[5]))
-                + Text(" $ swift build && swift test").foregroundColor(fg)
-            Text("main.swift:4: ").foregroundColor(fg) + Text("warning:").foregroundColor(Color(t.ansi[3]))
-                + Text(" 'run() -> Bool' is deprecated").foregroundColor(fg)
-            Text("Build complete!").font(Font(SettingsFonts.font(family, size, bold: true))).foregroundColor(Color(t.ansi[2]))
-                + Text(" (1.24 sec)").font(Font(SettingsFonts.font(family, size, italic: true))).foregroundColor(fg)
+        let image = width > 0 ? TerminalPreview.shared.image(config: config, width: width, scale: scale) : nil
+        ZStack(alignment: .topLeading) {
+            if let image {
+                Image(decorative: image, scale: scale).interpolation(.none)
+            } else {
+                Color.clear.frame(height: 72)
+            }
         }
-        .font(Font(SettingsFonts.font(family, size)))
-        .lineLimit(1)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GeometryReader { geometry in
+            Color.clear
+                .onAppear { width = geometry.size.width.rounded(.down) }
+                .onChange(of: geometry.size.width) { _, new in width = new.rounded(.down) }
+        })
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(t.background)))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.12)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Typography preview: regular, bold, and italic terminal text.")

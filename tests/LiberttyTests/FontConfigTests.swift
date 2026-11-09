@@ -103,3 +103,63 @@ struct FontFallbackTests {
         #expect(prompt.contains("cp ~/'My Config/libertty/config' ~/'My Config/libertty/config.before-migration'"))
     }
 }
+
+@Suite @MainActor struct SettingsFontWriteTests {
+    /// Settings checks a write by what the file says after it: choosing a
+    /// font (with or without fallbacks after it) must match, not report
+    /// "Couldn't change".
+    @Test func choosingAFontMatchesWhatTheFileSays() throws {
+        for start in ["font-family = Maple Mono NF\n", "font-family = Maple Mono NF\nfont-family = PingFang SC\n", ""] {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let file = dir.appendingPathComponent("config")
+            try start.write(to: file, atomically: true, encoding: .utf8)
+            let store = ConfigStore(url: file, watch: false)
+            for value in ["Menlo", "Maple Mono NF", ""] {
+                let (want, problem) = SettingsModel.expected("font-family", value, in: store.savedConfig)
+                #expect(problem == nil)
+                store.set("font-family", value.isEmpty ? nil : value)
+                #expect(store.savedConfig.values(of: "font-family") == want.values(of: "font-family"), "\(start) → \(value)")
+            }
+        }
+    }
+}
+
+@Suite @MainActor struct TerminalPreviewTests {
+    @Test func previewFollowsTheTypography() throws {
+        let plain = try #require(TerminalPreview.shared.image(config: Config(), width: 460, scale: 2))
+        var taller = Config()
+        _ = taller.set("adjust-cell-height", "50%")
+        let tall = try #require(TerminalPreview.shared.image(config: taller, width: 460, scale: 2))
+        #expect(plain.width == 920)
+        #expect(tall.height > plain.height)
+        // Wider cells: fewer columns, the sample wraps onto more rows.
+        #expect(TerminalPreview.grid(width: 900, cellWidth: 30).rows > TerminalPreview.grid(width: 900, cellWidth: 15).rows)
+    }
+}
+
+@Suite struct FontStyleTests {
+    func name(_ font: CTFont) -> String { CTFontCopyPostScriptName(font) as String }
+
+    @Test func facesByStyleName() {
+        let styles = FontSet.faces(of: "Menlo").map(\.style)
+        #expect(styles == ["Regular", "Bold", "Italic", "Bold Italic"])
+        let plain = FontSet(family: "Menlo", pointSize: 13, scale: 2)
+        #expect(name(plain.font(.bold)) == "Menlo-Bold")
+        // A face by its name; bold drawn as regular; a style the font hasn't: its own.
+        let set = FontSet(family: "Menlo", styles: FontStyles(regular: "Bold", bold: "false", italic: "Nonesuch"), pointSize: 13, scale: 2)
+        #expect(name(set.font(FontSet.Style())) == "Menlo-Bold")
+        #expect(name(set.font(.bold)) == "Menlo-Bold")
+        #expect(name(set.font(.italic)).contains("Italic"))
+    }
+
+    @Test func styleKeys() {
+        var c = Config()
+        #expect(c.set("font-style", "Medium") == nil && c.fontStyles.regular == "Medium")
+        #expect(c.set("font-style", "false") != nil)
+        #expect(c.set("font-style-bold", "FALSE") == nil && c.fontStyles.bold == "false")
+        #expect(c.set("font-style-italic", "Light Italic") == nil && c.values(of: "font-style-italic") == ["Light Italic"])
+        #expect(c.set("font-style-bold", "") == nil && c.fontStyles.bold.isEmpty)
+    }
+}

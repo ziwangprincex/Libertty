@@ -27,11 +27,40 @@ final class FontSet {
 
     static let preferredFamilies = [FontRegistry.bundledFamily, "JetBrains Mono", "SF Mono", "Menlo"]
 
+    /// One of a family's faces: its style name ("SemiBold Italic"), its
+    /// PostScript name, how heavy, and whether it slants.
+    struct Face: Equatable {
+        var style: String
+        var postScript: String
+        var weight: Double
+        var italic: Bool
+    }
+
+    /// `family`'s faces, upright ones first, each lightest first.
+    static func faces(of family: String) -> [Face] {
+        FontRegistry.registerBundledFonts()
+        let wanted = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: family] as CFDictionary)
+        let found = CTFontDescriptorCreateMatchingFontDescriptors(wanted, Set([kCTFontFamilyNameAttribute as String]) as CFSet)
+            as? [CTFontDescriptor] ?? []
+        var faces: [Face] = []
+        for d in found {
+            guard let style = CTFontDescriptorCopyAttribute(d, kCTFontStyleNameAttribute) as? String,
+                  let name = CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute) as? String,
+                  !faces.contains(where: { $0.postScript == name }) else { continue }
+            let traits = CTFontDescriptorCopyAttribute(d, kCTFontTraitsAttribute) as? [CFString: Any] ?? [:]
+            let weight = (traits[kCTFontWeightTrait] as? NSNumber)?.doubleValue ?? 0
+            let symbolic = (traits[kCTFontSymbolicTrait] as? NSNumber)?.uint32Value ?? 0
+            faces.append(Face(style: style, postScript: name, weight: weight,
+                              italic: symbolic & CTFontSymbolicTraits.traitItalic.rawValue != 0))
+        }
+        return faces.sorted { ($0.italic ? 1 : 0, $0.weight) < ($1.italic ? 1 : 0, $1.weight) }
+    }
+
     /// `family` comes first when given; a family that isn't installed falls
     /// back to the bundled font. `cellHeightAdjust` is `adjust-cell-height`,
     /// `cellWidthAdjust` `adjust-cell-width`.
-    init(family: String = "", fallbacks: [String] = [], pointSize: CGFloat, scale: CGFloat, cellHeightAdjust: MetricAdjust = .none,
-         cellWidthAdjust: MetricAdjust = .none, thicken: CGFloat = 0) {
+    init(family: String = "", fallbacks: [String] = [], styles: FontStyles = FontStyles(), pointSize: CGFloat, scale: CGFloat,
+         cellHeightAdjust: MetricAdjust = .none, cellWidthAdjust: MetricAdjust = .none, thicken: CGFloat = 0) {
         FontRegistry.registerBundledFonts()
         self.pointSize = pointSize
         self.scale = scale
@@ -56,21 +85,33 @@ final class FontSet {
         let primary = CTFontCopyFamilyName(regular) as String
         var cascade = fallbacks.filter { !$0.isEmpty && $0.caseInsensitiveCompare(primary) != .orderedSame }
         if primary != FontRegistry.bundledFamily, !cascade.contains(FontRegistry.bundledFamily) { cascade.append(FontRegistry.bundledFamily) }
+        let list = cascade.map { CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: $0] as CFDictionary) }
         if !cascade.isEmpty {
-            let list = cascade.map { CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: $0] as CFDictionary) }
             let descriptor = CTFontDescriptorCreateCopyWithAttributes(
                 CTFontCopyFontDescriptor(regular), [kCTFontCascadeListAttribute: list] as CFDictionary)
             regular = CTFontCreateWithFontDescriptor(descriptor, pixelSize, nil)
         }
 
-        func variant(_ traits: CTFontSymbolicTraits) -> CTFont {
-            CTFontCreateCopyWithSymbolicTraits(regular, pixelSize, nil, traits, traits) ?? regular
+        // `font-style`: a face of the family by its style name, with the
+        // same fallbacks; one the family doesn't have, its own.
+        let faces = styles.isEmpty ? [] : Self.faces(of: primary)
+        func named(_ style: String) -> CTFont? {
+            guard !style.isEmpty, style != "false",
+                  let face = faces.first(where: { $0.style.caseInsensitiveCompare(style) == .orderedSame }) else { return nil }
+            var attributes: [CFString: Any] = [kCTFontNameAttribute: face.postScript]
+            if !list.isEmpty { attributes[kCTFontCascadeListAttribute] = list }
+            return CTFontCreateWithFontDescriptor(CTFontDescriptorCreateWithAttributes(attributes as CFDictionary), pixelSize, nil)
+        }
+        if let face = named(styles.regular) { regular = face }
+        func variant(_ style: String, _ traits: CTFontSymbolicTraits) -> CTFont {
+            if style == "false" { return regular }
+            return named(style) ?? CTFontCreateCopyWithSymbolicTraits(regular, pixelSize, nil, traits, traits) ?? regular
         }
         fonts = [
             0: regular,
-            Style.bold.rawValue: variant(.traitBold),
-            Style.italic.rawValue: variant(.traitItalic),
-            Style([.bold, .italic]).rawValue: variant([.traitBold, .traitItalic]),
+            Style.bold.rawValue: variant(styles.bold, .traitBold),
+            Style.italic.rawValue: variant(styles.italic, .traitItalic),
+            Style([.bold, .italic]).rawValue: variant(styles.boldItalic, [.traitBold, .traitItalic]),
         ]
 
         // Cell width: the advance of a typical glyph, which every glyph in a
@@ -204,4 +245,16 @@ enum MetricAdjust: Equatable {
         case .percent(let p): return Int((Double(value) * (1 + p / 100)).rounded())
         }
     }
+}
+
+/// Which of a font's faces each kind of text uses (`font-style`,
+/// `font-style-bold`, `-italic`, `-bold-italic`): a style name, empty for
+/// the font's own, or "false" (bold and italic) for the regular face.
+struct FontStyles: Equatable {
+    var regular = ""
+    var bold = ""
+    var italic = ""
+    var boldItalic = ""
+
+    var isEmpty: Bool { self == FontStyles() }
 }

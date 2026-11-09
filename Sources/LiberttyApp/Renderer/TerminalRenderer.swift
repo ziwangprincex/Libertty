@@ -233,6 +233,21 @@ final class TerminalRenderer {
         commands.waitUntilCompleted()
     }
 
+    /// How `config` has terminals drawn: the theme's selection and cursor
+    /// text, the trail, ligatures, the panes' opacity, padding color and
+    /// contrast (a pane, and Settings' preview).
+    func take(_ config: Config) {
+        let theme = config.resolvedTheme
+        selectionColor = theme.selection
+        selectionForeground = theme.selectionForeground
+        cursorText = theme.cursorText
+        cursorTrail = config.cursorTrail
+        ligatures = config.ligatures
+        backgroundOpacity = config.paneOpacity
+        paddingColor = config.windowPaddingColor
+        minimumContrast = config.minimumContrast
+    }
+
     /// The current frame as an image (tab overview thumbnails), `width` ×
     /// `height` drawable pixels.
     func snapshotImage(_ session: TerminalSession, width: Int, height: Int) -> CGImage? {

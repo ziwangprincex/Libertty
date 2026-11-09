@@ -422,6 +422,14 @@ final class TerminalSession {
         return String(cString: buf)
     }
 
+    /// `text` (escape sequences and all) as if a program had printed it,
+    /// into a terminal with none (Settings' typography preview).
+    func show(_ text: String) {
+        let bytes = Array(text.utf8)
+        lock.withLock { ghostty_terminal_vt_write(terminal, bytes, bytes.count) }
+        requestRender()
+    }
+
     /// A line of Libertty's own at the end of the screen (not the program's,
     /// which has ended): dim, after what it printed.
     func note(_ text: String) {

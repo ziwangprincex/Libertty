@@ -1,0 +1,11 @@
+# Settings ▸ Terminal ▸ Typography: which of the font's faces each kind of
+# text uses (font-style, -bold, -italic, -bold-italic). Menlo, bold drawn
+# as regular.
+key:cmd+,
+wait:0.8
+settings:page:terminal
+wait:1.5
+expect-settings:Regular style=Automatic
+expect-settings:Bold style=As regular
+expect-settings:Italic style=Automatic
+shot:font-styles.png

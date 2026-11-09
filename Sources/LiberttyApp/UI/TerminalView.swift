@@ -26,6 +26,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     // Settings (see `apply`)
     private var fontFamily = ""
     private var fontFallbacks: [String] = []
+    private var fontStyles = FontStyles()
     private var fontThicken: CGFloat = 0
     private var cellHeightAdjust = MetricAdjust.none
     private var cellWidthAdjust = MetricAdjust.none
@@ -149,14 +150,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     func apply(_ config: Config, resetFontSize: Bool = false) {
         session.apply(config)
         let theme = config.resolvedTheme
-        renderer.selectionColor = theme.selection
-        renderer.selectionForeground = theme.selectionForeground
-        renderer.cursorText = theme.cursorText
-        renderer.cursorTrail = config.cursorTrail
-        renderer.ligatures = config.ligatures
-        renderer.backgroundOpacity = config.paneOpacity
-        renderer.paddingColor = config.windowPaddingColor
-        renderer.minimumContrast = config.minimumContrast
+        renderer.take(config)
         metalLayer.isOpaque = config.paneOpacity >= 1
         padding = config.padding
         unfocusedOpacity = config.inactivePaneFade ? config.unfocusedSplitOpacity : 1
@@ -179,8 +173,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         let thicken = config.fontThicken ? CGFloat(config.fontThickenStrength) / 255 : 0
         let familyChanged = config.fontFamily != fontFamily || config.adjustCellHeight != cellHeightAdjust
             || config.adjustCellWidth != cellWidthAdjust || config.fontFallbacks != fontFallbacks || thicken != fontThicken
+            || config.fontStyles != fontStyles
         fontFamily = config.fontFamily
         fontFallbacks = config.fontFallbacks
+        fontStyles = config.fontStyles
         fontThicken = thicken
         cellHeightAdjust = config.adjustCellHeight
         cellWidthAdjust = config.adjustCellWidth
@@ -256,7 +252,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private func rebuildFonts() {
         let scale = window?.backingScaleFactor ?? 2
         metalLayer.contentsScale = scale
-        renderer.setFonts(FontSet(family: fontFamily, fallbacks: fontFallbacks, pointSize: fontSize, scale: scale,
+        renderer.setFonts(FontSet(family: fontFamily, fallbacks: fontFallbacks, styles: fontStyles, pointSize: fontSize, scale: scale,
                                   cellHeightAdjust: cellHeightAdjust, cellWidthAdjust: cellWidthAdjust, thicken: fontThicken))
         updateGrid()
     }

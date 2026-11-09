@@ -480,5 +480,12 @@
   "Drag this icon into a list in System Settings to grant access. Some take effect once liberttyd restarts.": "把这个图标拖进系统设置里对应的列表即可授权。有些权限要等 liberttyd 重启后才生效。",
   "Programs in your terminals ask macOS as Libertty, so these are Libertty's permissions.": "终端里的程序以 Libertty 的身份向 macOS 请求权限，所以这里显示的是 Libertty 的权限。",
   "Drag this icon into a list in System Settings to grant access. Some take effect once Libertty restarts.": "把这个图标拖进系统设置里对应的列表即可授权。有些权限要等 Libertty 重启后才生效。",
-  "Waiting for you": "等你处理"
+  "Waiting for you": "等你处理",
+  "Regular style": "常规样式",
+  "Bold style": "粗体样式",
+  "Italic style": "斜体样式",
+  "Bold italic style": "粗斜体样式",
+  "Automatic": "自动",
+  "As regular": "同常规",
+  "Which of the font's faces each kind of text uses.": "每种文字用这款字体里的哪个字形（字重、斜体）。"
 }

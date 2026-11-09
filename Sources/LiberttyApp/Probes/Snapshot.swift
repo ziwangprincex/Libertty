@@ -99,7 +99,8 @@ enum Snapshot {
                                wait: Double = 0, settle: Double = 0) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw TerminalError.libghostty("no Metal device") }
         let scale: CGFloat = 2
-        let fonts = FontSet(family: config.fontFamily, fallbacks: config.fontFallbacks, pointSize: fontSize, scale: scale,
+        let fonts = FontSet(family: config.fontFamily, fallbacks: config.fontFallbacks, styles: config.fontStyles,
+                            pointSize: fontSize, scale: scale,
                             cellHeightAdjust: config.adjustCellHeight, cellWidthAdjust: config.adjustCellWidth,
                             thicken: config.fontThicken ? CGFloat(config.fontThickenStrength) / 255 : 0)
         let initStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)

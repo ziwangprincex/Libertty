@@ -44,6 +44,10 @@ struct Config: Equatable {
         if family.isEmpty, rest.isEmpty { fontFamilies = []; return }
         fontFamilies = [family.isEmpty ? FontRegistry.bundledFamily : family] + rest
     }
+    /// Ghostty's `font-style` keys: which of the font's faces each kind of
+    /// text uses, by style name ("Medium", "SemiBold Italic"); empty, the
+    /// font's own; for bold and italic, "false" draws them as regular.
+    var fontStyles = FontStyles()
     /// Ghostty's `font-feature` lines; `-calt`/`-liga` turn ligatures off.
     var fontFeatures: [String] = []
     var ligatures: Bool {
@@ -334,6 +338,10 @@ struct Config: Equatable {
     static let documentation: [(key: String, doc: String)] = [
         ("theme", "A theme name (libertty +list-themes), or light:NAME,dark:NAME to follow the system appearance."),
         ("font-family", "A monospaced font family (libertty +list-fonts). Repeatable, as in Ghostty: the first is the font, the ones after it fallbacks for characters it lacks; an empty one starts over. None: the bundled JetBrainsMono Nerd Font."),
+        ("font-style", "As in Ghostty: the face of the font for ordinary text, by its style name (Light, Medium, SemiBold…; libertty +list-fonts --styles). Empty: the font's regular."),
+        ("font-style-bold", "The face for bold text, by its style name (SemiBold, ExtraBold…); false draws bold text in the regular face. Empty: the font's own bold."),
+        ("font-style-italic", "The face for italic text, by its style name (Light Italic…); false draws italic text upright. Empty: the font's own italic."),
+        ("font-style-bold-italic", "The face for bold italic text, by its style name; false draws it in the regular face. Empty: the font's own."),
         ("font-feature", "As in Ghostty: -calt (or -liga) turns programming ligatures (-> != ===) off. Repeatable."),
         ("font-size", "Points, 6–72."),
         ("adjust-cell-height", "Make the line height taller or shorter, as in Ghostty: a number of pixels (2, -1) or a percentage (20%) added to the font's own; the text stays centered, and box drawing and powerline glyphs follow the cell."),
@@ -455,6 +463,10 @@ struct Config: Equatable {
         switch key {
         case "theme": return [theme.configString]
         case "font-family": return fontFamilies
+        case "font-style": return [fontStyles.regular]
+        case "font-style-bold": return [fontStyles.bold]
+        case "font-style-italic": return [fontStyles.italic]
+        case "font-style-bold-italic": return [fontStyles.boldItalic]
         case "font-feature": return fontFeatures
         case "font-size": return [num(fontSize)]
         case "adjust-cell-height": return [adjustCellHeight.configString]
@@ -709,6 +721,12 @@ struct Config: Equatable {
         case "font-family":
             if reset { fontFamilies = []; return nil }
             if !fontFamilies.contains(v) { fontFamilies.append(v) }
+        case "font-style":
+            guard v.lowercased() != "false" else { return "a style of the font, such as Medium (empty: its regular)" }
+            fontStyles.regular = v
+        case "font-style-bold": fontStyles.bold = v.lowercased() == "false" ? "false" : v
+        case "font-style-italic": fontStyles.italic = v.lowercased() == "false" ? "false" : v
+        case "font-style-bold-italic": fontStyles.boldItalic = v.lowercased() == "false" ? "false" : v
         case "font-feature":
             if reset { fontFeatures = []; return nil }
             fontFeatures.append(v)

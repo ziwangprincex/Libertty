@@ -28,7 +28,13 @@ enum CLI {
         case "+set": status = set(rest)
         case "+unset": status = unset(rest)
         case "+list-themes": status = listThemes(rest)
-        case "+list-fonts": FontSet.monospacedFamilies().forEach { print($0) }; status = 0
+        case "+list-fonts":
+            // `--styles`: each family's faces under it, as font-style names them.
+            for family in FontSet.monospacedFamilies() {
+                print(family)
+                if rest.contains("--styles") { FontSet.faces(of: family).forEach { print("  " + $0.style) } }
+            }
+            status = 0
         case "+list-keybinds": status = listKeybinds(rest)
         case "+list-actions": status = listActions()
         case "+validate-config": status = validate(rest)
@@ -112,7 +118,7 @@ enum CLI {
           libertty +update [--check]        install the newest version (signature-checked); --check only reports
 
           libertty +list-themes [--path]    built-in themes, ~/.config/libertty/themes, and Rex's and Ghostty's if installed
-          libertty +list-fonts              monospaced font families
+          libertty +list-fonts [--styles]   monospaced font families (--styles: their faces, for font-style)
           libertty +list-keybinds [--default]
           libertty +list-actions            what keybinds (and +action) can do
 

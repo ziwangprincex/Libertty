@@ -245,6 +245,12 @@ enum SettingsRegistry {
         all += [
             custom(.terminal, "Typography", "Preview", id: "font-preview"),
             custom(.terminal, "Typography", "Terminal font", id: "font-family", keys: ["font-family"], keywords: "typeface"),
+            custom(.terminal, "Typography", "Regular style", id: "font-style", keys: ["font-style"],
+                   help: "Which of the font's faces each kind of text uses.", keywords: "weight light medium face"),
+            custom(.terminal, "Typography", "Bold style", id: "font-style-bold", keys: ["font-style-bold"], keywords: "weight semibold face"),
+            custom(.terminal, "Typography", "Italic style", id: "font-style-italic", keys: ["font-style-italic"], keywords: "slant oblique face"),
+            custom(.terminal, "Typography", "Bold italic style", id: "font-style-bold-italic", keys: ["font-style-bold-italic"],
+                   keywords: "weight slant face"),
             item(.terminal, "Typography", "Font size", "font-size", .stepper(6...72, step: 1, unit: "pt"), keywords: "text size"),
             item(.terminal, "Typography", "Line height", "adjust-cell-height", .popup([SettingsOption(label: "The font's own", value: "")]
                 + ["-10%", "-5%", "5%", "10%", "15%", "20%", "25%", "30%", "40%", "50%"].map {

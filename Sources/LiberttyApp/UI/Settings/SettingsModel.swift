@@ -140,8 +140,8 @@ final class SettingsModel: ObservableObject {
             problems[id] = "Set in \(file)"
             return false
         }
-        var check = ConfigStore.shared.savedConfig
-        if let problem = check.set(key, value) {
+        let (check, problem) = Self.expected(key, value, in: ConfigStore.shared.savedConfig)
+        if let problem {
             problems[id] = problem
             return false
         }
@@ -154,6 +154,18 @@ final class SettingsModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    /// `config` as the file will make it once `key` is written as `value`
+    /// (ConfigStore.set), or why it can't be. The font is the first
+    /// `font-family`, its fallbacks kept: a `set` would add it after them.
+    static func expected(_ key: String, _ value: String, in config: Config) -> (config: Config, problem: String?) {
+        var check = config
+        if key == "font-family" {
+            check.setPrimaryFont(value)
+            return (check, nil)
+        }
+        return (check, check.set(key, value))
     }
 
     /// Keys set by an included file (`config-file`), which the main file's
