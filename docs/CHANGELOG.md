@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.4
+
+> Settings no longer says "Couldn't change" under every setting you change.
+
+- Fixed: in 0.6.3 every setting changed in Settings (but the font) showed "Couldn't change ~/.config/libertty/config" under it, although the config had changed and the setting had taken.
+
 ## 0.6.3
 
 > Choose the font's faces for regular, bold and italic text, and see every typography setting in a preview the terminal draws itself.
