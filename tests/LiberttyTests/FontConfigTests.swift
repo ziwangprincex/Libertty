@@ -126,6 +126,28 @@ struct FontFallbackTests {
     }
 }
 
+@Suite @MainActor struct SettingsWriteCheckTests {
+    /// Settings writes a key, then checks the file says what it expected:
+    /// for any key, not only the font (0.6.3 reported "Couldn't change" for
+    /// every other one, though the file had changed).
+    @Test func whatSettingsExpectsIsWhatTheFileSays() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("config")
+        try "font-family = Maple Mono NF\nfont-size = 13.5\n".write(to: file, atomically: true, encoding: .utf8)
+        let store = ConfigStore(url: file, watch: false)
+        for (key, value) in [("font-style", "Bold"), ("font-style-bold", "false"), ("font-style-italic", "Italic"),
+                             ("font-size", "15"), ("cursor-trail", "true"), ("active-border", "true"), ("font-family", "Menlo")] {
+            let (want, problem) = SettingsModel.expected(key, value, in: store.savedConfig)
+            #expect(problem == nil)
+            #expect(want.values(of: key) != store.savedConfig.values(of: key), "\(key): expected nothing to change")
+            store.set(key, value)
+            #expect(store.savedConfig.values(of: key) == want.values(of: key), "\(key) = \(value)")
+        }
+    }
+}
+
 @Suite @MainActor struct TerminalPreviewTests {
     @Test func previewFollowsTheTypography() throws {
         let plain = try #require(TerminalPreview.shared.image(config: Config(), width: 460, scale: 2))

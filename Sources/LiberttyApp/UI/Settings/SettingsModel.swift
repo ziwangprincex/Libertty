@@ -165,7 +165,10 @@ final class SettingsModel: ObservableObject {
             check.setPrimaryFont(value)
             return (check, nil)
         }
-        return (check, check.set(key, value))
+        // Set first, then return it: a tuple takes `check` as it is before
+        // the `set` beside it runs.
+        let problem = check.set(key, value)
+        return (check, problem)
     }
 
     /// Keys set by an included file (`config-file`), which the main file's
