@@ -9,8 +9,17 @@ struct SettingPicker {
         /// The config value; empty removes the line (the default).
         var value: String
         var detail: String = ""
-        /// The label drawn in this font (the font picker's rows).
-        var font: NSFont?
+        /// The label drawn in this family's face (the font picker's rows),
+        /// made when its row is: not for every font each time the palette opens.
+        var family: String?
+
+        var font: NSFont? {
+            guard let family else { return nil }
+            if family == FontRegistry.bundledFamily {
+                return NSFont(name: family, size: 13) ?? .monospacedSystemFont(ofSize: 13, weight: .regular)
+            }
+            return NSFont(descriptor: NSFontDescriptor(fontAttributes: [.family: family]), size: 13)
+        }
     }
 
     var key: String
@@ -21,6 +30,18 @@ struct SettingPicker {
     /// The value the config files hold now (not one being tried out).
     var current: String { ConfigStore.shared.savedConfig.values(of: key).first ?? "" }
 
+    /// Each choice is labeled by its value (the theme, the font): what's
+    /// set now says itself, without listing every one.
+    var labelIsValue: Bool { key == "theme" || key == "font-family" }
+
+    /// What's set now, as its choice is labeled (for `labelIsValue` pickers).
+    var currentLabel: String {
+        let value = current.replacingOccurrences(of: "\"", with: "")
+        if key == "font-family", value.isEmpty { return FontRegistry.bundledFamily }
+        if key == "theme" { return ConfigStore.shared.savedConfig.theme.configString.replacingOccurrences(of: "\"", with: "") }
+        return value
+    }
+
     static let all: [SettingPicker] = [
         SettingPicker(key: "theme", title: "Theme", symbol: "paintpalette") {
             var names = Theme.all.map(\.name)
@@ -29,11 +50,9 @@ struct SettingPicker {
             return names.map { Option(label: $0, value: $0.contains(",") ? "\"\($0)\"" : $0, detail: Theme.builtIn($0) != nil ? "built in" : "") }
         },
         SettingPicker(key: "font-family", title: "Terminal Font", symbol: "textformat") {
-            [Option(label: FontRegistry.bundledFamily, value: "", detail: "bundled",
-                    font: NSFont(name: FontRegistry.bundledFamily, size: 13) ?? .monospacedSystemFont(ofSize: 13, weight: .regular))]
+            [Option(label: FontRegistry.bundledFamily, value: "", detail: "bundled", family: FontRegistry.bundledFamily)]
                 + FontSet.monospacedFamilies().filter { $0 != FontRegistry.bundledFamily }.map { family in
-                    let descriptor = NSFontDescriptor(fontAttributes: [.family: family])
-                    return Option(label: family, value: family, font: NSFont(descriptor: descriptor, size: 13))
+                    Option(label: family, value: family, family: family)
                 }
         },
         SettingPicker(key: "font-size", title: "Terminal Font Size", symbol: "textformat.size") {

@@ -10,11 +10,14 @@ import QuartzCore
 ///   key → (encode, pty write, the shell's echo, pty read, parse) → output
 ///   output → (frame pacing, render, compositor) → presented on screen
 ///
-/// Keys alternate `a` and Backspace, so the line never grows. This is the
+/// Keys alternate `a` and Backspace, so the line never grows; with
+/// `--arrows`, ← and → over a line typed first (moving through a pasted
+/// command). This is the
 /// software part of typing latency; keyboard scan and display scanout add a
 /// roughly constant few milliseconds on top for every terminal.
 final class LatencyTrace {
     static var requested: Bool { CommandLine.arguments.contains("--latency-trace") }
+    static var arrows: Bool { CommandLine.arguments.contains("--arrows") }
 
     private static var current: LatencyTrace?
 
@@ -25,7 +28,8 @@ final class LatencyTrace {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             let trace = LatencyTrace(controller: controller, count: count)
             current = trace
-            trace.next()
+            if arrows { controller.focusedTerminal.session.sendText("echo sherc ser1 --flag value another-argument /a/long/path/file.txt") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (arrows ? 0.5 : 0)) { trace.next() }
         }
     }
 
@@ -54,12 +58,16 @@ final class LatencyTrace {
 
     private func next() {
         guard sent < count else { return finish() }
-        let backspace = sent % 2 == 1
+        let second = sent % 2 == 1
+        let (text, code): (String, Int) = Self.arrows
+            ? (second ? "\u{F703}" : "\u{F702}", second ? kVK_RightArrow : kVK_LeftArrow)
+            : (second ? "\u{7f}" : "a", second ? kVK_Delete : kVK_ANSI_A)
         guard let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            with: .keyDown, location: .zero, modifierFlags: Self.arrows ? [.function, .numericPad] : [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: view.window?.windowNumber ?? 0, context: nil,
-            characters: backspace ? "\u{7f}" : "a", charactersIgnoringModifiers: backspace ? "\u{7f}" : "a",
-            isARepeat: false, keyCode: UInt16(backspace ? kVK_Delete : kVK_ANSI_A)) else { return finish() }
+            characters: text, charactersIgnoringModifiers: text,
+            isARepeat: false, keyCode: UInt16(code)) else { return finish() }
         sent += 1
         outputBefore = view.session.outputMark.count
         waiting = true

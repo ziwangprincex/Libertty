@@ -254,31 +254,60 @@ class ThemeLibrary {
     }
 
     /// Forget the directory listings (on config reload, so new files show up).
-    func invalidate() { cache = nil }
+    func invalidate() {
+        cache = nil
+        sorted = nil
+    }
 
     /// Every theme, deduplicated by name (yours, then Rex's, then Ghostty's).
     var entries: [Entry] {
         if cache == nil {
-            var found: [String: Entry] = [:]
-            func add(_ entry: Entry) {
-                let key = entry.name.lowercased()
-                if found[key] == nil { found[key] = entry }
-            }
-            let dirs = directories
-            func addFiles(in dir: URL, source: String) {
-                guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
-                for name in names where !name.hasPrefix(".") {
-                    add(Entry(name: name, source: source, location: .file(dir.appendingPathComponent(name))))
-                }
-            }
-            for (dir, source) in dirs where source == "user" { addFiles(in: dir, source: source) }
-            if let file = rexFile {
-                for theme in RexThemes.read(file) { add(Entry(name: theme.name, source: "Rex", location: .rex(file, theme))) }
-            }
-            for (dir, source) in dirs where source != "user" { addFiles(in: dir, source: source) }
-            cache = found
+            cache = scan()
+            sorted = nil
         }
-        return cache!.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // In order, sorted once (the palette asks on every ⌘⇧P).
+        if let sorted { return sorted }
+        let list = cache!.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        sorted = list
+        return list
+    }
+
+    private var sorted: [Entry]?
+
+    /// The theme folders and Rex's file, read (some 25 ms: Ghostty ships
+    /// hundreds of themes). Touches nothing of this object's state.
+    private func scan() -> [String: Entry] {
+        var found: [String: Entry] = [:]
+        func add(_ entry: Entry) {
+            let key = entry.name.lowercased()
+            if found[key] == nil { found[key] = entry }
+        }
+        let dirs = directories
+        func addFiles(in dir: URL, source: String) {
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
+            for name in names where !name.hasPrefix(".") {
+                add(Entry(name: name, source: source, location: .file(dir.appendingPathComponent(name))))
+            }
+        }
+        for (dir, source) in dirs where source == "user" { addFiles(in: dir, source: source) }
+        if let file = rexFile {
+            for theme in RexThemes.read(file) { add(Entry(name: theme.name, source: "Rex", location: .rex(file, theme))) }
+        }
+        for (dir, source) in dirs where source != "user" { addFiles(in: dir, source: source) }
+        return found
+    }
+
+    /// Read the themes in the background, so the first ⌘⇧P (or Settings ▸
+    /// Themes) doesn't wait for them. On the main thread.
+    func warm() {
+        guard cache == nil else { return }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            let found = scan()
+            DispatchQueue.main.async { [self] in
+                // Read meanwhile (or forgotten and read again): what's there stands.
+                if cache == nil { cache = found; sorted = nil }
+            }
+        }
     }
 
     func entry(for name: String) -> Entry? {

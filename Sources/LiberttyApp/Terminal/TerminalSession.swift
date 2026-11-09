@@ -933,9 +933,16 @@ final class TerminalSession {
         markRenderPending()
     }
 
-    func clearSelection() {
-        lock.withLock { _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SELECTION, nil) }
-        markRenderPending()
+    /// No selection anymore; whether there was one.
+    @discardableResult
+    func clearSelection() -> Bool {
+        let had: Bool = lock.withLock {
+            guard activeSelectionLocked() != nil else { return false }
+            _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SELECTION, nil)
+            return true
+        }
+        if had { markRenderPending() }
+        return had
     }
 
     /// The selected text as plain text, soft-wrapped lines joined, or nil

@@ -1121,9 +1121,17 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             for peer in peers where !peer.isReadOnly && peer.session.send(input) { peer.setNeedsRender() }
         }
         if sent {
-            // Typing replaces the selection's relevance (Otty `selection_clear_on_typing`).
-            if action != GHOSTTY_KEY_ACTION_RELEASE { session.clearSelection() }
-            setNeedsRender(force: action != GHOSTTY_KEY_ACTION_RELEASE)
+            // Typing replaces the selection's relevance (Otty `selection_clear_on_typing`):
+            // a selection there goes, at once. Otherwise the key itself draws
+            // nothing: what it does (the echo, the cursor moving, the view
+            // back at the bottom) comes as output and draws its own frame.
+            // A redraw of every row here went out just before the echo's
+            // frame and held that one back by a frame or two.
+            if action != GHOSTTY_KEY_ACTION_RELEASE, session.clearSelection() {
+                setNeedsRender(force: true)
+            } else {
+                setNeedsRender()
+            }
         }
     }
 

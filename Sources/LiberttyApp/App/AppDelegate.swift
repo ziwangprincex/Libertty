@@ -100,6 +100,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     NSApp.mainMenu = self.makeMainMenu(keybinds)
                 }
             }
+            // What the palette and Settings list (the themes, the monospaced
+            // fonts), read in the background now: not at the first ⌘⇧P.
+            ThemeLibrary.shared.warm()
+            DispatchQueue.global(qos: .utility).async { _ = FontSet.monospacedFamilies() }
         }
         // Launching is an explicit request to use Libertty; started from a shell,
         // cooperative activation would leave the window behind (or in Stage

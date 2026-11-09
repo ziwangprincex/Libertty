@@ -195,7 +195,32 @@ final class FontSet {
     var familyName: String { CTFontCopyFamilyName(fonts[0]!) as String }
 
     /// Installed monospaced families, for the Settings picker.
+    /// The monospaced families, as `findMonospacedFamilies` finds them: kept
+    /// (finding them takes some 30 ms, and the palette asked on every ⌘⇧P)
+    /// until fonts are installed or removed.
     static func monospacedFamilies() -> [String] {
+        familiesLock.lock()
+        defer { familiesLock.unlock() }
+        if familiesObserver == nil {
+            familiesObserver = NotificationCenter.default.addObserver(
+                forName: NSNotification.Name(kCTFontManagerRegisteredFontsChangedNotification as String), object: nil, queue: nil
+            ) { _ in
+                familiesLock.lock()
+                knownFamilies = nil
+                familiesLock.unlock()
+            }
+        }
+        if let knownFamilies { return knownFamilies }
+        let found = findMonospacedFamilies()
+        knownFamilies = found
+        return found
+    }
+
+    private static let familiesLock = NSLock()
+    nonisolated(unsafe) private static var knownFamilies: [String]?
+    nonisolated(unsafe) private static var familiesObserver: NSObjectProtocol?
+
+    private static func findMonospacedFamilies() -> [String] {
         FontRegistry.registerBundledFonts()
         let collection = CTFontCollectionCreateFromAvailableFonts(nil)
         let descriptors = CTFontCollectionCreateMatchingFontDescriptors(collection) as? [CTFontDescriptor] ?? []

@@ -358,7 +358,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // Settings changed in place, each tried out as it's picked (Rex's
         // Change Terminal Font…, Change Cursor Style…).
         for picker in SettingPicker.all {
-            let now = picker.options().first { Self.isCurrent($0, of: picker) }?.label ?? picker.current
+            // The theme's and the font's names are their labels: not every
+            // theme and font listed (and each set on a Config) to find it.
+            let now = picker.labelIsValue ? picker.currentLabel
+                : picker.options().first { Self.isCurrent($0, of: picker) }?.label ?? picker.current
             out.append(Item(title: "Change \(picker.title)…", subtitle: now, symbol: picker.symbol, kind: .setting, picker: picker) {})
         }
         // Every other key, typed in place: the whole config from here, not

@@ -288,8 +288,19 @@ final class TerminalRenderer {
         // Wiped since the rows were placed (by a composition, last frame):
         // they point at overwritten space, every one of them.
         let atlasMoved = atlas.generation != rowsGeneration
+        // libghostty's dirty state is about rows: a cursor that only moved
+        // (← and → at a prompt, a program putting it elsewhere) leaves every
+        // row clean, and the screen would show it where it was until
+        // something else drew a frame (the blink, half a second on).
+        var cursorNow = GhosttyRenderStateCursor()
+        cursorNow.size = MemoryLayout<GhosttyRenderStateCursor>.size
+        _ = ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_CURSOR, &cursorNow)
+        let cursorKey = DrawnCursor(cursorNow)
+        let cursorChanged = cursorKey != drawnCursor
         let changed = dirty != GHOSTTY_RENDER_STATE_DIRTY_FALSE || force || highlightsChanged || imagesChanged || atlasMoved
+            || cursorChanged
         guard changed || offsetChanged || trail != nil else { return false }
+        drawnCursor = cursorKey
         // Only the offset moved, or a trail fades: the rows stand; the
         // instances are put together again (the shader shifts them).
         if !changed, pixelOffset == 0 || belowRow != nil || (trail != nil && !offsetChanged) {
@@ -343,6 +354,32 @@ final class TerminalRenderer {
     }
 
     private var lastFocused = true
+
+    /// The cursor as last drawn: where, and how.
+    private var drawnCursor: DrawnCursor?
+    private struct DrawnCursor: Equatable {
+        var inView: Bool, x: UInt16, y: UInt16, wideTail: Bool
+        var visible: Bool, blinking: Bool, password: Bool, style: UInt32
+
+        init(_ c: GhosttyRenderStateCursor) {
+            inView = c.viewport_has_value
+            // (Out of view, its place is undefined.)
+            x = inView ? c.viewport_x : 0
+            y = inView ? c.viewport_y : 0
+            wideTail = inView && c.wide_tail
+            visible = c.visible
+            blinking = c.blinking
+            password = c.password_input
+            style = UInt32(c.visual_style.rawValue)
+        }
+    }
+
+    /// Take the session's changes as a frame would, without drawing one:
+    /// whether there was anything new to draw (tests).
+    @discardableResult
+    func refresh(_ session: TerminalSession, focused: Bool = true) -> Bool {
+        prepare(session, focused: focused, force: false)
+    }
 
     /// Images shown by placeholder cells, from this frame's rows.
     private func updatePlaceholderDraws() {
