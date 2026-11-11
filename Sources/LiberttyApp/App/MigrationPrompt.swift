@@ -29,9 +29,11 @@ enum MigrationPrompt {
                     + "profile's `Keyboard Map` under `New Bookmarks`; keys are \"0xCHARACTER-0xMODIFIERS\" hex pairs (modifier bits: "
                     + "0x20000 shift, 0x40000 control, 0x80000 option, 0x100000 command)."
             case .tmux:
-                "tmux: ~/.tmux.conf or ~/.config/tmux/tmux.conf — `bind`/`bind-key` lines (and its default prefix bindings, if it "
-                    + "keeps them). Libertty has no prefix key: give a pane or tab action a direct chord (cmd+… or ctrl+shift+…) "
-                    + "only where it isn't one of Libertty's defaults already, and say which you mapped."
+                "tmux: ~/.tmux.conf or ~/.config/tmux/tmux.conf — `bind`/`bind-key` lines, its prefix (`set -g prefix`, else "
+                    + "ctrl+b) and its default prefix bindings, if it keeps them. Keep the prefix: what tmux binds after it is "
+                    + "`PREFIX>KEY` here (`bind c new-window` is `keybind = ctrl+b>c=new_tab`), and `bind -n` a key by itself. "
+                    + "A key tmux names by a shifted character is its key with shift (`%` is shift+5, `\"` is shift+quote, "
+                    + "`|` is shift+backslash). Leave out what is one of Libertty's defaults already, and say which you mapped."
             }
         }
 
@@ -56,7 +58,9 @@ enum MigrationPrompt {
 
         Libertty's config file is \(config): `key = value` lines, Ghostty's format. Keybindings are repeatable lines \
         `keybind = TRIGGER=ACTION`, e.g. `keybind = cmd+d=new_split:right`; `keybind = cmd+k=unbind` removes a default. \
-        Libertty has no key sequences or prefix keys.
+        A prefix key (tmux's, a Ghostty sequence) is `KEY>KEY`: `keybind = ctrl+b>c=new_tab`; add \
+        `keybind = ctrl+b>ctrl+b=text:\\x02` so the prefix pressed twice still reaches the program. A sequence takes its \
+        first key from whatever that key did alone, and works in terminal panes.
 
         1. See what Libertty has: run `libertty +list-actions` (every action and its arguments) and `libertty +list-keybinds` \
         (the bindings in effect now, defaults included).
@@ -69,7 +73,7 @@ enum MigrationPrompt {
         append one block headed `# Keybindings migrated from \(names), <today's date>`. Never rewrite, reorder or remove \
         my other lines — Libertty writes to this file too.
         5. Check it: `libertty +validate-config` must report no problems. A running Libertty applies the file at once.
-        6. Tell me what you added, and what you left out and why (no matching action, a conflict, a prefix sequence).
+        6. Tell me what you added, and what you left out and why (no matching action, a conflict).
         """
     }
 

@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 
 /// The terminal surface: owns the Metal layer, paces frames to the display,
 /// and turns AppKit input (keys, IME, scroll, paste) into terminal input.
-final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
+final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, PendingKeysDisplay {
     let session: TerminalSession
     /// Names this pane in notifications: its liberttyd session, else per view.
     lazy var paneID: String = session.persistentID ?? UUID().uuidString
@@ -419,7 +419,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         label.lineBreakMode = .byTruncatingMiddle
         label.wantsLayer = true
         label.drawsBackground = true
-        label.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85)
         label.layer?.cornerRadius = 5
         label.isHidden = true
         addSubview(label)
@@ -435,6 +434,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         nameTagLabel.stringValue = " \(nameTag) "
         let size = nameTagLabel.fittingSize
         nameTagLabel.frame = NSRect(x: 8, y: 9, width: min(size.width, max(0, bounds.width - 70)), height: size.height)
+        updateGround(of: nameTagLabel, alpha: 0.85)
         nameTagLabel.isHidden = false
     }
 
@@ -826,6 +826,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if showsFocusLine { focusLine.layer?.backgroundColor = Accent.color.cgColor }
         // (Asked only while it shows: asking makes the button.)
         if showsCloseButton && hovering { updateCloseButtonColor() }
+        // The tags that show (the name tag takes its ground as it's shown).
+        updateNameTag(show: showsCloseButton && hovering)
+        if hoveredLink != nil { updateGround(of: linkPreview, alpha: 0.92) }
+        if showsPendingKeys { updateGround(of: pendingKeysLabel, alpha: 0.92) }
     }
 
     /// The × button's disc, in the appearance the pane has now.
@@ -872,11 +876,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         let top: CGFloat = showsCloseButton ? 34 : 0
         scroller.frame = NSRect(x: bounds.width - 16, y: top, width: 16, height: max(0, bounds.height - top))
         if session.host != nil { layoutLinkBanner() }
+        if showsPendingKeys { layoutPendingKeys() }
     }
 
     override func resignFirstResponder() -> Bool {
         session.reportFocus(false)
         setNeedsRender(force: true)
+        PendingKeys.shared.cancel(in: self)
         return true
     }
 
@@ -1015,18 +1021,50 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// it is bound to `unbind`, i.e. not bound). Command combinations arrive
     /// here; others are checked at the top of `keyDown`.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.type == .keyDown, window?.firstResponder === self, !hasMarkedText(),
-              let action = ConfigStore.shared.keybinds.action(for: event) else {
+        guard event.type == .keyDown, window?.firstResponder === self, !hasMarkedText() else {
             return super.performKeyEquivalent(with: event)
         }
-        return ActionDispatcher.perform(action, in: self)
+        switch pressKeybind(event) {
+        case .action(let action): return ActionDispatcher.perform(action, in: self)
+        case .completed(let action): ActionDispatcher.perform(action, in: self); return true
+        case .held: return true
+        case .unbound: return super.performKeyEquivalent(with: event)
+        }
+    }
+
+    /// What the keybinds make of a key press, a sequence's (`ctrl+b>v`) one
+    /// key at a time: keys of a sequence that leads nowhere go to the
+    /// program after all, in the order they were pressed.
+    private func pressKeybind(_ event: NSEvent) -> PendingKeys.Outcome {
+        PendingKeys.shared.press(event, in: self, keybinds: ConfigStore.shared.keybinds) { keyDownUnbound(with: $0) }
+    }
+
+    /// The keys of a sequence under way, "⌃B …"; none: it's over.
+    func showPendingKeys(_ keys: [Trigger]) {
+        // (Told of none without having shown any: no tag is made for that.)
+        guard showsPendingKeys || !keys.isEmpty else { return }
+        showsPendingKeys = !keys.isEmpty
+        pendingKeysLabel.isHidden = keys.isEmpty
+        guard showsPendingKeys else { return }
+        pendingKeysLabel.stringValue = " " + keys.displayString + " … "
+        updateGround(of: pendingKeysLabel, alpha: 0.92)
+        layoutPendingKeys()
     }
 
     override func keyDown(with event: NSEvent) {
-        if !hasMarkedText(), let action = ConfigStore.shared.keybinds.action(for: event),
-           ActionDispatcher.perform(action, in: self) {
-            return
+        if !hasMarkedText() {
+            switch pressKeybind(event) {
+            case .action(let action): if ActionDispatcher.perform(action, in: self) { return }
+            case .completed(let action): ActionDispatcher.perform(action, in: self); return
+            case .held: return
+            case .unbound: break
+            }
         }
+        keyDownUnbound(with: event)
+    }
+
+    /// A key no keybind takes: the input method's, then the program's.
+    private func keyDownUnbound(with event: NSEvent) {
         // Its program ended and it stayed: a key (pressed now, not one held
         // from before) closes it, and goes nowhere else.
         if closesOnKey {
@@ -1596,13 +1634,82 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         label.lineBreakMode = .byTruncatingMiddle
         label.wantsLayer = true
         label.drawsBackground = true
-        label.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92)
         label.layer?.cornerRadius = 5
         label.isHidden = true
         addSubview(label)
         label.layer?.zPosition = 2
         return label
     }()
+
+    /// The keys of a sequence under way (`ctrl+b`, waiting for its next key),
+    /// at the pane's bottom right: nothing times out, so a prefix pressed by
+    /// mistake would otherwise look like a key that went nowhere.
+    private lazy var pendingKeysLabel: NSTextField = {
+        let label = PassThroughLabel(labelWithString: "")
+        label.font = Typeface.ui(11, .medium)
+        label.textColor = .labelColor
+        label.wantsLayer = true
+        label.drawsBackground = true
+        label.layer?.cornerRadius = 5
+        label.isHidden = true
+        addSubview(label)
+        label.layer?.zPosition = 2
+        return label
+    }()
+    /// It's on screen (asked instead of the tag: asking makes it).
+    private var showsPendingKeys = false
+
+    /// A tag's ground (the name tag's, the link preview's, the pending keys'),
+    /// in the appearance the pane has now: a color with its alpha changed is
+    /// resolved once (in the system's appearance, when made), while the
+    /// tag's text follows the pane's — light on light, with a dark window
+    /// theme on a light system. Taken as the tag is shown, and again when
+    /// the appearance changes under it.
+    private func updateGround(of tag: NSTextField, alpha: CGFloat) {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            tag.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(alpha)
+        }
+    }
+
+    /// What the pending-keys tag shows now (the UI probe): nil when hidden.
+    var pendingKeysShown: String? { showsPendingKeys ? pendingKeysLabel.stringValue : nil }
+
+    /// How well it reads (the UI probe): nil when hidden.
+    var pendingKeysContrast: Double? { showsPendingKeys ? contrast(of: pendingKeysLabel) : nil }
+
+    /// Where the link under ⌘ goes, as its tag says, and how well that
+    /// reads (the UI probe): nil when hidden.
+    var linkPreviewShown: String? { hoveredLink == nil || linkPreview.isHidden ? nil : linkPreview.stringValue }
+    var linkPreviewContrast: Double? { linkPreviewShown == nil ? nil : contrast(of: linkPreview) }
+
+    /// What the name tag says and how well that reads (the UI probe): nil when hidden.
+    var nameTagShown: String? { nameTagLabel.isHidden ? nil : nameTagLabel.stringValue }
+    var nameTagContrast: Double? { nameTagShown == nil ? nil : contrast(of: nameTagLabel) }
+
+    /// How well a tag's text reads on its ground: their WCAG contrast, as
+    /// this pane's appearance resolves them, the text's own alpha over the
+    /// ground (secondary text is a part-clear black or white).
+    private func contrast(of tag: NSTextField) -> Double? {
+        var ratio: Double?
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            guard let text = tag.textColor?.usingColorSpace(.sRGB),
+                  let ground = tag.backgroundColor?.usingColorSpace(.sRGB) else { return }
+            func byte(_ v: CGFloat) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
+            let alpha = text.alphaComponent
+            func over(_ t: CGFloat, _ g: CGFloat) -> UInt8 { byte(t * alpha + g * (1 - alpha)) }
+            let onGround = RGB(over(text.redComponent, ground.redComponent), over(text.greenComponent, ground.greenComponent),
+                               over(text.blueComponent, ground.blueComponent))
+            ratio = onGround.contrast(with: RGB(byte(ground.redComponent), byte(ground.greenComponent), byte(ground.blueComponent)))
+        }
+        return ratio
+    }
+
+    private func layoutPendingKeys() {
+        let size = pendingKeysLabel.fittingSize
+        let width = min(size.width, max(0, bounds.width - 12))
+        pendingKeysLabel.frame = NSRect(x: bounds.width - width - 18, y: bounds.height - size.height - 6,
+                                        width: width, height: size.height)
+    }
 
     /// ⌘ over the cell at `col`, `row` (the UI probe): as a mouse moved there would.
     func commandHover(col: Int, row: Int) {
@@ -1646,6 +1753,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         let size = linkPreview.fittingSize
         linkPreview.frame = NSRect(x: 6, y: bounds.height - size.height - 6,
                                    width: min(size.width, bounds.width - 12), height: size.height)
+        updateGround(of: linkPreview, alpha: 0.92)
         linkPreview.isHidden = false
     }
 

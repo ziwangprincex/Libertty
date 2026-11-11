@@ -85,6 +85,9 @@ import LiberttyCore
 ///   expect-header:TEXT    the focused pane's header says TEXT (its name, folder or branch)
 ///   header-pointer:on|off  the pointer comes onto (or leaves) the focused pane's header
 ///   expect-header-buttons:A,B  the buttons it shows now, by tooltip (`-`: none)
+///   expect-pending-keys:TEXT  the focused pane's tag for a key sequence under way (`-`: none), readable on its ground
+///   expect-link-preview:URL  its tag for where the link under ⌘ goes (`-`: none), readable on its ground
+///   expect-name-tag:TEXT  its name tag (hover:N shows it, without headers) has TEXT in it (`-`: none), readable on its ground
 ///   cmd-hover:TEXT        ⌘ held with the pointer over TEXT's last showing in the focused pane
 ///   expect-peek:NAME      the image peek shows the file NAME (none: nothing shows)
 ///   expect-sheet:yes|no   whether a sheet is up
@@ -861,6 +864,20 @@ enum UIProbe {
                         // The window, as dragged: where it is, not its size.
                         window.setFrameOrigin(NSPoint(x: window.frame.minX + dx, y: window.frame.minY + dy))
                         pump(0.4)
+                    case .expectPendingKeys(let want):
+                        // The tag of a sequence under way, in the focused pane: "-" for none.
+                        // Shown, its text reads on its ground in the appearance the pane
+                        // has now (4.5: WCAG's contrast for text).
+                        let pane = controller.focusedTerminal
+                        if !tagHolds("pending keys", shown: pane.pendingKeysShown, contrast: pane.pendingKeysContrast, want: want) { failures += 1 }
+                    case .expectLinkPreview(let want):
+                        let pane = controller.focusedTerminal
+                        if !tagHolds("link preview", shown: pane.linkPreviewShown, contrast: pane.linkPreviewContrast, want: want) { failures += 1 }
+                    case .expectNameTag(let want):
+                        // (Its text is the dimmer secondary one: 3, WCAG's contrast for large text.)
+                        let pane = controller.focusedTerminal
+                        if !tagHolds("name tag", shown: pane.nameTagShown, contrast: pane.nameTagContrast, want: want, whole: false,
+                                     minimum: 3) { failures += 1 }
                     case .expectCaretTold:
                         // Where the system would put its input-source indicator is where the cursor is.
                         let pane = controller.focusedTerminal
@@ -1221,12 +1238,30 @@ enum UIProbe {
         controller.everyTab.flatMap { $0.everyPane }.map { $0.session.scrollbackText() }.joined(separator: "\n")
     }
 
+    /// A pane's tag says `want` ("-": it's hidden; `whole` false: it has
+    /// `want` in it), and what it says reads on its ground in the appearance
+    /// the pane has now (4.5: WCAG's contrast for text). Says which.
+    private static func tagHolds(_ what: String, shown: String?, contrast: Double?, want: String, whole: Bool = true,
+                                 minimum: Double = 4.5) -> Bool {
+        let shown = shown?.trimmingCharacters(in: .whitespaces) ?? "-"
+        guard whole || want == "-" || shown == "-" ? shown == want : shown.contains(want) else {
+            print("FAIL  ui-probe \(what): \(shown), not \(want)")
+            return false
+        }
+        if let contrast, contrast < minimum {
+            print("FAIL  ui-probe \(what): \(shown) is hard to read on its ground (contrast \(String(format: "%.1f", contrast)))")
+            return false
+        }
+        print("ok    ui-probe \(what): \(shown)")
+        return true
+    }
+
     private enum Step {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
-        case headerPointer(Bool), expectHeaderButtons(String)
+        case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
@@ -1344,6 +1379,9 @@ enum UIProbe {
             case "header-pointer": steps.append(.headerPointer(arg == "on"))
             case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
             case "expect-caret-told": steps.append(.expectCaretTold)
+            case "expect-pending-keys": steps.append(.expectPendingKeys(arg))
+            case "expect-link-preview": steps.append(.expectLinkPreview(arg))
+            case "expect-name-tag": steps.append(.expectNameTag(arg))
             case "move":
                 let d = arg.split(separator: ",").compactMap { Double($0) }
                 guard d.count == 2 else { print("ui-probe: move:DX,DY"); exit(2) }

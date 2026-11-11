@@ -185,6 +185,21 @@ struct Trigger: Hashable {
         guard let code = keyName.code else { return nil }
         return Shortcut(keyCode: UInt32(code), modifiers: flags)
     }
+
+    /// `ctrl+b>v`: keys pressed one after another, Ghostty's `>` (tmux's
+    /// prefix key). A single trigger is a sequence of one.
+    static func sequence(_ text: String) -> [Trigger]? {
+        let keys = text.split(separator: ">", omittingEmptySubsequences: false).map { Trigger(String($0)) }
+        guard !keys.isEmpty, !keys.contains(nil) else { return nil }
+        return keys.compactMap { $0 }
+    }
+}
+
+extension Array where Element == Trigger {
+    /// As the config file has them: `ctrl+b>v`.
+    var configString: String { map(\.configString).joined(separator: ">") }
+    /// As the command palette and Settings show them: "⌃B V".
+    var displayString: String { map(\.displayString).joined(separator: " ") }
 }
 
 // MARK: - Actions
@@ -481,16 +496,33 @@ enum Action: Equatable {
 /// The effective keybinds: Libertty's defaults, then the user's `keybind`
 /// lines in order. `keybind = clear` drops everything before it,
 /// `TRIGGER=unbind` removes one, and a `global:` prefix makes a binding
-/// work system-wide.
+/// work system-wide. `KEY>KEY=ACTION` binds keys pressed one after another
+/// (`ctrl+b>v`), with Ghostty's rules: nothing times out, a sequence takes
+/// its first key from a binding of that key alone, and binding the key
+/// alone again drops the sequences that start with it.
 struct Keybinds: Equatable {
     struct Binding: Equatable {
         var trigger: Trigger
         var action: Action
     }
 
+    /// Two keys or more, pressed one after another.
+    struct KeySequence: Equatable {
+        var triggers: [Trigger]
+        var action: Action
+    }
+
+    /// Where a key press leads: to an action, further into a sequence (by
+    /// the trigger it matched), or nowhere.
+    enum Step: Equatable { case action(Action), more(Trigger), none }
+
     private(set) var local: [Binding] = []
     private(set) var global: [Binding] = []
+    private(set) var sequences: [KeySequence] = []
     private var index: [Trigger: Action] = [:]
+    private var sequenceIndex: [[Trigger]: Action] = [:]
+    /// What a sequence starts with, short of all of it: `ctrl+b` of `ctrl+b>v`.
+    private var prefixes: Set<[Trigger]> = []
 
     /// Ghostty's macOS defaults (src/config/Config.zig), minus actions
     /// Libertty doesn't have yet (search, inspector, command palette, undo).
@@ -534,22 +566,24 @@ struct Keybinds: Equatable {
     static func validate(_ entry: String) -> String? {
         let e = entry.trimmingCharacters(in: .whitespaces)
         if e == "clear" { return nil }
-        guard let (triggerText, actionText, _) = split(e) else { return "expected TRIGGER=ACTION (e.g. cmd+d=new_split:right)" }
-        guard Trigger(triggerText) != nil else { return "unknown key or modifier in “\(triggerText)”" }
+        guard let (triggerText, actionText, isGlobal) = split(e) else { return "expected TRIGGER=ACTION (e.g. cmd+d=new_split:right)" }
+        guard let keys = Trigger.sequence(triggerText) else { return "unknown key or modifier in “\(triggerText)”" }
+        if isGlobal, keys.count > 1 { return "a global: key can't be a sequence (“\(triggerText)”)" }
         guard Action(actionText) != nil else { return "unknown action “\(actionText)” (see libertty +list-actions)" }
         return nil
     }
 
-    /// One `keybind` value as (trigger, action, global), or nil if malformed.
-    static func parse(_ entry: String) -> (Trigger, Action, Bool)? {
+    /// One `keybind` value as (keys, action, global), or nil if malformed.
+    /// The keys are one trigger, or a sequence's.
+    static func parse(_ entry: String) -> ([Trigger], Action, Bool)? {
         guard let (t, a, g) = split(entry.trimmingCharacters(in: .whitespaces)),
-              let trigger = Trigger(t), let action = Action(a) else { return nil }
-        return (trigger, action, g)
+              let keys = Trigger.sequence(t), let action = Action(a), !g || keys.count == 1 else { return nil }
+        return (keys, action, g)
     }
 
-    /// The trigger an entry binds (`+import-ghostty` keeps the user's own).
-    static func trigger(of entry: String) -> Trigger? {
-        split(entry.trimmingCharacters(in: .whitespaces)).flatMap { Trigger($0.0) }
+    /// The keys an entry binds (`+import-ghostty` keeps the user's own).
+    static func trigger(of entry: String) -> [Trigger]? {
+        split(entry.trimmingCharacters(in: .whitespaces)).flatMap { Trigger.sequence($0.0) }
     }
 
     /// `[global:]TRIGGER=ACTION`, split at the first "=" after the trigger
@@ -577,27 +611,149 @@ struct Keybinds: Equatable {
             if e == "clear" {
                 local.removeAll()
                 global.removeAll()
+                sequences.removeAll()
                 continue
             }
-            guard let (t, a, isGlobal) = Self.split(e), let trigger = Trigger(t), let action = Action(a) else { continue }
+            guard let (t, a, isGlobal) = Self.split(e), let keys = Trigger.sequence(t), let action = Action(a) else { continue }
             if isGlobal {
-                global.removeAll { $0.trigger == trigger }
-                if action != .unbind { global.append(Binding(trigger: trigger, action: action)) }
+                // (The system takes a global key at once: it can't wait for a second.)
+                guard keys.count == 1 else { continue }
+                global.removeAll { $0.trigger == keys[0] }
+                if action != .unbind { global.append(Binding(trigger: keys[0], action: action)) }
+                continue
+            }
+            // These keys are this entry's now: what they did goes, and so does
+            // every sequence that starts with them.
+            local.removeAll { [$0.trigger] == keys }
+            sequences.removeAll { $0.triggers.starts(with: keys) }
+            guard action != .unbind else { continue }
+            if keys.count == 1 {
+                local.append(Binding(trigger: keys[0], action: action))
             } else {
-                local.removeAll { $0.trigger == trigger }
-                if action != .unbind { local.append(Binding(trigger: trigger, action: action)) }
+                // A key on the way to it can't act by itself too.
+                local.removeAll { $0.trigger == keys[0] }
+                sequences.removeAll { keys.starts(with: $0.triggers) }
+                sequences.append(KeySequence(triggers: keys, action: action))
             }
         }
         for b in local { index[b.trigger] = b.action }
+        for s in sequences {
+            sequenceIndex[s.triggers] = s.action
+            for n in 1..<s.triggers.count { prefixes.insert(Array(s.triggers[..<n])) }
+        }
     }
 
+    /// What one press does by itself (a sequence's keys do nothing here).
     func action(for event: NSEvent) -> Action? {
         for t in Trigger.candidates(for: event) { if let a = index[t] { return a } }
         return nil
     }
 
-    /// The first trigger bound to `action`, for the menu's key equivalent.
+    /// Where a press leads after `pressed`, the keys of a sequence so far
+    /// (none: a first key). `candidates`: every trigger the press could be,
+    /// most specific first (`Trigger.candidates`).
+    func step(after pressed: [Trigger], _ candidates: [Trigger]) -> Step {
+        for t in candidates {
+            let keys = pressed + [t]
+            if keys.count == 1, let a = index[t] { return .action(a) }
+            if let a = sequenceIndex[keys] { return .action(a) }
+            if prefixes.contains(keys) { return .more(t) }
+        }
+        return .none
+    }
+
+    /// The first trigger bound to `action`, for the menu's key equivalent
+    /// (a menu shows one press: an action bound only to a sequence has none).
     func trigger(for action: Action) -> Trigger? {
         local.first { $0.action == action }?.trigger
+    }
+
+    /// The keys bound to `action` as shown beside its name: "⌘D", or a
+    /// sequence's "⌃B V" when no single press is bound to it.
+    func keys(for action: Action) -> String? {
+        trigger(for: action)?.displayString ?? sequences.first { $0.action == action }?.triggers.displayString
+    }
+}
+
+// MARK: - A sequence under way
+
+/// The keys of a sequence pressed so far (`ctrl+b`, waiting for `v`), held
+/// back from the program until they turn out to be bound or not. As in
+/// Ghostty nothing times out: the next key completes the sequence, goes
+/// further into it, or isn't part of one — then the program gets the keys
+/// held back, as if nothing had been bound, and that key is a key like any
+/// other.
+/// What shows the keys of a sequence under way (the pane they were pressed in):
+/// told the keys each time they change, none when the sequence is over.
+protocol PendingKeysDisplay: AnyObject {
+    func showPendingKeys(_ keys: [Trigger])
+}
+
+final class PendingKeys {
+    static let shared = PendingKeys()
+
+    enum Outcome: Equatable {
+        /// One press bound to an action: the key is taken if the action is carried out.
+        case action(Action)
+        /// The last key of a sequence: taken whatever the action does.
+        case completed(Action)
+        /// On the way through a sequence (or a held key repeating): taken, nothing happens yet.
+        case held
+        case unbound
+    }
+
+    /// The keys pressed so far.
+    private(set) var pressed: [Trigger] = []
+    private var events: [NSEvent] = []
+    /// Where they were pressed: a sequence doesn't carry on in another pane.
+    private weak var owner: AnyObject?
+    /// A key held down after it was taken repeats into nothing, rather than
+    /// starting over or reaching the program.
+    private var taken: UInt16?
+
+    /// What `event`, a key pressed in `owner`, does. `flush` gets the keys
+    /// held back when the sequence leads nowhere, in the order pressed.
+    func press(_ event: NSEvent, in owner: AnyObject, keybinds: Keybinds, flush: (NSEvent) -> Void) -> Outcome {
+        if event.isARepeat, event.keyCode == taken { return .held }
+        taken = nil
+        // Focus moved on mid-sequence: those keys were another pane's, and stay unsent.
+        if self.owner !== owner { reset() }
+        switch keybinds.step(after: pressed, Trigger.candidates(for: event)) {
+        case .action(let action):
+            let sequence = !pressed.isEmpty
+            reset()
+            guard sequence else { return .action(action) }
+            taken = event.keyCode
+            return .completed(action)
+        case .more(let trigger):
+            pressed.append(trigger)
+            events.append(event)
+            self.owner = owner
+            taken = event.keyCode
+            (owner as? PendingKeysDisplay)?.showPendingKeys(pressed)
+            return .held
+        case .none:
+            guard !pressed.isEmpty else { return .unbound }
+            let held = events
+            reset()
+            held.forEach(flush)
+            return press(event, in: owner, keybinds: keybinds, flush: flush)
+        }
+    }
+
+    /// Forget a sequence under way (the config changed, the pane went away).
+    func reset() {
+        let shown = pressed.isEmpty ? nil : owner as? PendingKeysDisplay
+        pressed = []
+        events = []
+        owner = nil
+        shown?.showPendingKeys([])
+    }
+
+    /// Forget the sequence under way if it's `owner`'s: the pane lost the
+    /// keyboard, and its held-back keys stay unsent (as when another pane's
+    /// key arrives first).
+    func cancel(in owner: AnyObject) {
+        if self.owner === owner { reset() }
     }
 }

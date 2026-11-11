@@ -274,11 +274,11 @@ enum CLI {
         for (key, value) in pairs {
             switch key {
             case "keybind":
-                // One line per trigger: replace an earlier binding of the same key.
-                if let (trigger, _, isGlobal) = Keybinds.parse(value) {
+                // One line per trigger (or sequence): replace an earlier binding of the same keys.
+                if let (keys, _, isGlobal) = Keybinds.parse(value) {
                     store.unset("keybind") { v in
-                        guard let (t, _, g) = Keybinds.parse(v) else { return false }
-                        return t == trigger && g == isGlobal
+                        guard let (k, _, g) = Keybinds.parse(v) else { return false }
+                        return k == keys && g == isGlobal
                     }
                 }
                 store.add(key, value)
@@ -396,13 +396,17 @@ enum CLI {
 
     private static func listKeybinds(_ args: [String]) -> Int32 {
         let table = args.contains("--default") ? Keybinds(entries: []) : store.keybinds
-        let width = (table.local + table.global).map { $0.trigger.configString.count + 7 }.max() ?? 0
+        let width = ((table.local + table.global).map { $0.trigger.configString.count + 7 }
+            + table.sequences.map(\.triggers.configString.count)).max() ?? 0
         for b in table.global {
             print(("global:" + b.trigger.configString).padding(toLength: width, withPad: " ", startingAt: 0)
                   + " = " + b.action.configString)
         }
         for b in table.local {
             print(b.trigger.configString.padding(toLength: width, withPad: " ", startingAt: 0) + " = " + b.action.configString)
+        }
+        for s in table.sequences {
+            print(s.triggers.configString.padding(toLength: width, withPad: " ", startingAt: 0) + " = " + s.action.configString)
         }
         return 0
     }

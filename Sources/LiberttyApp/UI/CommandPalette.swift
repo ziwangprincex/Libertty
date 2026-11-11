@@ -203,7 +203,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         weak var controller = self.controller
         var out: [Item] = []
         func command(_ title: String, _ action: Action, _ symbol: String) {
-            var item = Item(title: L10n.t(title), symbol: symbol, shortcut: keybinds.trigger(for: action)?.displayString ?? "") {
+            var item = Item(title: L10n.t(title), symbol: symbol, shortcut: keybinds.keys(for: action) ?? "") {
                 ActionDispatcher.perform(action, in: controller?.focusedTerminal, controller: controller)
             }
             // In another language, the English finds it too.

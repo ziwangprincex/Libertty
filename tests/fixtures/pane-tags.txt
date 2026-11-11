@@ -1,0 +1,28 @@
+# The small tags over a pane (where the link under ⌘ goes; what a split
+# without a header runs, under the pointer) read on their ground in the
+# appearance the pane has — changed while they show, too. (Their grounds
+# were made once, in the appearance of that moment: light text on a light
+# ground with a dark window theme on a light system.) The config has
+# pane-headers = never.
+type:echo see https://example.com/tag-check
+key:enter
+wait:0.5
+appearance:dark
+cmd-hover:https://example.com/tag-check
+expect-link-preview:https://example.com/tag-check
+appearance:light
+expect-link-preview:https://example.com/tag-check
+appearance:dark
+expect-link-preview:https://example.com/tag-check
+action:new_split:right
+wait:0.8
+expect-panes:2
+type:cd /tmp
+key:enter
+wait:0.6
+hover:2
+expect-name-tag:tmp
+appearance:light
+expect-name-tag:tmp
+appearance:dark
+expect-name-tag:tmp

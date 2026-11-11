@@ -387,6 +387,9 @@ struct Config: Equatable {
         ("working-directory", "Where new panes start: inherit (the focused pane's directory), home, or a path."),
         ("keybind", "TRIGGER=ACTION, e.g. cmd+d=new_split:right, ctrl+shift+c=copy_to_clipboard, cmd+k=unbind. "
             + "Prefix global: to make it work from any app. `clear` drops the defaults. Repeatable. "
+            + "KEY>KEY=ACTION is a sequence, keys pressed one after another (a prefix key, as tmux has): "
+            + "ctrl+b>v=new_split:right; ctrl+b>ctrl+b=text:\\x02 still sends the prefix itself. Nothing times out; "
+            + "a key that isn't part of the sequence sends the keys so far to the program. In terminal panes. "
             + "See libertty +list-keybinds and libertty +list-actions."),
         ("global-hotkey", "Show or hide Libertty from any app (shorthand for keybind = global:KEY=toggle_visibility)."),
         ("global-new-window-hotkey", "Open a new window from any app (shorthand for keybind = global:KEY=new_window)."),
@@ -1386,13 +1389,14 @@ final class ConfigStore {
     }
 
     /// Rebind `action` to `trigger` (nil: leave it unbound), keeping the
-    /// file tidy: earlier user lines for the same trigger or action go.
+    /// file tidy: earlier user lines for the same trigger or action go
+    /// (a sequence bound to the action too).
     func rebind(_ action: Action, from old: Trigger?, to new: Trigger?) {
         edit { lines in
             lines.removeAll { line in
-                guard Self.key(of: line) == "keybind", let (t, a, isGlobal) = Keybinds.parse(Self.value(of: line)),
+                guard Self.key(of: line) == "keybind", let (keys, a, isGlobal) = Keybinds.parse(Self.value(of: line)),
                       !isGlobal else { return false }
-                return t == old || t == new || a == action
+                return keys == old.map { [$0] } || keys == new.map { [$0] } || a == action
             }
             if let old, Keybinds(entries: []).local.contains(where: { $0.trigger == old }) {
                 Self.append("keybind = \(old.configString)=unbind", to: &lines)

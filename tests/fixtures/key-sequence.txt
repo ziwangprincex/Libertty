@@ -1,0 +1,51 @@
+# Key sequences (keybind = ctrl+b>v=new_split:right): a prefix key is held
+# back until the next key says what it was. The config binds ctrl+b>v,
+# ctrl+b>ctrl+b (the prefix itself, for the program) and cmd+k>cmd+u.
+type:cat -v
+key:enter
+wait:0.5
+# A key that isn't part of a sequence: cat gets the prefix after all, then the key.
+# (Its tag reads on its ground in the appearance the pane has, changed while it shows too.)
+appearance:dark
+key:ctrl+b
+wait:0.2
+expect-not:^B
+expect-pending-keys:⌃B …
+appearance:light
+expect-pending-keys:⌃B …
+key:x
+key:enter
+wait:0.5
+expect:^Bx
+expect-pending-keys:-
+# The prefix twice sends it once.
+key:ctrl+b
+key:ctrl+b
+key:y
+key:enter
+wait:0.5
+expect:^By
+expect-not:^B^B
+# The prefix, then its key: a split, and cat saw neither.
+key:ctrl+b
+wait:0.2
+expect-panes:1
+key:v
+wait:0.8
+expect-panes:2
+expect-focus:2
+expect-not:^Bv
+# ⌘ keys arrive as key equivalents: the same sequence. (⌘K alone clears
+# the screen by default; as a prefix it waits, and the pane keeps its text.)
+type:echo MARK-TWO
+key:enter
+wait:0.5
+key:cmd+k
+wait:0.3
+expect-panes:2
+expect:MARK-TWO
+expect-pending-keys:⌘K …
+key:cmd+u
+wait:0.8
+expect-panes:3
+expect-pending-keys:-

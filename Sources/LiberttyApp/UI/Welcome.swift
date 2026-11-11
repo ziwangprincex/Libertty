@@ -219,7 +219,7 @@ struct WelcomeView: View {
     ]
 
     static func boundTips(_ keybinds: Keybinds) -> [(label: String, keys: String)] {
-        keyTips.compactMap { tip in keybinds.trigger(for: tip.action).map { (tip.label, $0.displayString) } }
+        keyTips.compactMap { tip in keybinds.keys(for: tip.action).map { (tip.label, $0) } }
     }
 
     private var keys: some View {

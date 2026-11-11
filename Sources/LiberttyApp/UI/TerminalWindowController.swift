@@ -720,7 +720,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     /// "Split Right (⌘D)": a control's name and its keys as bound now.
     static func tip(_ label: String, _ action: Action) -> String {
-        guard let keys = ConfigStore.shared.keybinds.trigger(for: action)?.displayString else { return label }
+        guard let keys = ConfigStore.shared.keybinds.keys(for: action) else { return label }
         return "\(label) (\(keys))"
     }
 }

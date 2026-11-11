@@ -169,6 +169,7 @@
 | Option 当 Alt（左、右或两边）、选中即复制、scrollback 行数、启动命令、起始目录 | ✅ |
 | `libertty +validate-config` 检查配置，逐行报告问题 | ✅ |
 | 自定义键位（keybind），Ghostty 语法和 action 名，`global:` 全局键位 | ✅ |
+| 按键序列 / 前缀键（`keybind = ctrl+b>v=new_split:right`，Ghostty 的 `>` 语法和规则：不超时；按到序列外的键，已按的键照常发给程序；序列占用首键原来的单键绑定；`global:` 不能是序列） | ✅ 终端 pane 内生效（文档、网页等 pane 里的键位走菜单，菜单放不下两次按键）；命令面板和设置里显示为 `⌃B V`；等待下一个键时 pane 右下角显示已按的键（`⌃B …`），离开 pane 即作废；真键盘验证过（中文输入法开着和关着各一轮） |
 | 分屏 pane 悬停时右上角出现 ×，右键菜单（复制、粘贴、分屏、清屏、查找、关闭） | ✅ |
 | 自定义主题文件（`~/.config/libertty/themes`，也能直接用 Ghostty 装的 463 套，以及已安装的 Rex 的 41 套：运行时从 Rex.app 读取，不拷贝）、`theme = light:X,dark:Y` 跟随系统深浅色 | ✅ |
 

@@ -595,6 +595,18 @@ expect pane-header 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-con
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/pane-header.txt)" $OUT
 # Float Pane: a live card in the split's corner.
 expect float 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/float.txt)" $OUT
+# Key sequences: a prefix key waits for the next key, and goes to the program if that isn't one of its own.
+mkdir -p $PRIVATE/sequence-config/libertty
+print -r -- 'keybind = ctrl+b>v=new_split:right
+keybind = ctrl+b>ctrl+b=text:\x02
+keybind = cmd+k>cmd+u=new_split:down' > $PRIVATE/sequence-config/libertty/config
+expect key-sequence 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/sequence-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/key-sequence.txt)" $OUT
+# The tags over a pane (a link's address, a headerless split's name) read on their ground, light or dark.
+mkdir -p $PRIVATE/tags-config/libertty
+print -r -- 'pane-headers = never' > $PRIVATE/tags-config/libertty/config
+expect pane-tags 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/tags-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/pane-tags.txt)" $OUT
 # liberttyd keeps the window layout the app gives it, across a takeover.
 expect layout-store 'layout-store: all passed' $LIBERTTY --layout-store-probe
 # +wait --until prompt|idle, +capture --ansi|--html, +events (Tern's wait / capture / events).

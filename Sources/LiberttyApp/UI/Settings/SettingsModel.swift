@@ -184,9 +184,9 @@ final class SettingsModel: ObservableObject {
             for line in text.split(whereSeparator: \.isNewline).map(String.init) {
                 guard let key = ConfigStore.key(of: line) else { continue }
                 if key == "keybind" {
-                    if let (trigger, action, _) = Keybinds.parse(ConfigStore.value(of: line)) {
+                    if let (keys, action, _) = Keybinds.parse(ConfigStore.value(of: line)) {
                         shortcuts.insert(action.configString)
-                        shortcuts.insert("trigger:" + trigger.configString)
+                        shortcuts.insert("trigger:" + keys.configString)
                     }
                 } else {
                     keys[key] = name
@@ -481,7 +481,7 @@ final class SettingsModel: ObservableObject {
 
     func trigger(for id: String) -> String? {
         if id.hasPrefix("shortcut:") {
-            return Action(String(id.dropFirst(9))).flatMap { keybinds.trigger(for: $0) }?.displayString
+            return Action(String(id.dropFirst(9))).flatMap { keybinds.keys(for: $0) }
         }
         let value = current(id)
         return value.isEmpty ? nil : (Shortcut(value)?.displayString ?? value)
@@ -562,6 +562,11 @@ final class SettingsModel: ObservableObject {
     private func rebind(_ action: Action, from old: Trigger?, to new: Trigger?, item id: String) {
         if lockedShortcuts.contains(action.configString) || new.map({ lockedShortcuts.contains("trigger:" + $0.configString) }) == true {
             problems[id] = "Set in an included config file"
+            return
+        }
+        // Bound by itself, the key would end every sequence that starts with it.
+        if let new, let sequence = keybinds.sequences.first(where: { $0.triggers.first == new && $0.action != action }) {
+            problems[id] = "Starts the key sequence \(sequence.triggers.displayString): change that in the config file first"
             return
         }
         let taken = new.flatMap { t in keybinds.local.first { $0.trigger == t && $0.action != action } }

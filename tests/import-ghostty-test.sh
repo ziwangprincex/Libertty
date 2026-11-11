@@ -49,6 +49,7 @@ background = #111111
 keybind = clear
 keybind = cmd+shift+j=clear_screen
 keybind = cmd+shift+u=scroll_to_top
+keybind = ctrl+a>n=new_window
 palette = 2=#00ff00
 palette = 3=#0000ff
 font-feature =' | perl -pe 's/\n/\r\n/' > $T/g2/config
@@ -66,6 +67,7 @@ grep -q '^font-feature' $f && bad "an empty font-feature written" || ok "an empt
 [[ $(grep -c 'cmd+shift+j' $f) == 1 ]] && grep -qx 'keybind = cmd+shift+j=new_tab' $f && ok "Libertty's own binding of a key kept" \
   || bad "keybind override: $(grep cmd+shift+j $f)"
 grep -qx 'keybind = cmd+shift+u=scroll_to_top' $f && ok "a new binding added" || bad "new keybind missing"
+grep -qx 'keybind = ctrl+a>n=new_window' $f && ok "a key sequence added" || bad "key sequence missing: $out"
 [[ $(grep -c '^palette = 2=' $f) == 1 ]] && grep -qx 'palette = 3=#0000ff' $f && ok "Libertty's own palette color kept, others added" \
   || bad "palette: $(grep palette $f)"
 $L +validate-config > /dev/null && ok "the result validates" || bad "invalid result"
