@@ -702,6 +702,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         effect.blendingMode = .behindWindow
         effect.wantsLayer = true
         effect.layer?.cornerRadius = Radius.panel - 2
+        effect.layer?.cornerCurve = .continuous
         effect.layer?.masksToBounds = true
         effect.layer?.borderWidth = 0.5
         effect.layer?.borderColor = NSColor.separatorColor.cgColor
@@ -1077,7 +1078,8 @@ private final class ScopeChip: NSView {
         label = NSTextField(labelWithString: title)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = Radius.card
+        layer?.cornerCurve = .continuous
         label.font = Typeface.ui(12, .medium)
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
@@ -1117,7 +1119,7 @@ final class KeyCap: NSView {
         wantsLayer = true
         layer?.cornerRadius = 5
         layer?.borderWidth = 0.5
-        label.font = mono ? .monospacedSystemFont(ofSize: 10.5, weight: .medium) : .systemFont(ofSize: 10.5, weight: .medium)
+        label.font = mono ? .monospacedSystemFont(ofSize: 10.5, weight: .medium) : Typeface.ui(10.5, .medium)
         label.textColor = .secondaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)

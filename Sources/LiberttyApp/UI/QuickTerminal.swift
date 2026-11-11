@@ -116,7 +116,8 @@ final class QuickTerminal {
             window.hasShadow = true
             window.backgroundColor = config.resolvedTheme.background.nsColor
             window.contentView?.wantsLayer = true
-            window.contentView?.layer?.cornerRadius = 12
+            window.contentView?.layer?.cornerRadius = Radius.card
+            window.contentView?.layer?.cornerCurve = .continuous
             window.contentView?.layer?.masksToBounds = true
             window.isOpaque = false
             window.backgroundColor = .clear

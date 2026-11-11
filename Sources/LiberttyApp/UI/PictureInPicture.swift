@@ -55,7 +55,8 @@ final class PictureInPicture: NSObject, NSWindowDelegate {
 
         let content = NSView()
         content.wantsLayer = true
-        content.layer?.cornerRadius = 10
+        content.layer?.cornerRadius = Radius.floating
+        content.layer?.cornerCurve = .continuous
         content.layer?.masksToBounds = true
         content.layer?.borderWidth = 0.5
         content.layer?.borderColor = NSColor.separatorColor.cgColor
@@ -70,7 +71,7 @@ final class PictureInPicture: NSObject, NSWindowDelegate {
         chrome.state = .active
         chrome.alphaValue = 0
         titleLabel.stringValue = title()
-        titleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        titleLabel.font = Typeface.ui(11, .medium)
         titleLabel.lineBreakMode = .byTruncatingTail
         let back = Self.button("arrow.up.backward.and.arrow.down.forward", "Go to the Pane", self, #selector(goToPane))
         let close = Self.button("xmark", "Close Picture in Picture", self, #selector(closeClicked))

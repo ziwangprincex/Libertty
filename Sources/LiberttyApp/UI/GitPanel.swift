@@ -54,12 +54,12 @@ final class GitPanelView: NSView {
         branchLabel.lineBreakMode = .byTruncatingMiddle
 
         message.placeholderString = "Commit message"
-        message.font = .systemFont(ofSize: 12)
+        message.font = Typeface.ui(12)
         message.target = self
         message.action = #selector(commit(_:))
         commitButton.title = "Commit"
         commitButton.bezelStyle = .smallSquare
-        commitButton.font = .systemFont(ofSize: 11, weight: .medium)
+        commitButton.font = Typeface.ui(11, .medium)
         commitButton.controlSize = .small
         commitButton.target = self
         commitButton.action = #selector(commit(_:))
@@ -207,7 +207,7 @@ final class GitPanelView: NSView {
         let title = (change.path as NSString).lastPathComponent + (change.isDirectory ? "/" : "")
         let name = NSButton(title: title, target: self, action: #selector(openDiff(_:)))
         name.isBordered = false
-        name.font = .systemFont(ofSize: 12)
+        name.font = Typeface.ui(12)
         name.alignment = .left
         name.lineBreakMode = .byTruncatingMiddle
         name.toolTip = change.path
@@ -343,7 +343,7 @@ final class GitPanelView: NSView {
 
     private static func sectionLabel(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text.uppercased())
-        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.font = Typeface.ui(10, .semibold)
         label.textColor = .tertiaryLabelColor
         return label
     }
@@ -353,7 +353,7 @@ final class GitPanelView: NSView {
         b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         b.imagePosition = .imageLeading
         b.isBordered = false
-        b.font = .systemFont(ofSize: 12)
+        b.font = Typeface.ui(12)
         b.contentTintColor = Accent.color
         return b
     }

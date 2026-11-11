@@ -217,6 +217,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         super.viewDidMoveToWindow()
         displayLink?.invalidate()
         displayLink = nil
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowMoved(_:)), name: NSWindow.didMoveNotification, object: window)
+        }
         guard window != nil else {
             // Out of the window (closed, parked, another tab): it draws no
             // more, so nothing else would stop its cursor's blink — and it
@@ -280,6 +284,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if force { forceRedraw = true }
         idleFrames = 0
         displayLink?.isPaused = false
+        caretMayHaveMoved()
         // Typing latency: a change that arrives after this display interval's
         // frame was drawn goes out now, not at the next tick, which would be
         // up to a frame later. Continuous output (a frame drawn this
@@ -409,7 +414,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     }
     private lazy var nameTagLabel: NSTextField = {
         let label = PassThroughLabel(labelWithString: "")
-        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.font = Typeface.ui(11, .medium)
         label.textColor = .secondaryLabelColor
         label.lineBreakMode = .byTruncatingMiddle
         label.wantsLayer = true
@@ -883,6 +888,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
         super.setFrameSize(newSize)
+        // (Its frame is drawn here, below, with no `setNeedsRender`.)
+        if changed { caretMayHaveMoved() }
         // Frozen: sized for a moment only (see `freeze`).
         guard freezes == 0 else { return }
         layoutOverlays()
@@ -1465,11 +1472,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         spinner.controlSize = .small
         spinner.startAnimation(nil)
         let label = NSTextField(labelWithString: "")
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.font = Typeface.ui(12, .medium)
         label.tag = 1
         // Why it can't connect, from ssh, and a way to try again.
         let detail = NSTextField(wrappingLabelWithString: "")
-        detail.font = .systemFont(ofSize: 11)
+        detail.font = Typeface.ui(11)
         detail.textColor = .secondaryLabelColor
         detail.maximumNumberOfLines = 3
         detail.preferredMaxLayoutWidth = 360
@@ -1584,7 +1591,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// a program's OSC 8 link may say one thing and point elsewhere.
     private lazy var linkPreview: NSTextField = {
         let label = NSTextField(labelWithString: "")
-        label.font = .systemFont(ofSize: 11)
+        label.font = Typeface.ui(11)
         label.textColor = .labelColor
         label.lineBreakMode = .byTruncatingMiddle
         label.wantsLayer = true
@@ -1887,6 +1894,14 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     /// Where the IME candidate window goes: at the terminal cursor.
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let rect = caretScreenRect
+        announcedCaretRect = rect
+        return rect
+    }
+
+    /// The cursor's cell on the screen: where the input method's candidates
+    /// and the system's input-source indicator (Caps Lock, 中/A) go.
+    var caretScreenRect: NSRect {
         guard let window else { return .zero }
         let cell = cellSizePoints
         let p = padding
@@ -1894,6 +1909,46 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         let local = NSRect(x: p.left + CGFloat(pos.x) * cell.width, y: p.top + CGFloat(pos.y) * cell.height - smoothOffset,
                            width: cell.width, height: cell.height)
         return window.convertToScreen(convert(local, to: nil))
+    }
+
+    /// What the system last heard of it, or was last told to ask for again (`--ui-probe`).
+    private(set) var announcedCaretRect = NSRect.zero
+
+    /// The system asks where the cursor is when a pane takes the keyboard and
+    /// not again by itself: its input-source indicator (and an input method
+    /// that keeps what it heard) stayed where the cursor was then — a new
+    /// split's pane mid-way through sliding in, before its prompt. Told that
+    /// it moved, it asks again.
+    private func tellCaret() {
+        guard window?.firstResponder === self else { return }
+        let rect = caretScreenRect
+        guard rect != announcedCaretRect else { return }
+        announcedCaretRect = rect
+        inputContext?.invalidateCharacterCoordinates()
+    }
+
+    /// Something that may have moved the cursor on the screen: output or
+    /// anything else to draw (`setNeedsRender`), the pane's place or size in
+    /// its split, its window dragged. Looked at a moment later, once for all
+    /// that happen meanwhile (a flood of output tells the system 20 times a
+    /// second at most, not at each frame) — and so always after the last of them.
+    private func caretMayHaveMoved() {
+        guard !caretCheckPending, window?.firstResponder === self else { return }
+        caretCheckPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self else { return }
+            self.caretCheckPending = false
+            self.tellCaret()
+        }
+    }
+
+    private var caretCheckPending = false
+
+    @objc private func windowMoved(_ note: Notification) { caretMayHaveMoved() }
+
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        caretMayHaveMoved()
     }
 
     func characterIndex(for point: NSPoint) -> Int { NSNotFound }

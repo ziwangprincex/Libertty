@@ -11,7 +11,7 @@ protocol PaneHeaderSource: AnyObject {
 
 /// A pane's header (Rex's): the program's glyph and name, where it runs,
 /// and the pane's buttons — split right, split down, float, zoom, close —
-/// faint until the pointer is over them. It's the top of the pane's card:
+/// close always, the rest once the pointer is over it. It's the top of the pane's card:
 /// a click focuses the pane, a double-click zooms it, as a title bar does.
 final class PaneHeader: NSView {
     struct Info: Equatable {
@@ -180,7 +180,35 @@ final class PaneHeader: NSView {
         // Rex's buttons: faint on every pane, clear under the pointer.
         let tint = hovering ? s.contentSecondary.nsColor : s.contentTertiary.nsColor.withAlphaComponent(0.7)
         buttons.forEach { $0.contentTintColor = tint }
+        updateButtonVisibility()
         mark.layer?.backgroundColor = Accent.color.cgColor
+    }
+
+    /// Only Close stays on every pane; the rest come in with the pointer,
+    /// so a split of several panes isn't a row of icons over each. They
+    /// stay in place, transparent (not hidden), so the header's layout
+    /// doesn't shift and VoiceOver still finds them.
+    private func updateButtonVisibility() {
+        let shown: CGFloat = hovering ? 1 : 0
+        let fading = [right, down, pip, zoom]
+        let duration = Motion.duration(Motion.hover)
+        guard duration > 0, window != nil else {
+            fading.forEach { $0.alphaValue = shown }
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = Motion.ease
+            fading.forEach { $0.animator().alphaValue = shown }
+        }
+    }
+
+    /// While they're transparent the hidden buttons take no clicks: the
+    /// header under them focuses, drags and zooms the pane as elsewhere.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        if let button = hit as? NSButton, button !== close, buttons.contains(button), button.alphaValue < 0.5 { return self }
+        return hit
     }
 
     override func updateTrackingAreas() {
@@ -193,6 +221,14 @@ final class PaneHeader: NSView {
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
+
+    /// The buttons one can see and press now, by tooltip (`--ui-probe`).
+    var shownButtons: [String] {
+        buttons.filter { !$0.isHidden && $0.alphaValue >= 0.5 }.compactMap(\.toolTip)
+    }
+
+    /// The pointer over it or not, as its tracking area says (`--ui-probe`).
+    func setPointerOver(_ over: Bool) { hovering = over }
 
     override func mouseDown(with event: NSEvent) {
         pressedAt = event.locationInWindow

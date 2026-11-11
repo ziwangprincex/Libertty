@@ -248,7 +248,7 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 13)
+        field.font = Typeface.ui(13)
         field.delegate = self
         field.cell?.usesSingleLineMode = true
         count.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)

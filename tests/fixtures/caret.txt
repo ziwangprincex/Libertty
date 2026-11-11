@@ -1,0 +1,40 @@
+# The system's input-source indicator (Caps Lock, 中/A) sits where it last
+# heard the cursor is. It asks when a pane takes the keyboard and not again
+# by itself: it stayed where a new pane's cursor was mid-way through the
+# split's animation, before the shell's prompt (0.6.5's screens show it
+# well to the right of the cursor). The pane tells it once the cursor or
+# the pane has moved. (Off screen, this sees the pane tell it; that the
+# indicator then follows is for the real screen.)
+wait:1.0
+caret-ask:go
+expect-caret-told:go
+# Output moves the cursor.
+type:echo CARET
+key:enter
+wait:0.5
+expect-caret-told:go
+# A split, animated as in the app: the new pane takes the keyboard while it
+# still slides in, and its prompt comes after.
+motion:on
+key:cmd+d
+caret-ask:go
+wait:1.2
+expect-panes:2
+expect-focus:2
+expect-caret-told:go
+# Back in the first pane, narrower now.
+key:cmd+alt+left
+caret-ask:go
+wait:0.4
+expect-focus:1
+expect-caret-told:go
+# The split closes: the pane left takes the room, animated.
+key:cmd+alt+right
+wait:0.4
+key:cmd+w
+wait:1.2
+expect-panes:1
+expect-caret-told:go
+# The window dragged: nothing to draw, and the cursor is elsewhere on the screen.
+move:40,-30
+expect-caret-told:go

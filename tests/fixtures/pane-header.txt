@@ -1,0 +1,16 @@
+# A pane's header: Close is always there; split, float and zoom come in
+# with the pointer, so a split of several panes isn't a row of icons on each.
+# (pane-headers = always is the default; a split gives both panes one.)
+expect-header-buttons:Close Pane
+header-pointer:on
+expect-header-buttons:Split Right,Split Down,Float Pane,Zoom Pane,Close Pane
+header-pointer:off
+expect-header-buttons:Close Pane
+key:cmd+d
+wait:1.0
+expect-panes:2
+expect-header-buttons:Close Pane
+header-pointer:on
+expect-header-buttons:Split Right,Split Down,Float Pane,Zoom Pane,Close Pane
+header-pointer:off
+shot:pane-header.png

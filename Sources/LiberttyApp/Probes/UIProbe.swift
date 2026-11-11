@@ -83,6 +83,8 @@ import LiberttyCore
 ///   sheet:BUTTON          press BUTTON on the sheet over the window (Save, Don't Save, Cancel)
 ///   sheet-type:TEXT       put TEXT in the sheet's text field (a name it asks for)
 ///   expect-header:TEXT    the focused pane's header says TEXT (its name, folder or branch)
+///   header-pointer:on|off  the pointer comes onto (or leaves) the focused pane's header
+///   expect-header-buttons:A,B  the buttons it shows now, by tooltip (`-`: none)
 ///   cmd-hover:TEXT        ⌘ held with the pointer over TEXT's last showing in the focused pane
 ///   expect-peek:NAME      the image peek shows the file NAME (none: nothing shows)
 ///   expect-sheet:yes|no   whether a sheet is up
@@ -832,6 +834,43 @@ enum UIProbe {
                             print("FAIL  ui-probe focus: pane \(focused == 0 ? "none" : String(focused)), not \(n)")
                             failures += 1
                         }
+                    case .headerPointer(let over):
+                        let leaf = controller.selectedTab.focusedPane as NSView?
+                        guard let leaf, let header = controller.selectedTab.container?.shownHeader(for: leaf) else {
+                            print("FAIL  ui-probe header-pointer: the focused pane has no header")
+                            failures += 1
+                            break
+                        }
+                        header.setPointerOver(over)
+                        pump(0.3)
+                    case .expectHeaderButtons(let want):
+                        let leaf = controller.selectedTab.focusedPane as NSView?
+                        let header = leaf.flatMap { controller.selectedTab.container?.shownHeader(for: $0) }
+                        let shown = header.map { $0.shownButtons.joined(separator: ",") } ?? "(no header)"
+                        if shown == (want == "-" ? "" : want) {
+                            print("ok    ui-probe header buttons: \(want)")
+                        } else {
+                            print("FAIL  ui-probe header buttons: \(shown), not \(want)")
+                            failures += 1
+                        }
+                    case .caretAsk:
+                        // As the system does when a view takes the keyboard — and not again by itself.
+                        _ = controller.focusedTerminal.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil)
+                        print("ok    ui-probe caret asked")
+                    case .move(let dx, let dy):
+                        // The window, as dragged: where it is, not its size.
+                        window.setFrameOrigin(NSPoint(x: window.frame.minX + dx, y: window.frame.minY + dy))
+                        pump(0.4)
+                    case .expectCaretTold:
+                        // Where the system would put its input-source indicator is where the cursor is.
+                        let pane = controller.focusedTerminal
+                        let told = pane.announcedCaretRect, now = pane.caretScreenRect
+                        if told == now {
+                            print("ok    ui-probe caret: the system has it at \(Int(now.minX)),\(Int(now.minY))")
+                        } else {
+                            print("FAIL  ui-probe caret: the system has it at \(Int(told.minX)),\(Int(told.minY)), it's at \(Int(now.minX)),\(Int(now.minY))")
+                            failures += 1
+                        }
                     case .expectSelected(let text):
                         // The tab in front, by its name (the window's title).
                         if window.title.contains(text) {
@@ -1186,7 +1225,8 @@ enum UIProbe {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
-        case hover(Int), expectFocus(Int)
+        case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
+        case headerPointer(Bool), expectHeaderButtons(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
@@ -1300,6 +1340,14 @@ enum UIProbe {
             case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))
+            case "caret-ask": steps.append(.caretAsk)
+            case "header-pointer": steps.append(.headerPointer(arg == "on"))
+            case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
+            case "expect-caret-told": steps.append(.expectCaretTold)
+            case "move":
+                let d = arg.split(separator: ",").compactMap { Double($0) }
+                guard d.count == 2 else { print("ui-probe: move:DX,DY"); exit(2) }
+                steps.append(.move(CGFloat(d[0]), CGFloat(d[1])))
             case "expect-windows": steps.append(.expectWindows(Int(arg) ?? -1))
             case "expect-other": steps.append(.expectOther(arg))
             case "take-tab": steps.append(.takeTab(Int(arg) ?? -1))

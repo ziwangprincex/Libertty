@@ -49,14 +49,14 @@ final class ImagePeek: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = Radius.floating
         layer?.cornerCurve = .continuous
         layer?.borderWidth = 1
         layer?.shadowOpacity = 0.25
         layer?.shadowRadius = 10
         layer?.shadowOffset = CGSize(width: 0, height: -3)
         picture.imageScaling = .scaleProportionallyUpOrDown
-        caption.font = .systemFont(ofSize: 11)
+        caption.font = Typeface.ui(11)
         caption.textColor = .secondaryLabelColor
         caption.lineBreakMode = .byTruncatingMiddle
         addSubview(picture)

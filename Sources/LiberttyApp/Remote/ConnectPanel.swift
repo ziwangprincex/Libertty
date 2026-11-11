@@ -54,9 +54,9 @@ final class ConnectPanel: NSObject, NSWindowDelegate {
         field.numberOfVisibleItems = 12
         let hint = NSTextField(wrappingLabelWithString:
             "Uses your ssh setup. Programs keep running on the host when the connection drops or Libertty quits.")
-        hint.font = .systemFont(ofSize: 11)
+        hint.font = Typeface.ui(11)
         hint.textColor = .secondaryLabelColor
-        status.font = .systemFont(ofSize: 12)
+        status.font = Typeface.ui(12)
         status.textColor = .secondaryLabelColor
         status.maximumNumberOfLines = 4
         spinner.style = .spinning

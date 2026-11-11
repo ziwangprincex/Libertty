@@ -176,6 +176,12 @@ final class SplitContainerView: NSView {
         didSet { if topClearance != oldValue { layoutPanes() } }
     }
 
+    /// The header `leaf` wears, if it shows one (`--ui-probe`).
+    func shownHeader(for leaf: NSView) -> PaneHeader? {
+        guard let header = headerViews[ObjectIdentifier(leaf)], !header.isHidden else { return nil }
+        return header
+    }
+
     /// Whether `leaf` shows a header now.
     func showsHeader(for leaf: NSView) -> Bool {
         if sharesTopRow { return true }

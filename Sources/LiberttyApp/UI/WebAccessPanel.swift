@@ -38,7 +38,7 @@ final class WebAccessPanel: NSObject {
         qr.imageScaling = .scaleProportionallyUpOrDown
         qr.wantsLayer = true
         qr.layer?.magnificationFilter = .nearest
-        status.font = .systemFont(ofSize: 11)
+        status.font = Typeface.ui(11)
         status.textColor = .secondaryLabelColor
         input.target = self
         input.action = #selector(inputChanged(_:))

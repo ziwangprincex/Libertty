@@ -88,6 +88,7 @@ final class TabOverviewView: NSView {
         view.imageScaling = .scaleAxesIndependently
         view.wantsLayer = true
         view.layer?.cornerRadius = Radius.card
+        view.layer?.cornerCurve = .continuous
         view.layer?.masksToBounds = true
         addSubview(view)
         return view
@@ -192,6 +193,7 @@ private final class CardView: NSView {
         wantsLayer = true
         image.wantsLayer = true
         image.layer?.cornerRadius = Radius.card
+        image.layer?.cornerCurve = .continuous
         image.layer?.masksToBounds = true
         image.imageScaling = .scaleProportionallyUpOrDown
         if let cg = card.image {
@@ -205,11 +207,12 @@ private final class CardView: NSView {
         title.stringValue = (index < 9 ? "⌘\(index + 1)  " : "") + card.title
         title.alignment = .center
         title.lineBreakMode = .byTruncatingMiddle
-        title.font = .systemFont(ofSize: 12, weight: .medium)
+        title.font = Typeface.ui(12, .medium)
         if let status = card.status { title.textColor = TerminalWindowController.color(for: status) }
         addSubview(image)
         addSubview(title)
         frameLayer.cornerRadius = Radius.card + 3
+        frameLayer.cornerCurve = .continuous
         frameLayer.borderWidth = 3
         frameLayer.borderColor = Accent.color.cgColor
         frameLayer.opacity = 0

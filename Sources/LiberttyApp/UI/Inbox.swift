@@ -226,7 +226,7 @@ private final class ActivityHeading: NSTableCellView {
         identifier = Self.identifier
         dot.wantsLayer = true
         dot.layer?.cornerRadius = 3.5
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.font = Typeface.ui(11, .semibold)
         label.textColor = .secondaryLabelColor
         for v in [dot, label] {
             v.translatesAutoresizingMaskIntoConstraints = false
@@ -261,9 +261,9 @@ private final class ActivityCell: NSTableCellView {
     init() {
         super.init(frame: .zero)
         identifier = Self.identifier
-        title.font = .systemFont(ofSize: 13, weight: .medium)
+        title.font = Typeface.ui(13, .medium)
         title.lineBreakMode = .byTruncatingTail
-        detail.font = .systemFont(ofSize: 11.5)
+        detail.font = Typeface.ui(11.5)
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byTruncatingTail
         for v in [title, detail] {
@@ -304,12 +304,12 @@ private final class InboxCell: NSTableCellView {
     init() {
         super.init(frame: .zero)
         identifier = Self.identifier
-        title.font = .systemFont(ofSize: 13, weight: .medium)
+        title.font = Typeface.ui(13, .medium)
         title.lineBreakMode = .byTruncatingTail
-        body.font = .systemFont(ofSize: 12)
+        body.font = Typeface.ui(12)
         body.textColor = .secondaryLabelColor
         body.lineBreakMode = .byTruncatingTail
-        time.font = .systemFont(ofSize: 11)
+        time.font = Typeface.ui(11)
         time.textColor = .tertiaryLabelColor
         for v in [title, body, time] {
             v.translatesAutoresizingMaskIntoConstraints = false

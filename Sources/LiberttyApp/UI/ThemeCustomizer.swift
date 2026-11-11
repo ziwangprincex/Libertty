@@ -170,7 +170,7 @@ struct ThemeCustomizerView: View {
                                   detail: "Orders generated colors from the background to the text, rather than dark to light.",
                                   isOn: $model.harmonious, look: look) { EmptyView() }
                     } else {
-                        Text("Colors 16 through 255 use the default xterm palette, which many terminal programs expect. Turn on Extended Palette to generate them from this theme's colors and edit them.")
+                        Text("Colors 16 through 255 use the default xterm palette, which many terminal programs expect.")
                             .font(.system(size: 12))
                             .foregroundStyle(look.secondary)
                             .fixedSize(horizontal: false, vertical: true)

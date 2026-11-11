@@ -1020,7 +1020,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         newsView.layer?.addSublayer(news)
         newsView.isHidden = true
         well.wantsLayer = true
-        well.layer?.cornerRadius = 6
+        well.layer?.cornerRadius = Radius.chip
         well.layer?.cornerCurve = .continuous
         // Rex shows no key hints on its rows (the menu and ⌘1–9 still work).
         shortcut.alphaValue = 0
@@ -1250,7 +1250,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         endEditing(keep: true, refocus: false)
         let field = NSTextField(string: current)
         field.placeholderString = placeholder
-        field.font = .systemFont(ofSize: 13)
+        field.font = Typeface.ui(13)
         field.focusRingType = .none
         field.bezelStyle = .roundedBezel
         field.delegate = self
@@ -1383,7 +1383,7 @@ final class SelectionCard: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 16
+        layer?.cornerRadius = Radius.panel
         layer?.cornerCurve = .continuous
         layer?.shadowOpacity = 1
         layer?.shadowRadius = 3
@@ -1643,7 +1643,7 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
             let c = NSTableCellView()
             c.identifier = id
             let image = NSImageView(), text = NSTextField(labelWithString: "")
-            text.font = .systemFont(ofSize: 13)
+            text.font = Typeface.ui(13)
             text.lineBreakMode = .byTruncatingMiddle
             for v in [image, text] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; c.addSubview(v) }
             c.imageView = image

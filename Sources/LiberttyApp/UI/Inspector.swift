@@ -36,7 +36,7 @@ final class InspectorViewController: NSViewController {
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 18, bottom: 18, right: 14)
 
-        pathLabel.font = .systemFont(ofSize: 13)
+        pathLabel.font = Typeface.ui(13)
         pathLabel.isSelectable = true
         pathLabel.lineBreakMode = .byCharWrapping
         let editor = Self.editor
@@ -65,7 +65,7 @@ final class InspectorViewController: NSViewController {
         processSection.addArrangedSubview(processList)
         portSection.addArrangedSubview(Self.header("Ports"))
         portSection.addArrangedSubview(portList)
-        idleHint.font = .systemFont(ofSize: 12)
+        idleHint.font = Typeface.ui(12)
         idleHint.textColor = .tertiaryLabelColor
 
         stack.addArrangedSubview(Self.header("Working Directory"))
@@ -282,14 +282,14 @@ final class InspectorViewController: NSViewController {
 
     private static func header(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.font = Typeface.ui(13, .semibold)
         label.textColor = .secondaryLabelColor
         return label
     }
 
     private static func row(_ text: String, dim: Bool) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = dim ? .systemFont(ofSize: 13) : .monospacedSystemFont(ofSize: 12, weight: .regular)
+        label.font = dim ? Typeface.ui(13) : .monospacedSystemFont(ofSize: 12, weight: .regular)
         label.textColor = dim ? .tertiaryLabelColor : .labelColor
         return label
     }
@@ -306,7 +306,7 @@ final class InspectorViewController: NSViewController {
         b.imagePosition = .imageLeading
         b.imageHugsTitle = true
         b.isBordered = false
-        b.font = .systemFont(ofSize: 13)
+        b.font = Typeface.ui(13)
         b.contentTintColor = Accent.color
         b.target = self
         b.action = action

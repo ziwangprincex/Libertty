@@ -22,7 +22,7 @@ final class HostChip {
         button = NSButton(frame: NSRect(x: 0, y: 0, width: 120, height: 24))
         button.bezelStyle = .texturedRounded
         button.imagePosition = .imageLeading
-        button.font = .systemFont(ofSize: 11, weight: .medium)
+        button.font = Typeface.ui(11, .medium)
         button.target = self
         button.action = #selector(showInfo(_:))
         button.toolTip = "This Mac"
@@ -154,12 +154,12 @@ private final class InfoViewController: NSViewController {
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
 
         let title = NSTextField(labelWithString: host?.destination ?? Host.current().localizedName ?? "This Mac")
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.font = Typeface.ui(13, .semibold)
         stack.addArrangedSubview(title)
 
         if host != nil {
             let link = NSTextField(labelWithString: "")
-            link.font = .systemFont(ofSize: 11)
+            link.font = Typeface.ui(11)
             stack.addArrangedSubview(link)
             linkLabel = link
         } else {
@@ -189,10 +189,10 @@ private final class InfoViewController: NSViewController {
 
     private static func row(_ label: String, _ value: String) -> NSTextField {
         let text = NSTextField(labelWithString: "")
-        text.font = .systemFont(ofSize: 11)
+        text.font = Typeface.ui(11)
         text.textColor = .secondaryLabelColor
         let bold = NSMutableAttributedString(string: label + "  ",
-                                             attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)])
+                                             attributes: [.font: Typeface.ui(11, .medium)])
         bold.append(NSAttributedString(string: value, attributes: [:]))
         text.attributedStringValue = bold
         return text

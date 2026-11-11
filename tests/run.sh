@@ -586,6 +586,13 @@ expect workspaces 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests
 # Panes: zoomed navigation, Redo of a close, two siblings ending at once.
 expect splits 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/splits.txt)" $OUT
+# The system is told where the cursor is after it moves (output, a split, the window dragged):
+# its input-source indicator stayed where the pane took the keyboard.
+expect caret 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/caret.txt)" $OUT
+# A pane's header shows Close; the other buttons come in with the pointer.
+expect pane-header 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/pane-header.txt)" $OUT
 # Float Pane: a live card in the split's corner.
 expect float 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/float.txt)" $OUT
 # liberttyd keeps the window layout the app gives it, across a takeover.
