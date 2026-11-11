@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.7
+
+> Key sequences: `keybind = ctrl+b>v=new_split:right` binds keys pressed one after another (a prefix key, as tmux and Ghostty have), so a tmux habit or a Ghostty config comes over as it is.
+
+- **Key sequences** (Ghostty's `>` syntax and its rules): `keybind = ctrl+b>v=new_split:right`, `ctrl+b>c=new_tab`; `ctrl+b>ctrl+b=text:\x02` still sends the prefix itself to the program. Nothing times out: the prefix waits for its next key, and the pane says so at its bottom right ("⌃B …"). A key that isn't part of the sequence sends the keys so far to the program, then itself as usual; leaving the pane drops them. A sequence takes its first key: with `cmd+k>cmd+u` bound, ⌘K alone no longer clears the screen, and binding the first key by itself afterwards ends the sequences that start with it. In terminal panes (a document's, a page's and the editor's keys go through the menus, which can't show two presses); `global:` keys can't be sequences. A key that needs Shift is written out: `shift+backslash`, `shift+5`.
+- Sequences show as "⌃B V" in the command palette, Settings, the welcome page and the buttons' tips, and `+list-keybinds` lists them. Settings won't record a key alone that starts a sequence (it says which).
+- `libertty +import-ghostty` brings Ghostty's sequences over (they were refused as keys it couldn't read), and the migration prompt (Help ▸ Migrate Keybindings with an Agent…) keeps a tmux prefix as sequences rather than turning each into a single chord.
+- Fixed: with a dark `window-theme` on a light system (or light on dark), the tag that says where a ⌘-hovered link goes and a headerless split's name tag were light text on a light ground. Their grounds follow the pane's appearance now, a change while they show included.
+- Inside: `--ui-probe` gains `expect-pending-keys`, `expect-link-preview` and `expect-name-tag` (each also checks the tag reads on its ground); `key-sequence.txt` and `pane-tags.txt` in the suite. Sequences were pressed on the real screen too, through the app's own key dispatch, with a Chinese input method on and off.
+
 ## 0.6.6
 
 > The Caps Lock and input-source indicator follows the cursor, and a pane's header shows its split, float and zoom buttons only under the pointer.
