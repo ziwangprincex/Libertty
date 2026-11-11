@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.6
+
+> The Caps Lock and input-source indicator follows the cursor, and a pane's header shows its split, float and zoom buttons only under the pointer.
+
+- Fixed: the system's input-source indicator (Caps Lock, 中/A) and an input method's candidates stayed where the cursor was when the pane took the keyboard — for a new split, where its pane was while sliding in. They follow the cursor now: as output moves it, after a split, after the window is dragged.
+- A pane's header keeps only Close in view; Split Right, Split Down, Float and Zoom come in when the pointer is over the header (at once with Reduce Motion), so a split of several panes isn't a row of icons over each. Until they show, a click where they are is the header's: it focuses the pane, drags it, a double-click zooms it. VoiceOver finds them as before.
+- The interface's own font (Geist) in the inspector, the Git panel, the inbox, the find bar, Connect to Host, Web Access and the other panels that still used the system's. Settings, the welcome page and the Theme Customizer keep the system font for now.
+- The command palette, the tab overview, the quick terminal and floating panes have the pane cards' continuous corners.
+- The Theme Customizer no longer says twice what Extended Palette does.
+- Inside: `--ui-probe` gains `caret-ask`, `expect-caret-told`, `move`, `header-pointer` and `expect-header-buttons`.
+
 ## 0.6.5
 
 > The cursor moves on screen the moment it moves: ← and → through a command no longer lag a keystroke behind (and Backspace deletes where the cursor shows). ⌘⇧P opens faster too.
