@@ -232,8 +232,13 @@ final class CommandHistory: @unchecked Sendable {
                 if changes == seen { indexDirty = false }
                 changes += 1
             }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: Self.reindexed, object: self) }
         }
     }
+
+    /// Posted (main thread) once the index is made again off it: a
+    /// suggestion given meanwhile came from the one before.
+    static let reindexed = Notification.Name("CommandHistory.reindexed")
 
     /// Under `lock`.
     private func buildIndex(now: Double) {

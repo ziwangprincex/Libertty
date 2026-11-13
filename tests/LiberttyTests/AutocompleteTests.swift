@@ -76,7 +76,12 @@ struct AutocompleteTests {
 
     @Test func historyRanksThisFolderFirst() {
         let h = history()
-        h.loadInBackground()
+        // Read (nothing) before anything is recorded, as the app does: a
+        // load racing the records would index some of them, and answer from
+        // that until it's made again.
+        let done = DispatchSemaphore(value: 0)
+        h.loadInBackground { done.signal() }
+        while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
         let now = Date().timeIntervalSince1970
         for _ in 0..<3 { h.record("git status", folder: "/a", now: now - 10) }
         h.record("git stash pop", folder: "/b", now: now - 10)

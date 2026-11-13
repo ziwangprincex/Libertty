@@ -50,8 +50,17 @@ extension TerminalView {
             && session.scrollbar.atBottom
     }
 
+    /// History made its index again (after a command, say): the pane with
+    /// the keyboard looks again now, not at its next key.
+    private static let watchesReindex: Void = {
+        NotificationCenter.default.addObserver(forName: CommandHistory.reindexed, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { (NSApp.keyWindow?.firstResponder as? TerminalView)?.setNeedsRender() }
+        }
+    }()
+
     /// The ghost text to draw this frame (the renderer's), and what taking it types.
     func autocompleteGhost() -> TerminalRenderer.Ghost? {
+        _ = Self.watchesReindex
         let state = autocomplete
         defer { refreshListIfNeeded() }
         guard ConfigStore.shared.config.autocomplete, autocompleteAllowed else {
