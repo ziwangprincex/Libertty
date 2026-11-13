@@ -6,6 +6,12 @@
 #                                         again (changelog or script changes), from the same zip
 #   scripts/release.sh VERSION --refresh  …and upload them over the published ones
 #
+# A VERSION with a prerelease part (0.7.0-beta.1) is a beta: published as a
+# GitHub prerelease (so it isn't "latest", which stable copies update from),
+# without the Homebrew tap. Every release, beta or stable, replaces the
+# feed of the `beta-channel` release, which copies on the beta channel
+# (auto-update-channel = beta) update from.
+#
 # Before it builds anything new it checks: the unit tests and the headless
 # suite pass (--skip-tests skips them, saying so), and the Linux liberttyd
 # in Resources/remote was built from this commit's daemon sources
@@ -40,6 +46,8 @@ for a in ${@:2}; do
   esac
 done
 source scripts/release.conf
+BETA=0
+[[ $VERSION == *-* ]] && BETA=1
 KEY=${LIBERTTY_UPDATE_KEY:-$HOME/.config/libertty-release/update.key}
 [[ -f $KEY ]] || { echo "no signing key at $KEY"; exit 1; }
 mkdir -p build
@@ -63,7 +71,7 @@ ZIP=$OUT/Libertty-$VERSION.zip
 if [[ $MODE == --restage || $MODE == --refresh ]]; then
   # The zip as published: its hash and signature mustn't change.
   [[ -f $ZIP ]] || { echo "no $ZIP: $MODE needs the release staged here"; exit 1; }
-  if [[ $MODE == --refresh ]]; then
+  if [[ $MODE == --refresh ]] && (( ! BETA )); then
     # The tap holds the newest version's cask; the feed is the newest release's.
     [[ $(gh release view --repo $REPO --json tagName -q .tagName) == v$VERSION ]] \
       || { echo "v$VERSION isn't the latest release: --refresh would point the tap and feed back at it"; exit 1; }
@@ -226,11 +234,24 @@ ls -1 $OUT | sed 's/^/  /'
 if [[ $MODE == --publish ]]; then
   gh repo view $REPO > /dev/null 2>&1 \
     || gh repo create $REPO --public --add-readme --description "Libertty: a fast native macOS terminal (releases)"
+  PRERELEASE=()
+  (( BETA )) && PRERELEASE=(--prerelease)
   gh release create v$VERSION $ZIP $OUT/Libertty-$VERSION.dmg $OUT/appcast.json \
-    --repo $REPO --title "Libertty $VERSION" --notes-file $OUT/release.md
+    --repo $REPO --title "Libertty $VERSION" --notes-file $OUT/release.md $PRERELEASE
 else
   gh release upload v$VERSION $OUT/appcast.json --repo $REPO --clobber
   gh release edit v$VERSION --repo $REPO --notes-file $OUT/release.md > /dev/null
+fi
+
+# The beta channel's feed: this release's (every release is news to a beta copy).
+gh release view beta-channel --repo $REPO > /dev/null 2>&1 \
+  || gh release create beta-channel --repo $REPO --prerelease --title "Beta channel" \
+       --notes "The update feed of Libertty copies with auto-update-channel = beta: the newest release, beta or stable. Not a release itself."
+gh release upload beta-channel $OUT/appcast.json --repo $REPO --clobber
+
+if (( BETA )); then
+  echo "Published Libertty $VERSION (a beta: no Homebrew cask; copies on the beta channel update to it)"
+  exit 0
 fi
 
 # Homebrew: the tap holds Casks/libertty.rb and its README (scripts/tap-README.md).

@@ -390,6 +390,9 @@ enum SettingsRegistry {
             item(.advanced, "Updates", "Updates", "auto-update", .popup(options([
                 ("Check and offer", "check"), ("Download in the background", "download"), ("Off", "off"),
             ])), keywords: "update version"),
+            item(.advanced, "Updates", "Channel", "auto-update-channel", .popup([
+                SettingsOption(label: "Stable releases", value: "stable", also: [""]), SettingsOption(label: "Betas too", value: "beta"),
+            ]), help: "Betas come first and may break; they get every stable release too.", keywords: "beta prerelease preview"),
             item(.advanced, "Updates", "Install a downloaded update", "auto-update-restart",
                  .popup(options([("When I restart", "ask"), ("When idle", "idle")])),
                  help: "When idle: Libertty restarts into it once no program runs in a pane and it isn't in front. Sessions keep running.",

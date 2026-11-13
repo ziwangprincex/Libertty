@@ -594,5 +594,9 @@
   "Install Libertty's terminfo on a host the first time": "第一次连接主机时安装 Libertty 的 terminfo",
   "When you ssh to a host to log in: once, in its ~/.terminfo, with its own tic.": "用 ssh 登录主机时安装一次：装在它的 ~/.terminfo 里，用它自己的 tic 编译。",
   "devbox, user@server, or a Host from ~/.ssh/config": "devbox、user@server，或 ~/.ssh/config 里的 Host",
-  "Add a Host": "添加主机"
+  "Add a Host": "添加主机",
+  "Channel": "更新通道",
+  "Stable releases": "正式版",
+  "Betas too": "也接收测试版",
+  "Betas come first and may break; they get every stable release too.": "测试版先于正式版发布，可能不稳定；选了测试版也会收到每个正式版。"
 }

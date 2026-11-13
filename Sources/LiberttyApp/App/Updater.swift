@@ -50,11 +50,21 @@ enum Updater {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// `$LIBERTTY_UPDATE_FEED` (tests, mirrors), else the one in Info.plist.
+    /// `$LIBERTTY_UPDATE_FEED` (tests, mirrors), else the one in Info.plist
+    /// for the channel (`auto-update-channel`): the newest stable release's
+    /// feed, or the beta feed, which every release (stable or beta) updates.
     static var feedURL: URL? {
         let env = ProcessInfo.processInfo.environment["LIBERTTY_UPDATE_FEED"]
-        let plist = Bundle.main.object(forInfoDictionaryKey: "LiberttyUpdateFeed") as? String
+        let key = channel == "beta" ? "LiberttyUpdateFeedBeta" : "LiberttyUpdateFeed"
+        let plist = Bundle.main.object(forInfoDictionaryKey: key) as? String
         return (env?.isEmpty == false ? env : plist).flatMap(URL.init(string:))
+    }
+
+    /// stable or beta: as configured, else beta for a beta build.
+    static var channel: String {
+        let configured = ConfigStore.shared.config.autoUpdateChannel
+        if !configured.isEmpty { return configured }
+        return Version(currentVersion).isPrerelease ? "beta" : "stable"
     }
 
     private static var publicKey: Curve25519.Signing.PublicKey? {
@@ -223,18 +233,40 @@ enum Updater {
 }
 
 /// Dotted version numbers compared numerically ("0.10.0" > "0.9.2").
+/// A release's version as semantic versioning orders them: 0.7.0-beta.2 <
+/// 0.7.0-beta.10 < 0.7.0 < 0.7.1.
 struct Version: Comparable {
     let parts: [Int]
+    /// What follows the "-" (`beta.2`), split at dots; empty for a release.
+    let prerelease: [String]
     init(_ text: String) {
-        let core = text.hasPrefix("v") ? String(text.dropFirst()) : text
+        var core = text.hasPrefix("v") ? String(text.dropFirst()) : text
+        if let plus = core.firstIndex(of: "+") { core = String(core[..<plus]) }  // build metadata doesn't order
+        if let dash = core.firstIndex(of: "-") {
+            prerelease = core[core.index(after: dash)...].split(separator: ".").map(String.init)
+            core = String(core[..<dash])
+        } else {
+            prerelease = []
+        }
         parts = core.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
     }
+    var isPrerelease: Bool { !prerelease.isEmpty }
     static func < (a: Version, b: Version) -> Bool {
         for i in 0..<max(a.parts.count, b.parts.count) {
             let x = i < a.parts.count ? a.parts[i] : 0, y = i < b.parts.count ? b.parts[i] : 0
             if x != y { return x < y }
         }
-        return false
+        // The same numbers: a prerelease comes before the release.
+        if a.prerelease.isEmpty || b.prerelease.isEmpty { return !a.prerelease.isEmpty && b.prerelease.isEmpty }
+        for (x, y) in zip(a.prerelease, b.prerelease) where x != y {
+            switch (Int(x), Int(y)) {
+            case let (m?, n?): return m < n
+            case (_?, nil): return true  // numbers before words
+            case (nil, _?): return false
+            default: return x < y
+            }
+        }
+        return a.prerelease.count < b.prerelease.count
     }
     static func == (a: Version, b: Version) -> Bool { !(a < b) && !(b < a) }
 }

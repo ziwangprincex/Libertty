@@ -63,6 +63,8 @@ VERSION=${LIBERTTY_VERSION:-0.6.7}
 # Update feed and the key updates must be signed with (scripts/release.sh).
 source $ROOT/scripts/release.conf
 FEED=https://github.com/$REPO/releases/latest/download/appcast.json
+# The beta channel's: a release of its own that every release (stable or beta) updates.
+FEED_BETA=https://github.com/$REPO/releases/download/beta-channel/appcast.json
 PUBKEY=$(cat $ROOT/scripts/update-public-key.txt)
 cat > $APP/Contents/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -72,6 +74,7 @@ cat > $APP/Contents/Info.plist <<PLIST
     <key>CFBundleExecutable</key><string>Libertty</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LiberttyUpdateFeed</key><string>$FEED</string>
+    <key>LiberttyUpdateFeedBeta</key><string>$FEED_BETA</string>
     <key>LiberttyUpdatePublicKey</key><string>$PUBKEY</string>
     <key>NSHumanReadableCopyright</key><string>Libertty. Terminal core: libghostty-vt (MIT). Font: JetBrains Mono Nerd Font (OFL-1.1).</string>
     <key>CFBundleIdentifier</key><string>dev.libertty.terminal</string>

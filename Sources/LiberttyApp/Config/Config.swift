@@ -273,6 +273,9 @@ struct Config: Equatable {
     /// Ghostty's `auto-update`: look for a new version daily and offer it
     /// (check), fetch it in the background too (download), or never (off).
     var autoUpdate = AutoUpdate.check
+    /// Which releases updates come from: stable ones, or betas too. Empty:
+    /// beta for a beta build (it keeps getting betas), else stable.
+    var autoUpdateChannel = ""
     /// Ghostty's quick terminal: a terminal that drops down from a screen edge.
     var quickTerminalPosition = QuickPosition.top
     /// Share of the screen it covers (height for top/bottom, width for left/right).
@@ -464,6 +467,7 @@ struct Config: Equatable {
         ("bell-features", "What the bell (BEL) does, comma-separated, no- turns one off: system (the alert sound), attention (bounce the Dock icon), title (🔔 in the tab title until you look), border (flash the pane's edge). Default attention,title."),
         ("scrollbar", "system (an overlay scrollbar while scrolling, or when the pointer is at the right edge) or never."),
         ("auto-update", "check (default), download or off: look for a new Libertty once a day and offer it; download fetches and verifies it in the background, then waits for Restart to Update. Libertty ▸ Check for Updates… works either way."),
+        ("auto-update-channel", "stable or beta: which releases updates come from. Beta also gets every stable release, and goes back to stable ones only when one is newer. Default: beta on a beta build, else stable."),
         ("quick-terminal-hotkey", "Drop the quick terminal down from any app, e.g. ctrl+grave_accent or alt+space (shorthand for keybind = global:KEY=toggle_quick_terminal). Window ▸ Quick Terminal works without one."),
         ("quick-terminal-position", "top, bottom, left, right or center: where the quick terminal comes from."),
         ("quick-terminal-size", "How much of the screen it covers: 0.2–1, or a percentage like 40%."),
@@ -599,6 +603,7 @@ struct Config: Equatable {
         case "bell-features": return [["system", "attention", "title", "border"].filter(bellFeatures.contains).joined(separator: ",")]
         case "scrollbar": return [scrollbar]
         case "auto-update": return [autoUpdate.rawValue]
+        case "auto-update-channel": return [autoUpdateChannel]
         case "quick-terminal-hotkey": return [quickTerminalHotkey]
         case "quick-terminal-position": return [quickTerminalPosition.rawValue]
         case "quick-terminal-size": return [num(quickTerminalSize)]
@@ -1071,6 +1076,9 @@ struct Config: Equatable {
         case "auto-update":
             if reset { autoUpdate = defaults.autoUpdate; return nil }
             guard let x = AutoUpdate(rawValue: v) else { return "off, check or download" }; autoUpdate = x
+        case "auto-update-channel":
+            if reset { autoUpdateChannel = defaults.autoUpdateChannel; return nil }
+            guard ["stable", "beta", ""].contains(v.lowercased()) else { return "stable or beta" }; autoUpdateChannel = v.lowercased()
         case "quick-terminal-hotkey":
             guard v.isEmpty || Shortcut(v) != nil else { return "not a shortcut (e.g. ctrl+grave_accent)" }
             quickTerminalHotkey = v
