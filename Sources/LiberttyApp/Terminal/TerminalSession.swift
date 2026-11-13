@@ -520,6 +520,7 @@ final class TerminalSession {
             let n = min(slice, bytes.count - offset)
             lock.withLock {
                 ghostty_terminal_vt_write(terminal, bytes.baseAddress! + offset, n)
+                compressor?.wake()
                 outputCount &+= 1
                 lastOutputTime = CACurrentMediaTime()
             }

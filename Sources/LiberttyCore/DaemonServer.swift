@@ -712,13 +712,14 @@ final class DaemonSession {
         pty.onOutput = { [weak self] bytes in self?.output(bytes) }
         pty.onExit = { [weak self] status in self?.exited(status) }
         pty.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
-        pty.startReading()
+        // (Before the reading starts: output wakes it.)
         compressor = IdleCompressor(queue: queue) { [weak self] body in
             guard let self else { return }
             self.lock.lock()
             defer { self.lock.unlock() }
             body(self.terminal)
         }
+        pty.startReading()
     }
 
     // MARK: Output (queue)
@@ -735,6 +736,7 @@ final class DaemonSession {
         // the last one.
         if lost { forgetLost() }
         ghostty_terminal_vt_write(terminal, bytes.baseAddress, bytes.count)
+        compressor?.wake()
         if pendingClear != nil { applyPendingClear() }
         lastOutput = DispatchTime.now().uptimeNanoseconds
         let reached = promptReached ? takeWaiters { $0.until == .prompt } : []
@@ -1508,16 +1510,24 @@ extension String {
 /// Scrollback compression, as libghostty-vt asks: once a terminal has been
 /// quiet for a tick, compress a little per tick until the pass completes.
 /// A long scrollback then costs a fraction of its memory (liberttyd keeps one
-/// per session on top of the window's).
-public final class IdleCompressor {
+/// per session on top of the window's). Once a pass is done and nothing has
+/// changed since, it stops ticking until output comes (`wake`): a quiet
+/// session costs no wake-ups at all.
+public final class IdleCompressor: @unchecked Sendable {
     private let timer: DispatchSourceTimer
     private var lastActivity: UInt64 = .max
     private var complete = false
+    private let dormancy = NSLock()
+    private var dormant = false
+    private let tick: Double
 
     /// `withTerminal` runs its body with the terminal locked against other use.
-    public init(queue: DispatchQueue, withTerminal: @escaping ((GhosttyTerminal) -> Void) -> Void) {
+    /// (The first tick after `first` seconds, then every `tick`.)
+    public init(queue: DispatchQueue, first: Double = 5, tick: Double = 2,
+                withTerminal: @escaping ((GhosttyTerminal) -> Void) -> Void) {
+        self.tick = tick
         timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 5, repeating: 2, leeway: .seconds(1))
+        timer.schedule(deadline: .now() + first, repeating: tick, leeway: .milliseconds(Int(tick * 500)))
         timer.setEventHandler { [unowned self] in
             withTerminal { terminal in
                 var activity: UInt64 = 0
@@ -1528,7 +1538,7 @@ public final class IdleCompressor {
                     self.complete = false
                     return
                 }
-                guard !self.complete else { return }
+                guard !self.complete else { return self.sleep() }
                 for _ in 0..<32 {
                     var result = GHOSTTY_TERMINAL_COMPRESSION_RESULT_COMPLETE
                     guard ghostty_terminal_compress(terminal, GHOSTTY_TERMINAL_COMPRESSION_MODE_INCREMENTAL, &result) == GHOSTTY_SUCCESS,
@@ -1545,4 +1555,25 @@ public final class IdleCompressor {
     deinit { timer.cancel() }
 
     public func stop() { timer.cancel() }
+
+    /// Output came: ticking again, if it had stopped. Call it with the
+    /// terminal locked, after writing to it (as the tick is), so a tick
+    /// going to sleep either saw that output or is woken by it.
+    public func wake() {
+        dormancy.lock()
+        defer { dormancy.unlock() }
+        guard dormant else { return }
+        dormant = false
+        timer.schedule(deadline: .now() + tick, repeating: tick, leeway: .milliseconds(Int(tick * 500)))
+    }
+
+    /// Asleep: done compressing and nothing has changed since.
+    public var isDormant: Bool { dormancy.withLock { dormant } }
+
+    private func sleep() {
+        dormancy.lock()
+        defer { dormancy.unlock() }
+        dormant = true
+        timer.schedule(deadline: .distantFuture, repeating: .never)
+    }
 }
