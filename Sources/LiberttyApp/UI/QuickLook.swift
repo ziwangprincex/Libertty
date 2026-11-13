@@ -85,7 +85,7 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
 
     // MARK: Delegate
 
-    /// ← → (and ↑ ↓) between the items; Space or the Quick Look key again closes.
+    /// ← → between the items (↑ ↓ scroll the one shown); Space or the Quick Look key again closes.
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         guard let event, event.type == .keyDown, items.count > 0 else { return false }
         if event.charactersIgnoringModifiers == " " || ConfigStore.shared.keybinds.action(for: event) == .quickLook {
@@ -94,8 +94,8 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
         }
         let step: Int
         switch Int(event.keyCode) {
-        case 123, 126: step = -1  // ← ↑
-        case 124, 125: step = 1   // → ↓
+        case 123: step = -1  // ←
+        case 124: step = 1   // →
         default: return false
         }
         let next = panel.currentPreviewItemIndex + step

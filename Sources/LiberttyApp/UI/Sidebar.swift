@@ -1695,10 +1695,14 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     // MARK: Actions
 
+    /// The row clicked (or right-clicked), else the selected one — not when
+    /// the menu was opened on the tree's empty space: that's the top folder's.
     private var target: FileNode? {
-        let row = outline.clickedRow >= 0 ? outline.clickedRow : outline.selectedRow
-        return row >= 0 ? outline.item(atRow: row) as? FileNode : nil
+        if outline.clickedRow >= 0 { return outline.item(atRow: outline.clickedRow) as? FileNode }
+        if menuOnEmpty { return nil }
+        return outline.selectedRow >= 0 ? outline.item(atRow: outline.selectedRow) as? FileNode : nil
     }
+    private var menuOnEmpty = false
 
     /// One click opens a text file in a tab (Tern's preview_click), ⌥-click
     /// beside the terminal; other files open with their app on double-click.
@@ -1718,6 +1722,9 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        let event = NSApp.currentEvent
+        menuOnEmpty = outline.clickedRow < 0 && (event?.type == .rightMouseDown
+            || event?.type == .leftMouseDown && event?.modifierFlags.contains(.control) == true)
         func add(_ title: String, _ action: Selector) {
             menu.addItem(withTitle: L10n.t(title), action: action, keyEquivalent: "").target = self
         }
