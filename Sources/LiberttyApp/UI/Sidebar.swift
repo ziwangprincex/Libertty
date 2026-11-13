@@ -534,6 +534,10 @@ final class SidebarViewController: NSViewController {
             }
         }
         guard let r else { return nil }
+        // The whole window laid out first: a row just added grows the
+        // table's height constraint, and until the window's next layout
+        // the table (and its rows) sit where they were.
+        view.window?.contentView?.layoutSubtreeIfNeeded()
         tabsTable.scrollRowToVisible(r)
         tabsTable.layoutSubtreeIfNeeded()
         return tabsTable.convert(tabsTable.rect(ofRow: r), to: nil)

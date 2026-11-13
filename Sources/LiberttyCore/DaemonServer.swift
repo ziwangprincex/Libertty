@@ -1575,6 +1575,10 @@ public final class IdleCompressor: @unchecked Sendable {
     /// terminal locked, after writing to it (as the tick is), so a tick
     /// going to sleep either saw that output or is woken by it.
     public func wake() {
+        // (Under the terminal's lock, as `check` reads it: a pass to do
+        // again, whatever the activity says — a replaced terminal's may
+        // match the old one's.)
+        complete = false
         dormancy.lock()
         defer { dormancy.unlock() }
         guard dormant else { return }

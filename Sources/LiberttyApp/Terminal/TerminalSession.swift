@@ -1211,6 +1211,8 @@ final class TerminalSession {
             ghostty_terminal_free(terminal)
             terminal = restored
             configureTerminal()
+            // A new history to compress (its last pass was the old one's).
+            compressor?.wake()
             var cols: UInt16 = 0, rows: UInt16 = 0
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_COLS, &cols)
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_ROWS, &rows)
