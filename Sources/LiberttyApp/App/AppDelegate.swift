@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// `--resize-trace`, `--latency-trace` (debug builds: Probes/).
     private static var traceRequested: Bool {
         #if LIBERTTY_PROBES
-        ResizeTrace.requested || LatencyTrace.requested
+        ResizeTrace.requested || LatencyTrace.requested || StartupBench.requested
         #else
         false
         #endif
@@ -51,6 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if LIBERTTY_PROBES
+        StartupBench.mark("launched")
+        #endif
         launched = true
         // AppleScript: the windows front to back (the Quick Terminal's too), and new ones as File ▸ New Window opens them.
         Scripting.host = Scripting.Host(controllers: { [unowned self] in
@@ -472,9 +475,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 }
                 window.setFrame(window.constrainFrameRect(frame, to: from.screen), display: false)
             }
+            #if LIBERTTY_PROBES
+            if let window = controller.window { StartupBench.place(window) }
+            #endif
             controller.showWindow(nil)
             try controller.start(command: command, workingDirectory: workingDirectory, inherited: source?.focusedWorkingDirectory)
             #if LIBERTTY_PROBES
+            if StartupBench.requested, controllers.count == 1 { StartupBench.start(controller: controller) }
             if ResizeTrace.requested, controllers.count == 1, let window = controller.window {
                 ResizeTrace.start(window: window, controller: controller)
             }
@@ -516,8 +523,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         return controller
     }
 
-    /// Window ▸ Move Pane to Tab: the tabs of the window in front, filled in as it opens.
+    @objc private func showWebAccess(_ sender: Any?) {
+        MainActor.assumeIsolated { WebAccessPanel.shared.show(sender) }
+    }
+
+    /// A menu's icons, as it first opens; Window ▸ Move Pane to Tab: the
+    /// tabs of the window in front, filled in as it opens.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if let pending = menuSymbols.removeValue(forKey: ObjectIdentifier(menu)) {
+            for (item, symbol, title) in pending.items {
+                item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            }
+        }
         guard menu.title == Self.movePaneMenuTitle else { return }
         menu.removeAllItems()
         // The key window's tabs: what its items act on (menuAction).
@@ -968,12 +985,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
     }
 
+    /// Menu items' icons, set as their menu first opens (menuNeedsUpdate):
+    /// loading some eighty symbol images took a dozen milliseconds of launch.
+    private var menuSymbols: [ObjectIdentifier: (menu: NSMenu, items: [(NSMenuItem, String, String)])] = [:]
+
     /// Ghostty's menus (macos/Sources/App/MainMenu.xib), item for item, with
     /// its menu icons, for what Libertty has. Key equivalents come from the
     /// keybind table, so a rebound key shows (and works) in the menu, and an
     /// unbound one leaves it.
     private func makeMainMenu(_ keybinds: Keybinds) -> NSMenu {
         let main = NSMenu()
+        menuSymbols = [:]
 
         @discardableResult
         func item(_ title: String, _ action: Action? = nil, selector: Selector? = nil, key: String = "",
@@ -993,7 +1015,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
             // Menu icons are the norm from macOS 26 on, as in Ghostty.
             if let symbol, #available(macOS 26, *) {
-                item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+                menuSymbols[ObjectIdentifier(menu), default: (menu, [])].items.append((item, symbol, title))
+                menu.delegate = self
             }
             return item
         }
@@ -1009,8 +1032,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         item("Reload Configuration", .reloadConfig, symbol: "arrow.trianglehead.2.clockwise.rotate.90", in: app)
         item("Theme Editor…", .openThemeEditor, symbol: "paintbrush", in: app)
         item("Secure Keyboard Entry", .toggleSecureInput, symbol: "lock.display", in: app)
-        let web = item("Web Access…", selector: #selector(WebAccessPanel.show(_:)), symbol: "globe", in: app)
-        web.target = MainActor.assumeIsolated { WebAccessPanel.shared }
+        // (Its panel and controls are made when it's first chosen, not at launch.)
+        item("Web Access…", selector: #selector(showWebAccess(_:)), symbol: "globe", in: app).target = self
         item("Make Libertty the Default Terminal", selector: #selector(makeDefaultTerminal(_:)), symbol: "star.fill", in: app)
             .target = self
         app.addItem(.separator())

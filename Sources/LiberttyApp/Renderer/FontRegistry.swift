@@ -7,15 +7,14 @@ import Foundation
 enum FontRegistry {
     static let bundledFamily = "JetBrainsMono Nerd Font"
 
-    private static var registered = false
-
-    static func registerBundledFonts() {
-        guard !registered else { return }
-        registered = true
+    /// Once, from whichever thread gets here first (see FontWarmup).
+    private static let registration: Void = {
         let fonts = fontFiles
         guard !fonts.isEmpty else { return }
         CTFontManagerRegisterFontURLs(fonts as CFArray, .process, true, nil)
-    }
+    }()
+
+    static func registerBundledFonts() { _ = registration }
 
     /// The app bundle's Resources/Fonts; unbundled (`swift build`: development,
     /// the tests), the same files where the checkout keeps them — not a copy
