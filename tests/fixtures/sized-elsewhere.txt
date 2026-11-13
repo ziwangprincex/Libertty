@@ -1,0 +1,33 @@
+# A session shown in two windows has one size for its program, the last
+# to resize set it (Rex's "Sized by another client"): a pane of another
+# size says so at its top, and its click takes the size back. When the
+# window that sized it goes, the one sized before it fits again. Run with
+# --persist (the session lives in liberttyd).
+expect-sized:no
+other-window:50x10
+wait:1.0
+expect-sized:yes
+type:stty size | sed s/^/A=/
+key:enter
+wait:0.6
+expect:A=10 50
+fit-here:go
+wait:1.0
+expect-sized:no
+type:stty size | sed s/^/B=/
+key:enter
+wait:0.6
+expect:B=
+expect-not:B=10 50
+# The other window sizes it again, then goes: back to this pane's.
+other-window:60x12
+wait:1.0
+expect-sized:yes
+other-window:close
+wait:1.0
+expect-sized:no
+type:stty size | sed s/^/C=/
+key:enter
+wait:0.6
+expect:C=
+expect-not:C=12 60

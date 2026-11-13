@@ -198,6 +198,8 @@ enum UIProbe {
         var failures = 0
         // Windows Move … to New Window opens: off screen too, never in front.
         var others: [TerminalWindowController] = []
+        // `other-window:`: a second connection showing the focused session.
+        var otherWindow: RemotePTY?
         TerminalWindowController.openWindowForTab = { tab, source, _ in
             tab.restoredWorkspace = nil
             let other = TerminalWindowController(restoring: [tab], selected: 0, frame: nil, showSidebar: true,
@@ -912,6 +914,42 @@ enum UIProbe {
                             print("FAIL  ui-probe secure input: \(wants ? "on" : "off"), not \(on ? "on" : "off")")
                             failures += 1
                         }
+                    case .otherWindow(let spec):
+                        if spec == "close" {
+                            otherWindow?.detach()
+                            otherWindow = nil
+                            print("ok    ui-probe the other window went")
+                        } else if let id = controller.focusedTerminal.session.persistentID {
+                            let dims = spec.split(separator: "x").compactMap { UInt16($0) }
+                            if otherWindow == nil {
+                                otherWindow = try? RemotePTY.attach(id: id, queue: DispatchQueue(label: "probe.other")).0
+                                otherWindow?.onOutput = { _ in }
+                                otherWindow?.startReading()
+                            }
+                            if let other = otherWindow, dims.count == 2 {
+                                other.resize(GridSize(cols: dims[0], rows: dims[1], widthPx: dims[0] * 8, heightPx: dims[1] * 16))
+                                print("ok    ui-probe another window at \(spec)")
+                            } else {
+                                print("FAIL  ui-probe another window: couldn't attach (--persist?) or no size in \(spec)")
+                                failures += 1
+                            }
+                        } else {
+                            print("FAIL  ui-probe another window: the pane has no session in liberttyd (--persist)")
+                            failures += 1
+                        }
+                    case .expectSized(let yes):
+                        let shown = controller.focusedTerminal.sizedTagShown
+                        if (shown != nil) == yes {
+                            print("ok    ui-probe \(yes ? "sized by another window" : "sized by this pane")")
+                        } else {
+                            print("FAIL  ui-probe sized tag: \(shown ?? "none"), program \(String(describing: controller.focusedTerminal.session.programSize))")
+                            failures += 1
+                        }
+                    case .fitHere:
+                        let fitted = controller.focusedTerminal.session
+                        fitted.fitProgramToPane()
+                        controller.focusedTerminal.programSizeChanged()
+                        print("ok    ui-probe fit to this pane (\(fitted.size.cols)x\(fitted.size.rows))")
                     case .updateInBackground:
                         // auto-update = download's daily check, now; then, with
                         // auto-update-restart = idle, the restart when nobody's looking.
@@ -1271,6 +1309,10 @@ enum UIProbe {
         /// Whether the focused pane would have Secure Keyboard Entry on for a
         /// password (the probe's window is never key, so not the system's state).
         case expectSecureInput(Bool)
+        /// Another window on the focused pane's session (in liberttyd), at
+        /// COLSxROWS ("close": it goes); whether the pane says it's sized by
+        /// another; its tag's click.
+        case otherWindow(String), expectSized(Bool), fitHere
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
@@ -1384,6 +1426,9 @@ enum UIProbe {
             case "expect-font": steps.append(.expectFont(Double(arg) ?? -1))
             case "expect-subtitle": steps.append(.expectSubtitle(arg))
             case "expect-secure-input": steps.append(.expectSecureInput(arg == "yes"))
+            case "other-window": steps.append(.otherWindow(arg))
+            case "expect-sized": steps.append(.expectSized(arg == "yes"))
+            case "fit-here": steps.append(.fitHere)
             case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))

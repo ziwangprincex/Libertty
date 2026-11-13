@@ -914,6 +914,8 @@ final class DaemonSession {
         if let program = foregroundProgram { header["program"] = program.json }
         // It watches agents' screens itself: the window needn't tell it what it reads (`report`).
         header["agentScreen"] = true
+        // And tells every window the program's size as it changes (`ptySize`).
+        header["sizes"] = true
         if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
@@ -963,6 +965,7 @@ final class DaemonSession {
         if let i = clients.firstIndex(where: { $0.connection === connection }) { clients.remove(at: i).hangUp() }
         // Repaired either way: the window may have left the list already.
         if primary === connection { primary = clients.last?.connection }
+        sizerLeft(connection)
     }
 
     /// A window's outbox stopped: it hung up, or was let go (its thread).
@@ -971,6 +974,7 @@ final class DaemonSession {
         defer { lock.unlock() }
         clients.removeAll { $0 === outbox }
         if primary === outbox.connection { primary = clients.last?.connection }
+        sizerLeft(outbox.connection)
     }
 
     func write(_ data: Data, from connection: Connection?) {
@@ -1045,7 +1049,35 @@ final class DaemonSession {
 
     func resize(_ newSize: GridSize, from connection: Connection) {
         lock.lock()
+        let key = ObjectIdentifier(connection)
+        clientSizes.removeAll { $0.connection == key }
+        clientSizes.append((key, newSize))
+        lock.unlock()
+        apply(newSize)
+    }
+
+    /// Each window's last size, the latest last (under `lock`): when the
+    /// window that sized the program goes, the one sized before it takes
+    /// over (tmux does the same), so a pane still showing it fits again.
+    private var clientSizes: [(connection: ObjectIdentifier, size: GridSize)] = []
+
+    /// A window went (under `lock`): if it was the one whose size the
+    /// program has, the program takes the size of the latest still here.
+    private func sizerLeft(_ connection: Connection) {
+        let key = ObjectIdentifier(connection)
+        let wasLatest = clientSizes.last?.connection == key
+        clientSizes.removeAll { $0.connection == key }
+        guard wasLatest, let next = clientSizes.last?.size, next != size else { return }
+        queue.async { [weak self] in self?.apply(next) }
+    }
+
+    private func apply(_ newSize: GridSize) {
+        lock.lock()
         size = newSize
+        // Every window hears the size the program has now: one whose pane is
+        // another says so ("Sized by another window") and can take it back.
+        let sized = (try? JSONSerialization.data(withJSONObject: ["cols": Int(newSize.cols), "rows": Int(newSize.rows)])) ?? Data()
+        for c in clients { c.send(.ptySize, sized) }
         let cw = UInt32(newSize.widthPx) / UInt32(max(1, newSize.cols))
         let ch = UInt32(newSize.heightPx) / UInt32(max(1, newSize.rows))
         _ = ghostty_terminal_resize(terminal, max(1, newSize.cols), max(1, newSize.rows), cw, ch)

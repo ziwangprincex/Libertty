@@ -54,6 +54,15 @@ public final class RemotePTY: TerminalBackend {
         return agentsWatched
     }
     private var agentsWatched = false
+    /// The size the session's program has, as liberttyd last said (the last
+    /// window to resize set it), on `queue`.
+    public var onPtySize: ((UInt16, UInt16) -> Void)?
+    public var ptySize: (cols: UInt16, rows: UInt16)? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return currentPtySize
+    }
+    private var currentPtySize: (cols: UInt16, rows: UInt16)?
     /// Its name as liberttyd last said ("" for none).
     public var label: String {
         stateLock.lock()
@@ -185,6 +194,9 @@ public final class RemotePTY: TerminalBackend {
                     case .foreground:
                         let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         setForeground(SessionProgram(json: json))
+                    case .ptySize:
+                        let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
+                        if let cols = json?["cols"] as? Int, let rows = json?["rows"] as? Int { setPtySize(UInt16(cols), UInt16(rows)) }
                     case .exited:
                         let status = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         stateLock.lock()
@@ -212,12 +224,29 @@ public final class RemotePTY: TerminalBackend {
         stateLock.lock()
         agentsWatched = header["agentScreen"] as? Bool ?? false
         stateLock.unlock()
+        // (Only a liberttyd that tells sizes later says it now: one before
+        // them would leave a window thinking its size was another's.)
+        if header["sizes"] as? Bool == true, let cols = header["cols"] as? Int, let rows = header["rows"] as? Int {
+            if tell { setPtySize(UInt16(cols), UInt16(rows)) } else {
+                stateLock.lock()
+                currentPtySize = (UInt16(cols), UInt16(rows))
+                stateLock.unlock()
+            }
+        }
         let program = SessionProgram(json: header["program"] as? [String: Any])
         if tell { setForeground(program) } else {
             stateLock.lock()
             currentForeground = program
             stateLock.unlock()
         }
+    }
+
+    private func setPtySize(_ cols: UInt16, _ rows: UInt16) {
+        stateLock.lock()
+        let changed = currentPtySize.map { $0 != (cols, rows) } ?? true
+        currentPtySize = (cols, rows)
+        stateLock.unlock()
+        if changed { queue.async { [weak self] in self?.onPtySize?(cols, rows) } }
     }
 
     /// The program in front from liberttyd: kept, and told on `queue` when it's news.

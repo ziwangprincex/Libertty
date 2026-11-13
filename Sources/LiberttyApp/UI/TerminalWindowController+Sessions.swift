@@ -159,6 +159,11 @@ extension TerminalWindowController {
         updateSidebar()
     }
 
+    /// Another window sized the program, or this one took it back.
+    func sessionProgramSizeChanged(_ session: TerminalSession) {
+        pane(for: session)?.programSizeChanged()
+    }
+
     func sessionProgressChanged(_ session: TerminalSession) {
         updateSidebar()
         onAttentionChange?()

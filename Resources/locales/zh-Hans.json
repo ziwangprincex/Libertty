@@ -493,5 +493,8 @@
   "Which of the font's faces each kind of text uses.": "每种文字用这款字体里的哪个字形（字重、斜体）。",
   "Uploading to %@…": "正在上传到 %@…",
   "Couldn't send that to the host": "无法发送到主机",
-  "The host's liberttyd is older and takes no files. Connect to it again to update it.": "主机上的 liberttyd 版本较旧，不能接收文件。重新连接主机即可更新它。"
+  "The host's liberttyd is older and takes no files. Connect to it again to update it.": "主机上的 liberttyd 版本较旧，不能接收文件。重新连接主机即可更新它。",
+  "Sized by another window": "尺寸由另一个窗口决定",
+  "Fit to This Pane": "适应此面板",
+  "Another window set the program's size: this pane shows what was drawn for it. Click to give it this pane's size.": "另一个窗口设定了程序的尺寸：这个面板显示的是按那个尺寸绘制的内容。点击即可改用此面板的尺寸。"
 }

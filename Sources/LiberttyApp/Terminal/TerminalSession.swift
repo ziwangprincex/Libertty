@@ -14,6 +14,8 @@ protocol TerminalSessionDelegate: AnyObject {
     func sessionProgramStatusChanged(_ session: TerminalSession)
     /// liberttyd says another program is in front (`reportedProgram`).
     func sessionForegroundChanged(_ session: TerminalSession)
+    /// liberttyd says the program has another size (`programSize`).
+    func sessionProgramSizeChanged(_ session: TerminalSession)
     func sessionExited(_ session: TerminalSession, status: Int32)
     func sessionWorkingDirectoryChanged(_ session: TerminalSession)
     func sessionDesktopNotification(_ session: TerminalSession, title: String, body: String)
@@ -26,6 +28,7 @@ protocol TerminalSessionDelegate: AnyObject {
 
 extension TerminalSessionDelegate {
     func sessionForegroundChanged(_ session: TerminalSession) {}
+    func sessionProgramSizeChanged(_ session: TerminalSession) {}
     func sessionWorkingDirectoryChanged(_ session: TerminalSession) {}
     /// An open search's count or highlights changed after output (`session.searchResult`).
     func sessionSearchChanged(_ session: TerminalSession) {}
@@ -335,6 +338,14 @@ final class TerminalSession {
             if let mode = remote.initialInputMode { inputModeChanged(mode) }
             remote.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
             reportedProgram = remote.foreground
+            programSize = remote.ptySize
+            remote.onPtySize = { [weak self] cols, rows in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.programSize = (cols, rows)
+                    self.delegate?.sessionProgramSizeChanged(self)
+                }
+            }
             remote.onForeground = { [weak self] program in
                 DispatchQueue.main.async {
                     guard let self, self.reportedProgram != program else { return }
@@ -384,6 +395,25 @@ final class TerminalSession {
     /// The program in front as liberttyd says (its `foreground` frames): on a
     /// host, the only way to know; nil for the shell, or an older liberttyd.
     private(set) var reportedProgram: SessionProgram?
+
+    /// The size its program has, as liberttyd says (the last window to
+    /// resize set it); nil when it doesn't say (an older one, a pty of our own).
+    private(set) var programSize: (cols: UInt16, rows: UInt16)?
+
+    /// Another window (or another Mac) sized the program: this pane shows,
+    /// at its own size, what was written for that one's (Rex's "Sized by
+    /// another client"). Not while this one's own new size is on its way.
+    var sizedElsewhere: Bool {
+        guard let p = programSize, !hasExited, pendingPtyResize == nil else { return false }
+        return p.cols != size.cols || p.rows != size.rows
+    }
+
+    /// Give the program this pane's size again.
+    func fitProgramToPane() {
+        pendingPtyResize?.cancel()
+        pendingPtyResize = nil
+        pty?.resize(size)
+    }
 
     /// liberttyd watches agents' screens itself and tells `+events`: what
     /// the window reads on them needn't be told it.
@@ -525,7 +555,10 @@ final class TerminalSession {
             _ = ghostty_terminal_resize(terminal, newSize.cols, newSize.rows, cellWidthPx, cellHeightPx)
         }
         pendingPtyResize?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.pty?.resize(newSize) }
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingPtyResize = nil
+            self?.pty?.resize(newSize)
+        }
         pendingPtyResize = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Timing.ptyResizeDebounce, execute: work)
     }

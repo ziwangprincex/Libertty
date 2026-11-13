@@ -334,6 +334,9 @@ expect password 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT --persist
 expect password-local 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT
+# A session in two windows: a pane of another size than its program's says so, and takes it back.
+expect sized-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sized-elsewhere.txt)" $OUT --persist
 # focus-follows-mouse: on, the pane under the pointer gets the keyboard; off (the default), it doesn't.
 mkdir -p $PRIVATE/ffm-config/libertty
 print 'focus-follows-mouse = true' > $PRIVATE/ffm-config/libertty/config
