@@ -571,6 +571,14 @@ extension TerminalWindowController {
             }
             return
         }
+        // Copy mode: its cursor goes to the next match from where it is, the
+        // way its search went (/ down, ? up; ⇧ the other way), and the
+        // keyboard comes back to the pane.
+        if let mode = focusedTerminal.copyMode {
+            focusedTerminal.copySearchStep(older: older == mode.searchesOlder)
+            area.findBar.show(result: focusedTerminal.session.searchResult)
+            return
+        }
         focusedTerminal.session.findNext(older: older)
         focusedTerminal.setNeedsRender(force: true)
         area.findBar.show(result: focusedTerminal.session.searchResult)

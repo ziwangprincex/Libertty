@@ -1,0 +1,56 @@
+# Copy mode (toggle_copy_mode, ⌘⇧C): a cursor of its own goes through the
+# screen and the scrollback by key, selects and copies; the program gets
+# none of the keys.
+type:printf '\033[H\033[2J\033[3J'; printf 'alpha beta_gamma\nsecond line here\n\344\270\255\346\226\207 third\n'
+key:enter
+wait:0.6
+key:cmd+shift+c
+expect-mode:Copy Mode
+key:g
+key:g
+expect-copy-cursor:alpha beta_gamma@0
+key:w
+expect-copy-cursor:alpha beta_gamma@6
+# Down keeps the column; w to the next word; v, e, y: copied.
+key:j
+key:w
+expect-copy-cursor:second line here@7
+key:v
+expect-mode:Copy Mode · Visual
+key:e
+expect-selection:line
+key:y
+expect-mode:Copied
+expect-clipboard:line
+expect-copy-cursor:-
+expect-selection:-
+# Wide characters are one step each.
+key:cmd+shift+c
+key:g
+key:g
+key:j
+key:j
+expect-copy-cursor:中文 third@0
+key:l
+expect-copy-cursor:中文 third@2
+key:l
+expect-copy-cursor:中文 third@4
+# A click puts the cursor where it is.
+click-text:third
+expect-copy-cursor:中文 third@5
+# ? finds up the page from the cursor; Return comes back to the pane, the
+# cursor on the match; Esc leaves copy mode and the search.
+key:?
+type:beta
+expect-searching:1
+key:enter
+expect-copy-cursor:alpha beta_gamma@6
+expect-mode:Copy Mode
+key:escape
+expect-mode:-
+expect-searching:0
+# The keys never reached the shell: its command line is as it was.
+type:echo DONE-$((40+2))
+key:enter
+expect:DONE-42
+expect-not:command not found

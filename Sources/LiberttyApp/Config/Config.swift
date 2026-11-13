@@ -232,6 +232,11 @@ struct Config: Equatable {
     var waitAfterCommand = false
     /// Ghostty's `focus-follows-mouse`: the pane under the pointer gets the keyboard.
     var focusFollowsMouse = false
+    /// Ghostty's `cursor-click-to-move`: a click in the command being typed
+    /// puts the shell's cursor there (arrow keys, at an OSC 133 prompt).
+    var cursorClickToMove = true
+    /// After a sequence's first key, what can follow is listed (which-key).
+    var keySequenceHints = true
     /// Ghostty's `abnormal-command-exit-runtime` (ms): a program that fails
     /// sooner than this keeps its pane, so its error can be read (Rex too).
     var abnormalCommandExitRuntime = 250
@@ -433,6 +438,8 @@ struct Config: Equatable {
         ("program-status-sound", "Which program states play a sound as they begin while you're elsewhere: e.g. blocked:Ping,error:Basso,done — a state alone plays the alert sound; the names are macOS's sounds (System Settings ▸ Sound). A state with a sound here doesn't also sound its notification. Default none."),
         ("cursor-style-blink", "Whether the cursor blinks by default: empty (blinks, and programs may turn it off with DEC mode 12), true or false. Programs can still change it (DECSCUSR)."),
         ("focus-follows-mouse", "Give the keyboard to the pane under the pointer, without a click (as in Ghostty): from one terminal pane to another of the window in front."),
+        ("cursor-click-to-move", "A click in the command you're typing moves the shell's cursor there (as in Ghostty): Libertty presses ← or → for you. Needs shell integration (OSC 133); not while a program has the mouse."),
+        ("key-sequence-hints", "After the first key of a key sequence (keybind = ctrl+b>v=…), list the keys that can follow and what each does, at the pane's corner."),
         ("wait-after-command", "Keep a pane open when its program ends, until a key is pressed in it (as in Ghostty). Off: only a program that fails at once keeps it (abnormal-command-exit-runtime)."),
         ("abnormal-command-exit-runtime", "Milliseconds: a program that fails (exits non-zero) sooner keeps its pane open with its error, until a key is pressed in it. 0 turns that off. Default 250."),
         ("undo-timeout", "How long Edit ▸ Undo (⌘Z) can bring back a closed pane, tab or window, programs still running: seconds or e.g. 30s; 0 ends them on close."),
@@ -566,6 +573,8 @@ struct Config: Equatable {
         case "undo-timeout": return [num(undoTimeout) + "s"]
         case "wait-after-command": return [String(waitAfterCommand)]
         case "focus-follows-mouse": return [String(focusFollowsMouse)]
+        case "cursor-click-to-move": return [String(cursorClickToMove)]
+        case "key-sequence-hints": return [String(keySequenceHints)]
         case "abnormal-command-exit-runtime": return [String(abnormalCommandExitRuntime)]
         case "web-access": return [webAccess]
         case "web-access-port": return [String(webAccessPort)]
@@ -968,6 +977,12 @@ struct Config: Equatable {
         case "focus-follows-mouse":
             if reset { focusFollowsMouse = defaults.focusFollowsMouse; return nil }
             guard let x = bool() else { return "true or false" }; focusFollowsMouse = x
+        case "cursor-click-to-move":
+            if reset { cursorClickToMove = defaults.cursorClickToMove; return nil }
+            guard let x = bool() else { return "true or false" }; cursorClickToMove = x
+        case "key-sequence-hints":
+            if reset { keySequenceHints = defaults.keySequenceHints; return nil }
+            guard let x = bool() else { return "true or false" }; keySequenceHints = x
         case "wait-after-command":
             if reset { waitAfterCommand = defaults.waitAfterCommand; return nil }
             guard let x = bool() else { return "true or false" }; waitAfterCommand = x

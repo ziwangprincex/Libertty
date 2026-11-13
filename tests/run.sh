@@ -605,6 +605,21 @@ keybind = ctrl+b>ctrl+b=text:\x02
 keybind = cmd+k>cmd+u=new_split:down' > $PRIVATE/sequence-config/libertty/config
 expect key-sequence 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/sequence-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/key-sequence.txt)" $OUT
+# Which-key hints: after a sequence's first key, the keys that can follow and what they do.
+mkdir -p $PRIVATE/key-hints-config/libertty
+print -r -- 'keybind = ctrl+b>v=new_split:right
+keybind = ctrl+b>c=new_tab' > $PRIVATE/key-hints-config/libertty/config
+expect key-hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/key-hints-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/key-hints.txt)" $OUT
+# Copy mode: a cursor of its own through the screen and the scrollback, selecting and copying; no key reaches the program.
+expect copy-mode 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/copy-mode.txt)" $OUT
+# Hint mode: labels on the links, paths, hashes and addresses on screen; a label opens or copies one.
+expect hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/hints.txt)" $OUT
+# cursor-click-to-move: a click in the command being typed moves the shell's cursor there (wide characters too).
+expect click-to-move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/click-to-move.txt)" $OUT
 # The tags over a pane (a link's address, a headerless split's name) read on their ground, light or dark.
 mkdir -p $PRIVATE/tags-config/libertty
 print -r -- 'pane-headers = never' > $PRIVATE/tags-config/libertty/config

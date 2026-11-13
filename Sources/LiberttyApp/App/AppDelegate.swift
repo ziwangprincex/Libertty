@@ -1049,6 +1049,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         item("Paste", .pasteFromClipboard, selector: #selector(NSText.paste(_:)), in: edit)
         item("Select All", .selectAll, selector: #selector(NSResponder.selectAll(_:)), in: edit)
         item("Copy Output of Last Command", .copyCommandOutput, symbol: "text.append", in: edit)
+        item("Copy Mode", .toggleCopyMode, symbol: "character.cursor.ibeam", in: edit)
+        item("Hint Mode", .toggleHintMode, symbol: "character.textbox", in: edit)
         edit.addItem(.separator())
         let find = NSMenu(title: "Find")
         let findParent = edit.addItem(withTitle: "Find", action: nil, keyEquivalent: "")

@@ -1,0 +1,36 @@
+# Hint mode (toggle_hint_mode, ⌘⇧H): every link, path, hash and address on
+# screen gets a label; typed, it opens (as ⌘-click does), in capitals it's
+# copied. A URL is only ever copied here: opening it would start a browser.
+type:printf 'x' > notes.txt; printf '\033[H\033[2J\033[3J'; printf 'see https://example.com/a and 1a2b3c4d at 10.0.0.1:8080 in notes.txt\n'
+key:enter
+wait:0.6
+key:cmd+shift+h
+expect-mode:Hints
+expect-hint:https://example.com/a
+expect-hint:1a2b3c4d
+expect-hint:10.0.0.1:8080
+expect-hint:notes.txt
+hint-copy:example.com
+expect-hint:-
+expect-clipboard:https://example.com/a
+expect-mode:Copied
+# A hash opens nothing: its label copies it.
+key:cmd+shift+h
+hint:1a2b3c4d
+expect-clipboard:1a2b3c4d
+# A file's label opens it, in a tab of its own.
+expect-tab-count:1
+key:cmd+shift+h
+hint:notes.txt
+expect-tab-count:2
+tab:1
+# Esc: no hints; nothing typed reached the shell.
+key:cmd+shift+h
+expect-mode:Hints
+key:escape
+expect-hint:-
+expect-mode:-
+type:echo DONE-$((40+2))
+key:enter
+expect:DONE-42
+expect-not:command not found

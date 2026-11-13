@@ -1,0 +1,31 @@
+# cursor-click-to-move (on by default): a plain click in the command being
+# typed moves the shell's cursor there; the shell's own line editor does it,
+# from the arrow keys Libertty presses (so what's typed next lands there).
+# (zsh's print -z puts the command with its CJK in the line editor.)
+type:print -z "echo abc$(printf '\344\270\255\346\226\207')xyz"
+key:enter
+wait:0.5
+expect:echo abc中文xyz
+click-text:中文
+type:-
+key:enter
+expect:abc-中文xyz
+# Back to the start, then past the end: after its last character.
+type:echo one two
+click-text:one
+type:X
+click-text:two+10
+type:!
+key:enter
+expect:Xone two!
+# Not while a program runs: cat gets no arrows.
+type:cat -v
+key:enter
+wait:0.3
+type:hello
+click-text:hel
+type:Z
+key:enter
+expect:helloZ
+expect-not:^[[
+key:ctrl+c
