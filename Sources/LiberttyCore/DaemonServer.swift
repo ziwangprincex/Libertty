@@ -1511,10 +1511,14 @@ extension String {
 /// quiet for a tick, compress a little per tick until the pass completes.
 /// A long scrollback then costs a fraction of its memory (liberttyd keeps one
 /// per session on top of the window's). Once a pass is done and nothing has
-/// changed since, it stops ticking until output comes (`wake`): a quiet
-/// session costs no wake-ups at all.
+/// changed since, it stops ticking until output comes (`wake`); meanwhile
+/// one timer for all the sleeping ones looks at each once a minute, for
+/// what changes the history without output (a resize reflowing it, a window
+/// attaching that read it back in). A quiet session costs no wake-ups of
+/// its own.
 public final class IdleCompressor: @unchecked Sendable {
     private let timer: DispatchSourceTimer
+    private let withTerminal: ((GhosttyTerminal) -> Void) -> Void
     private var lastActivity: UInt64 = .max
     private var complete = false
     private let dormancy = NSLock()
@@ -1525,36 +1529,47 @@ public final class IdleCompressor: @unchecked Sendable {
     /// (The first tick after `first` seconds, then every `tick`.)
     public init(queue: DispatchQueue, first: Double = 5, tick: Double = 2,
                 withTerminal: @escaping ((GhosttyTerminal) -> Void) -> Void) {
+        self.withTerminal = withTerminal
         self.tick = tick
         timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + first, repeating: tick, leeway: .milliseconds(Int(tick * 500)))
-        timer.setEventHandler { [unowned self] in
-            withTerminal { terminal in
-                var activity: UInt64 = 0
-                _ = ghostty_terminal_compression_activity(terminal, &activity)
-                guard activity == self.lastActivity else {
-                    // Still changing: wait until it's quiet.
-                    self.lastActivity = activity
-                    self.complete = false
-                    return
-                }
-                guard !self.complete else { return self.sleep() }
-                for _ in 0..<32 {
-                    var result = GHOSTTY_TERMINAL_COMPRESSION_RESULT_COMPLETE
-                    guard ghostty_terminal_compress(terminal, GHOSTTY_TERMINAL_COMPRESSION_MODE_INCREMENTAL, &result) == GHOSTTY_SUCCESS,
-                          result == GHOSTTY_TERMINAL_COMPRESSION_RESULT_PENDING else {
-                        self.complete = true
-                        break
-                    }
-                }
-            }
-        }
+        timer.setEventHandler { [unowned self] in self.check() }
         timer.resume()
     }
 
-    deinit { timer.cancel() }
+    /// A tick (on `queue`), or the sleepers' look (on its own thread): either
+    /// way inside `withTerminal`, whose lock keeps what it reads and sets.
+    private func check() {
+        withTerminal { terminal in
+            var activity: UInt64 = 0
+            _ = ghostty_terminal_compression_activity(terminal, &activity)
+            guard activity == self.lastActivity else {
+                // Still changing: wait until it's quiet (ticking again, if asleep).
+                self.lastActivity = activity
+                self.complete = false
+                return self.wake()
+            }
+            guard !self.complete else { return self.sleep() }
+            for _ in 0..<32 {
+                var result = GHOSTTY_TERMINAL_COMPRESSION_RESULT_COMPLETE
+                guard ghostty_terminal_compress(terminal, GHOSTTY_TERMINAL_COMPRESSION_MODE_INCREMENTAL, &result) == GHOSTTY_SUCCESS,
+                      result == GHOSTTY_TERMINAL_COMPRESSION_RESULT_PENDING else {
+                    self.complete = true
+                    break
+                }
+            }
+        }
+    }
 
-    public func stop() { timer.cancel() }
+    deinit {
+        Sleepers.shared.remove(self)
+        timer.cancel()
+    }
+
+    public func stop() {
+        Sleepers.shared.remove(self)
+        timer.cancel()
+    }
 
     /// Output came: ticking again, if it had stopped. Call it with the
     /// terminal locked, after writing to it (as the tick is), so a tick
@@ -1564,6 +1579,7 @@ public final class IdleCompressor: @unchecked Sendable {
         defer { dormancy.unlock() }
         guard dormant else { return }
         dormant = false
+        Sleepers.shared.remove(self)
         timer.schedule(deadline: .now() + tick, repeating: tick, leeway: .milliseconds(Int(tick * 500)))
     }
 
@@ -1573,7 +1589,49 @@ public final class IdleCompressor: @unchecked Sendable {
     private func sleep() {
         dormancy.lock()
         defer { dormancy.unlock() }
+        guard !dormant else { return }
         dormant = true
         timer.schedule(deadline: .distantFuture, repeating: .never)
+        Sleepers.shared.add(self)
+    }
+
+    /// The sleepers' look, now (the minute's timer; tests): one after
+    /// another on this thread, not on each one's queue (which would wake a
+    /// thread for each).
+    public static func lookAtSleepers() {
+        for sleeper in Sleepers.shared.current() { sleeper.check() }
+    }
+
+    /// The sleeping ones, and the one timer that looks at them (only while there are any).
+    private final class Sleepers: @unchecked Sendable {
+        static let shared = Sleepers()
+        private final class Weak { weak var value: IdleCompressor?; init(_ v: IdleCompressor) { value = v } }
+        private let lock = NSLock()
+        private var all: [ObjectIdentifier: Weak] = [:]
+        private var timer: DispatchSourceTimer?
+
+        func add(_ c: IdleCompressor) {
+            lock.withLock {
+                all[ObjectIdentifier(c)] = Weak(c)
+                guard timer == nil else { return }
+                let t = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+                t.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(10))
+                t.setEventHandler { IdleCompressor.lookAtSleepers() }
+                t.resume()
+                timer = t
+            }
+        }
+
+        func remove(_ c: IdleCompressor) {
+            lock.withLock {
+                all[ObjectIdentifier(c)] = nil
+                if all.isEmpty, let t = timer {
+                    t.cancel()
+                    timer = nil
+                }
+            }
+        }
+
+        func current() -> [IdleCompressor] { lock.withLock { all.values.compactMap(\.value) } }
     }
 }

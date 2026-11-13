@@ -25,7 +25,7 @@
 - **A beta channel** (`auto-update-channel = stable | beta`; Settings ▸ Advanced ▸ Updates): betas come first there.
 - **Less memory**: panes drawing the same font share one glyph atlas, which starts small (4 MB, not 64 MB each): four panes take 59 MB, not 250 MB. Shaders are compiled once, not for every pane.
 - **Launches in about half the time**: to the first frame showing the prompt, ~300 ms before, ~165 ms now (off screen, on an idle M5 Pro). The menus' icons load as each menu opens, the Web Access panel when it's first chosen, and fonts are warmed on another thread.
-- **Quiet sessions cost nothing**: a session's scrollback compression stops checking once it's done until output comes; a liberttyd with 100 idle sessions woke ~92 times every ten seconds, now twice.
+- **Quiet sessions cost nothing**: a session's scrollback compression stops checking once it's done, until output comes (one timer for all of them looks once a minute for a resize or a reattach that changed their history); a liberttyd with 100 idle sessions woke ~92 times every ten seconds, now twice.
 - Inside: liberttyd has new requests and frames (upload, foreground, ptySize, admin), so its build changes and a running one is replaced as for any update; a host's older liberttyd keeps working without the new parts. `Libertty --startup-bench [--sample]` and `bench/startup.sh` time a launch and say where it went. `scripts/codesign-identity.sh` makes and unlocks the signing certificate, in a keychain of its own (`~/.config/libertty-release`); `release.sh` won't stage without it. The Linux liberttyd in `Resources/remote` is rebuilt by CI.
 
 ## 0.6.7

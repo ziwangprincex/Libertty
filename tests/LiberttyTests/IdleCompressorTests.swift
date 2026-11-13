@@ -50,12 +50,31 @@ struct IdleCompressorTests {
         let first = lock.withLock { Self.compressedPages(terminal) }
         #expect(first > 0)
 
+        // History changed with no output (a resize reflowing it): the
+        // sleepers' look sees that and it ticks again, compressing what came back.
+        let slow = IdleCompressor(queue: DispatchQueue(label: "test.slow"), first: 0.05, tick: 0.05) { body in
+            lock.withLock { body(terminal) }
+        }
+        defer { slow.stop() }
+        #expect(Self.waitUntil(20) { slow.isDormant })
+        compressor.stop()
+        lock.withLock {
+            var cols: UInt16 = 100, rows: UInt16 = 30
+            _ = ghostty_terminal_resize(terminal, cols, rows, 0, 0)
+            (cols, rows) = (80, 24)
+            _ = ghostty_terminal_resize(terminal, cols, rows, 0, 0)
+        }
+        #expect(slow.isDormant)
+        IdleCompressor.lookAtSleepers()
+        #expect(Self.waitUntil(20) { !slow.isDormant })
+        #expect(Self.waitUntil(20) { slow.isDormant })
+
         lock.withLock {
             Self.write(terminal, lines: 20_000, tag: "b")
-            compressor.wake()
+            slow.wake()
         }
-        #expect(!compressor.isDormant)
-        #expect(Self.waitUntil(20) { compressor.isDormant })
+        #expect(!slow.isDormant)
+        #expect(Self.waitUntil(20) { slow.isDormant })
         #expect(lock.withLock { Self.compressedPages(terminal) } > first)
     }
 }
