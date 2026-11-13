@@ -179,6 +179,8 @@ extension TerminalWindowController {
         // It may have changed what a block shows (a commit, a branch), in any window.
         NotificationCenter.default.post(name: Blocks.commandFinished, object: nil)
         guard let pane = pane(for: session) else { return }
+        // What it printed, read as a list if a lens knows it (CommandLenses).
+        pane.surfaceOverlay.commandFinished(command)
         PluginHost.shared.emit("commandFinished", ["command": command, "exitCode": exitCode.map { Int($0) } as Any? ?? NSNull(),
                                                    "duration": duration, "cwd": session.workingDirectory ?? ""])
         // It may have changed the repository: its branch and changes again.

@@ -1,0 +1,16 @@
+# libertty +surface: the protocol from a shell script — query, a card with a
+# button, and the click read back as JSON (one process group, as a script is:
+# events go only to the program that drew the card).
+type:libertty +surface query > /dev/null && echo QUERY-OK
+key:enter
+wait:2.0
+expect:QUERY-OK
+type:sh -c 'libertty +surface show cli --rows 3 --title CLI "[{\"type\":\"buttons\",\"items\":[{\"id\":\"yes\",\"label\":\"Yes\"}]}]" && libertty +surface read --timeout 10'
+key:enter
+wait:2.0
+expect-surface:cli
+expect-surface-text:cli=CLI
+surface-press:cli=yes
+wait:1.0
+expect:"item":"yes"
+expect-surface-live:cli=no

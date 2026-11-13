@@ -63,6 +63,8 @@ final class TerminalSession {
     weak var delegate: TerminalSessionDelegate?
 
     let programStatus = ProgramStatusStore()
+    /// What its programs asked to show (SurfaceProtocol), and its commands' lenses.
+    let surfaces = SurfaceStore()
     private(set) var title = ""
     /// The title was set while a command ran (OSC 133): a program's. Once
     /// the shell's prompt is back it's that program's leftover (OMP's
@@ -391,6 +393,35 @@ final class TerminalSession {
 
     /// The shell (or command) process, for the inspector's process list.
     var shellPID: pid_t? { host == nil ? pty?.pid : nil }
+
+    // MARK: Surfaces (SurfaceStore)
+
+    /// The process group in front of the terminal, on this Mac; nil on a
+    /// host (its process table isn't ours) or when it can't be asked.
+    var foregroundGroup: pid_t? {
+        guard let pid = shellPID, pid > 0 else { return nil }
+        let pgid = libertty_proc_tty_pgid(pid)
+        return pgid > 0 ? pgid : nil
+    }
+
+    /// Who drew a surface, as it says on it. (Not "Libertty": a program
+    /// named so would pass its panel for Libertty's own.)
+    func surfaceProgramName(_ owner: pid_t?) -> String {
+        var name = reportedProgram?.name ?? ""
+        if let owner {
+            var buf = [CChar](repeating: 0, count: 64)
+            libertty_proc_name(owner, &buf, Int32(buf.count))
+            let own = String(cString: buf)
+            if !own.isEmpty { name = own }
+        }
+        return name.isEmpty || name.lowercased().hasPrefix("libertty") ? L10n.t("a program") : name
+    }
+
+    /// The protocol's answers (a query's, an error): as the terminal's own replies.
+    func surfaceReply(_ data: Data) { pty?.writeReply(data) }
+
+    /// A surface's event: to the program as input, as a key it reads would be.
+    func surfaceInput(_ data: Data) { pty?.write(data) }
 
     /// The program in front as liberttyd says (its `foreground` frames): on a
     /// host, the only way to know; nil for the shell, or an older liberttyd.
@@ -1054,6 +1085,7 @@ final class TerminalSession {
     /// Option-key behavior. Colors a program set itself (OSC 4/10/11) keep
     /// precedence, as in every terminal.
     func apply(_ config: Config) {
+        surfaces.enabled = config.surfaces
         let theme = config.resolvedTheme
         // (The config's palette and palette-generate are in the theme by now.)
         var colors = theme.fullPalette.map { GhosttyColorRgb(r: $0.r, g: $0.g, b: $0.b) }
@@ -1105,6 +1137,8 @@ final class TerminalSession {
         set(GHOSTTY_TERMINAL_OPT_PROGRESS_REPORT, unsafeBitCast(onProgressReport, to: UnsafeRawPointer.self))
         set(GHOSTTY_TERMINAL_OPT_CLIPBOARD_WRITE, unsafeBitCast(onClipboardWrite, to: UnsafeRawPointer.self))
         set(GHOSTTY_TERMINAL_OPT_CLIPBOARD_READ, unsafeBitCast(onClipboardRead, to: UnsafeRawPointer.self))
+        // OSC 7502 (SurfaceProtocol), among the sequences libghostty-vt leaves to us.
+        SurfaceStore.install(on: terminal)
 
         // Shared with liberttyd's copy, which must parse the same way.
         TerminalDefaults.apply(to: terminal, scrollback: ConfigStore.shared.config.scrollbackLimit)
@@ -1150,6 +1184,7 @@ final class TerminalSession {
             var g: GhosttySelectionGesture?
             ghostty_selection_gesture_free(gesture, terminal)
             if ghostty_selection_gesture_new(nil, &g) == GHOSTTY_SUCCESS, let g { gesture = g }
+            surfaces.terminalReplaced(self)
             ghostty_terminal_free(terminal)
             terminal = restored
             configureTerminal()
@@ -1228,6 +1263,7 @@ final class TerminalSession {
 
     /// Called with `lock` held, from the semantic-prompt callback.
     fileprivate func semanticPrompt(_ event: GhosttyTerminalSemanticPrompt) {
+        surfaces.semantic(event.kind, primary: event.prompt_kind == GHOSTTY_SEMANTIC_PROMPT_PROMPT_PRIMARY, terminal: terminal, session: self)
         switch event.kind {
         case GHOSTTY_SEMANTIC_PROMPT_PROMPT_START, GHOSTTY_SEMANTIC_PROMPT_INPUT_START:
             promptState = .prompt
@@ -1369,6 +1405,7 @@ final class TerminalSession {
     }
 
     fileprivate func didReset() {
+        surfaces.reset(self)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.title = ""

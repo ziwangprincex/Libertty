@@ -1,0 +1,15 @@
+# Surfaces through liberttyd (--persist): the program's bytes go through
+# the daemon (which leaves OSC 7502 alone) to the window, its event back
+# the same way; a second window on the session gets the screen from the
+# daemon's snapshot — without the surfaces, which are the window's.
+type:python3 @DIR@/surface-probe.py @TOOLS@
+key:enter
+wait:2.0
+expect:SUPPORTED 1
+expect-surface:demo
+surface-press:demo=cancel
+wait:1.0
+expect:EVENT click cancel
+wait:2.5
+expect:DONE
+attach-copy:DONE

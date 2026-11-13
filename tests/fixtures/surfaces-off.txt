@@ -1,0 +1,7 @@
+# surfaces = false: a program asking hears nothing (as from a terminal that
+# doesn't know the sequence), and what it sends shows nothing.
+type:python3 @DIR@/surface-probe.py @TOOLS@
+key:enter
+wait:2.0
+expect:UNSUPPORTED
+expect-no-surface:demo

@@ -1152,6 +1152,97 @@ enum UIProbe {
                             print("FAIL  ui-probe secure input: \(wants ? "on" : "off"), not \(on ? "on" : "off")")
                             failures += 1
                         }
+                    case .expectSurface(let id, let shown):
+                        let overlay = controller.focusedTerminal.surfaceOverlay
+                        // As the next frame would place them (an off-screen window draws few).
+                        overlay.layout()
+                        if id.hasPrefix("#") {
+                            // expect-surface-count: how many the pane has.
+                            let count = controller.focusedTerminal.session.surfaces.surfaces.count
+                            if count == Int(id.dropFirst()) {
+                                print("ok    ui-probe \(count) surfaces")
+                            } else {
+                                print("FAIL  ui-probe surfaces: \(count), not \(id.dropFirst()): \(overlay.surfaceIDs)")
+                                failures += 1
+                            }
+                            continue
+                        }
+                        let showing = overlay.isShown(id)
+                        if showing == shown {
+                            print("ok    ui-probe surface \(id) \(shown ? "shown" : "not shown")")
+                        } else {
+                            print("FAIL  ui-probe surface \(id): \(showing ? "shown" : "not shown"); surfaces: \(overlay.surfaceIDs)")
+                            failures += 1
+                        }
+                    case .expectSurfaceText(let spec):
+                        let parts = spec.split(separator: "=", maxSplits: 1).map(String.init)
+                        let text = controller.focusedTerminal.surfaceOverlay.surfaceView(parts[0])?.shownText ?? "(none)"
+                        if parts.count == 2, text.contains(parts[1]) {
+                            print("ok    ui-probe surface \(parts[0]) says \(parts[1])")
+                        } else {
+                            print("FAIL  ui-probe surface \(parts[0]): no \(parts.last ?? "") in \(text)")
+                            failures += 1
+                        }
+                    case .expectSurfaceLive(let spec):
+                        let parts = spec.split(separator: "=", maxSplits: 1).map(String.init)
+                        let live = controller.focusedTerminal.session.surfaces.surfaces.first { $0.spec.id == parts[0] }?.live
+                        if parts.count == 2, live == (parts[1] == "yes") {
+                            print("ok    ui-probe surface \(parts[0]) \(parts[1] == "yes" ? "live" : "ended")")
+                        } else {
+                            print("FAIL  ui-probe surface \(parts[0]): live \(String(describing: live))")
+                            failures += 1
+                        }
+                    case .surfaceAct(let name, let spec):
+                        // ID=ITEM (press), ID=INPUT=TEXT (submit), ID=ELEMENT=ITEM (choose).
+                        let parts = spec.split(separator: "=", maxSplits: 2).map(String.init)
+                        let view = controller.focusedTerminal.surfaceOverlay.surfaceView(parts[0])
+                        let done: Bool
+                        switch name {
+                        case "surface-press": done = parts.count == 2 && view?.press(parts[1]) == true
+                        case "surface-submit": done = parts.count == 3 && view?.submit(parts[1], parts[2]) == true
+                        default: done = parts.count == 3 && view?.choose(parts[1], parts[2]) == true
+                        }
+                        if done {
+                            print("ok    ui-probe \(name) \(spec)")
+                        } else {
+                            print("FAIL  ui-probe \(name) \(spec): nothing to act on (or it's off)")
+                            failures += 1
+                        }
+                    case .expectLens(let text):
+                        controller.focusedTerminal.surfaceOverlay.layout()
+                        let chips = controller.focusedTerminal.surfaceOverlay.lensChips
+                        if text.hasPrefix("#") {
+                            // expect-lens-count: how many lenses the pane has.
+                            if chips.count == Int(text.dropFirst()) {
+                                print("ok    ui-probe \(chips.count) lenses")
+                            } else {
+                                print("FAIL  ui-probe lenses: \(chips.count), not \(text.dropFirst()): \(chips.map(\.summary))")
+                                failures += 1
+                            }
+                        } else if chips.contains(where: { !$0.isHidden && $0.summary.contains(text) }) {
+                            print("ok    ui-probe lens says \(text)")
+                        } else {
+                            print("FAIL  ui-probe lens: no \(text) in \(chips.map { ($0.summary, $0.isHidden ? "hidden" : "shown") })")
+                            failures += 1
+                        }
+                    case .attachCopy(let text):
+                        // A second window on the session: the screen comes back from
+                        // liberttyd's snapshot; what programs drew over it doesn't.
+                        guard let id = controller.focusedTerminal.session.persistentID,
+                              let copy = try? TerminalSession.attach(id) else {
+                            print("FAIL  ui-probe attach-copy: no session in liberttyd (--persist?)")
+                            failures += 1
+                            continue
+                        }
+                        let deadline = Date().addingTimeInterval(3)
+                        while !copy.scrollbackText().contains(text), Date() < deadline { pump(0.1) }
+                        if copy.scrollbackText().contains(text), copy.surfaces.surfaces.isEmpty {
+                            print("ok    ui-probe attach-copy shows \(text), no surfaces")
+                        } else {
+                            print("FAIL  ui-probe attach-copy: \(copy.scrollbackText().contains(text) ? "" : "no \(text); ")\(copy.surfaces.surfaces.count) surfaces")
+                            failures += 1
+                        }
+                        copy.detachForProbe()
                     case .otherWindow(let spec):
                         if spec == "close" {
                             otherWindow?.detach()
@@ -1569,6 +1660,11 @@ enum UIProbe {
         /// `expect-composer:open|closed|popped|text=TEXT`, `queue-prompt:TEXT`,
         /// `expect-queue:N|tag=TEXT|paused|running`, `conversation:AGENT:ID` (a record for the focused pane).
         case composer(String), expectComposer(String), queuePrompt(String), expectQueue(String), conversation(String)
+        /// Surfaces (SurfaceProtocol) on the focused pane: shown, gone, saying,
+        /// live; pressing, typing into and choosing in one; a lens's chip
+        /// saying; a second window on the session showing TEXT, with none.
+        case expectSurface(String, Bool), expectSurfaceText(String), expectSurfaceLive(String), surfaceAct(String, String)
+        case expectLens(String), attachCopy(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
@@ -1691,6 +1787,15 @@ enum UIProbe {
             case "expect-sized": steps.append(.expectSized(arg == "yes"))
             case "fit-here": steps.append(.fitHere)
             case "expect-floating": steps.append(.expectFloating(arg))
+            case "expect-surface": steps.append(.expectSurface(arg, true))
+            case "expect-surface-count": steps.append(.expectSurface("#" + arg, true))
+            case "expect-no-surface": steps.append(.expectSurface(arg, false))
+            case "expect-surface-text": steps.append(.expectSurfaceText(arg))
+            case "expect-surface-live": steps.append(.expectSurfaceLive(arg))
+            case "surface-press", "surface-submit", "surface-choose": steps.append(.surfaceAct(verb, arg))
+            case "expect-lens": steps.append(.expectLens(arg))
+            case "expect-lens-count": steps.append(.expectLens("#" + arg))
+            case "attach-copy": steps.append(.attachCopy(arg))
             case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))
