@@ -243,7 +243,8 @@ extension TerminalWindowController {
     /// its tab selected.
     func isLookedAt(_ pane: TerminalView) -> Bool {
         NSApp.isActive && window?.isKeyWindow == true
-            && (selectedTab.panes.contains { $0 === pane } || selectedTab.parked.contains { $0.showsCard && $0.pane === pane })
+            && (selectedTab.panes.contains { $0 === pane } || selectedTab.parked.contains { $0.showsCard && $0.pane === pane }
+                || shownFloatingPanes.contains { $0 === pane })
     }
 
     /// Window ▸ Picture in Picture: the focused pane in a floating window.

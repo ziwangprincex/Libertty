@@ -1,0 +1,31 @@
+# Floating panes (Rex's New Floating Pane): a shell of its own over the
+# split, with the keyboard; minimized, out of sight with its program
+# running (the split's pane has the keyboard again); toggled back; saved
+# with the layout; closed with ⌘W while it has the keyboard, not the split's
+# pane. Run with --persist (the layout is saved by session).
+expect-floating:0
+action:new_floating_pane
+wait:1.2
+expect-floating:1 keyboard
+type:echo FLOAT-$((40+2))
+key:enter
+wait:0.6
+expect:FLOAT-42
+action:toggle_floating_panes
+wait:0.4
+expect-floating:0
+type:echo SPLIT-$((40+3))
+key:enter
+wait:0.6
+expect:SPLIT-43
+expect-panes:1
+action:toggle_floating_panes
+wait:0.4
+expect-floating:1 keyboard
+roundtrip:go
+# ⌘W in it closes it, and only it.
+key:cmd+w
+wait:1.0
+expect-floating:0
+expect-panes:1
+expect:SPLIT-43

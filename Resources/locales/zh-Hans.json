@@ -629,5 +629,10 @@
   "Channel": "更新通道",
   "Stable releases": "正式版",
   "Betas too": "也接收测试版",
-  "Betas come first and may break; they get every stable release too.": "测试版先于正式版发布，可能不稳定；选了测试版也会收到每个正式版。"
+  "Betas come first and may break; they get every stable release too.": "测试版先于正式版发布，可能不稳定；选了测试版也会收到每个正式版。",
+  "Minimize (it keeps running)": "最小化（程序继续运行）",
+  "Put in the Split": "放回分屏",
+  "Floating pane": "浮动面板",
+  "New Floating Pane": "新建浮动面板",
+  "Toggle Floating Panes": "显示或隐藏浮动面板"
 }

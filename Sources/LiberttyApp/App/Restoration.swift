@@ -91,6 +91,10 @@ struct SavedParked: Codable {
     /// Shown live in a corner of the split, and which corner.
     var card: Bool?
     var corner: String?
+    /// A floating pane's frame (x, y, width, height as fractions of the
+    /// split), and whether it was minimized.
+    var float: [Double]?
+    var floatMinimized: Bool?
 }
 
 struct SavedPane: Codable {
@@ -352,7 +356,9 @@ extension TerminalWindowController {
                                             anchor: entry.anchor.flatMap { a in leaves.firstIndex { $0 === a } },
                                             side: entry.side.rawValue,
                                             card: entry.showsCard ? true : nil,
-                                            corner: entry.showsCard ? (tab.container?.card?.corner.rawValue ?? entry.cardCorner) : nil)
+                                            corner: entry.showsCard ? (tab.container?.card?.corner.rawValue ?? entry.cardCorner) : nil,
+                                            float: entry.floating.map { [$0.minX, $0.minY, $0.width, $0.height].map(Double.init) },
+                                            floatMinimized: entry.floating != nil && entry.floatingMinimized ? true : nil)
                             })
             saved.worktree = tab.worktree
             return saved
@@ -473,9 +479,12 @@ extension TerminalWindowController {
             for entry in t.parked ?? [] {
                 guard entry.pane.session != nil || entry.pane.directory != nil, let view = pane(entry.pane) else { continue }
                 view.isParked = true
+                let float = entry.float.flatMap { f in f.count == 4 ? CGRect(x: f[0], y: f[1], width: f[2], height: f[3]) : nil }
+                view.isFloating = float != nil
                 tab.parked.append(TerminalTab.Parked(pane: view, anchor: leaf(entry.anchor),
                                                      side: entry.side.flatMap(SplitContainerView.Direction.init(rawValue:)) ?? .right,
-                                                     showsCard: entry.card == true, cardCorner: entry.corner))
+                                                     showsCard: entry.card == true && float == nil, cardCorner: entry.corner,
+                                                     floating: float, floatingMinimized: entry.floatMinimized == true))
             }
             if let zoomed = leaf(t.zoomed), root.leaves.count > 1 { tab.container?.toggleZoom(zoomed) }
             tabs.append(tab)

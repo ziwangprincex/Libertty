@@ -340,6 +340,9 @@ expect password 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT --persist
 expect password-local 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT
+# Floating panes: a shell of its own over the split, minimized and back, saved with the layout, ⌘W closing only it.
+expect floating-pane 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/floating-pane.txt)" $OUT --persist
 # A session in two windows: a pane of another size than its program's says so, and takes it back.
 expect sized-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sized-elsewhere.txt)" $OUT --persist

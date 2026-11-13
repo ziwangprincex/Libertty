@@ -152,6 +152,7 @@ extension TerminalWindowController {
         shownNews = infos.map(\.news)
         everyTab.forEach(updateNameTags(of:))
         everyTab.forEach(syncCard(of:))
+        syncAllFloats()
         onLayoutChange?()
         scheduleTileRefresh()
         let selected = tabs.firstIndex { $0 === selectedTab } ?? 0

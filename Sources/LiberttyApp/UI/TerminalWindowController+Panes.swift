@@ -118,6 +118,8 @@ extension TerminalWindowController {
     /// ⌘W closes the focused pane; the last pane closes its tab, the last
     /// tab the window.
     @objc func closePane(_ sender: Any?) {
+        // A floating pane with the keyboard closes, not the split's.
+        if let floating = focusedFloatingPane { return closeFloating(floating) }
         if let doc = focusedDocumentPane { return closeDocumentPane(doc) }
         guard let pane = selectedTab.focusedPane else { return closeSelectedTab() }
         closeTerminalPane(pane)
@@ -297,6 +299,8 @@ extension TerminalWindowController {
         }
         tab.parked.removeAll { $0.pane === pane }
         pane.isParked = false
+        pane.isFloating = false
+        syncFloats(of: tab)
         if tab !== selectedTab { select(tab) }
         if let zoomed = container.zoomed { container.toggleZoom(zoomed) }
         let anchor = entry.anchor.flatMap { a in container.views.contains { $0 === a } ? a : nil }

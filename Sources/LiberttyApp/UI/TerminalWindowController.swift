@@ -60,6 +60,12 @@ final class TerminalTab {
         /// Shown live in a corner of the split (in-window picture in picture).
         var showsCard = false
         var cardCorner: String?
+        /// A floating pane (New Floating Pane): a terminal of its own over the
+        /// split, at this frame (fractions of the split's size); nil for a
+        /// pane parked out of sight or shown as the card.
+        var floating: CGRect?
+        /// Minimized: out of sight, its program running on.
+        var floatingMinimized = false
     }
     /// Parked panes, the latest last. Their programs keep running; nothing draws them.
     var parked: [Parked] = []
@@ -403,7 +409,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
 
     /// The pane keyboard input goes to (in the last terminal tab, while a
     /// document is in front).
-    var focusedTerminal: TerminalView { (selectedTab.focusedPane ?? terminalTab.focusedPane)! }
+    var focusedTerminal: TerminalView { focusedFloatingPane ?? (selectedTab.focusedPane ?? terminalTab.focusedPane)! }
+
+    /// A floating pane of the tab in front, when it has the keyboard: what
+    /// the user works in (find, typing, the palette's actions), though the
+    /// split's focused pane stays what splits and zoom act on.
+    var focusedFloatingPane: TerminalView? {
+        guard let pane = window?.firstResponder as? TerminalView, pane.isFloating,
+              selectedTab.parked.contains(where: { $0.pane === pane }) else { return nil }
+        return pane
+    }
 
     /// The selected tab's panes (diagnostics).
     var activeContainer: SplitContainerView? { selectedTab.container }

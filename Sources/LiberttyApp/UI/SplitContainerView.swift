@@ -127,6 +127,31 @@ final class SplitContainerView: NSView {
         activeBorder.show(frame, look: bordered.look, radius: Radius.pane, animated: animated)
     }
 
+    // MARK: Floating panes (New Floating Pane)
+
+    /// Terminals of their own over the split, the frontmost last.
+    private(set) var floats: [FloatingTerminalView] = []
+
+    func addFloat(_ float: FloatingTerminalView) {
+        guard !floats.contains(where: { $0 === float }) else { return }
+        floats.append(float)
+        addSubview(float, positioned: .above, relativeTo: nil)
+        float.place(in: bounds.size)
+    }
+
+    func removeFloat(_ float: FloatingTerminalView) {
+        floats.removeAll { $0 === float }
+        float.removeFromSuperview()
+    }
+
+    /// In front of the other floating panes (and everything else).
+    func raise(_ float: FloatingTerminalView) {
+        guard floats.last !== float, floats.contains(where: { $0 === float }) else { return }
+        floats.removeAll { $0 === float }
+        floats.append(float)
+        addSubview(float, positioned: .above, relativeTo: nil)
+    }
+
     // MARK: Floating card (in-window picture in picture)
 
     /// A parked pane shown live in a corner, if one is.
@@ -489,6 +514,7 @@ final class SplitContainerView: NSView {
         }
         if let zoomed { placeCard(zoomed, in: bounds) }
         card?.place(in: bounds.size)
+        floats.forEach { $0.place(in: bounds.size) }
         for pane in views {
             // (placeCard hid the header of a card too short for one.)
             guard let header = headerViews[ObjectIdentifier(pane)] else { continue }

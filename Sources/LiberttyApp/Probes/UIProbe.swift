@@ -387,6 +387,8 @@ enum UIProbe {
                             && copy.workspaceTabs.map(\.count) == controller.workspaceTabs.map(\.count)
                             && parked(copy) == parked(controller)
                             && copy.everyTab.map { $0.parked.map(\.showsCard) } == controller.everyTab.map { $0.parked.map(\.showsCard) }
+                            && copy.everyTab.map { $0.parked.map { $0.floating != nil } } == controller.everyTab.map { $0.parked.map { $0.floating != nil } }
+                            && copy.everyTab.map { $0.parked.map(\.floatingMinimized) } == controller.everyTab.map { $0.parked.map(\.floatingMinimized) }
                         if same {
                             print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy))")
                         } else {
@@ -1181,6 +1183,18 @@ enum UIProbe {
                             print("FAIL  ui-probe sized tag: \(shown ?? "none"), program \(String(describing: controller.focusedTerminal.session.programSize))")
                             failures += 1
                         }
+                    case .expectFloating(let want):
+                        // "N" floating panes shown; "N keyboard": and one has the keyboard.
+                        let shown = controller.shownFloatingPanes.count
+                        let keyboard = controller.focusedFloatingPane != nil
+                        let parts = want.split(separator: " ")
+                        let ok = Int(parts.first ?? "") == shown && (parts.count < 2 || keyboard == (parts[1] == "keyboard"))
+                        if ok {
+                            print("ok    ui-probe floating panes: \(want)")
+                        } else {
+                            print("FAIL  ui-probe floating panes: \(shown) shown, keyboard \(keyboard ? "in one" : "elsewhere"); wanted \(want)")
+                            failures += 1
+                        }
                     case .fitHere:
                         let fitted = controller.focusedTerminal.session
                         fitted.fitProgramToPane()
@@ -1549,6 +1563,8 @@ enum UIProbe {
         /// COLSxROWS ("close": it goes); whether the pane says it's sized by
         /// another; its tag's click.
         case otherWindow(String), expectSized(Bool), fitHere
+        /// How many floating panes the tab in front shows, and with `keyboard` that one has it.
+        case expectFloating(String)
         /// The focused pane's composer and prompt queue: `composer:open|queue|close|pop-out|pop-in`,
         /// `expect-composer:open|closed|popped|text=TEXT`, `queue-prompt:TEXT`,
         /// `expect-queue:N|tag=TEXT|paused|running`, `conversation:AGENT:ID` (a record for the focused pane).
@@ -1674,6 +1690,7 @@ enum UIProbe {
             case "other-window": steps.append(.otherWindow(arg))
             case "expect-sized": steps.append(.expectSized(arg == "yes"))
             case "fit-here": steps.append(.fitHere)
+            case "expect-floating": steps.append(.expectFloating(arg))
             case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))

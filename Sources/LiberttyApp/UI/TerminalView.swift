@@ -411,6 +411,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// Taken out of its split but running on (Park Pane): in no window, and a
     /// Picture in Picture of it stays.
     var isParked = false
+    /// Parked, but shown as a floating pane (FloatingTerminalView): its grid
+    /// follows its frame, as a pane in the split's does.
+    var isFloating = false
     /// The grid got a new size (a pane header says it).
     var onGridResize: ((TerminalView) -> Void)?
 
@@ -724,7 +727,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// not from a field (the find bar, a rename), a document or an editor,
     /// not mid-drag, not to a parked pane.
     private func focusUnderPointer() {
-        guard ConfigStore.shared.config.focusFollowsMouse, !isParked, let window,
+        guard ConfigStore.shared.config.focusFollowsMouse, !isParked || isFloating, let window,
               // Not while dragging. (A probe's pointer is its own, with no
               // buttons; the real mouse is the user's, doing something else.)
               window.attachedSheet == nil, Probe.running || NSEvent.pressedMouseButtons == 0,
@@ -994,7 +997,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     private func updateGrid() -> Bool {
         // A parked pane shrinking out of its split keeps the grid it had: the
         // program never learns it was put away.
-        guard renderer != nil, !isParked else { return false }
+        guard renderer != nil, !isParked || isFloating else { return false }
         let scale = metalLayer.contentsScale
         let fonts = renderer.fonts
         let p = padding

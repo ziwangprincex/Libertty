@@ -226,6 +226,7 @@ enum Action: Equatable {
     case toggleFullscreen, toggleVisibility, toggleWindowFloatOnTop, resetWindowSize, toggleSecureInput
     case toggleCommandPalette, toggleQuickTerminal, toggleTabOverview, connectToHost, togglePictureInPicture
     case gotoPane, gotoAttention, resumeConversation, newTabInWorktree, toggleAppearance, gotoDirectory, showTabs(TabActivity), restartSurface, parkSurface, unparkSurface, floatSurface
+    case newFloatingPane, toggleFloatingPanes
     case moveSurfaceToNewTab, moveSurfaceToNewWindow, moveSurfaceToTab(Int), moveTabToNewWindow
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
@@ -260,6 +261,7 @@ enum Action: Equatable {
         ("toggle_tab_overview", .toggleTabOverview), ("connect_to_host", .connectToHost),
         ("goto_pane", .gotoPane), ("goto_attention", .gotoAttention), ("resume_conversation", .resumeConversation), ("new_tab_in_worktree", .newTabInWorktree), ("toggle_appearance", .toggleAppearance), ("go_to_directory", .gotoDirectory), ("restart_surface", .restartSurface),
         ("park_surface", .parkSurface), ("unpark_surface", .unparkSurface), ("float_surface", .floatSurface),
+        ("new_floating_pane", .newFloatingPane), ("toggle_floating_panes", .toggleFloatingPanes),
         ("move_surface_to_new_tab", .moveSurfaceToNewTab), ("move_surface_to_new_window", .moveSurfaceToNewWindow),
         ("move_tab_to_new_window", .moveTabToNewWindow),
         ("new_workspace", .newWorkspace), ("rename_workspace", .renameWorkspace), ("close_workspace", .closeWorkspace),
@@ -419,6 +421,8 @@ enum Action: Equatable {
         ("park_surface", "Take the focused pane out of the split, its program still running"),
         ("unpark_surface", "Put the latest parked pane back beside the pane it stood by"),
         ("float_surface", "Show the focused pane live in a corner of the split (picture in picture in the window), or bring it back"),
+        ("new_floating_pane", "A shell of its own floating over the split (Rex's floating pane): moved by its bar, resized by its edges, minimized with its program running"),
+        ("toggle_floating_panes", "Minimize the tab's floating panes, or bring them back (a new one if it has none)"),
         ("move_surface_to_new_tab", "Take the focused pane out of its split into a tab of its own, its program running on"),
         ("move_surface_to_tab:N", "Move the focused pane into tab N's split, beside its focused pane"),
         ("move_surface_to_new_window", "Take the focused pane out of its split into a window of its own"),
@@ -579,6 +583,7 @@ struct Keybinds: Equatable {
             "cmd+arrow_right=text:\\x05", "cmd+arrow_left=text:\\x01", "cmd+backspace=text:\\x15",
             "alt+arrow_left=esc:b", "alt+arrow_right=esc:f",
             "cmd+shift+c=toggle_copy_mode", "cmd+shift+h=toggle_hint_mode",
+            "cmd+alt+f=toggle_floating_panes", "cmd+alt+shift+f=new_floating_pane",
         ]
         for i in 1...8 { d.append("cmd+\(i)=goto_tab:\(i)") }
         return d

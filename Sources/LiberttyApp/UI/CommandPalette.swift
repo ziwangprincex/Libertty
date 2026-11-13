@@ -225,6 +225,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Park Pane", .parkSurface, "tray.and.arrow.down")
         command("Unpark Pane", .unparkSurface, "tray.and.arrow.up")
         command("Float Pane", .floatSurface, "pip.enter")
+        command("New Floating Pane", .newFloatingPane, "macwindow.badge.plus")
+        command("Toggle Floating Panes", .toggleFloatingPanes, "rectangle.on.rectangle")
         command("Move Pane to New Tab", .moveSurfaceToNewTab, "rectangle.portrait.and.arrow.right")
         command("Move Pane to New Window", .moveSurfaceToNewWindow, "macwindow.badge.plus")
         command("Move Tab to New Window", .moveTabToNewWindow, "uiwindow.split.2x1")

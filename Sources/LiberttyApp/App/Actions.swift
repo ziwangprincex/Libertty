@@ -92,6 +92,8 @@ enum ActionDispatcher {
         case .parkSurface: controller?.parkFocusedPane()
         case .unparkSurface: controller?.unparkLatest()
         case .floatSurface: controller?.toggleFloatingPane()
+        case .newFloatingPane: controller?.newFloatingPane()
+        case .toggleFloatingPanes: controller?.toggleFloatingPanes()
         case .moveSurfaceToNewTab: controller?.moveFocusedPaneToNewTab()
         case .moveSurfaceToTab(let n): controller?.moveFocusedPane(toTab: n)
         case .moveSurfaceToNewWindow: controller?.moveFocusedPaneToNewWindow()

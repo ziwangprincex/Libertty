@@ -1158,6 +1158,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         item("Park Pane", .parkSurface, symbol: "tray.and.arrow.down", in: window)
         item("Unpark Pane", .unparkSurface, symbol: "tray.and.arrow.up", in: window)
         item("Float Pane", .floatSurface, symbol: "pip.enter", in: window)
+        item("New Floating Pane", .newFloatingPane, symbol: "macwindow.badge.plus", in: window)
+        item("Toggle Floating Panes", .toggleFloatingPanes, symbol: "rectangle.on.rectangle", in: window)
         item("Move Pane to New Tab", .moveSurfaceToNewTab, symbol: "rectangle.portrait.and.arrow.right", in: window)
         let movePane = NSMenu(title: Self.movePaneMenuTitle)
         movePane.delegate = self
