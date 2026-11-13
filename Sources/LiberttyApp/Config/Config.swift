@@ -217,6 +217,9 @@ struct Config: Equatable {
     /// The sidebar's tab rows: a second line (what the program reports, else
     /// its branch and changes, else its folder), or compact: one line.
     var sidebarRows = "comfortable"
+    /// The sidebar's tabs in groups (Kero's): none, under their projects, or
+    /// under their machines — with the sessions there not open here.
+    var sidebarGroup = SidebarGrouping.none
     /// Libertty in the menu bar (Kero's tray): what waits for you, the Quick
     /// Terminal, Keep Mac Awake, Settings.
     var menuBarIcon = false
@@ -453,6 +456,7 @@ struct Config: Equatable {
         ("worktree-base", "What a new worktree's branch starts from: default (the repository's default branch, as a pull request is made against) or current (the branch of the pane you're in)."),
         ("git-status", "Show each pane's git branch and the lines its changes add and remove (in pane headers and sidebar rows); false stops Libertty running git for them."),
         ("sidebar-rows", "comfortable (default): each tab's row has a second line, what its program reports (OSC 7501), else its branch and changes, else its folder; compact: one line."),
+        ("sidebar-group", "Group the sidebar's tabs: none (default, one list), project (under the git repository each tab's folder is in — a worktree with its repository — else the folder; a host's tabs under host · folder) or host (under the machine each runs on: this Mac, a window's host, a host an ssh in a pane went to). Grouped, the sidebar also lists the sessions this Mac's liberttyd and connected hosts' keep that no window shows; a click shows one in a tab. A header's chevron folds its group, its + opens a tab there."),
         ("menu-bar-icon", "Show Libertty in the menu bar: the icon fills (with a count) while programs wait for you; its menu goes to them, drops the Quick Terminal down, keeps the Mac awake, opens Settings."),
         ("language", "The interface's language: auto (default, as macOS uses), en (English) or zh-Hans (简体中文): menus, the command palette, Settings and the sidebar. Takes effect when Libertty restarts."),
         ("diff-layout", "How diffs lay out, in +diff's pages and the Git block: auto (default: side by side once there's room, else unified), unified or split (side by side)."),
@@ -586,6 +590,7 @@ struct Config: Equatable {
         case "worktree-base": return [worktreeBase]
         case "git-status": return [String(gitStatus)]
         case "sidebar-rows": return [sidebarRows]
+        case "sidebar-group": return [sidebarGroup.rawValue]
         case "menu-bar-icon": return [String(menuBarIcon)]
         case "language": return [language]
         case "diff-layout": return [diffLayout]
@@ -966,6 +971,9 @@ struct Config: Equatable {
         case "sidebar-rows":
             if reset { sidebarRows = defaults.sidebarRows; return nil }
             guard ["comfortable", "compact"].contains(v.lowercased()) else { return "comfortable or compact" }; sidebarRows = v.lowercased()
+        case "sidebar-group":
+            if reset { sidebarGroup = defaults.sidebarGroup; return nil }
+            guard let x = SidebarGrouping(rawValue: v.lowercased()) else { return "none, project or host" }; sidebarGroup = x
         case "menu-bar-icon":
             if reset { menuBarIcon = defaults.menuBarIcon; return nil }
             guard let x = bool() else { return "true or false" }; menuBarIcon = x

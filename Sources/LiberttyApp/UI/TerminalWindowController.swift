@@ -736,6 +736,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         return popover
     }()
     var inboxObserver: AnyObject?
+    /// The sidebar's groups folded away (`sidebar-group`), by id; kept with the window's layout.
+    var collapsedGroups: Set<String> = []
+    /// Told when a grouped sidebar's groups changed by themselves (`SidebarGroups.changed`).
+    var groupsObserver: AnyObject?
 
     /// "Split Right (⌘D)": a control's name and its keys as bound now.
     static func tip(_ label: String, _ action: Action) -> String {

@@ -58,6 +58,7 @@ extension TerminalWindowController {
         if config.sidebarShowHiddenFiles != old.sidebarShowHiddenFiles || config.sidebarFiles != old.sidebarFiles {
             updateSidebar(force: true)
         }
+        if config.sidebarGroup != old.sidebarGroup { updateSidebar() }
         if config.tabBar != old.tabBar {
             arrangeColumns()
             updateTitleVisibility()
@@ -152,11 +153,19 @@ extension TerminalWindowController {
         }
     }
 
-    /// A tab showing a session liberttyd already runs (`libertty +attach`); shown
-    /// elsewhere too, it mirrors.
+    /// A tab showing a session liberttyd already runs (`libertty +attach`, a
+    /// sidebar row of one not open here) — this window's host's, on a
+    /// host's window; shown elsewhere too, it mirrors.
     func attachTab(_ id: String) {
         do {
-            let session = try TerminalSession.attach(id, config: config)
+            let session: TerminalSession
+            if let host {
+                // Shown once the host answers (a new shell if it no longer has it).
+                session = try TerminalSession.reattach(id, host: host, size: focusedTerminal.session.size,
+                                                       workingDirectory: nil, config: config)
+            } else {
+                session = try TerminalSession.attach(id, config: config)
+            }
             let pane = try TerminalView(session: session, config: config)
             pane.fontSize = focusedTerminal.fontSize
             adopt(pane)
@@ -203,15 +212,18 @@ extension TerminalWindowController {
         select(tabs[index])
     }
 
-    /// Tab N (1-based), or the last with nil.
+    /// Tab N (1-based), or the last with nil — as the sidebar lists them.
     func selectTab(_ n: Int?) {
-        let i = n.map { $0 - 1 } ?? tabs.count - 1
-        selectTab(at: i)
+        let listed = tabsAsListed
+        let i = n.map { $0 - 1 } ?? listed.count - 1
+        guard listed.indices.contains(i) else { return }
+        select(listed[i])
     }
 
     func selectTab(offset: Int) {
-        guard let i = tabs.firstIndex(where: { $0 === selectedTab }), tabs.count > 1 else { return }
-        selectTab(at: (i + offset + tabs.count) % tabs.count)
+        let listed = tabsAsListed
+        guard let i = listed.firstIndex(where: { $0 === selectedTab }), listed.count > 1 else { return }
+        select(listed[(i + offset + listed.count) % listed.count])
     }
 
     func select(_ tab: TerminalTab) {

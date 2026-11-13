@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **The sidebar groups its tabs** (Kero's projects, `sidebar-group`; Settings ▸ Interface ▸ Tabs, the command palette, a tab's menu ▸ Group Tabs): `project` puts each tab under the git repository its folder is in — a worktree under its repository, a folder outside any under itself, a host's tab under "host · folder" — and `host` under the machine it runs on: This Mac, the window's host, the host an ssh in the pane went to. A header's chevron (or a click on it) folds its group away, keeping only the tab you're in; folded groups are kept with the window. Its + opens a tab in the project's folder. Tabs keep their order inside their group; Move Up/Down and dragging reorder them there. The filter and the activity menu still apply, and a group with nothing left showing hides. By host, one machine and nothing elsewhere shows no header at all. `none`, the default, is the list as it was.
+- Grouped, the sidebar also lists the sessions this Mac's liberttyd and every connected host's keep that no window shows (`+new-session`, a window closed on another Mac), fainter, in their project's or machine's group: a click shows one in a tab here — or, a host's in a window on that host. Hosts are asked only while their shared ssh link is up (never a login), off the main thread, every few seconds while a grouped sidebar shows.
+- Inside: `--ui-probe` gains `expect-group`, `expect-group-count`, `expect-elsewhere`, `expect-no-elsewhere` and `click-row`; `roundtrip` checks folded groups; `sidebar-groups.txt` in the suite and `SidebarGroupsTests`.
+
 ## 0.6.7
 
 > Key sequences: `keybind = ctrl+b>v=new_split:right` binds keys pressed one after another (a prefix key, as tmux and Ghostty have), so a tmux habit or a Ghostty config comes over as it is.

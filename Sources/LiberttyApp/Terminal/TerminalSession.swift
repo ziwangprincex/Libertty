@@ -194,6 +194,13 @@ final class TerminalSession {
              config: ConfigStore.shared.config)
     }
 
+    /// Where it is, for a session that never said (a program that reports
+    /// no folder, attached from a list that read its process's): kept
+    /// until it says otherwise.
+    func assumeWorkingDirectory(_ path: String) {
+        if workingDirectory == nil { workingDirectory = path }
+    }
+
     private func join(_ host: RemoteHost, id: String, command: String?, workingDirectory: String?, config: Config) {
         startedAt = nil  // a host's start time isn't this Mac's to measure
         self.host = host

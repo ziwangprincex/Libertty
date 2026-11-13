@@ -389,6 +389,7 @@ enum UIProbe {
                             && copy.everyTab.map { $0.parked.map(\.showsCard) } == controller.everyTab.map { $0.parked.map(\.showsCard) }
                             && copy.everyTab.map { $0.parked.map { $0.floating != nil } } == controller.everyTab.map { $0.parked.map { $0.floating != nil } }
                             && copy.everyTab.map { $0.parked.map(\.floatingMinimized) } == controller.everyTab.map { $0.parked.map(\.floatingMinimized) }
+                            && copy.collapsedGroups == controller.collapsedGroups
                         if same {
                             print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy))")
                         } else {
@@ -1564,6 +1565,40 @@ enum UIProbe {
                             print("FAIL  ui-probe tabs: \(controller.tabs.count), not \(n)")
                             failures += 1
                         }
+                    case .expectGroup(let text):
+                        // The sidebar's group headers as shown ("none": no headers).
+                        let groups = controller.sidebarGroupSummary
+                        if text == "none" ? groups.isEmpty : groups.contains(where: { $0.contains(text) }) {
+                            print("ok    ui-probe group \(text)")
+                        } else {
+                            print("FAIL  ui-probe group: not \(text); headers: \(groups)")
+                            failures += 1
+                        }
+                    case .expectGroupCount(let n):
+                        let groups = controller.sidebarGroupSummary
+                        if groups.count == n { print("ok    ui-probe \(n) groups") } else {
+                            print("FAIL  ui-probe groups: \(groups.count), not \(n): \(groups)")
+                            failures += 1
+                        }
+                    case .expectElsewhere(let text, let shown):
+                        // Rows of sessions not open here.
+                        let rows = controller.sidebarElsewhereRows
+                        if rows.contains(where: { $0.contains(text) }) == shown {
+                            print("ok    ui-probe \(shown ? "" : "no ")session row \(text)")
+                        } else {
+                            print("FAIL  ui-probe session rows: \(shown ? "none shows" : "one shows") \(text): \(rows)")
+                            failures += 1
+                        }
+                    case .clickRow(let text):
+                        // A real click on the sidebar's row: its table's own action.
+                        guard let rect = controller.sidebar.windowRect(ofRowShowing: text), let content = window.contentView else {
+                            print("FAIL  ui-probe click-row: no row shows \(text)")
+                            failures += 1
+                            break
+                        }
+                        let point = content.convert(NSPoint(x: rect.minX + 60, y: rect.midY), from: nil)
+                        click(x: point.x, y: content.bounds.height - point.y, in: window)
+                        pump(0.4)
                     case .expectWorkspace(let text):
                         let names = controller.workspaceNames.enumerated().map {
                             $0.offset == controller.activeWorkspace ? "[\($0.element)]" : $0.element
@@ -1698,6 +1733,10 @@ enum UIProbe {
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
         case quickLookClick(String), expectQuickLook(String), expectDiagrams(Int)
+        /// The sidebar's groups (`sidebar-group`): a header showing TEXT, how
+        /// many show, a row of a session not open here (or none), a click on
+        /// the row showing TEXT.
+        case expectGroup(String), expectGroupCount(Int), expectElsewhere(String, Bool), clickRow(String)
         case treeSelect(String), treeMenu(String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
         case appleScript(String, String?)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
@@ -1772,6 +1811,11 @@ enum UIProbe {
             case "roundtrip": steps.append(.roundtrip)
             case "expect-workspace": steps.append(.expectWorkspace(arg))
             case "expect-tab-count": steps.append(.expectTabCount(Int(arg) ?? -1))
+            case "expect-group": steps.append(.expectGroup(arg))
+            case "expect-group-count": steps.append(.expectGroupCount(Int(arg) ?? -1))
+            case "expect-elsewhere": steps.append(.expectElsewhere(arg, true))
+            case "expect-no-elsewhere": steps.append(.expectElsewhere(arg, false))
+            case "click-row": steps.append(.clickRow(arg))
             case "sidebar-width": steps.append(.sidebarWidth(Double(arg) ?? 0))
             case "pinch": steps.append(.pinch(Double(arg) ?? 0))
             case "update-background": steps.append(.updateInBackground)
