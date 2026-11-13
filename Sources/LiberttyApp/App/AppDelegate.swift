@@ -876,10 +876,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return
         }
         if info["kind"] == "attach", let id = info["id"] {
-            // `libertty +attach ID`: a liberttyd session in a tab (or window) here.
-            if info["tab"] == "1", let host = frontController {
-                host.attachTab(id)
-                host.window?.makeKeyAndOrderFront(nil)
+            // `libertty +attach ID`: one of this Mac's liberttyd sessions in
+            // a tab (or window) here — a window of this Mac's (the front
+            // one's, unless that runs on a host: its tabs are the host's).
+            let local = frontController?.host == nil ? frontController : controllers.first { $0.host == nil }
+            if info["tab"] == "1", let window = local {
+                window.attachTab(id, on: nil)
+                window.window?.makeKeyAndOrderFront(nil)
             } else {
                 let config = ConfigStore.shared.config
                 let saved = SavedWindow(frame: "", sidebar: config.windowSidebar, inspector: config.windowInspector,

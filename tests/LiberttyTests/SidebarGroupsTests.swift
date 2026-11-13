@@ -92,6 +92,68 @@ struct SidebarGroupsTests {
         #expect(at(6) == 2)  // after tab 1, the last row
     }
 
+    /// Moving a tab within its group trades places among the group's own
+    /// slots of the window's order: an interleaved other group stays put,
+    /// so the groups keep their order.
+    @Test func reorderWithinGroup() {
+        // Window order [A0, B1, A2]: group A is tabs 0 and 2.
+        let a = [0, 2]
+        // A0 down past A2: [A2, B1, A0] — B stays second, A still first.
+        #expect(SidebarGroups.reorder(count: 3, group: a, moving: 0, before: 2) == [2, 1, 0])
+        // A2 up past A0: the same.
+        #expect(SidebarGroups.reorder(count: 3, group: a, moving: 2, before: 0) == [2, 1, 0])
+        // Where it is already: nothing moves.
+        #expect(SidebarGroups.reorder(count: 3, group: a, moving: 0, before: 0) == nil)
+        #expect(SidebarGroups.reorder(count: 3, group: a, moving: 0, before: 1) == nil)
+        // Not in the group, or out of range: nothing.
+        #expect(SidebarGroups.reorder(count: 3, group: a, moving: 1, before: 0) == nil)
+        #expect(SidebarGroups.reorder(count: 3, group: a, moving: 0, before: 3) == nil)
+        // Ungrouped (one group of every tab) it's the plain move: x down past y.
+        #expect(SidebarGroups.reorder(count: 3, group: [0, 1, 2], moving: 0, before: 2) == [1, 0, 2])
+        #expect(SidebarGroups.reorder(count: 3, group: [0, 1, 2], moving: 2, before: 0) == [2, 0, 1])
+        #expect(SidebarGroups.reorder(count: 4, group: [0, 1, 2, 3], moving: 1, before: 4) == [0, 2, 3, 1])
+    }
+
+    /// A drop in this window: among its group's tabs, never into another group.
+    @Test func dropWithinGroup() {
+        let groups = [SidebarGroup(id: "a", title: "a", tabs: [0, 2], elsewhere: [Self.session("s", project: nil)]),
+                      SidebarGroup(id: "b", title: "b", tabs: [1])]
+        // [hdr a, tab 0, tab 2, session, hdr b, tab 1]
+        let rows = SidebarGroups.rows(tabCount: 3, groups: groups, headers: true, collapsed: [], selected: 0)
+        func place(_ row: Int, _ dragged: Int) -> [Int]? {
+            SidebarGroups.dropPlace(above: row, rows: rows, groups: groups, headers: true, tabCount: 3, dragged: dragged)
+                .map { $0.group + [$0.position] }
+        }
+        #expect(place(0, 0) == nil)  // above a's header
+        #expect(place(1, 2) == [0, 2, 0])  // under it: first
+        #expect(place(2, 2) == [0, 2, 1])  // after tab 0
+        #expect(place(3, 0) == [0, 2, 2])  // after tab 2
+        #expect(place(4, 0) == [0, 2, 2])  // after a's session: still a's last
+        #expect(place(5, 0) == nil)  // under b's header: another group
+        #expect(place(6, 0) == nil)  // after tab 1
+        #expect(place(6, 1) == [1, 1])  // b's own tab, after itself
+        // A0 dropped after A2 (row 3): reordered within a, b stays second.
+        let drop = SidebarGroups.dropPlace(above: 3, rows: rows, groups: groups, headers: true, tabCount: 3, dragged: 0)!
+        #expect(SidebarGroups.reorder(count: 3, group: drop.group, moving: 0, before: drop.position) == [2, 1, 0])
+        // Without headers, row N is before tab N among them all.
+        let flat = SidebarGroups.dropPlace(above: 2, rows: [.tab(0), .tab(1), .tab(2)], groups: [], headers: false, tabCount: 3, dragged: 0)
+        #expect(flat?.group == [0, 1, 2] && flat?.position == 2)
+    }
+
+    /// Closing the tab in front shows the next as listed, else the one before.
+    @Test func nextAfterClosing() {
+        // Listed: A0, A2 (group a), then B1.
+        let listed = [0, 2, 1]
+        #expect(SidebarGroups.successor(of: 0, in: listed) == 2)
+        #expect(SidebarGroups.successor(of: 2, in: listed) == 1)
+        #expect(SidebarGroups.successor(of: 1, in: listed) == 2)
+        #expect(SidebarGroups.successor(of: 5, in: listed) == nil)
+        #expect(SidebarGroups.successor(of: 0, in: [0]) == nil)
+        // Ungrouped: the next tab, the last one's is the one before (as it always was).
+        #expect(SidebarGroups.successor(of: 1, in: [0, 1, 2]) == 2)
+        #expect(SidebarGroups.successor(of: 2, in: [0, 1, 2]) == 1)
+    }
+
     @Test func names() {
         #expect(SidebarGroups.shortHost("me@devbox.example") == "devbox.example")
         #expect(SidebarGroups.shortHost("devbox") == "devbox")

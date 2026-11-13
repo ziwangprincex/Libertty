@@ -360,7 +360,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             for s in sessions where s.clients == 0 {
                 let dir = SessionInfo.directory(fromPwd: s.workingDirectory).map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
                 out.append(Item(title: "Show Session \(s.id)", subtitle: [s.title, dir].filter { !$0.isEmpty }.joined(separator: " · "),
-                                symbol: "rectangle.stack", kind: .session) { controller?.attachTab(s.id) })
+                                symbol: "rectangle.stack", kind: .session) { controller?.attachTab(s.id, on: nil) })
             }
         }
         // Themes: built-in, ~/.config/libertty/themes, and Ghostty's.
