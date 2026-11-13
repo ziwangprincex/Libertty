@@ -47,6 +47,9 @@ cp -R $FONTS $APP/Contents/Resources/Fonts
 cp -R $ROOT/blocks $APP/Contents/Resources/blocks
 mkdir -p $APP/Contents/Resources/editor
 cp $ROOT/vendor/codemirror/{index.html,editor.js,LICENSES.txt} $APP/Contents/Resources/editor/
+# Markdown documents' diagrams (Mermaid, MIT; scripts/build-mermaid.sh) and its packages' licenses.
+mkdir -p $APP/Contents/Resources/mermaid
+cp $ROOT/vendor/mermaid/{mermaid.js,LICENSES.txt} $APP/Contents/Resources/mermaid/
 cp -R $ROOT/Resources/. $APP/Contents/Resources/
 # The logo (assets/icon/: its source, every size, the web favicon).
 cp $ROOT/assets/icon/libertty.icns $APP/Contents/Resources/AppIcon.icns
@@ -81,6 +84,9 @@ cat > $APP/Contents/Info.plist <<PLIST
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+    <!-- AppleScript: Resources/Libertty.sdef (Sources/LiberttyApp/App/Scripting.swift). -->
+    <key>NSAppleScriptEnabled</key><true/>
+    <key>OSAScriptingDefinition</key><string>Libertty.sdef</string>
     <!-- Default terminal (Libertty ▸ Make Libertty the Default Terminal), folders and scripts opened with Libertty. -->
     <key>CFBundleDocumentTypes</key>
     <array>

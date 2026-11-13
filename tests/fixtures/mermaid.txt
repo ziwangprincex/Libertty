@@ -1,0 +1,15 @@
+# ```mermaid fences in a Markdown document: diagrams, drawn in a page of
+# their own and set into the document (which runs no script itself); one
+# Mermaid can't draw shows why, with its source. tests/run.sh copies
+# tests/fixtures/diagrams.md to @DIR@.
+open:@DIR@/diagrams.md
+page-wait
+expect-diagrams:1
+expect-page:Couldn't draw this diagram
+expect-page:this is not a diagram
+# Nothing of the label's picture (its handler, its address elsewhere) is left.
+page-js:String(!!document.querySelector('.mermaid img, [onerror]')) ==> false
+# Saved again: drawn at once from what was drawn before.
+shell:printf '\nMore text.\n' >> @DIR@/diagrams.md
+expect-page:More text.
+expect-diagrams:1

@@ -1863,109 +1863,203 @@ extension TerminalSession {
         return nil
     }
 
+    /// Every link in the viewport, top to bottom, each once: declared
+    /// hyperlinks, URLs written out, and paths to what exists on this Mac
+    /// (files and folders; a host's paths aren't looked for). Quick Look's items.
+    func visibleLinks() -> [TerminalLink] {
+        let lines: [LogicalLine] = lock.withLock {
+            let cols = Int(size.cols), rows = Int(size.rows)
+            var lines: [LogicalLine] = []
+            var y = 0
+            while y < rows {
+                var last = y
+                while last < rows - 1, wrapsLocked(last) { last += 1 }
+                lines.append(logicalLineLocked(first: y, last: last, cols: cols))
+                y = last + 1
+            }
+            return lines
+        }
+        let local = host == nil, directory = workingDirectory
+        var seen = Set<String>(), out: [TerminalLink] = []
+        for line in lines {
+            for found in line.everyLink() {
+                let link: TerminalLink?
+                switch found {
+                case .link(let l): link = l
+                case .path(let text, let spans): link = local ? Self.resolvePath(text, spans: spans, in: directory) : nil
+                }
+                // Once each (a path:line names its file).
+                if let link, seen.insert(link.url).inserted { out.append(link) }
+            }
+        }
+        return out
+    }
+
     private func scanLink(atCol col: Int, row: Int) -> Scanned? {
         lock.withLock { () -> Scanned? in
             let cols = Int(size.cols), rows = Int(size.rows)
             guard col >= 0, col < cols, row >= 0, row < rows else { return nil }
-
-            func ref(_ x: Int, _ y: Int) -> GhosttyGridRef? {
-                var point = GhosttyPoint()
-                point.tag = GHOSTTY_POINT_TAG_VIEWPORT
-                point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
-                var r = GhosttyGridRef()
-                return ghostty_terminal_grid_ref(terminal, point, &r) == GHOSTTY_SUCCESS ? r : nil
-            }
-            func wraps(_ y: Int) -> Bool {
-                guard var r = ref(0, y) else { return false }
-                var raw: GhosttyRow = 0
-                var wrap = false
-                guard ghostty_grid_ref_row(&r, &raw) == GHOSTTY_SUCCESS else { return false }
-                _ = ghostty_row_get(raw, GHOSTTY_ROW_DATA_WRAP, &wrap)
-                return wrap
-            }
-            func uri(_ r: inout GhosttyGridRef) -> String? {
-                var len = 0
-                guard ghostty_grid_ref_hyperlink_uri(&r, nil, 0, &len) == GHOSTTY_OUT_OF_SPACE, len > 0 else { return nil }
-                var buf = [UInt8](repeating: 0, count: len)
-                guard ghostty_grid_ref_hyperlink_uri(&r, &buf, len, &len) == GHOSTTY_SUCCESS else { return nil }
-                return String(decoding: buf.prefix(len), as: UTF8.self)
-            }
-
             // The logical line: rows joined by soft wraps (within the viewport).
             var first = row, last = row
-            while first > 0, wraps(first - 1) { first -= 1 }
-            while last < rows - 1, wraps(last) { last += 1 }
-
-            // Text of the line, with each character's cell.
-            var text = ""
-            var cells: [(Int, Int)] = []  // per UTF-16 unit
-            var uris: [String?] = []      // per cell in `cells` order
-            var clicked: Int?
-            var scalars = [UInt32](repeating: 0, count: 16)
-            for y in first...last {
-                for x in 0..<cols {
-                    guard var r = ref(x, y) else { continue }
-                    var raw: GhosttyCell = 0
-                    var wide = GHOSTTY_CELL_WIDE_NARROW
-                    if ghostty_grid_ref_cell(&r, &raw) == GHOSTTY_SUCCESS {
-                        _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide)
-                    }
-                    if wide == GHOSTTY_CELL_WIDE_SPACER_TAIL || wide == GHOSTTY_CELL_WIDE_SPACER_HEAD { continue }
-                    var n = 0
-                    var piece = " "
-                    if ghostty_grid_ref_graphemes(&r, &scalars, scalars.count, &n) == GHOSTTY_SUCCESS, n > 0 {
-                        piece = String(String.UnicodeScalarView(scalars.prefix(n).compactMap(Unicode.Scalar.init)))
-                    }
-                    var hasLink = false
-                    _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_HAS_HYPERLINK, &hasLink)
-                    let link = hasLink ? uri(&r) : nil
-                    if x == col && y == row || (y == row && x == col - 1 && wide == GHOSTTY_CELL_WIDE_WIDE) {
-                        clicked = cells.count
-                    }
-                    for _ in 0..<piece.utf16.count {
-                        cells.append((y, x))
-                        uris.append(link)
-                    }
-                    text += piece
-                }
-            }
-            guard let at = clicked else { return nil }
-
-            func spans(_ range: Range<Int>) -> [TerminalLink.Span] {
-                var out: [TerminalLink.Span] = []
-                for i in range {
-                    let (y, x) = cells[i]
-                    if let lastSpan = out.last, lastSpan.row == y, lastSpan.columns.upperBound >= x - 1 {
-                        out[out.count - 1].columns = lastSpan.columns.lowerBound...max(lastSpan.columns.upperBound, x)
-                    } else {
-                        out.append(.init(row: y, columns: x...x))
-                    }
-                }
-                return out
-            }
+            while first > 0, wrapsLocked(first - 1) { first -= 1 }
+            while last < rows - 1, wrapsLocked(last) { last += 1 }
+            let line = logicalLineLocked(first: first, last: last, cols: cols, clicked: (row, col))
+            guard let at = line.clicked else { return nil }
 
             // A declared hyperlink wins: its cells, contiguous around the click.
-            if let declared = uris[at] {
-                var lo = at, hi = at
-                while lo > 0, uris[lo - 1] == declared { lo -= 1 }
-                while hi < uris.count - 1, uris[hi + 1] == declared { hi += 1 }
-                return .link(TerminalLink(url: declared, spans: spans(lo..<(hi + 1)), explicit: true))
+            if let declared = line.declared(around: at), let url = line.uris[at] {
+                return .link(TerminalLink(url: url, spans: line.spans(declared), explicit: true))
             }
-
-            let ns = text as NSString
-            for match in Self.urlPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-                let range = Self.trimURL(match.range, in: ns)
-                guard range.location <= at, at < range.location + range.length else { continue }
-                return .link(TerminalLink(url: ns.substring(with: range), spans: spans(range.location..<(range.location + range.length)),
-                                          explicit: false))
+            for range in line.urlRanges() where range.contains(at) {
+                return .link(TerminalLink(url: line.substring(range), spans: line.spans(range), explicit: false))
             }
-            for match in Self.pathPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-                let range = Self.trimPath(match.range, in: ns)
-                guard range.length > 1, range.location <= at, at < range.location + range.length else { continue }
-                return .path(ns.substring(with: range), spans(range.location..<(range.location + range.length)))
+            for range in line.pathRanges() where range.contains(at) {
+                return .path(line.substring(range), line.spans(range))
             }
             return nil
         }
+    }
+
+    /// A line as written: rows joined by soft wraps, its text, and each
+    /// UTF-16 unit's cell and declared hyperlink.
+    private struct LogicalLine {
+        var text = ""
+        var cells: [(row: Int, col: Int)] = []
+        var uris: [String?] = []
+        /// The unit at the cell asked about, if it's in the line.
+        var clicked: Int?
+
+        func substring(_ range: Range<Int>) -> String {
+            (text as NSString).substring(with: NSRange(location: range.lowerBound, length: range.count))
+        }
+
+        func spans(_ range: Range<Int>) -> [TerminalLink.Span] {
+            var out: [TerminalLink.Span] = []
+            for i in range {
+                let (y, x) = cells[i]
+                if let lastSpan = out.last, lastSpan.row == y, lastSpan.columns.upperBound >= x - 1 {
+                    out[out.count - 1].columns = lastSpan.columns.lowerBound...max(lastSpan.columns.upperBound, x)
+                } else {
+                    out.append(.init(row: y, columns: x...x))
+                }
+            }
+            return out
+        }
+
+        /// The run of units declaring the same hyperlink as unit `at`.
+        func declared(around at: Int) -> Range<Int>? {
+            guard let link = uris[at] else { return nil }
+            var lo = at, hi = at
+            while lo > 0, uris[lo - 1] == link { lo -= 1 }
+            while hi < uris.count - 1, uris[hi + 1] == link { hi += 1 }
+            return lo..<(hi + 1)
+        }
+
+        /// URLs written out.
+        func urlRanges() -> [Range<Int>] {
+            let ns = text as NSString
+            return TerminalSession.urlPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { match in
+                let range = TerminalSession.trimURL(match.range, in: ns)
+                return range.length > 0 ? range.location..<(range.location + range.length) : nil
+            }
+        }
+
+        /// What may be paths (two characters or more, without the
+        /// punctuation that closes a sentence).
+        func pathRanges() -> [Range<Int>] {
+            let ns = text as NSString
+            return TerminalSession.pathPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { match in
+                let range = TerminalSession.trimPath(match.range, in: ns)
+                return range.length > 1 ? range.location..<(range.location + range.length) : nil
+            }
+        }
+
+        /// Every link in the line, in order: declared hyperlinks; then URLs,
+        /// and paths, where nothing found before them is.
+        func everyLink() -> [Scanned] {
+            var taken: [Range<Int>] = []
+            var found: [(Int, Scanned)] = []
+            var i = 0
+            while i < uris.count {
+                guard let run = declared(around: i), let url = uris[i] else { i += 1; continue }
+                taken.append(run)
+                found.append((run.lowerBound, .link(TerminalLink(url: url, spans: spans(run), explicit: true))))
+                i = run.upperBound
+            }
+            func free(_ r: Range<Int>) -> Bool { !taken.contains { $0.overlaps(r) } }
+            for r in urlRanges() where free(r) {
+                taken.append(r)
+                found.append((r.lowerBound, .link(TerminalLink(url: substring(r), spans: spans(r), explicit: false))))
+            }
+            for r in pathRanges() where free(r) {
+                taken.append(r)
+                found.append((r.lowerBound, .path(substring(r), spans(r))))
+            }
+            return found.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+    }
+
+    // MARK: The grid, read with `lock` held
+
+    private func gridRefLocked(_ x: Int, _ y: Int) -> GhosttyGridRef? {
+        var point = GhosttyPoint()
+        point.tag = GHOSTTY_POINT_TAG_VIEWPORT
+        point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
+        var r = GhosttyGridRef()
+        return ghostty_terminal_grid_ref(terminal, point, &r) == GHOSTTY_SUCCESS ? r : nil
+    }
+
+    /// Whether viewport row `y` soft-wraps into the next.
+    private func wrapsLocked(_ y: Int) -> Bool {
+        guard var r = gridRefLocked(0, y) else { return false }
+        var raw: GhosttyRow = 0
+        var wrap = false
+        guard ghostty_grid_ref_row(&r, &raw) == GHOSTTY_SUCCESS else { return false }
+        _ = ghostty_row_get(raw, GHOSTTY_ROW_DATA_WRAP, &wrap)
+        return wrap
+    }
+
+    private func hyperlinkLocked(_ r: inout GhosttyGridRef) -> String? {
+        var len = 0
+        guard ghostty_grid_ref_hyperlink_uri(&r, nil, 0, &len) == GHOSTTY_OUT_OF_SPACE, len > 0 else { return nil }
+        var buf = [UInt8](repeating: 0, count: len)
+        guard ghostty_grid_ref_hyperlink_uri(&r, &buf, len, &len) == GHOSTTY_SUCCESS else { return nil }
+        return String(decoding: buf.prefix(len), as: UTF8.self)
+    }
+
+    /// Viewport rows `first`…`last` as one line, with each character's cell;
+    /// `clicked` (a row and column) marks the unit there.
+    private func logicalLineLocked(first: Int, last: Int, cols: Int, clicked cell: (row: Int, col: Int)? = nil) -> LogicalLine {
+        var line = LogicalLine()
+        var scalars = [UInt32](repeating: 0, count: 16)
+        for y in first...last {
+            for x in 0..<cols {
+                guard var r = gridRefLocked(x, y) else { continue }
+                var raw: GhosttyCell = 0
+                var wide = GHOSTTY_CELL_WIDE_NARROW
+                if ghostty_grid_ref_cell(&r, &raw) == GHOSTTY_SUCCESS {
+                    _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide)
+                }
+                if wide == GHOSTTY_CELL_WIDE_SPACER_TAIL || wide == GHOSTTY_CELL_WIDE_SPACER_HEAD { continue }
+                var n = 0
+                var piece = " "
+                if ghostty_grid_ref_graphemes(&r, &scalars, scalars.count, &n) == GHOSTTY_SUCCESS, n > 0 {
+                    piece = String(String.UnicodeScalarView(scalars.prefix(n).compactMap(Unicode.Scalar.init)))
+                }
+                var hasLink = false
+                _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_HAS_HYPERLINK, &hasLink)
+                let link = hasLink ? hyperlinkLocked(&r) : nil
+                if let cell, x == cell.col && y == cell.row || (y == cell.row && x == cell.col - 1 && wide == GHOSTTY_CELL_WIDE_WIDE) {
+                    line.clicked = line.cells.count
+                }
+                for _ in 0..<piece.utf16.count {
+                    line.cells.append((y, x))
+                    line.uris.append(link)
+                }
+                line.text += piece
+            }
+        }
+        return line
     }
 
     /// A URL found in text, without the sentence's punctuation after it; a

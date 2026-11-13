@@ -1,0 +1,31 @@
+# AppleScript (Resources/Libertty.sdef), told to the probe itself
+# (`tell current application`, never another app), in raw codes as a
+# script without the app's terms would be: «class LSes» session, «class
+# Lcwd» working directory, «class Lcnt» contents, «event LbtyRunC» run
+# command, «event LbtySplt» split, «event LbtyPerf» perform action,
+# «event LbtyInpt» input, «event LbtyNTab» new tab, «event LbtyNWin» new
+# window. tests/run.sh runs it from the suite's app bundle: Cocoa reads
+# the dictionary from its Info.plist.
+type:cd @DIR@
+key:enter
+wait:1.0
+applescript:count «class LSes» ==> 1
+applescript:get «class Lcwd» of «class LSes» 1 ends with "/applescript-dir" ==> true
+applescript:get «class Lsts» of «class LSes» 1 ==> idle
+applescript:«event LbtyRunC» given «class ----»:"echo scripted-$((6*7))"
+wait:0.5
+expect:scripted-42
+applescript:get «class Lcnt» of «class LSes» 1 contains "scripted-42" ==> true
+# A split below it, its shell elsewhere; the first stays focused? No: the new one has the keyboard.
+applescript:«event LbtySplt» («class LSes» 1) given «class Ldrc»:«constant LSdrLSdn», «class Ldir»:"/tmp"
+expect-panes:2
+applescript:count «class LSes» ==> 2
+applescript:count «class LSes» of «class LTab» 1 of «class LTwn» 1 ==> 2
+applescript:«event LbtyPerf» given «class ----»:"equalize_splits" ==> true
+applescript:«event LbtyPerf» given «class ----»:"no_such_action" ==> error -2700
+applescript:«event LbtyInpt» given «class ----»:"nope", «class Lses»:(«class LSes» id "missing") ==> error
+# A tab, and a window (off screen, as all a probe's are).
+applescript:«event LbtyNTab» given «class Ldir»:"@DIR@"
+applescript:count «class LTab» of «class LTwn» 1 ==> 2
+applescript:«event LbtyNWin»
+applescript:count «class LTwn» ==> 2

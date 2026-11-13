@@ -7,7 +7,8 @@ import Foundation
 
 extension ProbeLauncher {
     /// `Libertty --link-probe COMMAND`: run COMMAND in a 40-column session and
-    /// print every distinct link found at any cell (link detection test).
+    /// print every distinct link found at any cell (link detection test),
+    /// then the viewport's links in order, as Quick Look takes them.
     static func linkProbe(command: String) -> Never {
         do {
             let session = try TerminalSession(size: GridSize(cols: 40, rows: 10, widthPx: 0, heightPx: 0))
@@ -22,6 +23,7 @@ extension ProbeLauncher {
                 }
             }
             seen.forEach { print($0) }
+            print("visible: " + session.visibleLinks().map { ($0.url as NSString).lastPathComponent }.joined(separator: " | "))
             exit(0)
         } catch {
             print("link-probe: \(error)")

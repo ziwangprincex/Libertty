@@ -173,6 +173,8 @@ enum UIProbe {
         // A window of its own, off screen, with a shell in a scratch folder.
         let scratch = NSTemporaryDirectory() + "libertty-ui-probe-\(getpid())"
         try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)
+        // Move to Trash, in the file tree: to a folder of the probe's own, never the user's Trash.
+        MainActor.assumeIsolated { FileOperations.trashFolder = URL(fileURLWithPath: scratch).appendingPathComponent("Trash") }
         let controller: TerminalWindowController
         do {
             controller = try TerminalWindowController(config: Config(), cols: 80, rows: 24)
@@ -221,6 +223,14 @@ enum UIProbe {
             _ = PaneRequests.handle(info, in: [controller] + others)
         }
         defer { DistributedNotificationCenter.default().removeObserver(paneRequests) }
+        // AppleScript (the `applescript:` step): this probe's windows, a new one off screen too.
+        Scripting.host = Scripting.Host(controllers: { [controller] + others }, openWindow: { command, directory in
+            guard let other = try? TerminalWindowController(config: Config(), cols: 80, rows: 24) else { return nil }
+            if let w = other.window { hideOffScreen(w, at: NSPoint(x: -20000, y: -21000)) }
+            guard (try? other.start(command: command, workingDirectory: directory ?? scratch)) != nil else { return nil }
+            others.append(other)
+            return other
+        })
         // `+open --wait`'s side of it: the editors that said they closed.
         var closedEditors: Set<String> = []
         let closedObserver = DistributedNotificationCenter.default().addObserver(forName: EditorWait.closed, object: nil, queue: .main) { note in
@@ -458,17 +468,103 @@ enum UIProbe {
                             print("FAIL  ui-probe sheet: \(window.attachedSheet == nil ? "none up" : "no \(title) button")")
                             failures += 1
                         }
-                    case .commandHover(let text):
+                    case .commandHover(let text), .quickLookClick(let text):
                         let rows = controller.focusedTerminal.session.screenRows().split(separator: "\n", omittingEmptySubsequences: false)
                         guard let row = rows.lastIndex(where: { $0.contains(text) }),
                               let at = rows[row].range(of: text, options: .backwards) else {
-                            print("FAIL  ui-probe cmd-hover: no \(text) on screen")
+                            print("FAIL  ui-probe \(step): no \(text) on screen")
                             failures += 1
                             break
                         }
                         let col = rows[row].distance(from: rows[row].startIndex, to: at.lowerBound) + 1
-                        controller.focusedTerminal.commandHover(col: col, row: row)
+                        if case .quickLookClick = step {
+                            controller.focusedTerminal.commandClick(col: col, row: row, shift: true)
+                        } else {
+                            controller.focusedTerminal.commandHover(col: col, row: row)
+                        }
                         pump(0.3)
+                    case .expectDiagrams(let n):
+                        // Drawn in a page of their own (a first one starts its WebKit process), then set in.
+                        let deadline = Date().addingTimeInterval(max(20, Self.patience * 5))
+                        var drawn = -1
+                        repeat {
+                            drawn = (pageEvaluate(controller, "document.querySelectorAll('.mermaid svg').length") as? Int) ?? -1
+                            if drawn == n { break }
+                            pump(0.2)
+                        } while Date() < deadline
+                        if drawn == n {
+                            print("ok    ui-probe page shows \(n) diagram\(n == 1 ? "" : "s")")
+                        } else {
+                            print("FAIL  ui-probe diagrams: \(drawn), not \(n)")
+                            failures += 1
+                        }
+                    case .treeSelect(let path):
+                        if !controller.sidebar.fileTree.select(path: path) {
+                            print("FAIL  ui-probe tree-select: no \(path) in \(controller.sidebar.fileTree.shownPaths)")
+                            failures += 1
+                        }
+                        pump(0.2)
+                    case .treeMenu(let title):
+                        if !controller.sidebar.fileTree.chooseMenuItem(title) {
+                            print("FAIL  ui-probe tree-menu: no \(title) item")
+                            failures += 1
+                        }
+                        pump(0.4)
+                    case .treeDrop(let files, let folder, let move):
+                        let tree = controller.sidebar.fileTree
+                        guard let top = tree.rootPath else {
+                            print("FAIL  ui-probe tree-drop: no folder in the tree")
+                            failures += 1
+                            break
+                        }
+                        let into = folder == "." ? URL(fileURLWithPath: top) : URL(fileURLWithPath: top).appendingPathComponent(folder)
+                        tree.drop(files.map { URL(fileURLWithPath: $0) }, into: into, move: move)
+                        pump(0.4)
+                    case .expectTree(let path, let want):
+                        let deadline = Date().addingTimeInterval(want ? Self.patience : 0.5)
+                        var shown: [String] = []
+                        repeat {
+                            shown = controller.sidebar.fileTree.shownPaths
+                            if shown.contains(path) == want { break }
+                            pump(0.15)
+                        } while Date() < deadline
+                        if shown.contains(path) == want {
+                            print("ok    ui-probe tree \(want ? "shows" : "hasn't") \(path)")
+                        } else {
+                            print("FAIL  ui-probe tree: \(want ? "no" : "still") \(path) in \(shown)")
+                            failures += 1
+                        }
+                    case .appleScript(let source, let want):
+                        let said = runAppleScript(source)
+                        // Exactly that; an error by its start ("error -1728").
+                        if let want {
+                            if said == want || want.hasPrefix("error") && said.hasPrefix(want) {
+                                print("ok    ui-probe applescript says \(want)")
+                            } else {
+                                print("FAIL  ui-probe applescript: \(source) said \(said.debugDescription), not \(want.debugDescription)")
+                                failures += 1
+                            }
+                        }
+                        pump(0.6)
+                    case .expectUndo(let name):
+                        // What Edit ▸ Undo would undo ("none": nothing).
+                        let said = MainActor.assumeIsolated { () -> String in
+                            let manager = CloseUndo.shared.manager
+                            return manager.canUndo ? manager.undoActionName : "none"
+                        }
+                        if said == name { print("ok    ui-probe undo is \(name)") } else {
+                            let level = MainActor.assumeIsolated { CloseUndo.shared.manager.groupingLevel }
+                            print("FAIL  ui-probe undo: \(said), not \(name) (grouping level \(level))")
+                            failures += 1
+                        }
+                    case .expectQuickLook(let list):
+                        let shown = controller.focusedTerminal.quickLookTitles?.joined(separator: " | ") ?? "none"
+                        if shown == list {
+                            print("ok    ui-probe quick look shows \(list)")
+                        } else {
+                            print("FAIL  ui-probe quick look: \(shown), not \(list)")
+                            failures += 1
+                        }
                     case .expectPeek(let name):
                         let shown = controller.focusedTerminal.peekedImage ?? "none"
                         if shown == name {
@@ -1400,6 +1496,9 @@ enum UIProbe {
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
+        case quickLookClick(String), expectQuickLook(String), expectDiagrams(Int)
+        case treeSelect(String), treeMenu(String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
+        case appleScript(String, String?)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
         case settings(String), expectSettings(String), expectConfigChange(String)
@@ -1577,6 +1676,24 @@ enum UIProbe {
             case "sheet-type": steps.append(.sheetType(arg))
             case "expect-header": steps.append(.expectHeader(arg))
             case "cmd-hover": steps.append(.commandHover(arg))
+            case "quick-look-click": steps.append(.quickLookClick(arg))
+            case "expect-quick-look": steps.append(.expectQuickLook(arg))
+            case "expect-diagrams": steps.append(.expectDiagrams(Int(arg) ?? -1))
+            case "tree-select": steps.append(.treeSelect(arg))
+            case "tree-menu": steps.append(.treeMenu(arg))
+            case "tree-drop", "tree-drop-move":
+                // FILE[,FILE…]>FOLDER (a folder under the tree's top; "." is the top)
+                if let r = arg.range(of: ">") {
+                    let files = arg[..<r.lowerBound].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                    steps.append(.treeDrop(files, String(arg[r.upperBound...]), move: verb == "tree-drop-move"))
+                }
+            case "expect-tree": steps.append(.expectTree(arg, true))
+            case "expect-tree-not": steps.append(.expectTree(arg, false))
+            case "expect-undo": steps.append(.expectUndo(arg))
+            case "applescript":
+                // SOURCE [==> WHAT IT SAYS]; told to this process (`tell current application`), never another app.
+                if let r = arg.range(of: " ==> ") { steps.append(.appleScript(String(arg[..<r.lowerBound]), String(arg[r.upperBound...]))) }
+                else { steps.append(.appleScript(arg, nil)) }
             case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
             case "expect-sheet-text": steps.append(.expectSheetText(arg))
@@ -1612,6 +1729,22 @@ enum UIProbe {
     /// Keep the run loop alive so the app draws and sessions produce.
     /// What an expectation printed while it may still be asked again.
     private static var held: [String]?
+
+    /// `source` run here, in this process (its Apple events come back to
+    /// it): what it returned, or "error N: what it said". Run from an app
+    /// bundle (the suite's own): Cocoa reads the dictionary from its Info.plist.
+    private static func runAppleScript(_ source: String) -> String {
+        guard Bundle.main.object(forInfoDictionaryKey: "OSAScriptingDefinition") != nil else {
+            return "error: no dictionary here (run this probe from an app bundle)"
+        }
+        var error: NSDictionary?
+        guard let script = NSAppleScript(source: "tell current application\n\(source)\nend tell") else { return "error: didn't compile" }
+        let result = script.executeAndReturnError(&error)
+        if let error {
+            return "error \(error[NSAppleScript.errorNumber] ?? "?"): \(error[NSAppleScript.errorMessage] ?? "")"
+        }
+        return result.stringValue ?? (result.descriptorType == typeTrue ? "true" : result.descriptorType == typeFalse ? "false" : "\(result)")
+    }
 
     /// Lines the steps print: held while an expectation may be asked again.
     private static func print(_ text: String) {

@@ -1,0 +1,9 @@
+{
+  "name": "libertty-mermaid",
+  "private": true,
+  "description": "Mermaid diagrams for Markdown documents: mermaid (MIT), bundled by scripts/build-mermaid.sh into vendor/mermaid/mermaid.js.",
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "mermaid": "12.3.0"
+  }
+}

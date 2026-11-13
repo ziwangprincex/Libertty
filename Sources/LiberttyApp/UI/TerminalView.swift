@@ -3,6 +3,7 @@ import LiberttyCore
 import CGhosttyVt
 import Metal
 import QuartzCore
+import QuickLookUI
 import UniformTypeIdentifiers
 
 /// The terminal surface: owns the Metal layer, paces frames to the display,
@@ -708,6 +709,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         NSPasteboard.general.setString(link.url, forType: .string)
     }
 
+    @objc private func quickLookItem(_ sender: NSMenuItem) {
+        if let link = (sender.representedObject as? LinkBox)?.link { quickLook([link], folders: true) }
+    }
+
     override func mouseEntered(with event: NSEvent) {
         hovering = true
         updateCloseButton()
@@ -763,9 +768,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             let copy = menu.addItem(withTitle: "Copy Link", action: #selector(copyLinkItem(_:)), keyEquivalent: "")
             copy.target = self
             copy.representedObject = LinkBox(link)
+            let look = menu.addItem(withTitle: L10n.t("Quick Look"), action: #selector(quickLookItem(_:)), keyEquivalent: "")
+            look.target = self
+            look.representedObject = LinkBox(link)
             if #available(macOS 26, *) {
                 open.image = NSImage(systemSymbolName: "arrow.up.right.square", accessibilityDescription: nil)
                 copy.image = NSImage(systemSymbolName: "link", accessibilityDescription: nil)
+                look.image = NSImage(systemSymbolName: "eye", accessibilityDescription: nil)
             }
             menu.addItem(.separator())
         }
@@ -1351,9 +1360,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         pressCell = nil
-        // ⌘-click opens a link, even in programs that track the mouse.
+        // ⌘-click opens a link, even in programs that track the mouse; ⇧⌘-click previews it.
         if event.modifierFlags.contains(.command), let link = link(at: event) {
-            open(link)
+            if event.modifierFlags.contains(.shift) { quickLook([link], folders: true) } else { open(link) }
             return
         }
         // A click ends hint mode; in copy mode it puts the cursor there (and,
@@ -1831,6 +1840,19 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         updateHoveredLink(event)
     }
 
+    /// The UI probe: ⌘-click (⇧⌘ with `shift`) the cell at `col`, `row`.
+    func commandClick(col: Int, row: Int, shift: Bool) {
+        guard let window else { return }
+        let cell = cellSizePoints, pad = padding
+        let point = convert(CGPoint(x: pad.left + (CGFloat(col) + 0.5) * cell.width,
+                                    y: pad.top + (CGFloat(row) + 0.5) * cell.height - smoothOffset), to: nil)
+        guard let event = NSEvent.mouseEvent(with: .leftMouseDown, location: point,
+                                             modifierFlags: shift ? [.command, .shift] : .command, timestamp: 0,
+                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                             clickCount: 1, pressure: 1) else { return }
+        mouseDown(with: event)
+    }
+
     /// What the image peek shows now (the UI probe).
     var peekedImage: String? { imagePeek.isHidden ? nil : imagePeek.showing.map { ($0.path as NSString).lastPathComponent } }
 
@@ -1848,6 +1870,74 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         return CGRect(x: pad.left + CGFloat(span.columns.lowerBound) * cell.width,
                       y: pad.top + CGFloat(span.row) * cell.height - smoothOffset,
                       width: CGFloat(span.columns.count) * cell.width, height: cell.height)
+    }
+
+    // MARK: Quick Look (⌘Y, ⇧⌘-click)
+
+    private var quickLook: QuickLookPreview?
+    /// What the last Quick Look listed: a probe shows no panel (it would come forward).
+    private(set) var quickLookTitles: [String]?
+
+    /// ⌘Y: every file and web page on screen in the Quick Look panel, or
+    /// the panel closed again. False when the screen names nothing to preview.
+    @discardableResult
+    func toggleQuickLook() -> Bool {
+        if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible,
+           (panel.currentController as AnyObject?) === self {
+            panel.orderOut(nil)
+            return true
+        }
+        return quickLook(session.visibleLinks(), folders: false)
+    }
+
+    /// The panel over `links` (`folders`: a folder too, as one asked for by a click).
+    @discardableResult
+    private func quickLook(_ links: [TerminalLink], folders: Bool) -> Bool {
+        let preview = QuickLookPreview(links, remote: session.host != nil, folders: folders) { [weak self] link in
+            guard let self, let window = self.window else { return .zero }
+            return window.convertToScreen(self.convert(self.rect(of: link), to: nil))
+        }
+        guard !preview.items.isEmpty else {
+            NSSound.beep()
+            return false
+        }
+        // The link's underline and tag go, as when it opens.
+        hoveredLink = nil
+        renderer.linkSpans = []
+        showLinkPreview(nil)
+        setNeedsRender(force: true)
+        if Probe.running {
+            quickLookTitles = preview.titles
+            return true
+        }
+        guard let panel = QLPreviewPanel.shared() else { return false }
+        if panel.isVisible, (panel.currentController as AnyObject?) === self {
+            quickLook?.finish()
+            quickLook = preview
+            panel.dataSource = preview
+            panel.delegate = preview
+            panel.reloadData()
+            panel.currentPreviewItemIndex = preview.startIndex
+        } else {
+            quickLook = preview
+            // Showing another pane's items already: the panel asks who's in front now.
+            if panel.isVisible { panel.updateController() } else { panel.makeKeyAndOrderFront(nil) }
+        }
+        return true
+    }
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { quickLook != nil }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = quickLook
+        panel.delegate = quickLook
+        panel.reloadData()
+        panel.currentPreviewItemIndex = quickLook?.startIndex ?? 0
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        quickLook?.finish()
+        quickLook = nil
     }
 
     private func showLinkPreview(_ link: TerminalLink?) {

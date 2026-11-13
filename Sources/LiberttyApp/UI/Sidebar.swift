@@ -207,6 +207,8 @@ final class SidebarViewController: NSViewController {
     private var tabs: [SidebarTabInfo] = []
 
     private let files = FileTreeView()
+    /// The file tree (the UI probe).
+    var fileTree: FileTreeView { files }
     private let folderLabel = NSTextField(labelWithString: "")
     private let disclosure = NSButton()
     private var filesButtons: [NSView] = []
@@ -1472,7 +1474,7 @@ final class FileNode {
     func invalidate() { loaded = nil }
 }
 
-final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
+final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate, NSTextFieldDelegate {
     var onOpenTerminalHere: ((String) -> Void)?
     var onInsert: ((String) -> Void)?
     var onChangeDirectory: ((String) -> Void)?
@@ -1484,7 +1486,7 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
     private(set) var rootPath: String?
     private(set) var showHidden = true
 
-    private let outline = NSOutlineView()
+    private let outline = FileOutlineView()
     private var root: FileNode?
     private var watcher: DispatchSourceFileSystemObject?
 
@@ -1504,6 +1506,10 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         outline.action = #selector(clicked(_:))
         outline.doubleAction = #selector(doubleClicked(_:))
         outline.setDraggingSourceOperationMask(.copy, forLocal: false)
+        // Finder's files dropped on a folder (or the tree's own, moved).
+        outline.registerForDraggedTypes([.fileURL])
+        outline.onKey = { [weak self] event in self?.keyDown(in: event) ?? false }
+        outline.setAccessibilityLabel(L10n.t("Files"))
         let menu = NSMenu()
         menu.delegate = self
         outline.menu = menu
@@ -1529,6 +1535,8 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     func reload() {
         guard let rootPath else { return }
+        // Not under a name being typed (its field would go): after it.
+        if renaming != nil { reloadAfterRename = true; return }
         let expanded = (0..<outline.numberOfRows).compactMap { outline.item(atRow: $0) as? FileNode }
             .filter { outline.isItemExpanded($0) }.map(\.url)
         // Where the reader was: the file picked, and how far down.
@@ -1687,10 +1695,14 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     // MARK: Actions
 
+    /// The row clicked (or right-clicked), else the selected one — not when
+    /// the menu was opened on the tree's empty space: that's the top folder's.
     private var target: FileNode? {
-        let row = outline.clickedRow >= 0 ? outline.clickedRow : outline.selectedRow
-        return row >= 0 ? outline.item(atRow: row) as? FileNode : nil
+        if outline.clickedRow >= 0 { return outline.item(atRow: outline.clickedRow) as? FileNode }
+        if menuOnEmpty { return nil }
+        return outline.selectedRow >= 0 ? outline.item(atRow: outline.selectedRow) as? FileNode : nil
     }
+    private var menuOnEmpty = false
 
     /// One click opens a text file in a tab (Tern's preview_click), ⌥-click
     /// beside the terminal; other files open with their app on double-click.
@@ -1710,8 +1722,19 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let node = target else { return }
-        func add(_ title: String, _ action: Selector) { menu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self }
+        let event = NSApp.currentEvent
+        menuOnEmpty = outline.clickedRow < 0 && (event?.type == .rightMouseDown
+            || event?.type == .leftMouseDown && event?.modifierFlags.contains(.control) == true)
+        func add(_ title: String, _ action: Selector) {
+            menu.addItem(withTitle: L10n.t(title), action: action, keyEquivalent: "").target = self
+        }
+        // Where nothing is clicked: the folder at the top.
+        guard let node = target else {
+            guard rootPath != nil else { return }
+            add("New File…", #selector(newFile(_:)))
+            add("New Folder…", #selector(newFolder(_:)))
+            return
+        }
         if node.isDirectory {
             add("New Tab Here", #selector(newTabHere(_:)))
             add("cd Here in Focused Pane", #selector(cdHere(_:)))
@@ -1729,8 +1752,16 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         }
         add("Reveal in Finder", #selector(reveal(_:)))
         menu.addItem(.separator())
+        // In this folder, or the file's.
+        add("New File…", #selector(newFile(_:)))
+        add("New Folder…", #selector(newFolder(_:)))
+        menu.addItem(.separator())
         add("Copy Path", #selector(copyPath(_:)))
         add("Insert Path in Terminal", #selector(insertPath(_:)))
+        menu.addItem(.separator())
+        add("Rename", #selector(renameItem(_:)))
+        add("Duplicate", #selector(duplicateItem(_:)))
+        add("Move to Trash", #selector(trashItem(_:)))
     }
 
     @objc private func openItem(_ sender: Any?) { if let target { NSWorkspace.shared.open(target.url) } }
@@ -1748,6 +1779,279 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         guard let node = target else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(node.url.path, forType: .string)
+    }
+
+    // MARK: Changing files (Kero's Files): FileOperations, each undoable
+
+    @objc private func newFile(_ sender: Any?) { promptNew(isFolder: false) }
+    @objc private func newFolder(_ sender: Any?) { promptNew(isFolder: true) }
+    @objc private func renameItem(_ sender: Any?) { if let target { beginRename(target) } }
+
+    @objc private func duplicateItem(_ sender: Any?) {
+        guard let node = target else { return }
+        do { afterChange(selecting: [try FileOperations.duplicate(node.url)]) } catch { show(error) }
+    }
+
+    @objc private func trashItem(_ sender: Any?) { if let target { trash(target) } }
+
+    private func trash(_ node: FileNode) {
+        FileOperations.trash([node.url]) { [weak self] result in
+            if case .failure(let error) = result { self?.show(error) }
+            self?.reload()
+        }
+    }
+
+    /// Where something new goes: the folder clicked, the clicked file's, or the top.
+    private var folderForNew: URL? {
+        if let node = target { return node.isDirectory ? node.url : node.url.deletingLastPathComponent() }
+        return rootPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    private func promptNew(isFolder: Bool) {
+        guard let folder = folderForNew, let window else { return }
+        let alert = NSAlert()
+        alert.messageText = L10n.t(isFolder ? "New Folder" : "New File")
+        alert.informativeText = String(format: L10n.t("In %@. A slash makes the folders on the way: docs/notes.md."),
+                                       (folder.path as NSString).abbreviatingWithTildeInPath)
+        let field = NSTextField(string: "")
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+        field.placeholderString = isFolder ? L10n.t("untitled folder") : "untitled.txt"
+        alert.accessoryView = field
+        alert.addButton(withTitle: L10n.t("Create"))
+        alert.addButton(withTitle: L10n.t("Cancel"))
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            let typed = field.stringValue.trimmingCharacters(in: .whitespaces).isEmpty ? field.placeholderString ?? "" : field.stringValue
+            do {
+                let made = try FileOperations.create(typed, in: folder, isFolder: isFolder)
+                self.afterChange(selecting: [made])
+                // A new text file opens in the editor, to be written.
+                if !isFolder, EditorAssets.page != nil, EditorAssets.canEdit(made) { self.onEditDocument?(made) }
+            } catch {
+                // Once the name's sheet has gone.
+                DispatchQueue.main.async { self.show(error) }
+            }
+        }
+    }
+
+    private func show(_ error: Error) {
+        guard let window else { return NSSound.beep() }
+        let alert = NSAlert()
+        alert.messageText = L10n.t("Couldn't do that")
+        alert.informativeText = error.localizedDescription
+        if window.attachedSheet == nil { alert.beginSheetModal(for: window) } else { NSSound.beep() }
+    }
+
+    /// What a change made, shown and selected: the folders down to it opened.
+    private func afterChange(selecting urls: [URL]) {
+        reload()
+        let rows = IndexSet(urls.compactMap(row(showing:)))
+        guard let first = rows.first else { return }
+        outline.selectRowIndexes(rows, byExtendingSelection: false)
+        outline.scrollRowToVisible(first)
+    }
+
+    /// Opens the folders down to `url`; its row, if the tree has it.
+    private func row(showing url: URL) -> Int? {
+        guard let root, let rootPath else { return nil }
+        let base = URL(fileURLWithPath: rootPath).standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(base + "/") else { return nil }
+        var nodes = root.children(showHidden: showHidden)
+        var current = base
+        for part in path.dropFirst(base.count + 1).split(separator: "/") {
+            current += "/" + part
+            guard let node = nodes.first(where: { $0.url.standardizedFileURL.path == current }) else { return nil }
+            if current == path {
+                let row = outline.row(forItem: node)
+                return row >= 0 ? row : nil
+            }
+            outline.expandItem(node)
+            nodes = node.children(showHidden: showHidden)
+        }
+        return nil
+    }
+
+    // MARK: Renaming in place
+
+    private var renaming: (node: FileNode, field: NSTextField, cancelled: Bool)?
+    /// The field editor's own undo, while it holds a name.
+    private var editorUndo: Bool?
+    /// The tree changed while a name was being typed: read again after.
+    private var reloadAfterRename = false
+
+    /// The name becomes a field, its stem selected (as Finder does);
+    /// Return renames, Esc leaves it.
+    func beginRename(_ node: FileNode) {
+        let row = outline.row(forItem: node)
+        guard row >= 0, let window else { return }
+        if renaming != nil { window.makeFirstResponder(outline) }
+        outline.scrollRowToVisible(row)
+        outline.selectRowIndexes([row], byExtendingSelection: false)
+        guard let field = (outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)?.textField else { return }
+        field.isEditable = true
+        field.isSelectable = true
+        field.delegate = self
+        renaming = (node, field, false)
+        guard window.makeFirstResponder(field) else {
+            endRename(field)
+            return
+        }
+        // Its typing isn't the windows' undo (Edit ▸ Undo is the rename's, once done).
+        if let editor = field.currentEditor() as? NSTextView {
+            editorUndo = editor.allowsUndo
+            editor.allowsUndo = false
+        }
+        let name = node.name as NSString
+        let stem = node.isDirectory || name.pathExtension.isEmpty ? name.length : (name.deletingPathExtension as NSString).length
+        field.currentEditor()?.selectedRange = NSRange(location: 0, length: stem)
+    }
+
+    /// The name being typed (the UI probe).
+    var renameField: NSTextField? { renaming?.field }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard let renaming, control === renaming.field else { return false }
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            self.renaming?.cancelled = true
+            window?.makeFirstResponder(outline)
+            return true
+        }
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            window?.makeFirstResponder(outline)
+            return true
+        }
+        return false
+    }
+
+    func controlTextDidEndEditing(_ note: Notification) {
+        guard let field = note.object as? NSTextField, field === renaming?.field else { return }
+        endRename(field)
+    }
+
+    private func endRename(_ field: NSTextField) {
+        guard let (node, _, cancelled) = renaming else { return }
+        renaming = nil
+        if let editorUndo, let editor = field.currentEditor() as? NSTextView ?? window?.fieldEditor(false, for: field) as? NSTextView {
+            editor.allowsUndo = editorUndo
+        }
+        editorUndo = nil
+        field.isEditable = false
+        field.isSelectable = false
+        field.delegate = nil
+        let typed = field.stringValue
+        field.stringValue = node.name
+        // Once the field editor is through with its own ending.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if !cancelled, typed != node.name {
+                do { self.afterChange(selecting: [try FileOperations.rename(node.url, to: typed)]) } catch { self.show(error) }
+            }
+            if self.reloadAfterRename {
+                self.reloadAfterRename = false
+                self.reload()
+            }
+        }
+    }
+
+    // MARK: Keys
+
+    /// ⌘⌫ moves the selected file to the Trash, Return renames it (Finder's keys).
+    private func keyDown(in event: NSEvent) -> Bool {
+        guard renaming == nil, outline.selectedRow >= 0, let node = outline.item(atRow: outline.selectedRow) as? FileNode else { return false }
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        switch Int(event.keyCode) {
+        case 51 where flags == .command:  // ⌘⌫
+            trash(node)
+            return true
+        case 36 where flags.isEmpty, 76 where flags.isEmpty:  // Return, Enter
+            beginRename(node)
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: Dropping files in
+
+    /// Files from the Finder are copied in (⌘ moves them), the tree's own
+    /// moved (⌥ copies them), into the folder they're dropped on — or a
+    /// file's folder, or the top.
+    func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?,
+                     proposedChildIndex index: Int) -> NSDragOperation {
+        guard rootPath != nil, !Self.droppedFiles(info).isEmpty else { return [] }
+        var folder = item as? FileNode
+        if let node = folder, !node.isDirectory { folder = outline.parent(forItem: node) as? FileNode }
+        outline.setDropItem(folder, dropChildIndex: NSOutlineViewDropOnItemIndex)
+        return dropMoves(info) ? .move : .copy
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+        guard let folder = (item as? FileNode)?.url ?? rootPath.map({ URL(fileURLWithPath: $0, isDirectory: true) }) else { return false }
+        return drop(Self.droppedFiles(info), into: folder, move: dropMoves(info))
+    }
+
+    /// Copies (or moves) `urls` into `folder` and shows them there (the UI probe drops this way too).
+    @discardableResult
+    func drop(_ urls: [URL], into folder: URL, move: Bool) -> Bool {
+        do {
+            let placed = try FileOperations.drop(urls, into: folder, move: move)
+            afterChange(selecting: placed)
+            return !placed.isEmpty
+        } catch {
+            reload()
+            show(error)
+            return false
+        }
+    }
+
+    private func dropMoves(_ info: NSDraggingInfo) -> Bool {
+        let mask = info.draggingSourceOperationMask
+        return (info.draggingSource as AnyObject?) === outline ? mask != .copy : !mask.contains(.copy)
+    }
+
+    private static func droppedFiles(_ info: NSDraggingInfo) -> [URL] {
+        (info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+    }
+
+    // MARK: The UI probe
+
+    /// The rows shown, each its path under the top folder (a folder's with a slash).
+    var shownPaths: [String] {
+        guard let rootPath else { return [] }
+        let base = URL(fileURLWithPath: rootPath).standardizedFileURL.path
+        return (0..<outline.numberOfRows).compactMap { outline.item(atRow: $0) as? FileNode }.map { node in
+            String(node.url.standardizedFileURL.path.dropFirst(base.count + 1)) + (node.isDirectory ? "/" : "")
+        }
+    }
+
+    /// Selects the row showing `path` (under the top folder), the tree taking the keyboard.
+    @discardableResult
+    func select(path: String) -> Bool {
+        guard let rootPath, let row = row(showing: URL(fileURLWithPath: rootPath).appendingPathComponent(path)) else { return false }
+        outline.selectRowIndexes([row], byExtendingSelection: false)
+        window?.makeFirstResponder(outline)
+        return true
+    }
+
+    /// The selected row's menu item titled `title`, chosen.
+    func chooseMenuItem(_ title: String) -> Bool {
+        guard let menu = outline.menu else { return false }
+        menuNeedsUpdate(menu)
+        guard let item = menu.items.first(where: { $0.title == title || $0.title == L10n.t(title) }), let action = item.action
+        else { return false }
+        NSApp.sendAction(action, to: item.target, from: item)
+        return true
+    }
+}
+
+/// The file tree's outline, telling its keys first to the tree.
+final class FileOutlineView: NSOutlineView {
+    var onKey: ((NSEvent) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        if onKey?(event) != true { super.keyDown(with: event) }
     }
 }
 
