@@ -53,6 +53,13 @@ https://github.com/jlfwong/speedscope — 1.25.0, its release build. MIT License
 Source Code Pro (Adobe), is under the SIL Open Font License 1.1; both are in
 blocks/profile/lib/LICENSES.txt.
 
+== Mermaid (diagrams in Markdown documents), Copyright (c) 2014-2022 Knut Sveidqvist ==
+https://github.com/mermaid-js/mermaid — mermaid 12.3.0, bundled with what it uses: d3 and
+its modules (ISC), dagre-d3-es, cytoscape, khroma, marked, katex, roughjs, stylis, dayjs,
+lodash-es, es-toolkit (MIT), chevrotain (Apache License 2.0), DOMPurify (Apache License 2.0
+or MPL 2.0), d3-sankey (BSD-3-Clause), and others. MIT License; every bundled package's own
+license is in mermaid/LICENSES.txt. ELK layouts (elkjs) are left out.
+
 
 == herdr's agent manifests (agents' states from their screens) ==
 https://github.com/ogulcancelik/herdr — the rules that tell from a coding

@@ -468,6 +468,21 @@ enum UIProbe {
                             controller.focusedTerminal.commandHover(col: col, row: row)
                         }
                         pump(0.3)
+                    case .expectDiagrams(let n):
+                        // Drawn in a page of their own (a first one starts its WebKit process), then set in.
+                        let deadline = Date().addingTimeInterval(max(20, Self.patience * 5))
+                        var drawn = -1
+                        repeat {
+                            drawn = (pageEvaluate(controller, "document.querySelectorAll('.mermaid svg').length") as? Int) ?? -1
+                            if drawn == n { break }
+                            pump(0.2)
+                        } while Date() < deadline
+                        if drawn == n {
+                            print("ok    ui-probe page shows \(n) diagram\(n == 1 ? "" : "s")")
+                        } else {
+                            print("FAIL  ui-probe diagrams: \(drawn), not \(n)")
+                            failures += 1
+                        }
                     case .expectQuickLook(let list):
                         let shown = controller.focusedTerminal.quickLookTitles?.joined(separator: " | ") ?? "none"
                         if shown == list {
@@ -1278,7 +1293,7 @@ enum UIProbe {
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
-        case quickLookClick(String), expectQuickLook(String)
+        case quickLookClick(String), expectQuickLook(String), expectDiagrams(Int)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
         case settings(String), expectSettings(String), expectConfigChange(String)
@@ -1445,6 +1460,7 @@ enum UIProbe {
             case "cmd-hover": steps.append(.commandHover(arg))
             case "quick-look-click": steps.append(.quickLookClick(arg))
             case "expect-quick-look": steps.append(.expectQuickLook(arg))
+            case "expect-diagrams": steps.append(.expectDiagrams(Int(arg) ?? -1))
             case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
             case "expect-sheet-text": steps.append(.expectSheetText(arg))

@@ -508,6 +508,11 @@ expect sidebar-rows 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-co
 # A diff document: files fold, all at once too, side by side once wide.
 expect diff-document 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/diff-document.txt)" $OUT
+# Mermaid fences in a Markdown document: drawn, or saying why not.
+mkdir -p $PRIVATE/mermaid
+cp $ROOT/tests/fixtures/diagrams.md $PRIVATE/mermaid/
+expect mermaid 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/mermaid|g" $ROOT/tests/fixtures/mermaid.txt)" $OUT
 # The Git block's changed files in their folders.
 GT=$PRIVATE/git-tree
 mkdir -p $GT

@@ -8,6 +8,11 @@ import Foundation
 struct MarkdownRenderer {
     /// Highlighting for fenced code blocks; plain escaping when nil.
     var highlight: ((_ code: String, _ language: String) -> String)?
+    /// A ```mermaid fence's HTML (the diagram, or what stands in for it);
+    /// nil: it's code like any other.
+    var diagram: ((_ source: String) -> String)?
+    /// The ```mermaid fences' sources, in order, as rendered.
+    private(set) var diagrams: [String] = []
 
     private var refs: [String: (url: String, title: String?)] = [:]
     private var slugs: [String: Int] = [:]
@@ -376,7 +381,11 @@ struct MarkdownRenderer {
         return candidate
     }
 
-    private func codeBlock(_ code: String, language: String) -> String {
+    private mutating func codeBlock(_ code: String, language: String) -> String {
+        if language == "mermaid", let diagram {
+            diagrams.append(code)
+            return diagram(code)
+        }
         let body = highlight?(code, language) ?? Self.escape(code)
         let label = language.isEmpty ? "" : "<div class=\"code-head\"><span>\(Self.escape(language))</span></div>"
         return "<div class=\"code\">\(label)<pre><code\(language.isEmpty ? "" : " class=\"language-\(Self.escape(language))\"")>\(body)</code></pre></div>\n"

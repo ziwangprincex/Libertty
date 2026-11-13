@@ -964,7 +964,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                 ?? (try? String(contentsOf: url, encoding: .isoLatin1)) ?? ""
             if rendered {
                 var renderer = MarkdownRenderer { code, lang in Highlighter.html(code, language: lang) }
+                let theme = self.theme
+                if MermaidRenderer.script != nil { renderer.diagram = { MermaidRenderer.shared.html($0, theme: theme) } }
                 body = "<article class=\"md\">\(renderer.render(text))</article>"
+                drawDiagrams(renderer.diagrams)
             } else if isDiff {
                 body = DiffRenderer.html(text, layout: ConfigStore.shared.config.diffLayout)
             } else {
@@ -989,6 +992,17 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             web.loadFileURL(file, allowingReadAccessTo: URL(fileURLWithPath: "/"))
         } catch {
             web.loadHTMLString(html, baseURL: dir)
+        }
+    }
+
+    /// Diagrams not drawn yet show their source; once drawn, the page is
+    /// shown again with them, where the reader is.
+    private func drawDiagrams(_ sources: [String]) {
+        let theme = self.theme, url = self.url
+        guard sources.contains(where: { MermaidRenderer.shared.drawn($0, theme: theme) == nil }) else { return }
+        MermaidRenderer.shared.draw(sources, theme: theme) { [weak self] in
+            guard let self, self.url == url, self.theme == theme, self.rendered, !self.isEditing else { return }
+            self.load(keepScroll: true)
         }
     }
 
@@ -1270,6 +1284,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         .md .code-head { padding: 7px 16px 0; font: 500 11px var(--sans); color: var(--t3); text-transform: lowercase; }
         .md .code pre { margin: 0; padding: 12px 16px 16px; overflow: auto; font: 12.5px/1.7 var(--mono); color: var(--t1); tab-size: 4; }
         .md .code-head + pre { padding-top: 6px; }
+        .md .mermaid { margin: 8px 0 22px; text-align: center; overflow-x: auto; }
+        .md .mermaid svg { max-width: 100%; height: auto; }
+        .md .mermaid-failed .code-head { text-transform: none; color: \(a[1].hexString); }
         .md :is(ul, ol) { margin: 0 0 12px; padding-left: 22px; }
         .md li { margin: 0 0 6px; padding-left: 4px; }
         .md li > :is(ul, ol) { margin: 6px 0 0; }
