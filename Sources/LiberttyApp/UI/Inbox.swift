@@ -61,7 +61,7 @@ final class InboxViewController: NSViewController, NSTableViewDataSource, NSTabl
         mode.selectedSegment = byState ? 1 : 0
         mode.target = self
         mode.action = #selector(modeChanged(_:))
-        mode.setAccessibilityLabel(L10n.t("Show Activity"))
+        mode.setAccessibleLabel(L10n.t("Show Activity"))
         let title = mode
         let clear = NSButton(title: L10n.t("Clear"), target: self, action: #selector(clearAll(_:)))
         clear.bezelStyle = .inline
@@ -76,6 +76,7 @@ final class InboxViewController: NSViewController, NSTableViewDataSource, NSTabl
         table.delegate = self
         table.target = self
         table.action = #selector(clicked(_:))
+        table.setAccessibilityLabel(L10n.t("Activity"))
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.drawsBackground = false

@@ -228,6 +228,10 @@ extension TerminalWindowController {
         // In the window: the pane's edge lights up (unless you're typing in it).
         if pane !== focusedTerminal || !(window?.isKeyWindow ?? false) {
             pane.flashHalo(Self.color(for: top.state))
+            // Another pane of the window you're in: VoiceOver hears what the light says.
+            if window?.isKeyWindow == true, NSApp.isActive {
+                AccessibilityNews.announce(L10n.t(Self.label(for: top)) + ": " + title(ofPane: pane), from: pane)
+            }
         }
         guard !looked, config.desktopNotifications else { return }
         let app = session.programStatus.effectiveApp(of: top)

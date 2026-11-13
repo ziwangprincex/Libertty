@@ -348,7 +348,8 @@ final class CompletionList: NSView {
             label.wantsLayer = true
             label.drawsBackground = true
             label.backgroundColor = i == selected ? NSColor.controlAccentColor.withAlphaComponent(0.25) : .clear
-            label.setAccessibilityLabel(c.detail.isEmpty ? c.title : c.title + ", " + c.detail)
+            label.setAccessibleLabel(c.detail.isEmpty ? c.title : c.title + ", " + c.detail)
+            label.cell?.setAccessibilitySelected(i == selected)
             addSubview(label)
             rowViews.append(label)
             widest = max(widest, label.fittingSize.width)
@@ -366,9 +367,7 @@ final class CompletionList: NSView {
     private func announce() {
         guard completions.indices.contains(selected) else { return }
         let c = completions[selected]
-        NSAccessibility.post(element: self, notification: .announcementRequested,
-                             userInfo: [.announcement: c.detail.isEmpty ? c.title : c.title + ", " + c.detail,
-                                        .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        AccessibilityNews.announce(c.detail.isEmpty ? c.title : c.title + ", " + c.detail, from: self, high: true)
     }
 
     private func move(_ by: Int) {

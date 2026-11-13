@@ -229,13 +229,12 @@ extension TerminalView {
         }
         guard let tag else { return }
         tag.stringValue = " " + text + " "
-        tag.setAccessibilityLabel(text)
+        tag.setAccessibleLabel(text)
         let size = tag.fittingSize
         let width = min(size.width, max(0, bounds.width - 12))
         tag.frame = NSRect(x: bounds.width - width - 18, y: 6, width: width, height: size.height)
         tag.autoresizingMask = [.minXMargin, .maxYMargin]
-        NSAccessibility.post(element: tag, notification: .announcementRequested,
-                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        AccessibilityNews.announce(text, from: tag)
     }
 
     /// What the upload tag says (the UI probe): nil when there's none.

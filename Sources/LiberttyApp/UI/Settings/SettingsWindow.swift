@@ -101,11 +101,11 @@ struct SettingsView: View {
                             Button { model.goBack() } label: { Image(systemName: "chevron.left") }
                                 .disabled(!model.canGoBack)
                                 .help("Go to the previous Settings page")
-                                .accessibilityLabel("Back")
+                                .accessibilityLabel(L10n.t("Back"))
                             Button { model.goForward() } label: { Image(systemName: "chevron.right") }
                                 .disabled(!model.canGoForward)
                                 .help("Go to the next Settings page")
-                                .accessibilityLabel("Forward")
+                                .accessibilityLabel(L10n.t("Forward"))
                         }
                         .controlGroupStyle(.navigation)
                     }

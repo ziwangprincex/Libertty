@@ -749,4 +749,25 @@ final class DividerView: NSView {
         }
         refreshHover()
     }
+
+    // MARK: Accessibility: a splitter VoiceOver moves with its increment and decrement
+
+    override func isAccessibilityElement() -> Bool { node != nil }
+    override func accessibilityRole() -> NSAccessibility.Role? { .splitter }
+    override func accessibilityLabel() -> String? { L10n.t("Pane Divider") }
+    override func accessibilityOrientation() -> NSAccessibilityOrientation {
+        node?.axis == .horizontal ? .vertical : .horizontal
+    }
+    /// Where it is, as the first pane's share of the split.
+    override func accessibilityValue() -> Any? { node.map { Int(($0.ratio * 100).rounded()) } }
+    override func accessibilityPerformIncrement() -> Bool { nudge(0.05) }
+    override func accessibilityPerformDecrement() -> Bool { nudge(-0.05) }
+
+    private func nudge(_ by: CGFloat) -> Bool {
+        guard let node, let container else { return false }
+        node.ratio = min(0.9, max(0.1, node.ratio + by))
+        container.layoutPanes()
+        NSAccessibility.post(element: self, notification: .valueChanged)
+        return true
+    }
 }

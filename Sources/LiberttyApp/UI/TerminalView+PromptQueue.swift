@@ -35,7 +35,7 @@ extension TerminalView {
             .font: Typeface.ui(11, .medium),
             .foregroundColor: queue.paused ? NSColor.systemOrange : NSColor.secondaryLabelColor,
         ])
-        tag.setAccessibilityLabel(text)
+        tag.setAccessibleLabel(text)
         let size = tag.fittingSize
         tag.frame = NSRect(x: 12, y: bounds.height - size.height - 6, width: min(size.width, bounds.width - 24), height: size.height)
         tag.autoresizingMask = [.maxXMargin, .minYMargin]

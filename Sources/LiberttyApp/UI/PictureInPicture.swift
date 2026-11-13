@@ -63,6 +63,12 @@ final class PictureInPicture: NSObject, NSWindowDelegate {
         mirror.frame = content.bounds
         mirror.autoresizingMask = [.width, .height]
         mirror.onClick = { [weak self] in self?.goToPane() }
+        // VoiceOver: a button that goes to the pane it shows.
+        mirror.setAccessibilityElement(true)
+        mirror.setAccessibilityRole(.button)
+        mirror.setAccessibilityLabel(L10n.t("Picture in Picture") + ", " + title())
+        mirror.setAccessibilityHelp(L10n.t("Go to the Pane"))
+        panel.setAccessibilityTitle(L10n.t("Picture in Picture"))
         content.addSubview(mirror)
 
         // On hover: what it is, and its two buttons.
@@ -73,8 +79,8 @@ final class PictureInPicture: NSObject, NSWindowDelegate {
         titleLabel.stringValue = title()
         titleLabel.font = Typeface.ui(11, .medium)
         titleLabel.lineBreakMode = .byTruncatingTail
-        let back = Self.button("arrow.up.backward.and.arrow.down.forward", "Go to the Pane", self, #selector(goToPane))
-        let close = Self.button("xmark", "Close Picture in Picture", self, #selector(closeClicked))
+        let back = Self.button("arrow.up.backward.and.arrow.down.forward", L10n.t("Go to the Pane"), self, #selector(goToPane))
+        let close = Self.button("xmark", L10n.t("Close Picture in Picture"), self, #selector(closeClicked))
         let bar = NSStackView(views: [close, titleLabel, back])
         bar.spacing = 6
         bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
@@ -138,7 +144,10 @@ final class PictureInPicture: NSObject, NSWindowDelegate {
         guard let pane, pane.superview != nil || pane.isParked else { return close() }
         pane.renderMirror(into: mirror.metalLayer)
         frames += 1
-        if frames % 60 == 1 { titleLabel.stringValue = titleProvider() }
+        if frames % 60 == 1, titleLabel.stringValue != titleProvider() {
+            titleLabel.stringValue = titleProvider()
+            mirror.setAccessibilityLabel(L10n.t("Picture in Picture") + ", " + titleLabel.stringValue)
+        }
     }
 
     @objc private func goToPane() {
@@ -207,5 +216,10 @@ final class MirrorView: NSView {
         window?.performDrag(with: event)
         if let downAt, hypot(NSEvent.mouseLocation.x - downAt.x, NSEvent.mouseLocation.y - downAt.y) < 3 { onClick?() }
         downAt = nil
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
     }
 }

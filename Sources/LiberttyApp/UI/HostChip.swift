@@ -48,6 +48,9 @@ final class HostChip {
             button.toolTip = "This Mac"
         }
         button.sizeToFit()
+        // Said as what it is, with the link's state (its icon's look says neither).
+        button.setAccessibleLabel((host.map { L10n.t("Host") + " " + $0.destination } ?? L10n.t("This Mac") + ", " + HostChip.computerName)
+                                  + (linkUp ? "" : ", " + L10n.t("Not connected")))
         // An open popover follows the link coming back (or going).
         shown?.show(linkUp: linkUp)
     }

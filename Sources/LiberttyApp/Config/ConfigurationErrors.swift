@@ -44,6 +44,7 @@ private struct ConfigurationErrorsView: View {
                     .foregroundColor(.yellow)
                     .font(.system(size: 52))
                     .padding()
+                    .accessibilityLabel(L10n.t("Warning"))
                 Text("""
                     ^[\(model.errors.count) error(s) were](inflect: true) found while loading the configuration. \
                     Please review the errors below and reload your configuration or ignore the erroneous lines.

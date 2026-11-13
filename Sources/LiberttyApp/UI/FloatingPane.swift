@@ -48,8 +48,8 @@ final class FloatingPaneCard: NSView {
         chrome.alphaValue = 0
         titleLabel.font = Typeface.ui(11.5, .medium)
         titleLabel.lineBreakMode = .byTruncatingTail
-        let away = Self.button("tray.and.arrow.down", "Put Away (keep it parked)", self, #selector(putAway))
-        let back = Self.button("arrow.up.backward.and.arrow.down.forward", "Back to the Split", self, #selector(expand))
+        let away = Self.button("tray.and.arrow.down", L10n.t("Put Away (keep it parked)"), self, #selector(putAway))
+        let back = Self.button("arrow.up.backward.and.arrow.down.forward", L10n.t("Back to the Split"), self, #selector(expand))
         let bar = NSStackView(views: [away, titleLabel, back])
         bar.spacing = 6
         bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
@@ -62,8 +62,9 @@ final class FloatingPaneCard: NSView {
             bar.leadingAnchor.constraint(equalTo: chrome.leadingAnchor), bar.trailingAnchor.constraint(equalTo: chrome.trailingAnchor),
             bar.topAnchor.constraint(equalTo: chrome.topAnchor), bar.bottomAnchor.constraint(equalTo: chrome.bottomAnchor),
         ])
+        setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Floating pane")
+        setAccessibilityLabel(L10n.t("Floating pane"))
     }
 
     @available(*, unavailable)
@@ -123,7 +124,10 @@ final class FloatingPaneCard: NSView {
         guard let pane else { return stop() }
         _ = pane.renderMirror(into: mirror.metalLayer)
         frames += 1
-        if frames % 60 == 1 { titleLabel.stringValue = title() }
+        if frames % 60 == 1, titleLabel.stringValue != title() {
+            titleLabel.stringValue = title()
+            setAccessibilityLabel(L10n.t("Floating pane") + ", " + titleLabel.stringValue)
+        }
     }
 
     /// The card is going away: stop drawing and let the renderer forget the layer.

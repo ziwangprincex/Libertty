@@ -463,7 +463,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
     private var hovering = false
     private lazy var closeButton: NSButton = {
-        let b = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Pane")!,
+        let b = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.t("Close Pane"))!,
                          target: self, action: #selector(closeButtonClicked(_:)))
         b.isBordered = false
         b.bezelStyle = .circular
@@ -1097,6 +1097,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         pendingKeysLabel.stringValue = " " + keys.displayString + " … "
         updateGround(of: pendingKeysLabel, alpha: 0.92)
         layoutPendingKeys()
+        // Without the list of what can follow (which says this too, a moment
+        // on), VoiceOver hears the tag: the keys wait for another.
+        if !ConfigStore.shared.config.keySequenceHints {
+            AccessibilityNews.announce(keys.displayString + " …", from: pendingKeysLabel)
+        }
     }
 
     override func keyDown(with event: NSEvent) {
@@ -1587,6 +1592,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.startAnimation(nil)
+        spinner.setAccessibilityElement(false)  // the words beside it say it
         let label = NSTextField(labelWithString: "")
         label.font = Typeface.ui(12, .medium)
         label.tag = 1
@@ -1628,6 +1634,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         linkBannerWork?.cancel()
         guard !session.linkUp else {
             guard !linkBanner.isHidden else { return }
+            // It was saying so: VoiceOver hears the link is back.
+            AccessibilityNews.announce(L10n.t("Connected"), from: self)
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = Motion.duration(Motion.hover)
                 linkBanner.animator().alphaValue = 0
@@ -1642,7 +1650,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             guard let self, !self.session.linkUp else { return }
             if let host = self.session.host { self.fillLinkBanner(host) } else { self.fillLocalBanner() }
             self.layoutLinkBanner()
+            let wasHidden = self.linkBanner.isHidden
             self.linkBanner.isHidden = false
+            if wasHidden, let said = (self.linkBanner.viewWithTag(1) as? NSTextField)?.stringValue {
+                AccessibilityNews.announce(said, from: self.linkBanner)
+            }
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = Motion.duration(Motion.hover)
                 self.linkBanner.animator().alphaValue = 1
@@ -1669,8 +1681,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// What the banner says (refreshed while it shows: ssh's answer comes later).
     private func fillLinkBanner(_ host: RemoteHost) {
         let stuck = host.needsUser
-        (linkBanner.viewWithTag(1) as? NSTextField)?.stringValue = stuck ? "Can't connect to \(host.destination)"
+        let label = linkBanner.viewWithTag(1) as? NSTextField
+        let before = label?.stringValue
+        label?.stringValue = stuck ? "Can't connect to \(host.destination)"
             : session.hasConnectedOnce ? "Reconnecting to \(host.destination)…" : "Connecting to \(host.destination)…"
+        // Connecting turned to can't (ssh answered): said, once.
+        if !linkBanner.isHidden, let label, before != label.stringValue { AccessibilityNews.announce(label.stringValue, from: linkBanner) }
         let why = (host.lastError as? LocalizedError)?.errorDescription ?? host.lastError.map { "\($0)" }
         if let detail = linkBanner.viewWithTag(2) as? NSTextField {
             detail.stringValue = why ?? ""
@@ -2310,8 +2326,10 @@ final class PaneGrip: NSView {
         icon.symbolConfiguration = .init(pointSize: 9.5, weight: .semibold)
         icon.contentTintColor = .secondaryLabelColor
         addSubview(icon)
-        setAccessibilityRole(.button)
-        setAccessibilityLabel("Move Pane")
+        // Only a drag does anything here (VoiceOver moves a pane by the
+        // Move Pane commands): it isn't offered as a button that does nothing.
+        icon.hideFromAccessibility()
+        setAccessibilityElement(false)
     }
 
     @available(*, unavailable)

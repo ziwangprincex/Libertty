@@ -32,6 +32,8 @@ final class WebAccessPanel: NSObject {
         mode.addItems(withTitles: ["Off", "This Mac only", "This Mac and the local network", "My tailnet (Tailscale, HTTPS)"])
         mode.target = self
         mode.action = #selector(modeChanged(_:))
+        mode.setAccessibleLabel(L10n.t("Web Access"))
+        qr.setAccessibleLabel(L10n.t("QR code of the link"))
         link.isSelectable = true
         link.lineBreakMode = .byTruncatingMiddle
         link.font = .monospacedSystemFont(ofSize: 11, weight: .regular)

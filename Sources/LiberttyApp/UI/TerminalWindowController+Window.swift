@@ -255,6 +255,8 @@ extension TerminalWindowController {
         chrome.show(hostChip: host == nil ? nil : hostChip.view)
         chrome.show(unread: Notifier.shared.unread > 0)
         chrome.sidebarToggle.toolTip = Self.tip(sidebarShown ? "Hide Sidebar" : "Show Sidebar", .toggleSidebar)
+        // (VoiceOver says what a press does now, too.)
+        chrome.sidebarToggle.setAccessibleLabel(L10n.t(sidebarShown ? "Hide Sidebar" : "Show Sidebar"))
         let trailingInSidebar = sidebarShown && config.tabBar.inSidebar
         let clearance = leftColumn ? WindowChrome.trafficLightRoom + 10 : 9
         sidebar.setChrome(leading: leftColumn ? chrome.leading : nil, trailing: trailingInSidebar ? chrome.trailing : nil, mid: mid,

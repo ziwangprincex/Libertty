@@ -68,6 +68,7 @@ final class FloatingTerminalView: NSView {
         addSubview(bar)
         addSubview(pane)
         updateColors()
+        setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel(L10n.t("Floating pane"))
     }
@@ -109,7 +110,10 @@ final class FloatingTerminalView: NSView {
         titleLabel.stringValue = title()
     }
 
-    func refreshTitle() { titleLabel.stringValue = title() }
+    func refreshTitle() {
+        titleLabel.stringValue = title()
+        setAccessibilityLabel(L10n.t("Floating pane") + (titleLabel.stringValue.isEmpty ? "" : ", " + titleLabel.stringValue))
+    }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -207,6 +211,7 @@ final class FloatingTerminalView: NSView {
     // MARK: Accessibility
 
     override func accessibilityChildren() -> [Any]? {
-        [bar.subviews.first as Any, pane]
+        // Its bar's buttons and title, then its terminal (the stack holding them is no element itself).
+        NSAccessibility.unignoredChildren(from: [bar, pane])
     }
 }

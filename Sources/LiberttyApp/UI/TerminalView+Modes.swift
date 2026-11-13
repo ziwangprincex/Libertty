@@ -91,8 +91,7 @@ extension TerminalView {
 
     /// Said to VoiceOver, now.
     func announce(_ text: String) {
-        NSAccessibility.post(element: self, notification: .announcementRequested,
-                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        AccessibilityNews.announce(text, from: self, high: true)
     }
 
     /// A composition under way (Pinyin) is dropped as a mode takes the keys.
@@ -493,6 +492,8 @@ extension TerminalView {
             view.show(entries)
             view.isHidden = false
             self.layoutModeOverlays()
+            // Still waiting for the next key: VoiceOver hears what it can be.
+            AccessibilityNews.announce(self.pendingSequence.displayString + " … " + view.rows.joined(separator: ", "), from: view)
             if !Motion.reduced {
                 view.alphaValue = 0
                 NSAnimationContext.runAnimationGroup { $0.duration = 0.12; view.animator().alphaValue = 1 }

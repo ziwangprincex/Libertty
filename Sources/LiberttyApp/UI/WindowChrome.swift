@@ -72,7 +72,7 @@ final class WindowChrome {
 
     init(target: AnyObject, toggleSidebar: Selector, activity: Selector, palette: Selector, newTab: Selector) {
         sidebarToggle = Self.button("sidebar.left", TerminalWindowController.tip("Hide Sidebar", .toggleSidebar), target, toggleSidebar)
-        self.activity = Self.button("eye", "Show Activity", target, activity)
+        self.activity = Self.button("eye", L10n.t("Show Activity"), target, activity)
         self.palette = Self.button("command", TerminalWindowController.tip("Command Palette", .toggleCommandPalette), target, palette)
         self.newTab = Self.button("plus", TerminalWindowController.tip("New Tab", .newTab), target, newTab)
         leading.addArrangedSubview(sidebarToggle)
@@ -94,8 +94,10 @@ final class WindowChrome {
 
     /// Unread news lights the activity button.
     func show(unread: Bool) {
-        activity.image = NSImage(systemSymbolName: unread ? "eye.circle.fill" : "eye", accessibilityDescription: "Show Activity")
+        activity.image = NSImage(systemSymbolName: unread ? "eye.circle.fill" : "eye", accessibilityDescription: L10n.t("Show Activity"))
         activity.contentTintColor = unread ? Accent.color : .secondaryLabelColor
+        // What its light says, said.
+        activity.setAccessibleLabel(L10n.t("Show Activity") + (unread ? ", " + L10n.t("new activity") : ""))
     }
 
     static let buttonSize = NSSize(width: 29, height: 25)
@@ -106,7 +108,7 @@ final class WindowChrome {
         b.contentTintColor = .secondaryLabelColor
         b.symbolConfiguration = .init(pointSize: 14, weight: .regular)
         b.toolTip = tip
-        b.setAccessibilityLabel(tip.components(separatedBy: " (").first)
+        b.setAccessibleLabel(tip.components(separatedBy: " (").first)
         b.translatesAutoresizingMaskIntoConstraints = false
         b.widthAnchor.constraint(equalToConstant: buttonSize.width).isActive = true
         b.heightAnchor.constraint(equalToConstant: buttonSize.height).isActive = true

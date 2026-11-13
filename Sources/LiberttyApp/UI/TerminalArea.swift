@@ -244,7 +244,9 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
 
         let icon = NSImageView(image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)!)
         icon.contentTintColor = .secondaryLabelColor
+        icon.hideFromAccessibility()
         field.placeholderString = "Find in scrollback"
+        field.setAccessibleLabel(L10n.t("Find"))
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -259,6 +261,8 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
             b.isBordered = false
             b.contentTintColor = .secondaryLabelColor
             b.toolTip = tip
+            // Its name; the shortcut is in its help.
+            b.setAccessibleLabel(tip.components(separatedBy: " (").first)
             return b
         }
         let stack = NSStackView(views: [
@@ -279,6 +283,9 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
             stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor),
             field.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
         ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(L10n.t("Find"))
     }
 
     @available(*, unavailable)
@@ -293,6 +300,7 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
     /// Documents report only whether the text was found.
     func showDocument(found: Bool, empty: Bool) {
         count.stringValue = empty ? "" : found ? "" : "No matches"
+        if announcesNext, !found { tellCount() }
     }
 
     func show(result: SearchResult) {
@@ -303,6 +311,22 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
         } else {
             count.stringValue = result.selected.map { "\($0) of \(result.total)" } ?? "\(result.total)"
         }
+        if announcesNext { tellCount() }
+    }
+
+    /// Return or an arrow went to another match: VoiceOver says which
+    /// ("3 of 12") once its count comes. (Not as matches come in with new
+    /// output, nor as you type: it says the letters then.)
+    private var announcesNext = false
+
+    private func navigated() {
+        announcesNext = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.announcesNext = false }
+    }
+
+    private func tellCount() {
+        announcesNext = false
+        AccessibilityNews.announce(count.stringValue, from: count)
     }
 
     func controlTextDidChange(_ obj: Notification) { onChange?(field.stringValue) }
@@ -310,6 +334,7 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
         case #selector(insertNewline(_:)):
+            navigated()
             onNavigate?(!(NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false))
             return true
         case #selector(cancelOperation(_:)):
@@ -320,7 +345,7 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
         }
     }
 
-    @objc private func older() { if let onArrow { onArrow(true) } else { onNavigate?(true) } }
-    @objc private func newer() { if let onArrow { onArrow(false) } else { onNavigate?(false) } }
+    @objc private func older() { navigated(); if let onArrow { onArrow(true) } else { onNavigate?(true) } }
+    @objc private func newer() { navigated(); if let onArrow { onArrow(false) } else { onNavigate?(false) } }
     @objc private func close() { onClose?() }
 }

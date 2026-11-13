@@ -112,6 +112,7 @@ final class ImagePeek: NSView {
         guard shown != .zero else { return hide() }
         picture.image = image
         caption.stringValue = file.lastPathComponent + "  \(Int(pixels.width))×\(Int(pixels.height))"
+        picture.setAccessibleLabel(L10n.t("Image") + ", " + caption.stringValue)
         let pad: CGFloat = 8, captionHeight: CGFloat = 16
         let size = CGSize(width: max(shown.width, 140) + pad * 2, height: shown.height + captionHeight + pad * 2 + 2)
         frame = Self.frame(for: size, near: link, in: superview.bounds)

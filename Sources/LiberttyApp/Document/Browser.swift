@@ -33,6 +33,7 @@ final class BrowserBar: NSView, NSTextFieldDelegate {
         external.action = #selector(openExternally)
         for b in [back, forward, reload, external] { b.target = self }
         field.placeholderString = "Search or enter an address"
+        field.setAccessibleLabel(L10n.t("Address"))
         field.font = Typeface.secondary
         field.isBordered = false
         field.drawsBackground = true

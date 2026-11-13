@@ -109,6 +109,9 @@ final class InspectorViewController: NSViewController {
             gitPanel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             idleHint.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor, constant: -32),
         ])
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.group)
+        view.setAccessibilityLabel(L10n.t("Inspector"))
         self.view = view
     }
 
@@ -303,6 +306,8 @@ final class InspectorViewController: NSViewController {
 
     private func configureLink(_ b: NSButton, symbol: String, action: Selector) {
         b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        // Its title says it: not its icon's look ("Document overlapping another document") before it.
+        b.setAccessibleLabel(b.title)
         b.imagePosition = .imageLeading
         b.imageHugsTitle = true
         b.isBordered = false
