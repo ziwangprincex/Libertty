@@ -1629,13 +1629,25 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         return pill
     }()
     private var linkBannerWork: DispatchWorkItem?
+    /// The banner says the link is down (shown, or fading in): not its
+    /// view's isHidden, which a fade-out cut short by the link dropping
+    /// again leaves false at alpha 0.
+    private var linkBannerShown = false
+
+    /// What the banner says, for VoiceOver: once for the window in front,
+    /// however many of its panes show the same banner (a host's, liberttyd's).
+    private func announceLink(_ text: String, from element: Any) {
+        guard AccessibilityNews.isInFront(self) else { return }
+        AccessibilityNews.announce(text, from: element, once: 2)
+    }
 
     func updateLinkBanner() {
         linkBannerWork?.cancel()
         guard !session.linkUp else {
-            guard !linkBanner.isHidden else { return }
+            guard linkBannerShown else { return }
+            linkBannerShown = false
             // It was saying so: VoiceOver hears the link is back.
-            AccessibilityNews.announce(L10n.t("Connected"), from: self)
+            announceLink(L10n.t("Connected"), from: self)
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = Motion.duration(Motion.hover)
                 linkBanner.animator().alphaValue = 0
@@ -1650,10 +1662,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             guard let self, !self.session.linkUp else { return }
             if let host = self.session.host { self.fillLinkBanner(host) } else { self.fillLocalBanner() }
             self.layoutLinkBanner()
-            let wasHidden = self.linkBanner.isHidden
+            let appeared = !self.linkBannerShown
+            self.linkBannerShown = true
             self.linkBanner.isHidden = false
-            if wasHidden, let said = (self.linkBanner.viewWithTag(1) as? NSTextField)?.stringValue {
-                AccessibilityNews.announce(said, from: self.linkBanner)
+            if appeared, let said = (self.linkBanner.viewWithTag(1) as? NSTextField)?.stringValue {
+                self.announceLink(said, from: self.linkBanner)
             }
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = Motion.duration(Motion.hover)
@@ -1668,9 +1681,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// program may still be running in a new one or may be gone; the window
     /// keeps trying for a while (GoRex's "Lost the connection").
     private func fillLocalBanner() {
-        (linkBanner.viewWithTag(1) as? NSTextField)?.stringValue = "Lost the connection to the session server — reconnecting…"
+        (linkBanner.viewWithTag(1) as? NSTextField)?.stringValue = L10n.t("Lost the connection to the session server — reconnecting…")
         if let detail = linkBanner.viewWithTag(2) as? NSTextField {
-            detail.stringValue = "What you type isn't sent until it's back."
+            detail.stringValue = L10n.t("What you type isn't sent until it's back.")
             detail.isHidden = false
         }
         linkBanner.viewWithTag(3)?.isHidden = true
@@ -1683,10 +1696,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         let stuck = host.needsUser
         let label = linkBanner.viewWithTag(1) as? NSTextField
         let before = label?.stringValue
-        label?.stringValue = stuck ? "Can't connect to \(host.destination)"
-            : session.hasConnectedOnce ? "Reconnecting to \(host.destination)…" : "Connecting to \(host.destination)…"
+        label?.stringValue = String(format: L10n.t(stuck ? "Can't connect to %@"
+            : session.hasConnectedOnce ? "Reconnecting to %@…" : "Connecting to %@…"), host.destination)
         // Connecting turned to can't (ssh answered): said, once.
-        if !linkBanner.isHidden, let label, before != label.stringValue { AccessibilityNews.announce(label.stringValue, from: linkBanner) }
+        if linkBannerShown, let label, before != label.stringValue { announceLink(label.stringValue, from: linkBanner) }
         let why = (host.lastError as? LocalizedError)?.errorDescription ?? host.lastError.map { "\($0)" }
         if let detail = linkBanner.viewWithTag(2) as? NSTextField {
             detail.stringValue = why ?? ""

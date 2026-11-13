@@ -49,7 +49,7 @@ final class HostChip {
         }
         button.sizeToFit()
         // Said as what it is, with the link's state (its icon's look says neither).
-        button.setAccessibleLabel((host.map { L10n.t("Host") + " " + $0.destination } ?? L10n.t("This Mac") + ", " + HostChip.computerName)
+        button.setAccessibleLabel((host.map { L10n.t("Host") + " " + $0.destination } ?? L10n.t("This Mac") + ", " + button.title)
                                   + (linkUp ? "" : ", " + L10n.t("Not connected")))
         // An open popover follows the link coming back (or going).
         shown?.show(linkUp: linkUp)
@@ -96,8 +96,19 @@ final class HostChip {
         return String(cString: buffer)
     }
 
-    /// The name the user gave this Mac ("…'s MacBook Pro").
+    /// This Mac's name as the chip says it, asked of the system at most
+    /// once a minute: the chip is refreshed with every title change.
     static var computerName: String {
+        let now = Date()
+        if let (name, at) = computerNameCache, now.timeIntervalSince(at) < 60 { return name }
+        let name = currentComputerName()
+        computerNameCache = (name, now)
+        return name
+    }
+    nonisolated(unsafe) private static var computerNameCache: (String, Date)?
+
+    /// The name the user gave this Mac ("…'s MacBook Pro"), without the owner.
+    private static func currentComputerName() -> String {
         guard let name = Host.current().localizedName, !name.isEmpty else { return "This Mac" }
         // "Prince 的 MacBook Pro" → "MacBook Pro".
         for separator in ["的", "'s ", "’s "] {

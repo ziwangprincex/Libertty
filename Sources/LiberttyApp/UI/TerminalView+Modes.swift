@@ -477,7 +477,9 @@ extension TerminalView {
             return
         }
         if let shown = keyHints, !shown.isHidden {
+            // A sequence's next level (ctrl+b>w>…): what can follow now.
             shown.show(entries)
+            AccessibilityNews.announce(pendingSequence.displayString + " … " + shown.rows.joined(separator: ", "), from: shown)
             return layoutModeOverlays()
         }
         let timer = Timer(timeInterval: Self.keyHintsDelay, repeats: false) { [weak self] _ in

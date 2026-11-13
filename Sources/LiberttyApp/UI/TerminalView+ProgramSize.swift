@@ -45,8 +45,10 @@ extension TerminalView {
             .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
         ])
         tag.setAccessibleLabel(text)
-        // It came up: VoiceOver says so once (the program's text no longer fits this pane).
-        if isNew { AccessibilityNews.announce(L10n.t("Sized by another window"), from: tag) }
+        // It came up: VoiceOver says so once (the program's text no longer
+        // fits this pane) — if the pane is where you are: a window behind
+        // that the one in front resized would seem to be speaking of it.
+        if isNew, AccessibilityNews.isInFront(self) { AccessibilityNews.announce(L10n.t("Sized by another window"), from: tag) }
         let size = tag.fittingSize
         let width = min(size.width, max(0, bounds.width - 12))
         tag.frame = NSRect(x: ((bounds.width - width) / 2).rounded(), y: bounds.height - size.height - 6, width: width, height: size.height)

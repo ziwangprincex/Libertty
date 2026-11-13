@@ -45,7 +45,12 @@ final class OverlayScroller: NSView {
     /// New position; `reveal` shows it for a moment (the user scrolled).
     func update(_ scrollbar: TerminalSession.Scrollbar, reveal: Bool) {
         let changed = scrollbar != state
+        // Scrolled (a page by VoiceOver, the wheel, a jump): its value is
+        // new for VoiceOver. Not for output arriving: following it at the
+        // bottom, or held still higher up, the place stays put.
+        let moved = scrollbar.offset != state.offset && !(scrollbar.atBottom && state.atBottom)
         state = scrollbar
+        if moved, scrollbar.scrollable { NSAccessibility.post(element: self, notification: .valueChanged) }
         guard scrollbar.scrollable else { return fade(to: 0) }
         if changed { layoutKnob() }
         if reveal { show() }

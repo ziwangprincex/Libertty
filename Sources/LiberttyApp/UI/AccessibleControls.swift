@@ -28,19 +28,38 @@ extension NSImage {
 
 enum AccessibilityNews {
     #if LIBERTTY_PROBES
-    /// What was announced, VoiceOver running or not (the UI probe's `expect-announced`).
+    /// What was announced, VoiceOver running or not (the UI probe's
+    /// `expect-announced`): the latest 200.
     @MainActor static var said: [String] = []
     #endif
 
+    /// When each text deduplicated (`once`) was last said.
+    @MainActor private static var lastSaid: [String: Date] = [:]
+
     /// Said once, now, by VoiceOver (or another assistive app): for a change
-    /// on screen it wouldn't otherwise notice. Not for every frame.
-    @MainActor static func announce(_ text: String, from element: Any? = nil, high: Bool = false) {
-        #if LIBERTTY_PROBES
-        if !text.isEmpty { said.append(text) }
-        #endif
+    /// on screen it wouldn't otherwise notice. Not for every frame. `once`:
+    /// not again if the same words were said less than that many seconds
+    /// ago (each pane of a host saying its link dropped, say: it's said once).
+    @MainActor static func announce(_ text: String, from element: Any? = nil, high: Bool = false, once: TimeInterval = 0) {
         guard !text.isEmpty else { return }
+        if once > 0 {
+            let now = Date()
+            if let last = lastSaid[text], now.timeIntervalSince(last) < once { return }
+            lastSaid = lastSaid.filter { now.timeIntervalSince($0.value) < 60 }
+            lastSaid[text] = now
+        }
+        #if LIBERTTY_PROBES
+        said.append(text)
+        if said.count > 200 { said.removeFirst(said.count - 200) }
+        #endif
         NSAccessibility.post(element: element ?? NSApp.mainWindow as Any, notification: .announcementRequested,
                              userInfo: [.announcement: text,
                                         .priority: (high ? NSAccessibilityPriorityLevel.high : .medium).rawValue])
+    }
+
+    /// Whether a view is where the user is: in the key window of Libertty in
+    /// front (what's said elsewhere would be about something out of sight).
+    @MainActor static func isInFront(_ view: NSView) -> Bool {
+        view.window?.isKeyWindow == true && NSApp.isActive
     }
 }

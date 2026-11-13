@@ -256,20 +256,21 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
         count.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         count.textColor = .secondaryLabelColor
 
-        func button(_ symbol: String, _ tip: String, _ action: Selector) -> NSButton {
-            let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!, target: self, action: action)
+        func button(_ symbol: String, _ name: String, _ more: String, _ action: Selector) -> NSButton {
+            let label = L10n.t(name)
+            let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, target: self, action: action)
             b.isBordered = false
             b.contentTintColor = .secondaryLabelColor
-            b.toolTip = tip
-            // Its name; the shortcut is in its help.
-            b.setAccessibleLabel(tip.components(separatedBy: " (").first)
+            b.toolTip = label + " " + more
+            // Its name; the shortcut is in its tip.
+            b.setAccessibleLabel(label)
             return b
         }
         let stack = NSStackView(views: [
             icon, field, count,
-            button("chevron.up", "Previous Match (older) ⌘G", #selector(older)),
-            button("chevron.down", "Next Match (newer) ⇧⌘G", #selector(newer)),
-            button("xmark", "Close (Esc)", #selector(close)),
+            button("chevron.up", "Previous Match", "(older) ⌘G", #selector(older)),
+            button("chevron.down", "Next Match", "(newer) ⇧⌘G", #selector(newer)),
+            button("xmark", "Close", "(Esc)", #selector(close)),
         ])
         stack.orientation = .horizontal
         stack.spacing = 10
@@ -299,29 +300,39 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
 
     /// Documents report only whether the text was found.
     func showDocument(found: Bool, empty: Bool) {
-        count.stringValue = empty ? "" : found ? "" : "No matches"
-        if announcesNext, !found { tellCount() }
+        count.stringValue = empty ? "" : found ? "" : L10n.t("No matches")
+        // (Found: the page shows it, there's no count to say.)
+        if announcesNext {
+            if found { announcesNext = false } else { tellCount() }
+        }
     }
 
     func show(result: SearchResult) {
         if !result.active || field.stringValue.isEmpty {
             count.stringValue = ""
         } else if result.total == 0 {
-            count.stringValue = "No matches"
+            count.stringValue = L10n.t("No matches")
         } else {
-            count.stringValue = result.selected.map { "\($0) of \(result.total)" } ?? "\(result.total)"
+            count.stringValue = result.selected.map { String(format: L10n.t("%d of %d"), $0, result.total) } ?? "\(result.total)"
         }
         if announcesNext { tellCount() }
     }
 
     /// Return or an arrow went to another match: VoiceOver says which
     /// ("3 of 12") once its count comes. (Not as matches come in with new
-    /// output, nor as you type: it says the letters then.)
+    /// output, nor as you type: it says the letters then.) Typing, or the
+    /// count coming, ends it; else it lapses after a while (a search that
+    /// never answers).
     private var announcesNext = false
+    private var navigation = 0
 
     private func navigated() {
         announcesNext = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.announcesNext = false }
+        navigation += 1
+        let mine = navigation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            if self?.navigation == mine { self?.announcesNext = false }
+        }
     }
 
     private func tellCount() {
@@ -329,7 +340,10 @@ final class FindBar: NSVisualEffectView, NSTextFieldDelegate {
         AccessibilityNews.announce(count.stringValue, from: count)
     }
 
-    func controlTextDidChange(_ obj: Notification) { onChange?(field.stringValue) }
+    func controlTextDidChange(_ obj: Notification) {
+        announcesNext = false
+        onChange?(field.stringValue)
+    }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {

@@ -761,5 +761,14 @@
   "Don't Group": "不分组",
   "By Project": "按项目",
   "By Host": "按主机",
-  "Grouped, tabs sit under their git repository or folder, or under the machine they run on, with the sessions there that no window shows.": "分组后，标签归到所在的 git 仓库或文件夹下，或归到运行它的机器下；那里没有窗口显示的会话也一并列出。"
+  "Grouped, tabs sit under their git repository or folder, or under the machine they run on, with the sessions there that no window shows.": "分组后，标签归到所在的 git 仓库或文件夹下，或归到运行它的机器下；那里没有窗口显示的会话也一并列出。",
+  "Activity": "动态",
+  "%d of %d": "第 %d 个，共 %d 个",
+  "Previous Match": "上一个匹配",
+  "Next Match": "下一个匹配",
+  "Can't connect to %@": "无法连接到 %@",
+  "Reconnecting to %@…": "正在重新连接到 %@…",
+  "Connecting to %@…": "正在连接到 %@…",
+  "Lost the connection to the session server — reconnecting…": "与会话服务器的连接断开了，正在重新连接…",
+  "What you type isn't sent until it's back.": "连接恢复之前，你输入的内容不会发送。"
 }
