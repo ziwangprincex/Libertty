@@ -1594,7 +1594,16 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         }
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) { endEditing(keep: true, refocus: false) }
+    func controlTextDidEndEditing(_ obj: Notification) {
+        // (Ended by Esc without asking us first: going back.)
+        endEditing(keep: !Self.endedByCancel(obj), refocus: false)
+    }
+
+    /// The field's editing ended with Esc (its text movement, as AppKit
+    /// reports it when it ends the editing itself).
+    static func endedByCancel(_ note: Notification) -> Bool {
+        (note.userInfo?["NSTextMovement"] as? Int) == NSTextMovement.cancel.rawValue
+    }
 
     // A cell taken for another row brings no field along, and a hidden one
     // (the sidebar folded away) takes no typing: the name typed so far is kept.
@@ -2409,6 +2418,8 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     func controlTextDidEndEditing(_ note: Notification) {
         guard let field = note.object as? NSTextField, field === renaming?.field else { return }
+        // Esc that AppKit ended the editing with itself, not through doCommandBy.
+        if TabCell.endedByCancel(note) { renaming?.cancelled = true }
         endRename(field)
     }
 

@@ -546,7 +546,8 @@ mkdir -p $PRIVATE/quick-look/sub
 print hi > $PRIVATE/quick-look/notes.txt
 print png > $PRIVATE/quick-look/shot.png
 print 'see shot.png, notes.txt:3 and https://example.com/a\nagain shot.png, ./sub and missing.txt' > $PRIVATE/quick-look/list
-expect quick-look 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+# (zsh with nothing of its own: a login shell's banner, as bash's on a CI runner, names a page and a file too.)
+expect quick-look 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config LIBERTTY_SHELL=/bin/zsh ZDOTDIR=$PRIVATE/empty-zdotdir \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/quick-look|g" $ROOT/tests/fixtures/quick-look.txt)" $OUT
 # Sidebar rows' second line and the header's branch.
 SR=$PRIVATE/sidebar-rows
@@ -700,7 +701,8 @@ expect copy-mode 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-confi
 expect hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/hints.txt)" $OUT
 # cursor-click-to-move: a click in the command being typed moves the shell's cursor there (wide characters too).
-expect click-to-move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+# (zsh: macOS's bash 3.2 echoes 中文 as octal escapes unless its inputrc says otherwise.)
+expect click-to-move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config LIBERTTY_SHELL=/bin/zsh ZDOTDIR=$PRIVATE/empty-zdotdir \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/click-to-move.txt)" $OUT
 # The tags over a pane (a link's address, a headerless split's name) read on their ground, light or dark.
 mkdir -p $PRIVATE/tags-config/libertty

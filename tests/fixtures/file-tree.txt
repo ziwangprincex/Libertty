@@ -4,6 +4,8 @@
 # own folder), and files dropped in from "the Finder" (@FINDER@): copied,
 # numbered past a name taken, moved with ⌘. tests/run.sh makes @DIR@
 # with a.txt and src/, and @FINDER@ with pic.png.
+# (Made again here, so a second attempt — CI retries a failed probe — starts as the first did.)
+shell:rm -rf @DIR@ @FINDER@ && mkdir -p @DIR@/src @FINDER@ && echo one > @DIR@/a.txt && echo png > @FINDER@/pic.png
 type:cd @DIR@
 key:enter
 wait:1.0
