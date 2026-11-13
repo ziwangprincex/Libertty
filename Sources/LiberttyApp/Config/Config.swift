@@ -162,6 +162,9 @@ struct Config: Equatable {
     var jupyter = ""
     /// `libertty +browser` may read and act in pages (text, eval, click…).
     var browserAutomation = false
+    /// `libertty` commands may drive Libertty (split, focus, type into
+    /// sessions…); false leaves them reading only (RemoteControlPolicy).
+    var remoteControl = true
     /// Ghostty's `window-vsync`. Off: frames go to the screen as soon as
     /// they're drawn (full screen always syncs). On: never tears, but types
     /// up to two frames later.
@@ -404,6 +407,7 @@ struct Config: Equatable {
         ("browser-search", "The browser's search, %s standing for the words typed (default DuckDuckGo)."),
         ("jupyter", "The jupyter command notebooks run their cells with (default: the one on your login shell's PATH)."),
         ("browser-automation", "Let libertty +browser read and act in the browser's pages (text, html, eval, click, type, screenshot, url) — for scripts and agents. Off by default: a page may be one you're signed in to."),
+        ("remote-control", "Let libertty commands (scripts, coding agents) drive Libertty: +split, +focus, +move-pane, +action, +new-window, +send, +send-key, +prompt, +new-session, +kill-session, +resume, +daemon stop and restart. false: they may still read (+list-sessions, +capture, +wait, +events) and name their own session. It keeps well-behaved tools out; it's no sandbox. Set it in Settings or here: +set doesn't change it."),
         ("markdown-rendered", "Show Markdown files rendered; false shows their source (View ▸ Show Markdown Source toggles one)."),
         ("session-persistence", "Keep shells and programs running in liberttyd when Libertty quits (or crashes, or updates); the next launch shows them again. Closing a pane or window still ends it. Takes effect at the next launch."),
         ("desktop-notifications", "Show notifications programs ask for (OSC 9, OSC 777), and when a program reports it needs you (OSC 7501: approval, a question, sign-in) or finished, while you're elsewhere."),
@@ -527,6 +531,7 @@ struct Config: Equatable {
         case "browser-search": return [browserSearch]
         case "jupyter": return [jupyter]
         case "browser-automation": return [String(browserAutomation)]
+        case "remote-control": return [String(remoteControl)]
         case "window-vsync": return [String(windowVsync)]
         case "session-persistence": return [String(sessionPersistence)]
         case "window-save-state": return [windowSaveState.rawValue]
@@ -1083,6 +1088,9 @@ struct Config: Equatable {
         case "browser-automation":
             if reset { browserAutomation = defaults.browserAutomation; return nil }
             guard let x = bool() else { return "true or false" }; browserAutomation = x
+        case "remote-control":
+            if reset { remoteControl = defaults.remoteControl; return nil }
+            guard let x = bool() else { return "true or false" }; remoteControl = x
         default:
             return "unknown key (libertty +show-config --default lists them)"
         }

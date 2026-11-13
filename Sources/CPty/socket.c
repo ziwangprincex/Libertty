@@ -7,9 +7,11 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -92,6 +94,41 @@ int libertty_sock_accept(int listener) {
         return -1;
     }
     return fd;
+}
+
+pid_t libertty_sock_peer_pid(int fd) {
+#ifdef __linux__
+    struct ucred cred;
+    socklen_t length = sizeof(cred);
+    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &length) == 0 ? cred.pid : 0;
+#else
+    pid_t pid = 0;
+    socklen_t length = sizeof(pid);
+    return getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0 ? pid : 0;
+#endif
+}
+
+int libertty_fd_path(int fd, char *out, int cap) {
+    if (cap <= 0) return -1;
+    out[0] = 0;
+#ifdef __linux__
+    char link[64];
+    snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
+    ssize_t n = readlink(link, out, (size_t)cap - 1);
+    if (n <= 0) return -1;
+    out[n] = 0;
+#else
+    char path[PATH_MAX];
+    if (fcntl(fd, F_GETPATH, path) != 0) return -1;
+    snprintf(out, (size_t)cap, "%s", path);
+#endif
+    // Only a file it appends to; not a terminal, a pipe or /dev/null.
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+        out[0] = 0;
+        return -1;
+    }
+    return 0;
 }
 
 int libertty_sock_send_fd(int sock, int fd) {

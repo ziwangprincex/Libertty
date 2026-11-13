@@ -99,6 +99,13 @@ if [[ -z "${_LIBERTTY_BASH_INTEGRATED-}" ]]; then
         ssh() { TERM=$LIBERTTY_SSH_TERM command ssh "$@"; }
     fi
 
+    # `libertty` completes (its +commands, session IDs, actions, settings),
+    # unless the user's own files complete it already.
+    if builtin command -v libertty >/dev/null 2>&1 && ! builtin complete -p libertty >/dev/null 2>&1 \
+        && [[ -r "${BASH_SOURCE[0]%/*}/libertty-completion.bash" ]]; then
+        builtin source "${BASH_SOURCE[0]%/*}/libertty-completion.bash"
+    fi
+
     if [[ "$(builtin declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
         PROMPT_COMMAND=(_libertty_precmd "${PROMPT_COMMAND[@]}" _libertty_prompt_end)   # bash 5.1+ array form
     else

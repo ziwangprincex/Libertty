@@ -338,6 +338,9 @@ enum SettingsRegistry {
             item(.integrations, "Worktrees", "Folder", "worktree-dir", .text(placeholder: ".libertty/worktrees"),
                  help: "Relative to the repository, or a path. Inside it, git is told to ignore them (.git/info/exclude).",
                  keywords: "git worktree folder"),
+            bool(.integrations, "Command Line", "Let commands drive Libertty", "remote-control",
+                 help: "libertty +split, +send, +focus and the like, from scripts and agents. Off, they can still read: +capture, +list-sessions, +events.",
+                 keywords: "cli remote control automation agents scripts security"),
         ]
 
         // Notifications

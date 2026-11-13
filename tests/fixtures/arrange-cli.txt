@@ -33,7 +33,7 @@ expect-layout:v50(a,b)
 type:libertty +swap-pane nosuchid; r=$?; sleep 0.8; echo "NONE=$r"
 key:enter
 wait:1.0
-expect:NONE=1
+expect:NONE=3
 expect:no window shows session nosuchid
 type:libertty +swap-pane "$A" "$A"; r=$?; sleep 0.8; echo "SAME=$r"
 key:enter

@@ -81,6 +81,11 @@ int libertty_proc_snapshot(struct libertty_proc *out, int cap);
 int libertty_sock_listen(const char *path);
 int libertty_sock_connect(const char *path);
 int libertty_sock_accept(int listener);
+/// The process at the other end of an accepted connection, or 0 if unknown.
+pid_t libertty_sock_peer_pid(int fd);
+/// The regular file `fd` is open on (liberttyd's log, its stderr), into
+/// `out`; -1 and an empty string for anything else.
+int libertty_fd_path(int fd, char *out, int cap);
 
 /// Pass a descriptor over the socket (one byte of data rides along).
 int libertty_sock_send_fd(int sock, int fd);

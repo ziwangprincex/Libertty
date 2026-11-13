@@ -496,6 +496,14 @@ public enum DaemonClient {
         waitFor({ $0.version == Wire.version }, seconds: seconds, child: pid) == true
     }
 
+    /// Have the liberttyd at `executable` take every session over from the
+    /// one serving the socket, whatever its build (`+daemon restart`, for a
+    /// liberttyd too old to restart itself). The new one's pid once it answers.
+    public static func replace(executable: String, logPath: String?) -> pid_t? {
+        guard hello() != nil, let pid = spawn(executable, ["--takeover"], logPath: logPath, responsible: true) else { return nil }
+        return waitFor({ $0.pid == pid }, seconds: 15, child: pid) == true ? pid : nil
+    }
+
     /// True once it answers as wanted, false if it exited first, nil when the
     /// time ran out with it still alive (still starting).
     private static func waitFor(_ condition: (Welcome) -> Bool, seconds: Double, child: pid_t) -> Bool? {
@@ -518,6 +526,8 @@ public enum DaemonClient {
         var argv = (["liberttyd"] + arguments).map { strdup($0) } + [nil]
         var env = ProcessInfo.processInfo.environment
         env["LIBERTTY_DAEMON_SOCKET"] = Wire.socketPath
+        // So that a `+daemon restart` starts its successor the same way.
+        env["LIBERTTY_DAEMON_RESPONSIBLE"] = responsible ? "1" : "0"
         var envp = env.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
             argv.forEach { free($0) }

@@ -86,7 +86,7 @@ public final class DaemonServer {
         #endif
     }
 
-    private let path: String
+    let path: String
     private let build: String
     private let lock = NSLock()
     private var sessions: [String: DaemonSession] = [:]
@@ -114,7 +114,13 @@ public final class DaemonServer {
     /// What this liberttyd does beyond protocol 1's beginnings, in `welcome`:
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
-    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions"]
+    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions",
+                           "admin"]
+
+    /// When this liberttyd started (a takeover's newer one starts the clock again).
+    private let started = Date().timeIntervalSince1970
+    /// Who is connected, by connection (under `lock`), for `clients`.
+    private var clientRecords: [ObjectIdentifier: ConnectedClient] = [:]
 
     private init(path: String) {
         self.path = path
@@ -163,8 +169,13 @@ public final class DaemonServer {
                 exit(1)
             }
             let connection = Connection(fd: fd)
+            let peer = libertty_sock_peer_pid(fd)
+            var name = [CChar](repeating: 0, count: 256)
+            if peer > 0 { libertty_proc_name(peer, &name, Int32(name.count)) }
+            let record = ConnectedClient(pid: peer, process: String(cString: name), since: Date().timeIntervalSince1970)
             lock.lock()
             connections += 1
+            clientRecords[ObjectIdentifier(connection)] = record
             exitTimer?.cancel()
             exitTimer = nil
             lock.unlock()
@@ -172,6 +183,7 @@ public final class DaemonServer {
                 handle(connection)
                 lock.lock()
                 connections -= 1
+                clientRecords[ObjectIdentifier(connection)] = nil
                 lock.unlock()
                 scheduleExitIfIdle()
             }
@@ -249,10 +261,22 @@ public final class DaemonServer {
             if let listener { DaemonEvents.shared.stop(listener) }
         }
         func fail(_ message: String) { connection.send(.result, json: ["ok": false, "error": message]) }
+        /// What `clients` says of this connection.
+        func note(_ change: (inout ConnectedClient) -> Void) {
+            lock.withLock {
+                let key = ObjectIdentifier(connection)
+                guard var record = clientRecords[key] else { return }
+                change(&record)
+                clientRecords[key] = record
+            }
+        }
 
         while let frame = connection.receive() {
             switch frame.kind {
             case .hello:
+                if let client = frame.json["client"] as? String, !client.isEmpty {
+                    note { $0.client = SessionInfo.cleanLabel(client) }
+                }
                 connection.send(.welcome, json: ["version": Wire.version, "build": build, "pid": Int(getpid()),
                                                  "features": Self.features])
             case .create:
@@ -263,6 +287,7 @@ public final class DaemonServer {
                     register(s)
                     s.attach(connection, sendSnapshot: false, catchUp: request.catchUp ?? false)
                     bound = s
+                    note { $0.session = s.id }
                 } catch {
                     fail("can't start \(request.executable): \(error)")
                 }
@@ -271,6 +296,7 @@ public final class DaemonServer {
                 guard let s = session(id) else { fail("no session \(id)"); continue }
                 s.attach(connection, sendSnapshot: true, catchUp: frame.json["catchUp"] as? Bool ?? false)
                 bound = s
+                note { $0.session = s.id }
             case .input:
                 bound?.write(frame.payload, from: connection)
             case .reply:
@@ -355,12 +381,14 @@ public final class DaemonServer {
                 }
                 s.addWaiter(connection, until: until)
                 waitedOn.append(s)
+                note { $0.waiting.append(s.id) }
             case .events:
                 guard listener == nil else { fail("already listening"); continue }
                 let kinds = (frame.json["kinds"] as? [String]).map(Set.init)
                 // The answer first: every event after it is an `event` frame.
                 connection.send(.result, json: ["ok": true])
                 listener = DaemonEvents.shared.listen(connection, kinds: kinds)
+                note { $0.listening = true }
             case .configure:
                 if let lines = frame.json["scrollback"] as? Int { bound?.setScrollback(lines) }
             case .storeLayout:
@@ -406,12 +434,50 @@ public final class DaemonServer {
             case .shutdown:
                 lock.lock()
                 let all = Array(sessions.values)
+                // `+daemon stop --if-idle`: decided here, so no session can start between a look and the stop.
+                if frame.json["ifIdle"] as? Bool == true, !all.isEmpty {
+                    lock.unlock()
+                    connection.send(.result, json: ["ok": false, "error": "\(all.count) sessions", "sessions": all.count])
+                    continue
+                }
                 lock.unlock()
                 all.forEach { $0.terminate() }
                 connection.send(.result, json: ["ok": true])
                 Self.log("shutdown requested; ended \(all.count) sessions")
                 removeOwnSocket()
                 exit(0)
+            case .info:
+                lock.lock()
+                let all = Array(sessions.values)
+                let others = clientRecords.count - 1
+                lock.unlock()
+                var answer: [String: Any] = [
+                    "ok": true, "version": Wire.version, "build": build, "pid": Int(getpid()), "started": started,
+                    "socket": path, "sessions": all.count, "shown": all.filter { $0.info().clients > 0 }.count,
+                    "clients": max(0, others), "features": Self.features,
+                ]
+                if let log = Self.logPath() { answer["log"] = log }
+                connection.send(.result, json: answer)
+            case .clients:
+                lock.lock()
+                let others = clientRecords.filter { $0.key != ObjectIdentifier(connection) }.values
+                    .sorted { $0.since < $1.since }
+                lock.unlock()
+                let data = (try? JSONEncoder().encode(Clients(ok: true, clients: Array(others)))) ?? Data()
+                connection.send(.result, data)
+            case .log:
+                guard let path = Self.logPath() else { fail("liberttyd's output goes to no file"); continue }
+                let json = frame.json
+                guard let (text, end) = Self.readLog(path, from: json["from"] as? Int, lines: json["lines"] as? Int) else {
+                    fail("can't read \(path)")
+                    continue
+                }
+                connection.send(.result, json: ["ok": true, "path": path, "text": text, "end": end])
+            case .restart:
+                // A newer liberttyd would take over the same way: the sessions go
+                // to the new process, their programs never notice.
+                guard let pid = restartFromOwnFile() else { fail("couldn't start a new liberttyd"); continue }
+                connection.send(.result, json: ["ok": true, "pid": Int(pid)])
             default:
                 fail("unexpected \(frame.kind)")
             }
@@ -553,7 +619,7 @@ final class DaemonSession {
         if request.inheritEnvironment == true {
             var base = ProcessInfo.processInfo.environment
             // Ours, not the session's.
-            for key in ["PWD", "OLDPWD", "SHLVL", "_"] { base[key] = nil }
+            for key in ["PWD", "OLDPWD", "SHLVL", "_", "LIBERTTY_DAEMON_RESPONSIBLE"] { base[key] = nil }
             environment = base.merging(request.environment) { $1 }
         }
         let directory = FileManager.default.fileExists(atPath: request.workingDirectory) ? request.workingDirectory

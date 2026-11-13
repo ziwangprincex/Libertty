@@ -3,7 +3,7 @@
 type:libertty +split nosuchid -e true; echo "EXIT=$?"
 key:enter
 wait:2.0
-expect:EXIT=1
+expect:EXIT=3
 expect:no window shows session nosuchid
 # A program that's done at once still made its pane: success, with its ID.
 type:Q=$(libertty +split --no-focus -e true); echo "QUICK=$? ${#Q}"
