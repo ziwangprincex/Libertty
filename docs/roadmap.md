@@ -233,7 +233,7 @@ Kero（github.com/egoist/kero，MIT）是给编程 agent 用的终端。下面�
 |---|---|---|
 | 跳到需要你处理的 pane | ⌘J | ✅ `goto_attention`（⌘J）：所有窗口里先等你的，再失败的、完成的、有未读动静的；连按往下走；`tests/fixtures/attention.txt` |
 | 从屏幕判断 agent 状态 | herdr 规则 | ✅ `AgentScreen`（规则引擎移植，13 个 agent）、`agent-screen-status`；Codex 一轮开始时终于显示“工作中”；hook/OSC 7501 报告优先；`AgentScreenTests`（Kero 的 Claude 屏幕样本）、`tests/fixtures/agent-screen.txt`（`fake-codex.c` 当替身）。⚠️ 真实 Codex/Gemini/OpenCode 没在本机跑过 |
-| 粘贴截图/Finder 里复制的文件 | ✅ | ✅ `PasteContent`：图片存成文件粘贴路径（7 天后清理），文件粘贴带引号的路径；远程 pane 不粘图片；`PasteTests` |
+| 粘贴截图/Finder 里复制的文件 | ✅ | ✅ `PasteContent`：图片存成文件粘贴路径（7 天后清理），文件粘贴带引号的路径；远程 pane 的图片和文件先传到主机再粘贴主机上的路径（见第 15 节）；`PasteTests` |
 | 防止睡眠 | Keep computer awake | ✅ `keep-awake = never/always/agents`（IOPMAssertion）；设置、命令面板、菜单栏图标；`KeepAwakeTests` 检查真实的断言 |
 | 恢复对话 | Resume Conversation | ✅ hook 记录 session id（Claude Code、Codex、Pi、OMP、OpenCode），`conversations.json` 保留 200 条；liberttyd 丢了会话（重启电脑）时 pane 自动续上（`resume-agents`）；⌘P 最近对话、⇧⌘O 全部；`+history`、`+resume`；`ConversationTests`、`tests/fixtures/resume.txt` |
 | 只看上一轮的改动 | Last Turn、Revert、Keep | ✅ agent 开始一轮时用临时 index 给工作区拍快照（不碰用户的 index）；Git 块 Changes 分 Uncommitted / Last Turn / Branch；逐块 Revert（agent 工作时拒绝、文件变了就失败）和 Keep；`+diff --turn/--branch`；`tests/fixtures/last-turn.txt` |
@@ -248,3 +248,36 @@ Kero（github.com/egoist/kero，MIT）是给编程 agent 用的终端。下面�
 | 列宽 | `cell-width` | ✅ `adjust-cell-width`（Ghostty 同名）；`tests/text-render-test.sh` 量像素 |
 | 菜单栏图标 | tray | ✅ `menu-bar-icon`（默认关）：有等你处理时实心并显示数量；菜单跳转、快捷终端、防睡眠、设置 |
 | 界面中文 | 日文、简体中文 | ✅ `language = auto/en/zh-Hans`（auto 跟随 macOS）：菜单、命令面板（英文名也能搜到）、设置、侧栏；`Resources/locales/zh-Hans.json`；测试探针固定英文；`L10nTests`、`tests/fixtures/chinese.txt`。命令行输出、错误提示、配置文档仍是英文 |
+
+## 15. 对齐 Rex Beta 1957 / Kero 2.1.35 / Otty 1.6.5 / Tern 0.8.3（2026-11-13）
+
+这一轮的差距是对照这四个的新版本查出来的，每一条都在对方的二进制或文档里核实过。iPhone 客户端、App Intents（Shortcuts）和公证不做。
+
+| 功能 | 对方 | Libertty |
+|---|---|---|
+| 更新后系统权限不丢 | Rex、Otty、Ghostty 都是 Developer ID | ✅ 自签名证书签名（`scripts/codesign-identity.sh`，单独的 keychain 放在 `~/.config/libertty-release/`），designated requirement 变成 identifier + 证书 leaf，每次构建都一样；`release.sh` 没有证书就拒绝打包。⚠️ 还没在真实的一次更新前后实测授权是否保留；这次更新本身会让旧授权失效一次 |
+| 输密码时自动 Secure Input | Otty Auto Secure Input | ✅ `secure-input-on-password`；`tests/fixtures/password.txt` |
+| 远程 pane 粘贴截图、拖文件 | Rex 1957、Kero 2.1.35 | ✅ 经主机的 liberttyd 上传（新的 upload 请求），pane 里输入主机上的路径；`UploadTests`，remote probe 实际传文件并在主机 shell 里 cat |
+| agent 屏幕识别在 liberttyd 里 | Kero（kerod） | ✅ `AgentScreen` 移到 LiberttyCore，liberttyd 每个会话一个 `AgentWatch`；没有窗口时 `+events --for waiting` 也能听到；Linux 上用 Swift Regex（两种引擎在样本上一致的测试）。⚠️ Linux 版 liberttyd 本机构建不了，要 CI 重建 `Resources/remote` |
+| 用户自己的 agent 规则 | Kero `agents.toml` | ✅ `~/.config/libertty/agents/NAME.toml`/`.json`，自写的 TOML 解析；`+agents --check`；`AgentScreenTests` |
+| Prompt 队列、Composer、分叉对话 | Otty | ✅ ⌘⇧M / ⌘⇧E / `fork_conversation`；`PromptQueueTests`，`prompt-queue.txt`（替身 agent）、`composer.txt`、`fork-conversation.txt` |
+| 被别的客户端改了尺寸 | Rex "Sized by another client" | ✅ ptySize 帧、`sized-elsewhere.txt` |
+| 普通 ssh 也装 terminfo | Rex `rex terminfo setup` | ✅ `+terminfo`、`ssh-terminfo`；`tests/terminfo-test.sh` |
+| ⌘Y Quick Look | Rex | ✅ `QuickLookTests`、`quick-look.txt` |
+| AppleScript | Rex sdef | ✅ `Resources/Libertty.sdef`；`applescript.txt`（从 app bundle 跑）、`ScriptingTests`。App Intents 不做 |
+| 给 agent 的浏览器自动化 | Kero | ✅ `+browser`：按 ID 指定、带 ref 的快照、wait、按键、cookies；`browser-automation.txt` |
+| 命令行补全、`+daemon`、`+clients`、退出码、`remote-control` | Rex、Kero | ✅ `tests/cli-admin-test.sh`、`CLITests` |
+| 远程主机列表、主机密钥变了时的引导 | Rex | ✅ 设置 ▸ Remote Hosts、`SSHRecovery`、`+hosts`；`RemoteHostsTests`、`tests/hosts-test.sh` |
+| 文件树新建/重命名/删除 | Kero | ✅ 每一步都能撤销；`FileOperationsTests`、`file-tree.txt` |
+| ⌥ 点击提示符移动光标 | Kero、Ghostty | ✅ `cursor-click-to-move`；`click-to-move.txt` |
+| Markdown 里的 Mermaid | Otty、Tern | ✅ 单独的沙盒 WKWebView 画图，只拿回清洗过的 SVG；`MermaidTests`、`mermaid.txt`。ELK 布局（elkjs，EPL-2.0）没带 |
+| 浮动 pane | Rex New Floating Pane | ✅ ⌥⇧⌘F / ⌥⌘F；`floating-pane.txt` |
+| which-key 提示 | Rex | ✅ `key-sequence-hints`；`key-hints.txt` |
+| 命令行补全和灰色建议 | Otty、Tern | ✅ 历史（按文件夹、frecency）、命令规格、PATH、分支、脚本、make 目标、ssh 主机、路径；`AutocompleteTests`、`AutocompleteRenderTests`、`autocomplete.txt` |
+| 程序画原生界面、command lenses | Tern Surface Protocol | ✅ OSC 7502（`docs/surface-protocol.md`）、`+surface`；`SurfaceProtocolTests`、`CommandLensTests`，`surfaces*.txt`、`lenses.txt` |
+| Vi 复制模式、链接提示模式 | Otty | ✅ ⌘⇧C / ⌘⇧H；`CopyModeTests`、`HintTests`，`copy-mode.txt`、`hints.txt` |
+| beta 更新通道 | Rex preview | ✅ `auto-update-channel`；`VersionTests`（semver 预发布排序）。⚠️ `beta-channel` release 要第一次发版时才会建出来 |
+| 内存 | Otty Memory Report | ✅ 同字体的 pane 共用一个从 1024² 起步的字形图集，shader 每块 GPU 只编译一次：4 个 pane 从 250 MB 降到 59 MB（footprint 实测） |
+| 冷启动 | Tern 公开写 151 ms | ✅ `--startup-bench`（`bench/startup.sh`，`--sample` 看主线程每段花在哪）：菜单图标改成打开时才加载、Web Access 面板用到才建、字体在后台线程预热；release 构建窗口不上屏时，到画出提示符的第一帧从约 300 ms 降到约 165 ms。⬜ 上屏的数字、和其他终端对比要在空闲的屏幕上跑（会抢焦点，留给你） |
+| 空闲开销 / 共享 poller | Tern | ✅ 评估后不做共享 poller（见第 6 节）；改成压缩完成后定时器停下：100 个空闲会话的 liberttyd 每 10 秒唤醒从约 92 次降到约 2 次；`IdleCompressorTests` |
+

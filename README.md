@@ -27,22 +27,36 @@ works without one.
 
 Programs in Libertty's sessions ask for privacy permissions (camera, files, Full Disk
 Access) as "Libertty Sessions". For Full Disk Access, add
-`/Applications/Libertty.app/Contents/MacOS/liberttyd` in System Settings.
+`/Applications/Libertty.app/Contents/MacOS/liberttyd` in System Settings. Libertty is
+signed with a certificate of its own, so what you grant stays granted across updates.
 
 ## Features
 
 **Terminal.** Metal rendering; box drawing, Powerline and braille drawn from the grid;
 kitty graphics; ligatures. `TERM=xterm-ghostty` with its terminfo (`ssh` sends
-`xterm-256color`). Shell integration for zsh, bash and fish. OSC 8 links, OSC 9/777
-notifications, OSC 9;4 progress, OSC 52 clipboard (reading off by default), OSC 7501
-program status. ⌘-click opens URLs and `file:line:col`. Fallback fonts (`font-family`
-repeats, as in Ghostty), `font-thicken`, and an optional cursor trail (`cursor-trail`).
+`xterm-256color`, or `xterm-ghostty` to hosts set up with `libertty +terminfo setup`).
+Shell integration for zsh, bash and fish. OSC 8 links, OSC 9/777 notifications, OSC 9;4
+progress, OSC 52 clipboard (reading off by default), OSC 7501 program status. ⌘-click opens
+URLs and `file:line:col`; ⌘Y shows the files and pages on screen in Quick Look. Fallback
+fonts (`font-family` repeats, as in Ghostty), `font-thicken`, and an optional cursor trail
+(`cursor-trail`). Secure Keyboard Entry turns itself on while a password is read.
+
+**At the prompt.** Ghost text from your history (this folder's first; → takes it) and a
+completion list (⌃⇧Space) of history, commands' subcommands and flags, branches, scripts,
+hosts and paths, read off the screen so it works on hosts too. A click on the command line
+moves the cursor there. Copy mode (⌘⇧C) moves through the scrollback with vi keys; hint
+mode (⌘⇧H) labels every link, path and hash on screen to open or copy. Programs can draw
+native cards and panels in their output ([OSC 7502](docs/surface-protocol.md),
+`libertty +surface`), and after `git status`, a build's errors or a search, a chip opens
+them as a list.
 
 **Window.** Laid out after Rex: tabs in a sidebar on the left or right, or along the top
 (`tab-bar`); panes as cards, each with a header (split, float, zoom, close);
 `pane-style = compact` for edge-to-edge panes; `interface-style = glass` for a translucent
 window. Splits, workspaces, parked and floating panes, moving panes and tabs between
 windows, command palette (⌘⇧P), Quick Terminal, undo for closing a pane, tab or window.
+Floating panes (⌥⇧⌘F) are shells of their own over the split, minimized with ⌥⌘F. Key
+sequences (`keybind = ctrl+b>v=new_split:right`) show which keys can follow.
 On a trackpad, spread two fingers to zoom a pane and pinch to restore it; Option-swipe
 sideways shows or hides the sidebar. `active-border` draws a border round the focused pane.
 
@@ -58,8 +72,10 @@ your programs reach (Full Disk Access, screen recording, camera, microphone).
 
 **Remote hosts.** File ▸ Connect to Host… (`libertty +connect HOST`) runs a window's panes
 on another machine over your `ssh`. The host gets its own liberttyd in `~/.libertty` (no
-root), so programs survive disconnects. Hosts: macOS (Apple silicon), Linux (x86_64,
-aarch64).
+root), so programs survive disconnects. Screenshots and files pasted or dropped on a host's
+pane are sent there first, so a program there gets a path it can open. Settings ▸ Remote
+Hosts lists your hosts and how each is, and helps when ssh can't connect (a changed host
+key, keys not in ssh-agent). Hosts: macOS (Apple silicon), Linux (x86_64, aarch64).
 
 **Web access.** `web-access = local | network | tailscale` shows the Mac's panes in a
 browser, behind a secret link. `web-access-input = false` makes it read-only.
@@ -68,10 +84,10 @@ browser, behind a secret link. `web-access-input = false` makes it read-only.
 
 | | |
 |---|---|
-| Documents | Markdown, highlighted source, images, PDF, web pages, `git diff` |
+| Documents | Markdown (with Mermaid diagrams), highlighted source, images, PDF, web pages, `git diff` |
 | Editor | CodeMirror 6, Vim keys, usable as `$EDITOR` (`libertty +open --wait`) |
 | Git | Stage by file or hunk, commit, history graph, branches, push and pull, stashes, conflicts |
-| Browser | Search, downloads; scripting only with `browser-automation = true` |
+| Browser | Search, downloads; `libertty +browser` for agents only with `browser-automation = true` |
 | Tasks | Processes by terminal, CPU, memory, ports |
 | Canvas, Board | Excalidraw drawings; a Kanban board stored as Markdown |
 | SQLite, Notebook | Browse and query a database; run `.ipynb` cells in your own Jupyter |
@@ -81,7 +97,11 @@ browser, behind a secret link. `web-access-input = false` makes it read-only.
 **Coding agents.** `libertty +agent-setup` adds hooks for Claude Code and Codex (and an
 extension for Pi, OMP and OpenCode), so their tabs show working, waiting or done, sessions are
 named after their task, and their conversations resume after a restart (File ▸ Resume
-Conversation…, ⇧⌘O). Other agents' states are read from their screens. ⌘J jumps to the pane
+Conversation…, ⇧⌘O). Other agents' states are read from their screens, by liberttyd itself,
+so `libertty +events --for waiting` hears them with no window open; your own agents' rules go
+in `~/.config/libertty/agents/`. The composer (⌘⇧E) writes a prompt of several lines; the
+prompt queue (⌘⇧M) sends prompts one at a time as the agent comes to rest; Fork Conversation
+carries a Claude Code or Codex conversation on in a new pane. ⌘J jumps to the pane
 that needs you; the Git block's Last Turn shows what an agent changed in its latest turn, to
 revert or keep hunk by hunk; File ▸ New Tab in Worktree… (⌥⌘T) gives an agent a branch and a
 folder of its own. Sidebar rows and pane headers show each pane's branch and changes. A
@@ -94,6 +114,10 @@ and closing a pane where one is working or waiting says so by name.
 the look, permissions, agent setup, Ghostty's settings, a few keys. `libertty +migrate-prompt`
 (or Help ▸ Migrate Keybindings with an Agent…) gives an agent a prompt to bring over your
 Ghostty, iTerm2 or tmux keybindings.
+
+**Scripting.** The `libertty` command (completion for zsh, bash and fish), AppleScript
+(windows, tabs, sessions; new tab, split, input, run command, perform action), and
+`remote-control = false` to keep agents from driving the app.
 
 **Language.** English, or Simplified Chinese when macOS uses it (`language = auto | en | zh-Hans`).
 

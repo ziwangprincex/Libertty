@@ -22,20 +22,29 @@ Libertty 会自己更新。它的 shell 里可以直接用 `libertty` 命令，H
 相关功能需要 `git`（Command Line Tools 或 Homebrew 的都行），其他功能不需要。
 
 会话里的程序申请隐私权限（摄像头、文件、完全磁盘访问）时，显示的名字是"Libertty Sessions"。要给完全
-磁盘访问权限，在系统设置里添加 `/Applications/Libertty.app/Contents/MacOS/liberttyd`。
+磁盘访问权限，在系统设置里添加 `/Applications/Libertty.app/Contents/MacOS/liberttyd`。Libertty 用自己的证书签名，
+给过的权限更新后仍然有效。
 
 ## 功能
 
 **终端。** Metal 渲染；制表符、Powerline 和盲文字符按网格绘制；支持 kitty 图像协议和连字。
-`TERM=xterm-ghostty`，自带 terminfo（`ssh` 时改发 `xterm-256color`）。zsh、bash、fish 的 shell
-集成。支持 OSC 8 链接、OSC 9/777 通知、OSC 9;4 进度、OSC 52 剪贴板（默认禁止读取）、OSC 7501
-程序状态。⌘-点击打开网址和 `文件:行:列`。支持 fallback 字体（`font-family` 可写多行，同 Ghostty）、
-`font-thicken` 加粗，以及可选的光标拖尾（`cursor-trail`）。
+`TERM=xterm-ghostty`，自带 terminfo（`ssh` 时改发 `xterm-256color`；用 `libertty +terminfo setup`
+设置过的主机仍发 `xterm-ghostty`）。zsh、bash、fish 的 shell 集成。支持 OSC 8 链接、OSC 9/777 通知、
+OSC 9;4 进度、OSC 52 剪贴板（默认禁止读取）、OSC 7501 程序状态。⌘-点击打开网址和 `文件:行:列`；⌘Y 用
+Quick Look 预览屏幕上的文件和网页。支持 fallback 字体（`font-family` 可写多行，同 Ghostty）、
+`font-thicken` 加粗，以及可选的光标拖尾（`cursor-trail`）。程序在等密码时自动打开安全键盘输入。
+
+**命令行输入。** 提示符后面显示来自历史的灰色建议（当前文件夹的优先，→ 采纳）；⌃⇧Space 弹出补全列表：
+历史、各命令的子命令和参数、分支、脚本、主机、路径。内容是从屏幕上读的，所以在远程主机上也能用。点一下命令行，
+光标就移到那里。复制模式（⌘⇧C）用 vi 键位在回滚历史里移动；提示模式（⌘⇧H）给屏幕上每个链接、路径和
+commit hash 标上字母，按下就打开或复制。程序可以在输出里画原生的卡片和面板（[OSC 7502](docs/surface-protocol.md)、
+`libertty +surface`）；`git status`、编译报错或搜索结果之后，命令行旁会出现一个按钮，点开是列表。
 
 **窗口。** 布局参照 Rex：标签放在左侧栏、右侧栏或顶部（`tab-bar`）；每个 pane 是一张卡片，带标题栏
 （分屏、浮动、放大、关闭）；`pane-style = compact` 让 pane 铺满；`interface-style = glass` 让窗口
 半透明。另有分屏、工作区、收起和浮动 pane、在窗口之间移动 pane 和标签、命令面板（⌘⇧P）、Quick
-Terminal，关闭 pane、标签或窗口后可以撤销。触控板上双指张开放大 pane、捏合恢复；按住 Option 横向轻扫
+Terminal，关闭 pane、标签或窗口后可以撤销。浮动 pane（⌥⇧⌘F）是一个浮在分屏上面、有自己 shell 的
+pane，⌥⌘F 收起或放回。按键序列（`keybind = ctrl+b>v=new_split:right`）按下第一个键后会提示接下来能按什么。触控板上双指张开放大 pane、捏合恢复；按住 Option 横向轻扫
 显示或隐藏侧边栏。`active-border` 给当前 pane 画一圈边框。
 
 **程序状态。** 标签上显示程序是在运行、在等你、已完成还是失败了（来自 OSC 7501，或者检测到在等密码）。
@@ -47,7 +56,9 @@ Terminal，关闭 pane、标签或窗口后可以撤销。触控板上双指张�
 
 **远程主机。** 文件 ▸ Connect to Host…（`libertty +connect HOST`）让一个窗口的 pane 通过你的 `ssh`
 运行在另一台机器上。主机上会装一份自己的 liberttyd（在 `~/.libertty`，不需要 root），断线后程序继续
-运行。支持 macOS（Apple silicon）和 Linux（x86_64、aarch64）。
+运行。往远程 pane 里粘贴截图或拖文件时，会先传到主机上，主机上的程序拿到的是能打开的路径。设置 ▸ Remote
+Hosts 列出你的主机和各自的连接状态；ssh 连不上时（主机密钥变了、ssh-agent 里没有密钥）会告诉你怎么处理。
+支持 macOS（Apple silicon）和 Linux（x86_64、aarch64）。
 
 **网页访问。** `web-access = local | network | tailscale` 在浏览器里显示本机的 pane，需要带密钥的
 链接才能打开。`web-access-input = false` 时只读。
@@ -56,10 +67,10 @@ Terminal，关闭 pane、标签或窗口后可以撤销。触控板上双指张�
 
 | | |
 |---|---|
-| 文档 | Markdown、带高亮的源码、图片、PDF、网页、`git diff` |
+| 文档 | Markdown（支持 Mermaid 图）、带高亮的源码、图片、PDF、网页、`git diff` |
 | 编辑器 | CodeMirror 6，支持 Vim 键位，可以当 `$EDITOR` 用（`libertty +open --wait`） |
 | Git | 按文件或代码块暂存、提交、历史图、分支、推送拉取、stash、解决冲突 |
-| 浏览器 | 搜索、下载；只有设了 `browser-automation = true` 才能用脚本操作 |
+| 浏览器 | 搜索、下载；只有设了 `browser-automation = true`，agent 才能用 `libertty +browser` 操作 |
 | 任务 | 按终端分组的进程、CPU、内存、端口 |
 | 画布、看板 | Excalidraw 画图；用 Markdown 保存的看板 |
 | SQLite、Notebook | 浏览和查询数据库；用你自己的 Jupyter 运行 `.ipynb` |
@@ -68,7 +79,9 @@ Terminal，关闭 pane、标签或窗口后可以撤销。触控板上双指张�
 
 **编程 Agent。** `libertty +agent-setup` 给 Claude Code 和 Codex 加上 hook（给 Pi、OMP、OpenCode 装扩展），
 它们的标签会显示在运行、在等你或已完成，会话按任务命名，重启后能接着之前的对话（文件 ▸ 恢复对话…，⇧⌘O）。
-其他 agent 的状态从屏幕上判断。⌘J 跳到需要你处理的 pane；Git 块的 Last Turn 只显示 agent 上一轮改了什么，
+其他 agent 的状态从屏幕上判断，由 liberttyd 自己判断，所以没开窗口时 `libertty +events --for waiting` 也能听到；
+自己写的 agent 规则放在 `~/.config/libertty/agents/`。Composer（⌘⇧E）用来写多行 prompt；prompt 队列（⌘⇧M）
+等 agent 闲下来再一条条发；分叉对话把 Claude Code 或 Codex 的对话在新 pane 里接着开一份。⌘J 跳到需要你处理的 pane；Git 块的 Last Turn 只显示 agent 上一轮改了什么，
 可以逐块撤回或标为看过；文件 ▸ 在工作树中新建标签…（⌥⌘T）给 agent 一个独立的分支和文件夹。侧栏和 pane
 标题栏显示分支和改动。截图粘贴进 pane 时粘贴的是图片文件的路径。`keep-awake = agents` 让 Mac 在 agent
 工作时不睡眠。`--remove` 可以撤掉 hook。标签上显示各 agent 的官方 logo（共 30 个：Claude Code、Codex、
@@ -78,6 +91,9 @@ Gemini、CodeBuddy、Qwen Code、Kimi、Copilot、Cursor、Aider……）；关�
 **上手。** 第一次启动时有一份简短的引导（帮助 ▸ 开始使用 Libertty）：外观、权限、agent 设置、导入 Ghostty
 设置、几个常用快捷键。`libertty +migrate-prompt`（或帮助 ▸ 用 Agent 迁移快捷键…）生成一段 prompt，让 agent
 把你在 Ghostty、iTerm2 或 tmux 里的快捷键搬过来。
+
+**脚本。** `libertty` 命令（带 zsh、bash、fish 补全）、AppleScript（窗口、标签、会话；新建标签、分屏、输入、
+运行命令、执行操作），以及 `remote-control = false`：不让 agent 操作应用。
 
 **语言。** 英文，或在 macOS 使用简体中文时显示简体中文（`language = auto | en | zh-Hans`）。
 
