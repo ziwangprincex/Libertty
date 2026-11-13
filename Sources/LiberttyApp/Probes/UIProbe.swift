@@ -453,17 +453,29 @@ enum UIProbe {
                             print("FAIL  ui-probe sheet: \(window.attachedSheet == nil ? "none up" : "no \(title) button")")
                             failures += 1
                         }
-                    case .commandHover(let text):
+                    case .commandHover(let text), .quickLookClick(let text):
                         let rows = controller.focusedTerminal.session.screenRows().split(separator: "\n", omittingEmptySubsequences: false)
                         guard let row = rows.lastIndex(where: { $0.contains(text) }),
                               let at = rows[row].range(of: text, options: .backwards) else {
-                            print("FAIL  ui-probe cmd-hover: no \(text) on screen")
+                            print("FAIL  ui-probe \(step): no \(text) on screen")
                             failures += 1
                             break
                         }
                         let col = rows[row].distance(from: rows[row].startIndex, to: at.lowerBound) + 1
-                        controller.focusedTerminal.commandHover(col: col, row: row)
+                        if case .quickLookClick = step {
+                            controller.focusedTerminal.commandClick(col: col, row: row, shift: true)
+                        } else {
+                            controller.focusedTerminal.commandHover(col: col, row: row)
+                        }
                         pump(0.3)
+                    case .expectQuickLook(let list):
+                        let shown = controller.focusedTerminal.quickLookTitles?.joined(separator: " | ") ?? "none"
+                        if shown == list {
+                            print("ok    ui-probe quick look shows \(list)")
+                        } else {
+                            print("FAIL  ui-probe quick look: \(shown), not \(list)")
+                            failures += 1
+                        }
                     case .expectPeek(let name):
                         let shown = controller.focusedTerminal.peekedImage ?? "none"
                         if shown == name {
@@ -1266,6 +1278,7 @@ enum UIProbe {
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
+        case quickLookClick(String), expectQuickLook(String)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
         case settings(String), expectSettings(String), expectConfigChange(String)
@@ -1430,6 +1443,8 @@ enum UIProbe {
             case "sheet-type": steps.append(.sheetType(arg))
             case "expect-header": steps.append(.expectHeader(arg))
             case "cmd-hover": steps.append(.commandHover(arg))
+            case "quick-look-click": steps.append(.quickLookClick(arg))
+            case "expect-quick-look": steps.append(.expectQuickLook(arg))
             case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
             case "expect-sheet-text": steps.append(.expectSheetText(arg))

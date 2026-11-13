@@ -1,0 +1,11 @@
+# ⌘Y: the files and web pages on screen, in order and each once, folders
+# left out (a probe shows no panel: it keeps what the panel would list);
+# ⇧⌘-click previews just the one. tests/run.sh writes @DIR@'s files and
+# `list`, the lines printed here.
+type:cd @DIR@ && cat list
+key:enter
+wait:1.0
+action:quick_look
+expect-quick-look:shot.png | notes.txt | https://example.com/a
+quick-look-click:notes.txt
+expect-quick-look:notes.txt

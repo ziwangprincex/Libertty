@@ -1034,6 +1034,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // To whatever has the keyboard: a document in the editor saves (DocumentView.saveDocument).
         item("Save", selector: #selector(DocumentView.saveDocument(_:)), key: "s", symbol: "square.and.arrow.down", in: file)
         file.addItem(.separator())
+        item("Quick Look", .quickLook, symbol: "eye", in: file)
         item("Export Text As…", .writeScrollbackFile("save"), symbol: "square.and.arrow.up", in: file)
         item("Open Scrollback in Tab", .writeScrollbackFile("open"), symbol: "doc.text", in: file)
 

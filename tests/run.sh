@@ -172,6 +172,8 @@ expect links-cjk-quote 'text https://github.com/foo/bar 0:' $LIBERTTY --link-pro
 expect links-kana 'text https://ja.wikipedia.org/wiki/佐々木小次郎 0:' $LIBERTTY --link-probe 'printf "https://ja.wikipedia.org/wiki/佐々木小次郎 です\n"'
 expect links-cjk-path 'text https://zh.wikipedia.org/wiki/中文 0:' $LIBERTTY --link-probe 'printf "看 https://zh.wikipedia.org/wiki/中文。\n"'
 expect links-path 'CLI.swift line 42 col 7' $LIBERTTY --link-probe 'printf "Sources/LiberttyApp/App/CLI.swift:42:7: error\n"'
+# Every link on screen, in order and each once (Quick Look's items): a path's lines are one file; what isn't there isn't one.
+expect links-visible 'visible: x \| Package.swift \| docs$' $LIBERTTY --link-probe 'printf "see https://example.com/x and Package.swift:3, Package.swift again\n\033]8;;https://libertty.dev/docs\033\\\\here\033]8;;\033\\\\ nope.txt\n"'
 expect selection-autoscroll 'drag up \+ 3 ticks: line2' $LIBERTTY --selection-probe
 expect selection-extend 'shift-click extend: line28 \| line29 \| line' $LIBERTTY --selection-probe
 expect zsh-command-finished 'finished: printf .* exit=1' $LIBERTTY --command-probe zsh
@@ -489,6 +491,13 @@ sips -s format png -z 60 90 /System/Library/CoreServices/CoreTypes.bundle/Conten
 print hi > $PRIVATE/peek/notes.txt
 expect image-peek 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/peek|g" $ROOT/tests/fixtures/image-peek.txt)" $OUT
+# Quick Look (⌘Y, ⇧⌘-click): what the panel would list.
+mkdir -p $PRIVATE/quick-look/sub
+print hi > $PRIVATE/quick-look/notes.txt
+print png > $PRIVATE/quick-look/shot.png
+print 'see shot.png, notes.txt:3 and https://example.com/a\nagain shot.png, ./sub and missing.txt' > $PRIVATE/quick-look/list
+expect quick-look 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/quick-look|g" $ROOT/tests/fixtures/quick-look.txt)" $OUT
 # Sidebar rows' second line and the header's branch.
 SR=$PRIVATE/sidebar-rows
 mkdir -p $SR

@@ -228,6 +228,7 @@ enum Action: Equatable {
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
     case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
+    case quickLook
     case undo, redo
     case openSettings, openConfig, reloadConfig, openThemeEditor, quit
     case ignore, unbind
@@ -263,6 +264,7 @@ enum Action: Equatable {
         ("open_git", .openGit), ("open_browser", .openBrowser), ("focus_address", .focusAddress), ("open_tasks", .openTasks), ("new_canvas", .newCanvas), ("open_profiler", .openProfiler), ("open_board", .openBoard), ("open_plugins", .openPlugins), ("open_screen", .openScreen),
         ("toggle_picture_in_picture", .togglePictureInPicture),
         ("toggle_broadcast_input", .toggleBroadcastInput), ("copy_command_output", .copyCommandOutput),
+        ("quick_look", .quickLook),
         ("undo", .undo), ("redo", .redo),
         ("open_settings", .openSettings), ("open_config", .openConfig), ("reload_config", .reloadConfig), ("open_theme_editor", .openThemeEditor), ("quit", .quit),
         ("ignore", .ignore), ("unbind", .unbind),
@@ -431,6 +433,7 @@ enum Action: Equatable {
         ("undo", "Bring back the pane, tab or window closed last (within undo-timeout)"),
         ("redo", "Close it again"),
         ("copy_command_output", "Copy what the last command printed (needs shell integration)"),
+        ("quick_look", "Preview the files and web pages on screen with Quick Look, ← → between them (⇧⌘-click previews one); again closes"),
         ("write_scrollback_file:open|copy|paste|save", "Put the scrollback in a text file and open it in a tab, copy or paste its path, or save it where you choose"),
         ("write_selection_file:open|copy|paste|save", "The same for the selection"),
         ("toggle_quick_terminal", "Drop a terminal down from the top of the screen, or put it away (good as a global: key)"),
@@ -541,6 +544,7 @@ struct Keybinds: Equatable {
             "cmd+w=close_surface", "cmd+alt+w=close_tab", "cmd+shift+w=close_window",
             "cmd+alt+shift+w=close_all_windows",
             "cmd+shift+r=prompt_tab_title", "cmd+p=goto_pane", "cmd+j=goto_attention", "cmd+shift+o=resume_conversation", "cmd+alt+t=new_tab_in_worktree", "cmd+shift+l=toggle_appearance",
+            "cmd+y=quick_look",
             "cmd+shift+bracket_left=previous_tab", "cmd+shift+bracket_right=next_tab",
             "ctrl+shift+tab=previous_tab", "ctrl+tab=next_tab", "cmd+9=last_tab",
             "cmd+d=new_split:right", "cmd+shift+d=new_split:down",
