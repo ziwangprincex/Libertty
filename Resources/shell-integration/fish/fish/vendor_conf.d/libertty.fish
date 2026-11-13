@@ -46,4 +46,13 @@ if set -q LIBERTTY_SSH_TERM; and not functions -q ssh
     end
 end
 
+# `libertty` completes (its +commands, session IDs, actions, settings): its
+# completion folder goes last, so a libertty.fish of your own comes first.
+if command -q libertty
+    set -l completions (string replace -r '/[^/]*/[^/]*$' '' -- (status --current-filename))/vendor_completions.d
+    if test -d $completions; and not contains -- $completions $fish_complete_path
+        set -ga fish_complete_path $completions
+    end
+end
+
 __libertty_report_pwd

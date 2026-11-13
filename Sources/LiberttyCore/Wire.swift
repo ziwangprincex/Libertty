@@ -30,7 +30,7 @@ public enum Wire {
 
     public enum Kind: UInt8 {
         // Client → daemon
-        case hello = 1        // {version}
+        case hello = 1        // {version, client?}: `client` says what asks ("cli +events"), for `clients`
         case create = 2       // CreateRequest
         case attach = 3       // {id, catchUp?}
         case input = 4        // bytes the user typed
@@ -42,7 +42,8 @@ public enum Wire {
         case send = 10        // {id, text}: type into a session
         case configure = 11   // {scrollback}
         case takeover = 12    // a newer liberttyd asks for every session
-        case shutdown = 13    // end every session and exit
+        case shutdown = 13    // {ifIdle?}: end every session and exit; with ifIdle only when there are
+                              // none (else → result {ok: false, sessions})
         case ack = 14         // takeover lockstep: frame parsed, send the descriptor
         case wait = 15        // {id, until?: exit|prompt|idle, idleMs?} → result {ok, status | reached} once it
                               // ends, or its shell shows a prompt, or its output is quiet for idleMs
@@ -55,6 +56,12 @@ public enum Wire {
         case report = 22      // {id, state, record?, app?}: a program's state the app read on the session's screen
                               // (an agent's spinner, its permission dialog) → result {ok}; a `status` event
         case permissions = 23 // → result {ok, access: {full-disk|screen|camera|microphone|local-network: granted|denied|not-asked|unknown}}
+        // The `admin` feature (`libertty +daemon`, `+clients`):
+        case info = 24        // → result {ok, version, build, pid, started, socket, log?, sessions, shown, clients}
+        case clients = 25     // → result {ok, clients: [ConnectedClient]}: who else is connected
+        case log = 26         // {from?, lines?} → result {ok, path, text, end}: its log from byte `from` on
+                              // (at most 1 MB), or its last `lines` lines; `end` is where the text stops
+        case restart = 27     // → result {ok, pid}: a liberttyd from its own file takes every session over
         case upload = 40      // header {batch, path} | the file's bytes: kept where liberttyd runs → result {ok, path}
 
         // Daemon → client
@@ -236,6 +243,38 @@ public struct SessionInfo: Codable, Sendable {
         // Bytes that aren't UTF-8 come out as U+FFFD: then not the same bytes.
         let text = String(decoding: bytes, as: UTF8.self)
         return text.utf8.elementsEqual(bytes) ? text : nil
+    }
+}
+
+/// One line of `libertty +clients`: a connection to liberttyd other than
+/// the asker's — a window showing a session, `+events` or `+wait`, or a Mac
+/// reaching a host's liberttyd through `liberttyd --bridge`.
+public struct ConnectedClient: Codable, Sendable {
+    /// The process at the other end (on a host: the ssh bridge's); 0 when
+    /// the system didn't say.
+    public var pid: Int32
+    /// That process's name.
+    public var process: String
+    /// What it said it is, in `hello` (`cli +events`); nil if it didn't.
+    public var client: String?
+    /// When it connected (seconds since 1970).
+    public var since: Double
+    /// The session it shows (a window's connection carries one session).
+    public var session: String?
+    /// It follows `+events`.
+    public var listening: Bool
+    /// Sessions it waits on (`+wait`).
+    public var waiting: [String]
+
+    public init(pid: Int32, process: String, client: String? = nil, since: Double, session: String? = nil,
+                listening: Bool = false, waiting: [String] = []) {
+        self.pid = pid
+        self.process = process
+        self.client = client
+        self.since = since
+        self.session = session
+        self.listening = listening
+        self.waiting = waiting
     }
 }
 

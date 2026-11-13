@@ -54,6 +54,10 @@ public struct KeySpec: Equatable {
         return out
     }()
 
+    /// The keys known by name (`enter`, `page_up`, `f5`…) and the punctuation
+    /// keys' names, for completing `+send-key`.
+    public static var namedKeys: [String] { (Array(named.keys) + Array(punctuation.keys)).sorted() }
+
     /// Nil for a name it doesn't know.
     public init?(_ spec: String) {
         // The last part is the key ("+" and "ctrl++" are +), the rest modifiers.

@@ -24,6 +24,9 @@ shot:settings-themes.png
 settings:search:cursor
 expect-settings:page=Terminal
 shot:settings-terminal.png
+# remote-control is found under Integrations (libertty +set doesn't change it).
+settings:search:remote control
+expect-settings:page=Integrations
 # What was there before is still there.
 expect-shell:cat '@CFG@/config' ==> # Settings writes its lines in place: this stays.
 expect-shell:grep -c '^font-size = 14$' '@CFG@/config' ==> 1

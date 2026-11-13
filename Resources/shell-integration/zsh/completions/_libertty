@@ -1,0 +1,38 @@
+#compdef libertty
+# Completion for Libertty's command line in zsh. `libertty +complete` says
+# what fits the words typed so far: commands, flags, session IDs, actions,
+# settings and their values, themes, hosts. Libertty's shell integration
+# puts this file's folder at the end of fpath (your own _libertty comes
+# first); elsewhere, `libertty +completions zsh > ~/.zfunc/_libertty`.
+
+_libertty() {
+    local -a lines values displays
+    local line value doc directives=
+    lines=("${(@f)$(command libertty +complete zsh -- "${(@)words[2,CURRENT]}" 2>/dev/null)}")
+    for line in "${lines[@]}"; do
+        [[ -z $line ]] && continue
+        if [[ $line == :* ]]; then
+            directives+=" ${line#:}"
+            continue
+        fi
+        value=${line%%$'\t'*}
+        doc=
+        [[ $line == *$'\t'* ]] && doc=${line#*$'\t'}
+        values+=("$value")
+        displays+=("${value}${doc:+  -- $doc}")
+    done
+    local -i ret=1
+    if (( ${#values} )); then
+        if [[ $directives == *nospace* ]]; then
+            compadd -S '' -l -d displays -a values && ret=0
+        else
+            compadd -l -d displays -a values && ret=0
+        fi
+    fi
+    [[ $directives == *files* ]] && _files && ret=0
+    [[ $directives == *dirs* ]] && _files -/ && ret=0
+    [[ $directives == *commands* ]] && _command_names -e && ret=0
+    return ret
+}
+
+_libertty "$@"

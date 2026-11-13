@@ -614,6 +614,8 @@ expect pane-tags 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/tags-config
 expect layout-store 'layout-store: all passed' $LIBERTTY --layout-store-probe
 # +wait --until prompt|idle, +capture --ansi|--html, +events (Tern's wait / capture / events).
 expect cli-wait 'cli-wait: all passed' zsh $ROOT/tests/cli-wait-test.sh $LIBERTTY
+# +daemon, +clients, completion, exit statuses, remote-control (a config of its own: it reads remote-control).
+expect cli-admin 'cli-admin: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config zsh $ROOT/tests/cli-admin-test.sh $LIBERTTY
 expect send-key 'send-key: all passed' zsh $ROOT/tests/send-key-test.sh $LIBERTTY
 expect import-ghostty 'import-ghostty: all passed' zsh $ROOT/tests/import-ghostty-test.sh $LIBERTTY
 

@@ -100,9 +100,28 @@ if [[ -n "${LIBERTTY_SSH_TERM-}" ]] && (( ! $+functions[ssh] )) && (( ! $+aliase
     ssh() { TERM=$LIBERTTY_SSH_TERM command ssh "$@"; }
 fi
 
+# `libertty` completes (its +commands, session IDs, actions, settings): its
+# completion goes last on fpath, so your own _libertty comes first, and the
+# compinit in your .zshrc finds it. If compinit didn't look (a dump it
+# trusts), the first prompt adds it, unless something completes libertty already.
+if (( $+commands[libertty] )); then
+    builtin typeset -g _libertty_completions="${${(%):-%x}:A:h}/completions"
+    fpath+=("$_libertty_completions")
+    _libertty_add_completion() {
+        builtin local status_=$?
+        add-zsh-hook -d precmd _libertty_add_completion
+        if (( $+functions[compdef] )) && (( ! $+_comps[libertty] )); then
+            builtin autoload -Uz -- "$_libertty_completions/_libertty" && compdef _libertty libertty
+        fi
+        builtin unfunction _libertty_add_completion
+        builtin return $status_
+    }
+fi
+
 builtin autoload -Uz add-zsh-hook
 add-zsh-hook chpwd _libertty_report_pwd
 add-zsh-hook preexec _libertty_preexec
+(( $+functions[_libertty_add_completion] )) && add-zsh-hook precmd _libertty_add_completion
 precmd_functions=(_libertty_status ${precmd_functions:#(_libertty_status|_libertty_mark_prompt)} _libertty_mark_prompt)
 
 _libertty_report_pwd

@@ -809,6 +809,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     @objc private func remoteRequest(_ note: Notification) {
         guard let info = note.userInfo as? [String: String], RemoteControl.isForUs(info) else { return }
+        // remote-control = false: what drives Libertty is refused here too, not only by the command.
+        if RemoteControlPolicy.refuses(info, config: ConfigStore.shared.config) {
+            return RemoteControl.answer(info, ["result": "refused", "message": RemoteControlPolicy.message])
+        }
         if info["kind"] == "open" { return handleOpen(info) }
         if info["kind"] == "browser" {
             // A window to act in: the front one, or a new one for `open`.
@@ -829,7 +833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // The Quick Terminal's pane can be split too (it's no window of the list).
         if PaneRequests.handle(info, in: controllers + [QuickTerminal.shared.windowController].compactMap { $0 }) { return }
         if info["kind"] == "focus", let id = info["id"] {
-            _ = reveal(paneID: id)
+            RemoteControl.answer(info, ["result": reveal(paneID: id) ? "focused" : "no-pane"])
             return
         }
         if info["kind"] == "attach", let id = info["id"] {

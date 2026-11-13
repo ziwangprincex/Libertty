@@ -7,6 +7,19 @@ import LiberttyCore
 /// and sends requests to the running Libertty. Shells started by Libertty have
 /// `libertty` on their PATH.
 enum CLI {
+    /// What `libertty` exits with (`+help` lists them). `+wait` exits with
+    /// the program's own status instead, whatever it is.
+    enum ExitCode {
+        static let ok: Int32 = 0
+        static let failure: Int32 = 1
+        static let usage: Int32 = 2
+        /// No such session, pane or conversation (or more than one fits).
+        static let notFound: Int32 = 3
+        /// liberttyd, or the running Libertty, can't be reached.
+        static let unreachable: Int32 = 4
+        static let timeout: Int32 = 124
+    }
+
     static func runIfRequested() {
         let args = Array(CommandLine.arguments.dropFirst())
         if Askpass.requested { Askpass.run(prompt: args.first ?? "") }  // ssh asking, while connecting to a host
@@ -18,6 +31,14 @@ enum CLI {
             guard i + 1 < rest.count, !rest[i + 1].hasPrefix("-") else { fail("--host needs an ssh destination"); exit(2) }
             host = RemoteHost.named(rest[i + 1])
             rest.removeSubrange(i...(i + 1))
+        }
+        guard CLISpec.command(named: command) != nil else {
+            fail("unknown command \(command); see libertty +help")
+            exit(ExitCode.usage)
+        }
+        if let refusal = RemoteControlPolicy.refusal(command, rest, config: store.config) {
+            fail(refusal)
+            exit(ExitCode.failure)
         }
         let status: Int32
         switch command {
@@ -73,6 +94,10 @@ enum CLI {
         case "+agent-hook": status = AgentCLI.hook(rest)
         case "+agent-setup": status = AgentCLI.setup(rest)
         case "+agents": status = AgentRulesCLI.run(rest)
+        case "+completions": status = completions(rest)
+        case "+complete": status = complete(rest)
+        case "+daemon": status = daemonCommand(rest)
+        case "+clients": status = clients(rest)
         default:
             fail("unknown command \(command); see libertty +help")
             status = 2
@@ -81,18 +106,18 @@ enum CLI {
     }
 
     /// Set with `--host`; nil for this Mac's liberttyd.
-    nonisolated(unsafe) private static var host: RemoteHost?
-    private static var daemon: DaemonAddress { host?.address ?? .local }
+    nonisolated(unsafe) static var host: RemoteHost?
+    static var daemon: DaemonAddress { host?.address ?? .local }
 
     private static var version: String {
         "Libertty " + ((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "dev")
     }
 
-    private static func fail(_ message: String) {
+    static func fail(_ message: String) {
         FileHandle.standardError.write(("libertty: " + message + "\n").data(using: .utf8)!)
     }
 
-    private static var store: ConfigStore { ConfigStore.shared }
+    static var store: ConfigStore { ConfigStore.shared }
 
     // MARK: Help
 
@@ -117,6 +142,8 @@ enum CLI {
           libertty +migrate-prompt [--from ghostty|iterm2|tmux]…
                                          a prompt for a coding agent that brings your keybindings over
           libertty +update [--check]        install the newest version (signature-checked); --check only reports
+          libertty +completions zsh|bash|fish
+                                         the shell's completion for libertty (Libertty's shells load it themselves)
 
           libertty +list-themes [--path]    built-in themes, ~/.config/libertty/themes, and Rex's and Ghostty's if installed
           libertty +list-fonts [--styles]   monospaced font families (--styles: their faces, for font-style)
@@ -148,7 +175,8 @@ enum CLI {
           libertty +capture ID [--scrollback] [--ansi | --html]
                                          print a session's screen (and history): text, with its colors
                                          as terminal escapes (--ansi), or as a web page (--html)
-          libertty +send ID TEXT...         type TEXT into a session (\n for Return)
+          libertty +send ID TEXT... [--enter]
+                                         type TEXT into a session (\\n for Return); --enter: then press Return
           libertty +send-key ID KEY...      press keys in it, encoded as its program wants: ctrl+c, enter, shift+tab, up
           libertty +kill-session ID [--remove-worktree [--force]]
                                          end a session's program (and remove its worktree; --force: with
@@ -185,6 +213,13 @@ enum CLI {
                                          needs +agent-setup), the last to run first; QUERY matches names, folders, ids
           libertty +resume ID|NAME          pick one up again: the pane running it, or a new tab resuming it
                                          (claude --resume, codex resume); prints the pane's session ID
+          libertty +daemon status [--json]  liberttyd: its pid, build, socket, log, uptime, sessions and clients
+          libertty +daemon stop [--if-idle | --force]
+                                         stop it; with sessions only --force (it ends them), --if-idle leaves it be
+          libertty +daemon restart          a new liberttyd takes every session over (programs keep running)
+          libertty +daemon logs [-f] [--lines N]
+                                         its log's last N lines (50); -f: and what follows, until ^C
+          libertty +clients [--json]        who is connected to liberttyd: windows, +events, +wait, Macs over ssh
         Inside Libertty, $LIBERTTY_SESSION is the current pane's ID.
 
         Programs and agents:
@@ -203,7 +238,14 @@ enum CLI {
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
           --host HOST                    with +list-sessions, +new-session, +capture, +send, +send-key,
-                                         +kill-session, +wait, +events, +split or +move-pane: that machine's sessions
+                                         +kill-session, +wait, +events, +split, +move-pane, +daemon or +clients:
+                                         that machine's sessions
+
+        With remote-control = false (Settings ▸ Integrations), commands may read but not drive Libertty:
+        +split, +send, +focus, +action, +new-window, +new-session, +kill-session, +daemon stop… are refused.
+
+        Exit status: 0 done, 1 failed, 2 usage, 3 no such session, pane or conversation, 4 liberttyd or
+        Libertty unreachable, 124 out of time (+wait, +events); +wait exits with the program's own status.
         """)
         return 0
     }
@@ -266,8 +308,9 @@ enum CLI {
             if key == "config-file" { continue }
             // What lets a terminal read your signed-in pages is yours to switch
             // on, in the config file: not something a program in a terminal does.
-            if key == "browser-automation" {
-                fail("browser-automation is set by editing the config file (\(store.url.path)), not with +set")
+            // So is what lets programs drive Libertty.
+            if key == "browser-automation" || key == "remote-control" {
+                fail("\(key) is set in Settings or by editing the config file (\(store.url.path)), not with +set")
                 return 1
             }
             if let problem = scratch.set(key, value) {
@@ -310,6 +353,11 @@ enum CLI {
             (String(arg[..<$0]), String(arg[arg.index(after: $0)...]))
         } ?? (arg, args.count > 1 ? args[1] : nil)
         guard Config.documentation.contains(where: { $0.key == key }) else { fail("unknown key \(key)"); return 1 }
+        // Back to its default would let commands drive Libertty again (see +set).
+        if key == "remote-control" {
+            fail("remote-control is set in Settings or by editing the config file (\(store.url.path)), not with +unset")
+            return 1
+        }
         if let value, Config.repeatable.contains(key) {
             store.unset(key) { $0 == value }
         } else {
@@ -425,7 +473,7 @@ enum CLI {
 
     // MARK: Talking to the running app
 
-    private static var liberttyRunning: Bool {
+    static var liberttyRunning: Bool {
         NSWorkspace.shared.runningApplications.contains {
             $0.bundleIdentifier == "dev.libertty.terminal"
                 || ($0.executableURL?.lastPathComponent == "Libertty" && $0.processIdentifier != getpid())
@@ -439,7 +487,7 @@ enum CLI {
             fail("\(text) can't be sent from outside Libertty (it would type into a terminal); bind it to a key instead")
             return 1
         }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         RemoteControl.post(["action": action.configString])
         return 0
     }
@@ -486,14 +534,23 @@ enum CLI {
         return id
     }
 
-    private static func result(_ frame: Connection.Frame?) -> Bool {
-        guard let frame else { fail("liberttyd isn't running (no sessions)"); return false }
-        if frame.json["ok"] as? Bool == false {
-            fail(frame.json["error"] as? String ?? "failed")
-            return false
+    /// A one-request answer as an exit status, having said what went wrong:
+    /// no answer is liberttyd out of reach, a session it doesn't have is not found.
+    static func status(_ frame: Connection.Frame?) -> Int32 {
+        guard let frame else {
+            fail(host.map { "can't reach liberttyd on \($0.destination)" } ?? "liberttyd isn't running (no sessions)")
+            return ExitCode.unreachable
         }
-        return true
+        if frame.json["ok"] as? Bool == false {
+            let error = frame.json["error"] as? String ?? "failed"
+            fail(error)
+            return isMissing(error) ? ExitCode.notFound : ExitCode.failure
+        }
+        return ExitCode.ok
     }
+
+    /// liberttyd's word for a session it doesn't have.
+    static func isMissing(_ error: String) -> Bool { error.hasPrefix("no such session") || error.hasPrefix("no session ") }
 
     /// `+split [ID] [--right|--left|--down|--up] [--ratio PERCENT] [--cwd DIR]
     /// [--no-focus] [-e COMMAND...]`: a new pane beside the one showing session
@@ -541,7 +598,7 @@ enum CLI {
             i += 1
         }
         guard let beside else { fail(usage + " (outside a Libertty session, give the ID of the pane to split)"); return 2 }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         let answer = RemoteControl.request(["kind": "split", "beside": beside, "direction": direction,
                                             "share": String(Double(ratio) / 100), "cwd": cwd, "command": command,
                                             "focus": focus ? "1" : "0", "keepOpen": keepOpen ? "1" : "0"], timeout: 10)
@@ -556,7 +613,7 @@ enum CLI {
             return 0
         case "no-pane":
             fail("no window shows session \(beside) (libertty +list-sessions; +attach \(beside) shows one)")
-            return 1
+            return ExitCode.notFound
         case "refused":
             fail("can't split it: \(answer?["message"] ?? "")")
             return 1
@@ -565,7 +622,7 @@ enum CLI {
             return 1
         default:
             fail("Libertty didn't answer (one older than this command?)")
-            return 1
+            return ExitCode.unreachable
         }
     }
 
@@ -597,20 +654,20 @@ enum CLI {
             i += 1
         }
         guard let id, let to else { fail(usage); return 2 }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         let answer = RemoteControl.request(["kind": "move-pane", "id": id, "to": to, "side": side], timeout: 10)
         switch answer?["result"] {
         case "moved":
             return 0
         case "no-pane":
-            fail("no window shows session \(id) (libertty +list-sessions)")
-            return 1
+            fail("no window shows session \(answer?["missing"].flatMap { $0.isEmpty ? nil : $0 } ?? id) (libertty +list-sessions)")
+            return ExitCode.notFound
         case "refused":
             fail("can't move it: \(answer?["message"] ?? "")")
             return 1
         default:
             fail("Libertty didn't answer (one older than this command?)")
-            return 1
+            return ExitCode.unreachable
         }
     }
 
@@ -622,7 +679,7 @@ enum CLI {
         let ids = args.filter { !$0.hasPrefix("-") }
         guard args.count == ids.count, let (id, other) = ids.count == 2 ? (ids[0], ids[1]) : ids.count == 1 ? mine.map({ ($0, ids[0]) }) : nil
         else { fail(usage); return 2 }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         return arrangeAnswer(RemoteControl.request(["kind": "swap-pane", "id": id, "with": other], timeout: 10), id: id, done: "swapped")
     }
 
@@ -646,7 +703,7 @@ enum CLI {
             i += 1
         }
         guard let id, let direction else { fail(usage); return 2 }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         let answer = RemoteControl.request(["kind": "resize-pane", "id": id, "direction": direction, "points": String(points)], timeout: 10)
         return arrangeAnswer(answer, id: id, done: "resized")
     }
@@ -656,13 +713,13 @@ enum CLI {
         case done: return 0
         case "no-pane":
             fail("no window shows session \(answer?["missing"] ?? id) (libertty +list-sessions)")
-            return 1
+            return ExitCode.notFound
         case "refused":
             fail("can't: \(answer?["message"] ?? "")")
             return 1
         default:
             fail("Libertty didn't answer (one older than this command?)")
-            return 1
+            return ExitCode.unreachable
         }
     }
 
@@ -687,12 +744,16 @@ enum CLI {
         switch DaemonClient.request(.rename, json: ["id": id, "label": name], needing: "label", address: daemon) {
         case .unanswered:
             fail("liberttyd isn't running")
-            return 1
+            return ExitCode.unreachable
         case .unsupported:
             fail("this liberttyd can't name sessions; restart Libertty to update it")
             return 1
         case .answered(let frame):
-            guard frame.json["ok"] as? Bool == true else { fail(frame.json["error"] as? String ?? "no session \(id)"); return 1 }
+            guard frame.json["ok"] as? Bool == true else {
+                let error = frame.json["error"] as? String ?? "no session \(id)"
+                fail(error)
+                return isMissing(error) ? ExitCode.notFound : ExitCode.failure
+            }
             return 0
         }
     }
@@ -738,17 +799,20 @@ enum CLI {
         guard args.count == 1 else { fail("usage: libertty +resume ID|NAME"); return 2 }
         guard let c = Conversations.find(args[0], among: Conversations.load()) else {
             fail("no conversation \(args[0]) (libertty +history lists them)")
-            return 3
+            return ExitCode.notFound
         }
         guard Conversations.resumeCommand(c) != nil else { fail("\(c.agentName)'s conversations can't be resumed"); return 1 }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         let answer = RemoteControl.request(["kind": "resume", "agent": c.agent, "id": c.id], timeout: 10)
         switch answer?["result"] {
         case "made":
             if let id = answer?["session"], !id.isEmpty { print(id) }
             return 0
+        case nil:
+            fail("Libertty didn't answer")
+            return ExitCode.unreachable
         default:
-            fail(answer?["message"] ?? "Libertty didn't answer")
+            fail(answer?["message"] ?? "Libertty couldn't resume it")
             return 1
         }
     }
@@ -757,7 +821,8 @@ enum CLI {
         guard let sessions = DaemonClient.sessions(address: daemon) else {
             let why = host.map { "can't reach \($0.destination)" + (($0.lastError as? LocalizedError)?.errorDescription.map { ": " + $0 } ?? "") }
             if !args.contains("--json") { print("no sessions (\(why ?? "liberttyd isn't running"))") } else { print("[]") }
-            return 0
+            // This Mac's liberttyd not running is no sessions; a host out of reach is a failure.
+            return host == nil ? 0 : ExitCode.unreachable
         }
         if args.contains("--json") {
             let encoder = JSONEncoder()
@@ -825,7 +890,7 @@ enum CLI {
         let size = GridSize(cols: UInt16(config.windowColumns), rows: UInt16(config.windowRows), widthPx: 0, heightPx: 0)
         let request: CreateRequest
         if let host {
-            do { try host.prepare() } catch { fail("\(host.destination): \(error.localizedDescription)"); return 1 }
+            do { try host.prepare() } catch { fail("\(host.destination): \(error.localizedDescription)"); return ExitCode.unreachable }
             // There, the directory is the host's (its home unless --cwd).
             let cwd = args.contains("--cwd") ? directory : nil
             guard let r = host.createRequest(id: id, command: command, workingDirectory: cwd, size: size, config: config) else { return 1 }
@@ -834,7 +899,7 @@ enum CLI {
             guard let exe = Persistence.daemonExecutable,
                   DaemonClient.ensureRunning(executable: exe, logPath: Persistence.logPath) else {
                 fail("can't start liberttyd")
-                return 1
+                return ExitCode.unreachable
             }
             var (executable, arguments, environment) = TerminalSession.launchSpec(command: command)
             environment["LIBERTTY_SESSION"] = id
@@ -860,7 +925,8 @@ enum CLI {
         guard !(args.contains("--html") && args.contains("--ansi")) else { fail("usage: libertty \(usage)"); return 2 }
         let frame = DaemonClient.request(.capture, json: ["id": id, "scrollback": args.contains("--scrollback"),
                                                           "format": format.rawValue], address: daemon)
-        guard result(frame), let text = frame?.json["text"] as? String else { return 1 }
+        let answered = status(frame)
+        guard answered == ExitCode.ok, let text = frame?.json["text"] as? String else { return answered == 0 ? 1 : answered }
         // An older liberttyd knows plain text only (and says nothing of a format).
         if format != .plain, frame?.json["format"] as? String != format.rawValue {
             fail("this liberttyd captures plain text only; restart Libertty to update it")
@@ -891,19 +957,33 @@ enum CLI {
             .replacingOccurrences(of: ">", with: "&gt;")
     }
 
+    /// `+send ID TEXT... [--enter]`: TEXT typed (`\n` Return, `\t` Tab);
+    /// --enter then presses Return, encoded as the program wants it, apart
+    /// from the text (as +prompt: an agent takes text typed at once as a paste).
     private static func send(_ args: [String]) -> Int32 {
-        guard args.count >= 2 else { fail("usage: libertty +send ID TEXT..."); return 2 }
+        let enter = args.contains("--enter")
+        let args = args.filter { $0 != "--enter" }
+        guard args.count >= (enter ? 1 : 2) else { fail("usage: libertty +send ID TEXT... [--enter]"); return 2 }
         let text = args.dropFirst().joined(separator: " ")
             .replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\t", with: "\t")
-        return result(DaemonClient.request(.send, json: ["id": args[0], "text": text], address: daemon)) ? 0 : 1
+        if !enter || !text.isEmpty {
+            let sent = status(DaemonClient.request(.send, json: ["id": args[0], "text": text], address: daemon))
+            guard sent == ExitCode.ok, enter else { return sent }
+            usleep(300_000)
+        }
+        switch DaemonClient.request(.sendKey, json: ["id": args[0], "keys": ["enter"]], needing: "sendKey", address: daemon) {
+        case .answered(let frame): return status(frame)
+        case .unsupported: return status(DaemonClient.request(.send, json: ["id": args[0], "text": "\r"], address: daemon))
+        case .unanswered: return status(nil)
+        }
     }
 
     /// `+list-panes`: the running Libertty's panes as it draws them.
     private static func listPanes() -> Int32 {
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         guard let answer = RemoteControl.request(["kind": "list-panes"], timeout: 3) else {
             fail("Libertty didn't answer (an older version doesn't know +list-panes)")
-            return 1
+            return ExitCode.unreachable
         }
         if let text = answer["text"], !text.isEmpty { print(text) }
         return 0
@@ -921,20 +1001,21 @@ enum CLI {
         }
         switch DaemonClient.request(.sendKey, json: ["id": args[0], "keys": Array(args.dropFirst())], needing: "sendKey",
                                     address: daemon) {
-        case .unanswered: fail("liberttyd isn't running"); return 1
+        case .unanswered: return status(nil)
         case .unsupported: fail("this liberttyd can't press keys; restart Libertty to update it"); return 1
-        case .answered(let frame): return result(frame) ? 0 : 1
+        case .answered(let frame): return status(frame)
         }
     }
 
     private static func attach(_ args: [String]) -> Int32 {
         guard let id = args.first(where: { !$0.hasPrefix("--") }) else { fail("usage: libertty +attach ID [--window]"); return 2 }
         if host != nil { fail("+attach shows sessions of this Mac; for a host, use File ▸ Connect to Host…"); return 2 }
-        guard let sessions = DaemonClient.sessions(), sessions.contains(where: { $0.id == id }) else {
+        guard let sessions = DaemonClient.sessions() else { fail("liberttyd isn't running (no sessions)"); return ExitCode.unreachable }
+        guard sessions.contains(where: { $0.id == id }) else {
             fail("no session \(id) (see libertty +list-sessions)")
-            return 1
+            return ExitCode.notFound
         }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         RemoteControl.post(["kind": "attach", "id": id, "tab": args.contains("--window") ? "0" : "1"])
         return 0
     }
@@ -972,12 +1053,12 @@ enum CLI {
             }
         }
         guard let id = id ?? ProcessInfo.processInfo.environment["LIBERTTY_SESSION"] else { fail(usage); return 2 }
-        guard let c = daemon.connect() else { fail("liberttyd isn't running"); return 1 }
+        guard let c = daemon.connect() else { fail("liberttyd isn't running"); return ExitCode.unreachable }
         let start = Date()
         if let timeout { c.setReceiveTimeout(timeout) }
         // An older liberttyd would wait for the end whatever was asked.
         if until != "exit" {
-            c.send(.hello, json: ["version": Wire.version])
+            c.send(.hello, json: ["version": Wire.version, "client": "cli +wait"])
             guard let welcome = c.receive(), welcome.kind == .welcome else { return timedOut(start, timeout) ?? gone() }
             guard (welcome.json["features"] as? [String] ?? []).contains("waitUntil") else {
                 fail("this liberttyd only waits for the end; restart Libertty to update it")
@@ -986,7 +1067,11 @@ enum CLI {
         }
         c.send(.wait, json: ["id": id, "until": until, "idleMs": idleMs])
         guard let frame = c.receive() else { return timedOut(start, timeout) ?? gone() }
-        guard frame.json["ok"] as? Bool == true else { fail(frame.json["error"] as? String ?? "no such session"); return 1 }
+        guard frame.json["ok"] as? Bool == true else {
+            let error = frame.json["error"] as? String ?? "no such session"
+            fail(error)
+            return isMissing(error) ? ExitCode.notFound : ExitCode.failure
+        }
         if frame.json["reached"] != nil { return 0 }
         return Int32(frame.json["status"] as? Int ?? 0)
     }
@@ -994,12 +1079,12 @@ enum CLI {
     /// 124 if the answer didn't come because the time ran out.
     private static func timedOut(_ start: Date, _ timeout: Double?) -> Int32? {
         guard let timeout, Date().timeIntervalSince(start) >= timeout - 0.05 else { return nil }
-        return 124
+        return ExitCode.timeout
     }
 
     private static func gone() -> Int32 {
         fail("liberttyd went away")
-        return 1
+        return ExitCode.unreachable
     }
 
     /// `+events [--filter KIND,...]`: what happens in the sessions, one JSON
@@ -1050,8 +1135,8 @@ enum CLI {
             if !all.contains("status") { all.append("status") }
             kinds = all
         }
-        guard let c = daemon.connect() else { fail("liberttyd isn't running"); return 1 }
-        c.send(.hello, json: ["version": Wire.version])
+        guard let c = daemon.connect() else { fail("liberttyd isn't running"); return ExitCode.unreachable }
+        c.send(.hello, json: ["version": Wire.version, "client": "cli +events"])
         guard let welcome = c.receive(), welcome.kind == .welcome else { return gone() }
         guard (welcome.json["features"] as? [String] ?? []).contains("events") else {
             fail("this liberttyd has no events; restart Libertty to update it")
@@ -1066,7 +1151,7 @@ enum CLI {
         while true {
             if let timeout {
                 let left = timeout - Date().timeIntervalSince(start)
-                guard left > 0 else { return 124 }
+                guard left > 0 else { return ExitCode.timeout }
                 c.setReceiveTimeout(left)
             }
             guard let frame = c.receive() else { return timedOut(start, timeout) ?? gone() }
@@ -1116,22 +1201,24 @@ enum CLI {
         }
         guard words.count >= 2 else { fail(usage); return 2 }
         let id = words[0], text = words.dropFirst().joined(separator: " ")
-        guard result(DaemonClient.request(.send, json: ["id": id, "text": text], address: daemon)) else { return 1 }
+        let sent = status(DaemonClient.request(.send, json: ["id": id, "text": text], address: daemon))
+        guard sent == ExitCode.ok else { return sent }
         // Return apart from the text: an agent's input takes text typed at once as a paste.
         usleep(300_000)
         switch DaemonClient.request(.sendKey, json: ["id": id, "keys": ["enter"]], needing: "sendKey", address: daemon) {
         case .answered: break
         case .unsupported: _ = DaemonClient.request(.send, json: ["id": id, "text": "\r"], address: daemon)
-        case .unanswered: fail("liberttyd isn't running"); return 1
+        case .unanswered: fail("liberttyd isn't running"); return ExitCode.unreachable
         }
         // Its answer starting: then quiet once it's over.
         usleep(800_000)
         var waitArgs: [String] = [id, "--until", "idle=" + String(quiet)]
         if let timeout { waitArgs += ["--timeout", String(timeout)] }
         let waited = waitSession(waitArgs)
-        guard waited == 0 || waited == 124 else { return waited }
+        guard waited == 0 || waited == ExitCode.timeout else { return waited }
         let frame = DaemonClient.request(.capture, json: ["id": id, "scrollback": false, "format": "plain"], address: daemon)
-        guard result(frame), let screen = frame?.json["text"] as? String else { return 1 }
+        let captured = status(frame)
+        guard captured == ExitCode.ok, let screen = frame?.json["text"] as? String else { return captured == 0 ? 1 : captured }
         var rows = screen.split(separator: "\n", omittingEmptySubsequences: false)
         while rows.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { rows.removeLast() }
         print(rows.suffix(lines).joined(separator: "\n"))
@@ -1143,9 +1230,19 @@ enum CLI {
             fail("usage: libertty +focus ID")
             return 2
         }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
-        RemoteControl.post(["kind": "focus", "id": id])
-        return 0
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
+        switch RemoteControl.request(["kind": "focus", "id": id], timeout: 5)?["result"] {
+        case "focused": return 0
+        case "no-pane":
+            fail("no window shows session \(id) (libertty +list-sessions; +attach \(id) shows one)")
+            return ExitCode.notFound
+        case "refused":
+            fail("remote-control = false: Libertty doesn't let commands drive it")
+            return 1
+        default:
+            fail("Libertty didn't answer (one older than this command?)")
+            return ExitCode.unreachable
+        }
     }
 
     private static func killSession(_ args: [String]) -> Int32 {
@@ -1168,7 +1265,8 @@ enum CLI {
             }
             worktree = w
         }
-        guard result(DaemonClient.request(.kill, json: ["id": id], address: daemon)) else { return 1 }
+        let killed = status(DaemonClient.request(.kill, json: ["id": id], address: daemon))
+        guard killed == ExitCode.ok else { return killed }
         guard let worktree else { return 0 }
         usleep(500_000)  // its programs let go of the folder
         if case .failure(let why) = Worktrees.remove(worktree, force: force) { fail(why.message); return 1 }
@@ -1229,7 +1327,7 @@ enum CLI {
     /// `libertty +connect HOST`: a window on HOST (File ▸ Connect to Host…).
     private static func connect(_ args: [String]) -> Int32 {
         guard let host = args.first, !host.hasPrefix("-") else { fail("usage: libertty +connect HOST"); return 2 }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         RemoteControl.post(["kind": "connect", "host": host])
         return 0
     }
@@ -1336,7 +1434,7 @@ enum CLI {
             fail(usage)
             return 2
         }
-        guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
+        guard liberttyRunning else { fail("Libertty isn't running"); return ExitCode.unreachable }
         let token = UUID().uuidString
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-browser-\(token)")
         info["token"] = token
@@ -1354,7 +1452,7 @@ enum CLI {
         RemoteControl.post(info)
         let deadline = Date().addingTimeInterval(30)
         while answer == nil, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
-        guard let ok = answer else { fail("no answer from Libertty"); return 1 }
+        guard let ok = answer else { fail("no answer from Libertty"); return ExitCode.unreachable }
         let text = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
         if ok {
             if !text.isEmpty { print(text) }
