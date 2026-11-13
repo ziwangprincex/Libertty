@@ -154,8 +154,9 @@ extension TerminalWindowController {
     /// an OSC 7501 report's: `libertty +events --for waiting` (scripts, other
     /// agents) sees the agents that report nothing themselves. This Mac's
     /// panes only; an older liberttyd, which doesn't take it, isn't asked.
+    /// A liberttyd that watches agents' screens itself (AgentWatch) isn't told.
     private func tellDaemon(_ session: TerminalSession, _ state: String, app: String) {
-        guard session.host == nil, let id = session.persistentID else { return }
+        guard session.host == nil, !session.daemonWatchesAgents, let id = session.persistentID else { return }
         Self.screenReports.async {
             _ = DaemonClient.request(.report, json: ["id": id, "state": state, "record": Self.agentScreenID, "app": app],
                                      needing: "report")

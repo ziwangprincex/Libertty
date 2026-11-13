@@ -153,6 +153,12 @@ extension TerminalWindowController {
         }
     }
 
+    /// On a host, what's in front is what its liberttyd says: the tab's
+    /// glyph follows (scheduleTileRefresh reads it).
+    func sessionForegroundChanged(_ session: TerminalSession) {
+        updateSidebar()
+    }
+
     func sessionProgressChanged(_ session: TerminalSession) {
         updateSidebar()
         onAttentionChange?()

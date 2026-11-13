@@ -66,6 +66,28 @@ $L +events --once --timeout 1 > /dev/null 2>&1; [[ $? == 124 ]] && ok "+events -
 # +prompt: typed, Return, its screen once quiet.
 $L +prompt $ID 'echo ANSWER-$((6*7))' --quiet 600 -n 12 | grep -q 'ANSWER-42' && ok "+prompt prints the answer" || bad "+prompt"
 
+# An agent's screen, with no window: liberttyd itself tells what it shows
+# (AgentWatch). A stand-in "codex" (tests/fixtures/fake-codex.c) shows a
+# turn's timer, then its prompt at rest: working, then done; and liberttyd
+# names the program in front.
+cc -o $T/codex ${0:A:h}/fixtures/fake-codex.c
+( $L +events --for working --once --timeout 15 > $T/agent-working ) &
+W1=$!
+( $L +events --for done --once --timeout 20 > $T/agent-done ) &
+W2=$!
+sleep 0.5
+AGENT=$($L +new-session --cwd /tmp)
+$L +wait $AGENT --until prompt --timeout 20
+$L +send $AGENT "$T/codex\n"
+wait $W1 $W2
+grep -q '"source":"screen"' $T/agent-working && grep -q '"app":"codex"' $T/agent-working \
+  && ok "an agent's screen, no window: working (liberttyd)" || bad "agent working: $(cat $T/agent-working)"
+grep -q '"state":"done"' $T/agent-done && grep -q '"record":"screen"' $T/agent-done \
+  && ok "…then done" || bad "agent done: $(cat $T/agent-done)"
+grep -q '"event":"program"' $T/events && grep -q '"agent":"codex"' $T/events \
+  && ok "event program: the agent in front" || bad "no program event"
+$L +kill-session $AGENT
+
 ( $L +wait $ID --timeout 10; echo $? > $T/exit ) &
 sleep 0.3
 $L +send $ID 'exit 7\n'

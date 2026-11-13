@@ -1,4 +1,5 @@
 import AppKit
+import LiberttyCore
 
 /// What a pane's program shows as: its name (for the tooltip) and a glyph.
 /// Monochrome by default — a row of colored squares in the sidebar reads
@@ -77,17 +78,10 @@ struct ProgramBadge {
         "plandex": ProgramBadge(name: "Plandex", symbol: "sparkle", tint: .teal, agent: "plandex"),
     ]
 
-    /// The agent a name is, as Kero tells it: the name, or the name with a
-    /// suffix ("claude-code", "gemini-cli"; not Pi's: "pi-hole" isn't Pi).
-    static func agentKey(_ name: String) -> String? {
-        let name = name.lowercased()
-        if agents[name] != nil { return name }
-        return agents.keys.sorted { $0.count > $1.count }.first { $0 != "pi" && name.hasPrefix($0 + "-") }
-    }
+    /// The agent a name is (AgentNames: Libertty's list, then yours).
+    static func agentKey(_ name: String) -> String? { AgentNames.key(name) }
 
-    private static let shellNames: Set<String> = [
-        "zsh", "bash", "fish", "sh", "dash", "nu", "pwsh", "elvish", "xonsh", "tcsh", "csh", "ksh", "cmd", "powershell",
-    ]
+    private static let shellNames = AgentNames.shells
 
     /// Known programs, by process name.
     private static let known: [String: ProgramBadge] = {
@@ -143,57 +137,31 @@ struct ProgramBadge {
         ProgramBadge(name: name.isEmpty ? "Shell" : name, symbol: "terminal", tint: .gray)
     }
 
-    /// Programs often started through something else — a wrapper (tclaude),
-    /// a launcher, npx — and worth finding behind it. By process name.
-    static func isOftenWrapped(_ name: String) -> Bool {
-        agentKey(name) != nil
-    }
-
     /// The badge for a foreground process: its name, and its arguments when
     /// it's a runtime (empty otherwise).
     static func forProcess(_ name: String, arguments: String = "") -> ProgramBadge {
-        let base = (name as NSString).lastPathComponent
-        let name = base.hasPrefix("-") ? String(base.dropFirst()) : base
-        if !arguments.isEmpty, runsAnotherProgram(name), let badge = scripted(arguments) { return badge }
+        let name = AgentNames.baseName(name)
+        if !arguments.isEmpty, runsAnotherProgram(name), let key = AgentNames.scripted(arguments) { return agent(key) }
         guard !name.isEmpty else { return shell("") }
         if let b = known[name.lowercased()] { return b }
-        if let key = agentKey(name), let b = agents[key] { return b }
+        if let key = agentKey(name) { return agent(key) }
         if shellNames.contains(name.lowercased()) { return shell(name) }
         // Anything else: its own name, drawn as its first letter.
         return ProgramBadge(name: name, symbol: nil)
     }
 
-    /// The program a runtime runs, by the script it was given: the script's
-    /// own name (`node /opt/homebrew/bin/claude`, through its shebang) or
-    /// the package it's in (`…/node_modules/@openai/codex/bin/codex.js`).
-    /// Names only, never a substring of the command line:
-    /// /Users/claude/server.js isn't Claude Code, nor imagemagick Ruby.
-    private static func scripted(_ arguments: String) -> ProgramBadge? {
-        // The script is the first argument that isn't an option.
-        guard let script = arguments.split(separator: " ").first(where: { !$0.hasPrefix("-") }) else { return nil }
-        let parts = script.split(separator: "/").map(String.init)
-        var names: [String] = []
-        if let last = parts.last { names.append((last as NSString).deletingPathExtension) }
-        if let i = parts.lastIndex(of: "node_modules"), i + 1 < parts.count {
-            let package = parts[i + 1].hasPrefix("@") && i + 2 < parts.count ? parts[i + 2] : parts[i + 1]
-            names.append(package)
-        }
-        for name in names.map({ $0.lowercased() }) {
-            // "claude", or "claude-code"; "gemini-cli".
-            if let key = agentKey(name) { return agents[key] }
-        }
-        return nil
+    /// An agent's badge by its key: Libertty's, or one of yours (its rules'
+    /// `name`, or its id), drawn as a sparkle.
+    static func agent(_ key: String) -> ProgramBadge {
+        if let b = agents[key] { return b }
+        let name = AgentScreen.manifest(for: key)?.name ?? key
+        return ProgramBadge(name: name, symbol: "sparkle", tint: .gray, agent: key)
     }
 
     /// A program that runs something else lives inside it: a language
-    /// runtime, a shell. Only for these is the argument list worth reading
-    /// (see TerminalSession.foregroundProgram).
-    static func runsAnotherProgram(_ name: String) -> Bool {
-        let runtime = ["node", "deno", "bun", "python", "python3", "ipython", "ruby", "perl", "php", "lua",
-                       "java", "dotnet", "cargo", "go"]
-        let base = (name as NSString).lastPathComponent.lowercased()
-        return shellNames.contains(base) || runtime.contains(base)
-    }
+    /// runtime, a shell (AgentNames). Only for these is the argument list
+    /// worth reading (see TerminalSession.foregroundProgram).
+    static func runsAnotherProgram(_ name: String) -> Bool { AgentNames.runsAnotherProgram(name) }
 }
 
 /// One pane's tile, ready for the sidebar.

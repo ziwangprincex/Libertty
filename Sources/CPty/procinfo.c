@@ -191,9 +191,58 @@ pid_t libertty_proc_tty_pgid(pid_t pid) {
 #include <string.h>
 #include <unistd.h>
 
+#include <dirent.h>
+#include <stdlib.h>
+
+// Every process's parent, from /proc/PID/stat (the field after the name,
+// which is in parentheses and may hold spaces or parentheses itself).
+static pid_t parent_of(const char *pid_dir) {
+    char path[300], buf[512];
+    snprintf(path, sizeof path, "/proc/%s/stat", pid_dir);
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    char *close = strrchr(buf, ')');
+    if (!close) return -1;
+    char state;
+    int ppid;
+    if (sscanf(close + 1, " %c %d", &state, &ppid) != 2) return -1;
+    return (pid_t)ppid;
+}
+
 int libertty_proc_descendants(pid_t root, pid_t *out, int cap) {
-    (void)root; (void)out; (void)cap;
-    return 0;
+    // One pass over /proc for every (pid, parent), then breadth first from root.
+    enum { MAX = 8192 };
+    pid_t *pids = malloc(sizeof(pid_t) * MAX), *parents = malloc(sizeof(pid_t) * MAX);
+    if (!pids || !parents) { free(pids); free(parents); return 0; }
+    int total = 0;
+    DIR *proc = opendir("/proc");
+    if (proc) {
+        struct dirent *e;
+        while ((e = readdir(proc)) && total < MAX) {
+            if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+            pid_t parent = parent_of(e->d_name);
+            if (parent < 0) continue;
+            pids[total] = (pid_t)atoi(e->d_name);
+            parents[total] = parent;
+            total++;
+        }
+        closedir(proc);
+    }
+    int count = 0, next = 0;
+    pid_t queue_root = root;
+    for (;;) {
+        for (int i = 0; i < total && count < cap; i++) {
+            if (parents[i] == queue_root && pids[i] > 0) out[count++] = pids[i];
+        }
+        if (next >= count) break;
+        queue_root = out[next++];
+    }
+    free(pids);
+    free(parents);
+    return count;
 }
 
 void libertty_proc_name(pid_t pid, char *out, int cap) {

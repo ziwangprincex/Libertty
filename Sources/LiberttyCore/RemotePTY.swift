@@ -37,6 +37,23 @@ public final class RemotePTY: TerminalBackend {
     public var onInputModeChange: ((InputMode) -> Void)?
     /// What liberttyd said it was when this attached (later changes come through `onInputModeChange`).
     public private(set) var initialInputMode: InputMode?
+    /// The program in front changed (liberttyd looks; nil: the shell), on `queue`.
+    public var onForeground: ((SessionProgram?) -> Void)?
+    /// The program in front as liberttyd last said.
+    public var foreground: SessionProgram? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return currentForeground
+    }
+    private var currentForeground: SessionProgram?
+    /// liberttyd watches coding agents' screens itself (AgentWatch): what a
+    /// window reads on them needn't be told it.
+    public var watchesAgents: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return agentsWatched
+    }
+    private var agentsWatched = false
     /// Its name as liberttyd last said ("" for none).
     public var label: String {
         stateLock.lock()
@@ -71,11 +88,13 @@ public final class RemotePTY: TerminalBackend {
     /// Start a new session in liberttyd.
     public static func create(_ request: CreateRequest, address: DaemonAddress = .local, queue: DispatchQueue) throws -> RemotePTY {
         guard let c = address.connect() else { throw DaemonClientError.unavailable }
-        let pid = try create(c, request)
-        return RemotePTY(id: request.id, pid: pid, connection: c, address: address, queue: queue)
+        let (pid, header) = try create(c, request)
+        let pty = RemotePTY(id: request.id, pid: pid, connection: c, address: address, queue: queue)
+        pty.took(header)
+        return pty
     }
 
-    private static func create(_ c: Connection, _ request: CreateRequest) throws -> pid_t {
+    private static func create(_ c: Connection, _ request: CreateRequest) throws -> (pid_t, [String: Any]) {
         c.setBufferSizes(1 << 21)
         c.setReceiveTimeout(15)
         var request = request
@@ -86,7 +105,7 @@ public final class RemotePTY: TerminalBackend {
             throw DaemonClientError.refused(reply.json["error"] as? String ?? "unexpected reply")
         }
         c.setReceiveTimeout(0)
-        return pid_t(header["pid"] as? Int ?? 0)
+        return (pid_t(header["pid"] as? Int ?? 0), header)
     }
 
     /// Attach to a running session. Returns its snapshot too (empty if liberttyd
@@ -94,10 +113,11 @@ public final class RemotePTY: TerminalBackend {
     public static func attach(id: String, address: DaemonAddress = .local, queue: DispatchQueue) throws -> (RemotePTY, Data) {
         guard let c = address.connect() else { throw DaemonClientError.unavailable }
         c.setBufferSizes(1 << 21)
-        let (pid, snapshot, label, mode) = try attach(c, id: id)
+        let (pid, snapshot, label, mode, header) = try attach(c, id: id)
         let pty = RemotePTY(id: id, pid: pid, connection: c, address: address, queue: queue)
         pty.currentLabel = label
         pty.initialInputMode = mode
+        pty.took(header)
         return (pty, snapshot)
     }
 
@@ -118,7 +138,7 @@ public final class RemotePTY: TerminalBackend {
         return InputMode(echo: echo, canonical: canonical)
     }
 
-    private static func attach(_ c: Connection, id: String) throws -> (pid_t, Data, String, InputMode?) {
+    private static func attach(_ c: Connection, id: String) throws -> (pid_t, Data, String, InputMode?, [String: Any]) {
         c.setReceiveTimeout(20)
         c.send(.attach, json: ["id": id, "catchUp": true])
         guard let reply = c.receive() else { throw DaemonClientError.unavailable }
@@ -126,7 +146,7 @@ public final class RemotePTY: TerminalBackend {
             throw DaemonClientError.refused(reply.json["error"] as? String ?? "unexpected reply")
         }
         c.setReceiveTimeout(0)
-        return (pid_t(header["pid"] as? Int ?? 0), body, header["label"] as? String ?? "", inputMode(header))
+        return (pid_t(header["pid"] as? Int ?? 0), body, header["label"] as? String ?? "", inputMode(header), header)
     }
 
     /// Begin delivering output; set the handlers first.
@@ -162,6 +182,9 @@ public final class RemotePTY: TerminalBackend {
                     case .inputMode:
                         let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         if let mode = Self.inputMode(json) { queue.async { [weak self] in self?.onInputModeChange?(mode) } }
+                    case .foreground:
+                        let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
+                        setForeground(SessionProgram(json: json))
                     case .exited:
                         let status = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         stateLock.lock()
@@ -181,6 +204,29 @@ public final class RemotePTY: TerminalBackend {
             if finished || !redial(bytes, wake: wake) { break }
         }
         if bytes.close() { wake() }
+    }
+
+    /// What an attach (or create) said beyond its pid: the program in front,
+    /// and whether liberttyd watches agents' screens.
+    private func took(_ header: [String: Any], tell: Bool = false) {
+        stateLock.lock()
+        agentsWatched = header["agentScreen"] as? Bool ?? false
+        stateLock.unlock()
+        let program = SessionProgram(json: header["program"] as? [String: Any])
+        if tell { setForeground(program) } else {
+            stateLock.lock()
+            currentForeground = program
+            stateLock.unlock()
+        }
+    }
+
+    /// The program in front from liberttyd: kept, and told on `queue` when it's news.
+    private func setForeground(_ program: SessionProgram?) {
+        stateLock.lock()
+        let changed = program != currentForeground
+        currentForeground = program
+        stateLock.unlock()
+        if changed { queue.async { [weak self] in self?.onForeground?(program) } }
     }
 
     /// A name from liberttyd: kept, and told on `queue` when it's news.
@@ -223,16 +269,18 @@ public final class RemotePTY: TerminalBackend {
             c.setBufferSizes(1 << 21)
             let snapshot: Data
             do {
-                let (pid, data, label, mode) = try Self.attach(c, id: id)
+                let (pid, data, label, mode, header) = try Self.attach(c, id: id)
                 self.pid = pid
                 snapshot = data
                 setLabel(label)
                 if let mode { queue.async { [weak self] in self?.onInputModeChange?(mode) } }
+                took(header, tell: true)
             } catch DaemonClientError.refused {
                 // The session is gone. Restoring: start a fresh one in its place.
                 guard let request = pendingFallback?(), let fresh = address.connect(),
-                      let pid = try? Self.create(fresh, request) else { return false }
+                      let (pid, header) = try? Self.create(fresh, request) else { return false }
                 self.pid = pid
+                took(header, tell: true)
                 stateLock.lock()
                 connection = fresh
                 fallback = nil

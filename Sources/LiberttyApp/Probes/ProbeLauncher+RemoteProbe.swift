@@ -94,7 +94,10 @@ extension ProbeLauncher {
             RunLoop.main.run(until: Date().addingTimeInterval(1.0))
             shell.sendText("sleep 2\n")
             check("busy while running", wait(3) { shell.hasForegroundProgram })
+            // What's in front, as the host's liberttyd says: a tab there shows it.
+            check("program named there", wait(3) { shell.reportedProgram?.name == "sleep" })
             check("idle at the prompt", wait(5) { !shell.hasForegroundProgram })
+            check("no program at the prompt", wait(3) { shell.reportedProgram == nil })
             shell.sendText("echo session=$LIBERTTY_SESSION\n")
             check("shell", wait(5) { shell.scrollbackText().contains("session=" + (shell.persistentID ?? "?")) })
             // Where that shell is, as the host has it: the pane's name and its

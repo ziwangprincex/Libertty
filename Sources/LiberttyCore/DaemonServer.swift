@@ -114,7 +114,8 @@ public final class DaemonServer {
     /// What this liberttyd does beyond protocol 1's beginnings, in `welcome`:
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
-    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions"]
+    static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions",
+                           "agentScreen", "foreground"]
 
     private init(path: String) {
         self.path = path
@@ -536,6 +537,12 @@ final class DaemonSession {
     /// What the parser reported, published once the lock is released.
     private var pendingEvents: [(kind: String, fields: [String: Any])] = []
     private var idleTimer: DispatchSourceTimer?
+    /// The last OSC 9;4 progress as the agents' rules read it, after "9;" (under `lock`).
+    private var progressCode = ""
+    /// Who's in front, and what an agent there is doing (AgentWatch).
+    private var agentWatch: AgentWatch?
+    /// Who it last said is in front (under `lock`), for a window attaching.
+    private var foregroundProgram: AgentWatch.Program?
 
     init(request: CreateRequest) throws {
         id = request.id
@@ -607,12 +614,27 @@ final class DaemonSession {
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_BELL, unsafeBitCast(daemonBell, to: UnsafeRawPointer.self))
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PROGRAM_STATUS,
                                  unsafeBitCast(daemonProgramStatus, to: UnsafeRawPointer.self))
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PROGRESS_REPORT,
+                                 unsafeBitCast(daemonProgressReport, to: UnsafeRawPointer.self))
         TerminalDefaults.apply(to: terminal, scrollback: scrollback)
         KittyGraphics.enableForDaemon(on: terminal)
         // Snapshots must work mid-sequence: remember unfinished input.
         var continuation = 16 << 20
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_CONTINUATION_MAX_BYTES, &continuation)
 
+        agentWatch = AgentWatch(
+            foreground: { [weak self] in
+                guard let self else { return nil }
+                return ForegroundProgram.process(master: self.pty.master, shell: self.pty.pid)
+            },
+            sight: { [weak self] in self?.sight() ?? .init(screen: "", title: "", progress: "") },
+            publish: { [weak self] state, app in
+                guard let self else { return }
+                DaemonEvents.shared.publish("status", session: self.id, [
+                    "state": state, "record": AgentWatch.record, "app": app, "message": "", "title": "", "source": "screen",
+                ])
+            },
+            programChanged: { [weak self] program in self?.programChanged(program) })
         pty.onOutput = { [weak self] bytes in self?.output(bytes) }
         pty.onExit = { [weak self] status in self?.exited(status) }
         pty.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
@@ -649,7 +671,37 @@ final class DaemonSession {
         // Unlocked: a waiter or a listener that doesn't read holds up only itself.
         for w in reached { w.connection.send(.result, json: ["ok": true, "reached": "prompt"]) }
         for e in events { DaemonEvents.shared.publish(e.kind, session: id, e.fields) }
+        agentWatch?.poke()
     }
+
+    // MARK: The program in front (AgentWatch)
+
+    /// What an agent's rules read: the screen's rows as shown (no trailing
+    /// empty ones), the title, the progress.
+    private func sight() -> AgentWatch.Sight {
+        lock.lock()
+        defer { lock.unlock() }
+        var rows = Snapshots.text(terminal, scrollback: false, format: .plain, unwrap: false)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+        while rows.last?.isEmpty == true { rows.removeLast() }
+        var t = GhosttyString()
+        let title = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_TITLE, &t) == GHOSTTY_SUCCESS ? String(borrowed: t) : ""
+        return .init(screen: rows.isEmpty ? "" : rows.joined(separator: "\n") + "\n", title: title, progress: progressCode)
+    }
+
+    /// The windows hear who's in front (a remote host's tabs show its
+    /// agent so), and so does `+events`.
+    private func programChanged(_ program: AgentWatch.Program?) {
+        let json = program?.json ?? ["name": ""]
+        let frame = (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
+        lock.lock()
+        foregroundProgram = program
+        for c in clients { c.send(.foreground, frame) }
+        lock.unlock()
+        DaemonEvents.shared.publish("program", session: id, ["name": program?.name ?? "", "agent": program?.agent ?? ""])
+    }
+
+    fileprivate func progressReported(_ code: String) { progressCode = code }
 
     // MARK: What the shell reports (vt_write, under `lock`)
 
@@ -660,6 +712,7 @@ final class DaemonSession {
             // (fish reports only the prompt's start; zsh and bash also when
             // input starts: either means the shell is waiting.)
             if !atPrompt { pendingEvents.append(("prompt", [:])) }
+            if !atPrompt { agentWatch?.atPrompt() }
             atPrompt = true
             submitted = false
             promptReached = true
@@ -697,7 +750,11 @@ final class DaemonSession {
 
     /// A program's report of what it does (OSC 7501): `status` events, which
     /// `+events --for blocked,…` follows.
-    fileprivate func programStatus(_ fields: [String: Any]) { pendingEvents.append(("status", fields)) }
+    fileprivate func programStatus(_ fields: [String: Any]) {
+        pendingEvents.append(("status", fields))
+        agentWatch?.programReported(record: fields["record"] as? String ?? "", app: fields["app"] as? String ?? "",
+                                    state: fields["state"] as? String ?? "")
+    }
 
     /// Under `lock`: drop the windows whose outboxes hung up.
     private func forgetLost() {
@@ -784,6 +841,7 @@ final class DaemonSession {
 
     private func exited(_ status: Int32) {
         compressor?.stop()
+        agentWatch?.end()
         // The shell's exit code, as `$?` would show it (128 + signal if killed).
         let code = PTY.exitCode(fromWaitStatus: status)
         lock.lock()
@@ -844,6 +902,9 @@ final class DaemonSession {
             header["echo"] = mode.echo
             header["canonical"] = mode.canonical
         }
+        if let program = foregroundProgram { header["program"] = program.json }
+        // It watches agents' screens itself: the window needn't tell it what it reads (`report`).
+        header["agentScreen"] = true
         if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
@@ -1180,6 +1241,21 @@ private let daemonProgramStatus: GhosttyTerminalProgramStatusFn = { _, userdata,
     if !kind.isEmpty { fields["kind"] = kind }
     if report.progress >= 0 { fields["progress"] = Int(report.progress) }
     s.programStatus(fields)
+}
+
+/// OSC 9;4, as the agents' rules read it: "4;STATE[;PERCENT]" ("" once removed).
+private let daemonProgressReport: GhosttyTerminalProgressReportFn = { _, userdata, report in
+    guard let report = report?.pointee, let s = daemonSession(userdata) else { return }
+    let state: Int? = switch report.state {
+    case GHOSTTY_TERMINAL_PROGRESS_STATE_SET: 1
+    case GHOSTTY_TERMINAL_PROGRESS_STATE_ERROR: 2
+    case GHOSTTY_TERMINAL_PROGRESS_STATE_INDETERMINATE: 3
+    case GHOSTTY_TERMINAL_PROGRESS_STATE_PAUSE: 4
+    default: nil
+    }
+    guard let state else { return s.progressReported("") }
+    let percent = state == 1 ? max(0, Int(report.progress)) : (report.progress >= 0 && state != 3 ? Int(report.progress) : nil)
+    s.progressReported(percent.map { "4;\(state);\(min(100, $0))" } ?? "4;\(state)")
 }
 
 private let daemonWritePty: GhosttyTerminalWritePtyFn = { _, userdata, data, len in

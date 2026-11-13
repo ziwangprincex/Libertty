@@ -68,6 +68,7 @@ public enum Wire {
         case event = 108      // what happened in a session (`events`): {event, id, time, …}
         case label = 109      // {label}: the session was named (to the windows showing it)
         case inputMode = 110  // {echo, canonical}: how the terminal hands typing to the program now
+        case foreground = 111 // {name, arguments, agent}: the program in front of the session now ("" names: the shell)
     }
 
     public static let maxFrame = 256 << 20

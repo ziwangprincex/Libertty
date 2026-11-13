@@ -72,6 +72,7 @@ enum CLI {
         case "+status": status = AgentCLI.status(rest)
         case "+agent-hook": status = AgentCLI.hook(rest)
         case "+agent-setup": status = AgentCLI.setup(rest)
+        case "+agents": status = AgentRulesCLI.run(rest)
         default:
             fail("unknown command \(command); see libertty +help")
             status = 2
@@ -195,6 +196,9 @@ enum CLI {
                                          Claude Code hooks (its tab says when it works, waits for you or is done;
                                          it learns where it runs), Codex's notify (done, waiting for approval) and a
                                          skill for this command line for each; Codex when ~/.codex is there; asks first
+          libertty +agents [--check]        the coding agents whose screens Libertty reads (Codex, Gemini, …): its own,
+                                         and yours in ~/.config/libertty/agents (herdr's manifests, TOML or JSON);
+                                         --check: what of yours can't be read (exits 1)
 
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)

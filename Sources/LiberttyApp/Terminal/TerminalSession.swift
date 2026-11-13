@@ -12,6 +12,8 @@ protocol TerminalSessionDelegate: AnyObject {
     func sessionTitleChanged(_ session: TerminalSession, title: String)
     func sessionBell(_ session: TerminalSession)
     func sessionProgramStatusChanged(_ session: TerminalSession)
+    /// liberttyd says another program is in front (`reportedProgram`).
+    func sessionForegroundChanged(_ session: TerminalSession)
     func sessionExited(_ session: TerminalSession, status: Int32)
     func sessionWorkingDirectoryChanged(_ session: TerminalSession)
     func sessionDesktopNotification(_ session: TerminalSession, title: String, body: String)
@@ -23,6 +25,7 @@ protocol TerminalSessionDelegate: AnyObject {
 }
 
 extension TerminalSessionDelegate {
+    func sessionForegroundChanged(_ session: TerminalSession) {}
     func sessionWorkingDirectoryChanged(_ session: TerminalSession) {}
     /// An open search's count or highlights changed after output (`session.searchResult`).
     func sessionSearchChanged(_ session: TerminalSession) {}
@@ -331,6 +334,14 @@ final class TerminalSession {
             }
             if let mode = remote.initialInputMode { inputModeChanged(mode) }
             remote.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
+            reportedProgram = remote.foreground
+            remote.onForeground = { [weak self] program in
+                DispatchQueue.main.async {
+                    guard let self, self.reportedProgram != program else { return }
+                    self.reportedProgram = program
+                    self.delegate?.sessionForegroundChanged(self)
+                }
+            }
             label = remote.label
             remote.onLabel = { [weak self] label in
                 DispatchQueue.main.async {
@@ -370,6 +381,14 @@ final class TerminalSession {
     /// The shell (or command) process, for the inspector's process list.
     var shellPID: pid_t? { host == nil ? pty?.pid : nil }
 
+    /// The program in front as liberttyd says (its `foreground` frames): on a
+    /// host, the only way to know; nil for the shell, or an older liberttyd.
+    private(set) var reportedProgram: SessionProgram?
+
+    /// liberttyd watches agents' screens itself and tells `+events`: what
+    /// the window reads on them needn't be told it.
+    var daemonWatchesAgents: Bool { (pty as? RemotePTY)?.watchesAgents ?? false }
+
     /// On a host only the shell integration's marks can say.
     var hasForegroundProgram: Bool {
         guard !hasExited else { return false }
@@ -390,30 +409,10 @@ final class TerminalSession {
         return name.isEmpty ? nil : (pgid, name)
     }
 
-    /// What a foreground process runs, when its own name doesn't say: a
-    /// language runtime or a shell is in front, and the program is either
-    /// one it started — `tclaude` is node starting `claude` — or the script
-    /// it was handed (`node …/node_modules/@anthropic-ai/claude-code/cli.js`).
-    /// Costlier than foregroundProcess: it walks the leader's children and
-    /// reads its arguments (which can fault the process's pages back in).
+    /// What a foreground process runs, when its own name doesn't say
+    /// (ForegroundProgram.identify).
     static func identify(_ process: (pgid: pid_t, name: String)) -> (name: String, arguments: String) {
-        // ssh names its host in its arguments: the tab says where it went.
-        if ["ssh", "mosh", "mosh-client"].contains(process.name.lowercased()) {
-            var argv = [CChar](repeating: 0, count: 1024)
-            _ = libertty_proc_argv(process.pgid, &argv, Int32(argv.count))
-            return (process.name, String(cString: argv))
-        }
-        guard ProgramBadge.runsAnotherProgram(process.name) else { return (process.name, "") }
-        // Children before grandchildren, and a wrapper is a level or two.
-        var children = [pid_t](repeating: 0, count: 16)
-        let count = Int(libertty_proc_descendants(process.pgid, &children, Int32(children.count)))
-        for child in children.prefix(count) {
-            let name = processName(child)
-            if ProgramBadge.isOftenWrapped(name) { return (name, "") }
-        }
-        var argv = [CChar](repeating: 0, count: 1024)
-        _ = libertty_proc_argv(process.pgid, &argv, Int32(argv.count))
-        return (process.name, String(cString: argv))
+        ForegroundProgram.identify(process)
     }
 
     private static func processName(_ pid: pid_t) -> String {

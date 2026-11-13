@@ -287,7 +287,12 @@ extension TerminalWindowController {
             guard pane.session.host == nil, !pane.session.hasExited, let pid = pane.session.shellPID else { return nil }
             return (ObjectIdentifier(pane.session), pid)
         }
-        guard !wanted.isEmpty else {
+        // A host's panes: what its liberttyd says is in front.
+        let reported: [(ObjectIdentifier, SessionProgram)] = everyTab.flatMap(\.everyPane).compactMap { pane in
+            guard pane.session.host != nil, !pane.session.hasExited, let program = pane.session.reportedProgram else { return nil }
+            return (ObjectIdentifier(pane.session), program)
+        }
+        guard !wanted.isEmpty || !reported.isEmpty else {
             programs.removeAll()
             identified.removeAll()
             turnStates.removeAll()
@@ -319,6 +324,11 @@ extension TerminalWindowController {
                     about[id] = Identified(pgid: process.pgid, name: process.name,
                                            settled: !ProgramBadge.runsAnotherProgram(process.name) || badge.name != plain.name)
                 }
+                for (id, program) in reported {
+                    let badge = ProgramBadge.forProcess(program.name, arguments: program.arguments)
+                    let isSSH = ["ssh", "mosh", "mosh-client"].contains(program.name.lowercased())
+                    tiles[id] = ProgramTile(badge, host: isSSH ? ProgramTile.sshHost(program.arguments) : nil)
+                }
                 DispatchQueue.main.async {
                     guard let self else { return }
                     let changed = tiles != self.programs
@@ -342,7 +352,7 @@ extension TerminalWindowController {
                     self.identified = about
                     // What was kept of sessions gone (keyed by their address, which
                     // a new session may take): gone with them.
-                    let live = Set(wanted.map(\.0))
+                    let live = Set(wanted.map(\.0) + reported.map(\.0))
                     self.turnStates = self.turnStates.filter { live.contains($0.key) }
                     self.agentWatches = self.agentWatches.filter { live.contains($0.key) }
                     for pane in self.allPanes where agentsChanged.contains(ObjectIdentifier(pane.session)) {
