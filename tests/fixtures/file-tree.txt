@@ -1,0 +1,75 @@
+# The sidebar's file tree changes files (Kero's Files), each undoable:
+# New File/Folder (a slash makes the folders on the way), Rename in place
+# (Esc leaves it), Duplicate, Move to Trash (⌘⌫; a probe's Trash is its
+# own folder), and files dropped in from "the Finder" (@FINDER@): copied,
+# numbered past a name taken, moved with ⌘. tests/run.sh makes @DIR@
+# with a.txt and src/, and @FINDER@ with pic.png.
+type:cd @DIR@
+key:enter
+wait:1.0
+expect-tree:a.txt
+expect-tree:src/
+# New File… beside a.txt: docs/ made on the way (and the file opens to be written).
+tree-select:a.txt
+tree-menu:New File…
+sheet-type:docs/notes.md
+sheet:Create
+expect-tree:docs/notes.md
+expect-shell:ls @DIR@/docs ==> notes.md
+# A name taken already says so.
+tree-select:a.txt
+tree-menu:New Folder…
+sheet-type:src
+sheet:Create
+expect-sheet-text:is there already
+sheet:OK
+# Renamed in place: the stem is selected, so typing replaces it.
+tree-select:a.txt
+tree-menu:Rename
+type:b
+key:enter
+expect-tree:b.txt
+expect-tree-not:a.txt
+undo:go
+expect-tree:a.txt
+expect-tree-not:b.txt
+# Esc leaves the name as it was.
+tree-select:a.txt
+tree-menu:Rename
+type:zzz
+key:escape
+expect-tree:a.txt
+expect-tree-not:zzz.txt
+# Return on a selected file renames it too (Finder's key).
+tree-select:a.txt
+key:enter
+type:c
+key:enter
+expect-tree:c.txt
+expect-undo:Rename
+undo:go
+expect-tree:a.txt
+# Duplicate, then ⌘⌫ (and back).
+tree-select:a.txt
+tree-menu:Duplicate
+expect-tree:a copy.txt
+expect-undo:Duplicate
+tree-select:a copy.txt
+key:cmd+backspace
+expect-tree-not:a copy.txt
+expect-shell:ls @DIR@ ==> a.txt
+expect-undo:Move to Trash
+undo:go
+expect-tree:a copy.txt
+# From the Finder: copied into src/, then again as "pic 2.png"; ⌘ moves.
+tree-drop:@FINDER@/pic.png>src
+expect-tree:src/pic.png
+expect-shell:ls @FINDER@ ==> pic.png
+tree-drop:@FINDER@/pic.png>src
+expect-tree:src/pic 2.png
+tree-drop-move:@FINDER@/pic.png>.
+expect-tree:pic.png
+expect-shell:ls @FINDER@ | wc -l | tr -d ' ' ==> 0
+undo:go
+expect-tree-not:pic.png
+expect-shell:ls @FINDER@ ==> pic.png

@@ -513,6 +513,12 @@ mkdir -p $PRIVATE/mermaid
 cp $ROOT/tests/fixtures/diagrams.md $PRIVATE/mermaid/
 expect mermaid 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/mermaid|g" $ROOT/tests/fixtures/mermaid.txt)" $OUT
+# The file tree's changes to files, undone; files dropped in from "the Finder".
+mkdir -p $PRIVATE/file-tree/top/src $PRIVATE/file-tree/finder
+print one > $PRIVATE/file-tree/top/a.txt
+print png > $PRIVATE/file-tree/finder/pic.png
+expect file-tree 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed -e "s|@DIR@|$PRIVATE/file-tree/top|g" -e "s|@FINDER@|$PRIVATE/file-tree/finder|g" $ROOT/tests/fixtures/file-tree.txt)" $OUT
 # The Git block's changed files in their folders.
 GT=$PRIVATE/git-tree
 mkdir -p $GT

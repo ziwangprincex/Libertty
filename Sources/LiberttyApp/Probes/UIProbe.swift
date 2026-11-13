@@ -173,6 +173,8 @@ enum UIProbe {
         // A window of its own, off screen, with a shell in a scratch folder.
         let scratch = NSTemporaryDirectory() + "libertty-ui-probe-\(getpid())"
         try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)
+        // Move to Trash, in the file tree: to a folder of the probe's own, never the user's Trash.
+        MainActor.assumeIsolated { FileOperations.trashFolder = URL(fileURLWithPath: scratch).appendingPathComponent("Trash") }
         let controller: TerminalWindowController
         do {
             controller = try TerminalWindowController(config: Config(), cols: 80, rows: 24)
@@ -481,6 +483,53 @@ enum UIProbe {
                             print("ok    ui-probe page shows \(n) diagram\(n == 1 ? "" : "s")")
                         } else {
                             print("FAIL  ui-probe diagrams: \(drawn), not \(n)")
+                            failures += 1
+                        }
+                    case .treeSelect(let path):
+                        if !controller.sidebar.fileTree.select(path: path) {
+                            print("FAIL  ui-probe tree-select: no \(path) in \(controller.sidebar.fileTree.shownPaths)")
+                            failures += 1
+                        }
+                        pump(0.2)
+                    case .treeMenu(let title):
+                        if !controller.sidebar.fileTree.chooseMenuItem(title) {
+                            print("FAIL  ui-probe tree-menu: no \(title) item")
+                            failures += 1
+                        }
+                        pump(0.4)
+                    case .treeDrop(let files, let folder, let move):
+                        let tree = controller.sidebar.fileTree
+                        guard let top = tree.rootPath else {
+                            print("FAIL  ui-probe tree-drop: no folder in the tree")
+                            failures += 1
+                            break
+                        }
+                        let into = folder == "." ? URL(fileURLWithPath: top) : URL(fileURLWithPath: top).appendingPathComponent(folder)
+                        tree.drop(files.map { URL(fileURLWithPath: $0) }, into: into, move: move)
+                        pump(0.4)
+                    case .expectTree(let path, let want):
+                        let deadline = Date().addingTimeInterval(want ? Self.patience : 0.5)
+                        var shown: [String] = []
+                        repeat {
+                            shown = controller.sidebar.fileTree.shownPaths
+                            if shown.contains(path) == want { break }
+                            pump(0.15)
+                        } while Date() < deadline
+                        if shown.contains(path) == want {
+                            print("ok    ui-probe tree \(want ? "shows" : "hasn't") \(path)")
+                        } else {
+                            print("FAIL  ui-probe tree: \(want ? "no" : "still") \(path) in \(shown)")
+                            failures += 1
+                        }
+                    case .expectUndo(let name):
+                        // What Edit ▸ Undo would undo ("none": nothing).
+                        let said = MainActor.assumeIsolated { () -> String in
+                            let manager = CloseUndo.shared.manager
+                            return manager.canUndo ? manager.undoActionName : "none"
+                        }
+                        if said == name { print("ok    ui-probe undo is \(name)") } else {
+                            let level = MainActor.assumeIsolated { CloseUndo.shared.manager.groupingLevel }
+                            print("FAIL  ui-probe undo: \(said), not \(name) (grouping level \(level))")
                             failures += 1
                         }
                     case .expectQuickLook(let list):
@@ -1294,6 +1343,7 @@ enum UIProbe {
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
         case quickLookClick(String), expectQuickLook(String), expectDiagrams(Int)
+        case treeSelect(String), treeMenu(String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
         case settings(String), expectSettings(String), expectConfigChange(String)
@@ -1461,6 +1511,17 @@ enum UIProbe {
             case "quick-look-click": steps.append(.quickLookClick(arg))
             case "expect-quick-look": steps.append(.expectQuickLook(arg))
             case "expect-diagrams": steps.append(.expectDiagrams(Int(arg) ?? -1))
+            case "tree-select": steps.append(.treeSelect(arg))
+            case "tree-menu": steps.append(.treeMenu(arg))
+            case "tree-drop", "tree-drop-move":
+                // FILE[,FILE…]>FOLDER (a folder under the tree's top; "." is the top)
+                if let r = arg.range(of: ">") {
+                    let files = arg[..<r.lowerBound].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                    steps.append(.treeDrop(files, String(arg[r.upperBound...]), move: verb == "tree-drop-move"))
+                }
+            case "expect-tree": steps.append(.expectTree(arg, true))
+            case "expect-tree-not": steps.append(.expectTree(arg, false))
+            case "expect-undo": steps.append(.expectUndo(arg))
             case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
             case "expect-sheet-text": steps.append(.expectSheetText(arg))
