@@ -237,6 +237,13 @@ final class TileStack: NSView {
         return NSSize(width: overflow > 0 ? width + 12 : width, height: Self.size)
     }
 
+    // VoiceOver: the programs the glyphs stand for ("Running: claude, vim"); none at a prompt.
+    override func isAccessibilityElement() -> Bool { !tiles.isEmpty }
+    override func accessibilityRole() -> NSAccessibility.Role? { .image }
+    override func accessibilityLabel() -> String? {
+        tiles.isEmpty ? nil : L10n.t("Running") + ": " + tiles.map(\.name).joined(separator: ", ")
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard !shown.isEmpty else {
             if let symbol = fallbackSymbol {

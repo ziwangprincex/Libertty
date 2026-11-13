@@ -219,7 +219,7 @@ final class LensChip: NSButton {
             .font: Typeface.ui(11, .medium), .foregroundColor: NSColor.secondaryLabelColor,
         ])
         toolTip = lens.result.command
-        setAccessibilityLabel(lens.result.summary + ", " + L10n.t("Open as List"))
+        setAccessibleLabel(lens.result.summary + ", " + L10n.t("Open as List"))
         target = self
         action = #selector(tapped)
         colorize()
@@ -354,6 +354,9 @@ final class LensList: NSViewController, NSTableViewDataSource, NSTableViewDelega
                 button.tag = row
                 box.addArrangedSubview(button)
             }
+            // (A stack is no element by itself: its label is read once it is one.)
+            box.setAccessibilityElement(true)
+            box.setAccessibilityRole(.group)
             box.setAccessibilityLabel(place + " " + item.label)
             return box
         }

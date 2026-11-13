@@ -61,13 +61,14 @@ struct ThemeCustomizerView: View {
                     .offset(x: 4, y: 3)
             }
             .frame(width: 34, height: 34)
+            .accessibilityHidden(true)
             TextField("Theme Name", text: $model.name)
                 .textFieldStyle(.plain)
                 .font(.system(size: 24, weight: .semibold))
                 .onSubmit { model.status = "" }
             Spacer(minLength: 12)
             HStack(spacing: 5) {
-                Image(systemName: model.theme.isDark ? "moon.fill" : "sun.max.fill")
+                Image(systemName: model.theme.isDark ? "moon.fill" : "sun.max.fill").accessibilityHidden(true)
                 Text(model.theme.isDark ? "Dark Theme" : "Light Theme")
             }
             .font(.system(size: 12, weight: .medium))
@@ -184,6 +185,7 @@ struct ThemeCustomizerView: View {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 10, weight: .semibold))
                                     .rotationEffect(.degrees(model.showExtended ? 90 : 0))
+                                    .accessibilityHidden(true)
                                 Text(model.showExtended ? "Hide extended palette" : "Show extended palette")
                                     .font(.system(size: 12, weight: .medium))
                             }
@@ -458,6 +460,7 @@ private struct MoreMenu: View, Equatable {
         .tint(Color.secondary)
         .fixedSize()
         .help("Start from another theme, import one, or delete one of your own")
+        .accessibilityLabel(L10n.t("Theme Actions"))
     }
 }
 

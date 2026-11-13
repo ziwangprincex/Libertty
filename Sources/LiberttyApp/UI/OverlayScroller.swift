@@ -159,4 +159,25 @@ final class OverlayScroller: NSView {
         layoutKnob()
         show()
     }
+
+    // MARK: Accessibility: the scrollback's scroll bar, paged by increment and decrement
+
+    override func isAccessibilityElement() -> Bool { state.scrollable }
+    override func accessibilityRole() -> NSAccessibility.Role? { .scrollBar }
+    override func accessibilityLabel() -> String? { L10n.t("Scrollback") }
+    override func accessibilityOrientation() -> NSAccessibilityOrientation { .vertical }
+    /// 0 at the oldest line, 1 at the newest.
+    override func accessibilityValue() -> Any? {
+        let range = state.total > state.length ? state.total - state.length : 0
+        return range > 0 ? Double(state.offset) / Double(range) : 1.0
+    }
+    override func accessibilityPerformIncrement() -> Bool { page(down: true) }
+    override func accessibilityPerformDecrement() -> Bool { page(down: false) }
+
+    private func page(down: Bool) -> Bool {
+        guard state.scrollable else { return false }
+        let page = state.length
+        onScroll?(down ? min(state.total - state.length, state.offset + page) : (state.offset > page ? state.offset - page : 0))
+        return true
+    }
 }

@@ -1,0 +1,44 @@
+# VoiceOver names every control: no button, image, checkbox, pop-up or field
+# in the app's windows on screen that it would read by its role alone ("button")
+# or by its icon's look ("Up-right arrow in a square"). The sidebar has its own
+# count (printed, not asserted here).
+wait:1.5
+expect-unlabeled:0 window
+action:new_split:right
+wait:0.8
+expect-unlabeled:0 split
+action:toggle_command_palette
+wait:0.6
+expect-unlabeled:0 palette
+action:toggle_command_palette
+wait:0.4
+click:Show Activity
+wait:0.6
+expect-unlabeled:0 inbox
+click:Show Activity
+wait:0.4
+action:toggle_inspector
+wait:1
+expect-unlabeled:0 inspector
+action:toggle_inspector
+wait:0.4
+action:start_search
+wait:0.5
+expect-unlabeled:0 find
+action:end_search
+action:toggle_composer
+wait:0.6
+expect-unlabeled:0 composer
+action:toggle_composer
+wait:0.4
+# What a mode says as it starts reaches VoiceOver.
+action:toggle_copy_mode
+wait:0.3
+expect-announced:Copy mode
+key:escape
+wait:0.3
+settings:open
+expect-unlabeled:0 settings
+settings:page:remote hosts
+expect-unlabeled:0 settings-hosts
+settings:close

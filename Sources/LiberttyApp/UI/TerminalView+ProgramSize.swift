@@ -24,6 +24,7 @@ extension TerminalView {
             objc_setAssociatedObject(self, &Self.sizedTagKey, nil, .OBJC_ASSOCIATION_RETAIN)
             return
         }
+        let isNew = tag == nil
         if tag == nil {
             let button = NSButton(title: "", target: self, action: #selector(fitProgramHere(_:)))
             button.isBordered = false
@@ -43,7 +44,9 @@ extension TerminalView {
         tag.attributedTitle = NSAttributedString(string: "  " + text + "  ", attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
         ])
-        tag.setAccessibilityLabel(text)
+        tag.setAccessibleLabel(text)
+        // It came up: VoiceOver says so once (the program's text no longer fits this pane).
+        if isNew { AccessibilityNews.announce(L10n.t("Sized by another window"), from: tag) }
         let size = tag.fittingSize
         let width = min(size.width, max(0, bounds.width - 12))
         tag.frame = NSRect(x: ((bounds.width - width) / 2).rounded(), y: bounds.height - size.height - 6, width: width, height: size.height)

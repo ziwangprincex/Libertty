@@ -1004,6 +1004,26 @@ enum UIProbe {
                         }
                         header.setPointerOver(over)
                         pump(0.3)
+                    case .expectAnnounced(let want):
+                        let said = MainActor.assumeIsolated { AccessibilityNews.said }
+                        if want == "-" ? said.isEmpty : said.contains(where: { $0.contains(want) }) {
+                            print("ok    ui-probe announced: \(want)")
+                            MainActor.assumeIsolated { AccessibilityNews.said = [] }
+                        } else {
+                            print("FAIL  ui-probe announced: \(said.isEmpty ? "nothing" : said.map(\.debugDescription).joined(separator: ", ")), not \(want)")
+                            failures += 1
+                        }
+                    case .expectUnlabeled(let want, let what):
+                        let all = Self.unlabeledControls()
+                        let outside = all.filter { !$0.inSidebar }
+                        print("info  ui-probe sidebar\(what): \(all.count - outside.count) unlabeled")
+                        if outside.count == want {
+                            print("ok    ui-probe unlabeled controls\(what): \(want)")
+                        } else {
+                            print("FAIL  ui-probe unlabeled controls\(what): \(outside.count), not \(want)")
+                            for u in outside { print("      \(u.role): \(u.description)") }
+                            failures += 1
+                        }
                     case .expectHeaderButtons(let want):
                         let leaf = controller.selectedTab.focusedPane as NSView?
                         let header = leaf.flatMap { controller.selectedTab.container?.shownHeader(for: $0) }
@@ -1689,6 +1709,10 @@ enum UIProbe {
         /// Autocomplete: the focused pane's ghost text ("none": no suggestion),
         /// and a row of its completion list ("none": not open).
         case expectGhost(String), expectCompletions(String)
+        /// Controls in the app's windows on screen that VoiceOver reads by their role alone (the sidebar's apart).
+        case expectUnlabeled(Int, String)
+        /// Something VoiceOver was told (AccessibilityNews) since the last of these said it ("-": nothing).
+        case expectAnnounced(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
@@ -1828,6 +1852,11 @@ enum UIProbe {
             case "caret-ask": steps.append(.caretAsk)
             case "header-pointer": steps.append(.headerPointer(arg == "on"))
             case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
+            case "expect-unlabeled":
+                // `expect-unlabeled:0 palette`: how many, then what's on screen (for the output).
+                let words = arg.split(separator: " ", maxSplits: 1).map(String.init)
+                steps.append(.expectUnlabeled(Int(words.first ?? "") ?? -1, words.count > 1 ? " (\(words[1]))" : ""))
+            case "expect-announced": steps.append(.expectAnnounced(arg))
             case "expect-caret-told": steps.append(.expectCaretTold)
             case "expect-pending-keys": steps.append(.expectPendingKeys(arg))
             case "expect-mode": steps.append(.expectMode(arg))

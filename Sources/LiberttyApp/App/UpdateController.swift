@@ -412,6 +412,7 @@ final class UpdateController: NSObject {
             progressBar = bar
         }
         (progressWindow?.contentView?.viewWithTag(1) as? NSTextField)?.stringValue = title
+        progressBar?.setAccessibilityLabel(title)  // VoiceOver: what the bar is the progress of
         progressBar?.isIndeterminate = indeterminate
         if indeterminate { progressBar?.startAnimation(nil) } else { progressBar?.stopAnimation(nil); progressBar?.doubleValue = 0 }
         Probe.activateApp()

@@ -59,7 +59,7 @@ final class SurfaceView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
                                  target: self, action: #selector(closeTapped))
             close.isBordered = false
             close.contentTintColor = .secondaryLabelColor
-            close.setAccessibilityLabel(L10n.t("Close"))
+            close.setAccessibleLabel(L10n.t("Close"))
             addSubview(close)
             closeButton = close
         }
@@ -241,7 +241,7 @@ final class SurfaceView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
             field.target = self
             field.action = #selector(fieldSubmitted(_:))
             field.font = Typeface.ui(12.5)
-            field.setAccessibilityLabel(e.label.isEmpty ? e.placeholder : e.label)
+            field.setAccessibleLabel(e.label.isEmpty ? e.placeholder : e.label)
             box.addArrangedSubview(field)
             field.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
             return box
@@ -253,7 +253,7 @@ final class SurfaceView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
             }
             let view = NSImageView(image: image)
             view.imageScaling = .scaleProportionallyDown
-            view.setAccessibilityLabel(e.label.isEmpty ? L10n.t("Image") : e.label)
+            view.setAccessibleLabel(e.label.isEmpty ? L10n.t("Image") : e.label)
             let height = CGFloat(e.height ?? 6) * 16
             let width = image.size.height > 0 ? min(600, height * image.size.width / image.size.height) : height
             view.widthAnchor.constraint(equalToConstant: width).isActive = true

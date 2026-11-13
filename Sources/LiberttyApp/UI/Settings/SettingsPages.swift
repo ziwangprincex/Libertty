@@ -642,6 +642,7 @@ struct PermissionsCard: View {
                     Image(systemName: kind.symbol)
                         .frame(width: 20)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(L10n.t(kind.title)).font(.system(size: 12, weight: .medium))
                         Text(L10n.t(kind.detail)).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -779,7 +780,9 @@ struct FontChooser: View {
                         Text(family).font(Font(SettingsFonts.font(family, 13)))
                         if family == FontRegistry.bundledFamily { Text("bundled").foregroundStyle(.secondary) }
                         Spacer()
-                        if family == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                        if family == current {
+                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor).accessibilityLabel(L10n.t("In use"))
+                        }
                     }
                     .contentShape(Rectangle())
                 }
@@ -961,7 +964,7 @@ struct ShortcutsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
                 TextField("Filter Shortcuts…", text: $model.shortcutFilter)
                     .textFieldStyle(.plain)
                     .accessibilityLabel("Filter Shortcuts")
@@ -1279,7 +1282,7 @@ struct ProgramStateRow: View {
                     Text(summary).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
             }
             .contentShape(Rectangle())
         }
@@ -1368,6 +1371,7 @@ struct RemoteHostsPage: View {
                         Image(systemName: "globe")
                             .font(.system(size: 38, weight: .light))
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text("No Remote Hosts").font(.system(size: 15, weight: .semibold))
                         Text("Connect to a host over ssh: its sessions run there, and keep running when the connection drops.")
                             .multilineTextAlignment(.center)
@@ -1468,7 +1472,7 @@ private struct HostRow: View {
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 16)
+                Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 16).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(destination)
                     Text(status).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)

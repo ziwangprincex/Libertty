@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **VoiceOver names every control**: buttons, images, pop-ups and fields read by what they do, not "button" or their icon's look ("Up-right arrow in a square"); a label set on an AppKit control reaches its cell now, where VoiceOver reads it (the inbox's Recent/By State, the chrome's buttons, the Git panel's, the composer's, Inspector's links). The tab strip is a tab group whose tabs say their state, panes and news, with Close Tab and Rename Tab as actions; the tab overview's cards, the palette's scope chips, Picture in Picture and floating cards are buttons and groups; a split's divider moves by increment and decrement; the scrollback's scroll bar pages; decorative icons stay silent. VoiceOver hears a find bar's match count as Return moves it, another pane's agent needing you, a host's link dropping and coming back, a program sized by another window, and what can follow a key-sequence prefix. Inside: `--ui-probe` gains `expect-unlabeled` (counts what VoiceOver would read by role or stock icon name alone, the sidebar apart) and `expect-announced`; `accessibility-labels.txt` in the suite.
+
 ## 0.6.7
 
 > Key sequences: `keybind = ctrl+b>v=new_split:right` binds keys pressed one after another (a prefix key, as tmux and Ghostty have), so a tmux habit or a Ghostty config comes over as it is.

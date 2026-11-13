@@ -219,6 +219,9 @@ final class GitPanelView: NSView {
 
         row.addArrangedSubview(mark)
         row.addArrangedSubview(name)
+        // VoiceOver hears the file and what changed ("app.swift, modified"), not a letter.
+        mark.hideFromAccessibility()
+        name.setAccessibleLabel(title + ", " + Self.changeWord(markChar))
         // Tooltips name the file: hovering says what a click will do, and
         // VoiceOver reads the same.
         let file = Self.displayName(change)
@@ -348,9 +351,24 @@ final class GitPanelView: NSView {
         return label
     }
 
+    /// What git's one-letter status says, in words.
+    private static func changeWord(_ mark: Character) -> String {
+        switch mark {
+        case "?": return L10n.t("untracked")
+        case "A": return L10n.t("added")
+        case "D": return L10n.t("deleted")
+        case "R": return L10n.t("renamed")
+        case "C": return L10n.t("copied")
+        case "U": return L10n.t("in conflict")
+        case "T": return L10n.t("type changed")
+        default: return L10n.t("modified")
+        }
+    }
+
     private func link(_ title: String, _ symbol: String, _ action: Selector) -> NSButton {
         let b = NSButton(title: title, target: self, action: action)
         b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        b.setAccessibleLabel(title)
         b.imagePosition = .imageLeading
         b.isBordered = false
         b.font = Typeface.ui(12)
@@ -369,7 +387,7 @@ final class GitPanelView: NSView {
         b.isBordered = false
         b.contentTintColor = .secondaryLabelColor
         b.toolTip = tip
-        b.setAccessibilityLabel(tip)
+        b.setAccessibleLabel(tip)
         b.identifier = NSUserInterfaceItemIdentifier(path)
         return b
     }

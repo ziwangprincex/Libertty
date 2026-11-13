@@ -725,7 +725,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         searchIcon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
         searchIcon.symbolConfiguration = .init(pointSize: 15, weight: .regular)
         searchIcon.contentTintColor = .secondaryLabelColor
+        searchIcon.hideFromAccessibility()
         effect.addSubview(searchIcon)
+        panel.setAccessibilityTitle(L10n.t(panesOnly ? "Go to Pane" : "Command Palette"))
 
         field.placeholderString = Self.placeholder(panesOnly: panesOnly)
         field.font = Typeface.ui(16)
@@ -1079,6 +1081,7 @@ private final class PaletteVeil: NSView {
 }
 
 /// A scope chip under the field: the one on is a tinted pill in the accent.
+/// VoiceOver has it as one of a set of radio buttons.
 private final class ScopeChip: NSView {
     var onClick: (() -> Void)?
     var isOn = false { didSet { update() } }
@@ -1092,11 +1095,15 @@ private final class ScopeChip: NSView {
         layer?.cornerCurve = .continuous
         label.font = Typeface.ui(12, .medium)
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.hideFromAccessibility()
         addSubview(label)
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.radioButton)
+        setAccessibilityLabel(title)
         update()
     }
 
@@ -1108,6 +1115,7 @@ private final class ScopeChip: NSView {
     private func update() {
         label.textColor = isOn ? Accent.color : .secondaryLabelColor
         layer?.backgroundColor = (isOn ? Accent.color.withAlphaComponent(0.16) : .clear).cgColor
+        setAccessibilityValue(isOn)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -1117,6 +1125,11 @@ private final class ScopeChip: NSView {
 
     override func mouseDown(with event: NSEvent) { onClick?() }
     override var mouseDownCanMoveWindow: Bool { false }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
+    }
 }
 
 /// A key drawn as a key: a small rounded cap with its legend (Tern's kbd).
@@ -1241,6 +1254,8 @@ private final class PaletteCell: NSTableCellView {
         subtitle.textColor = .tertiaryLabelColor
         subtitle.lineBreakMode = .byTruncatingMiddle
         keys.spacing = 3
+        // The row reads by its words; its icon is a picture of them.
+        icon.hideFromAccessibility()
         for v in [tile, icon, title, subtitle, keys] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)

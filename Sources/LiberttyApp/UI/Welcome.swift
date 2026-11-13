@@ -200,6 +200,7 @@ struct WelcomeView: View {
                 .font(.system(size: 16))
                 .frame(width: 24)
                 .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(L10n.t(title)).font(.system(size: 13, weight: .medium))
                 Text(L10n.t(detail)).font(.system(size: 11)).foregroundStyle(.secondary)

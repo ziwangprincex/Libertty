@@ -665,6 +665,10 @@ expect pane-header 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-con
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/pane-header.txt)" $OUT
 # Float Pane: a live card in the split's corner.
 expect float 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/float.txt)" $OUT
+# VoiceOver names every control on screen (window, split, palette, inbox,
+# inspector, find, composer, Settings), and hears copy mode start.
+expect accessibility-labels 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/accessibility-labels.txt)" $OUT
 # Key sequences: a prefix key waits for the next key, and goes to the program if that isn't one of its own.
 mkdir -p $PRIVATE/sequence-config/libertty
 print -r -- 'keybind = ctrl+b>v=new_split:right

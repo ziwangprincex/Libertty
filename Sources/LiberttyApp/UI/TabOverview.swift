@@ -32,6 +32,10 @@ final class TabOverviewView: NSView {
             addSubview(view)
             cardViews.append(view)
         }
+        background.hideFromAccessibility()
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(L10n.t("Tab Overview"))
         updateSelection()
     }
 
@@ -145,14 +149,20 @@ final class TabOverviewView: NSView {
         cardViews[index].setImage(image)
     }
 
-    private func select(_ i: Int) {
+    private func select(_ i: Int, byKeyboard: Bool = false) {
         guard cards.indices.contains(i), i != selected else { return }
         selected = i
         updateSelection()
+        // The arrows moved the ring: VoiceOver says which tab it's on now.
+        if byKeyboard { AccessibilityNews.announce(cardViews[i].accessibilityLabel() ?? "", from: self) }
     }
 
     private func updateSelection() {
         for (i, v) in cardViews.enumerated() { v.isChosen = i == selected }
+    }
+
+    override func accessibilitySelectedChildren() -> [Any]? {
+        cardViews.indices.contains(selected) ? [cardViews[selected]] : []
     }
 
     override func keyDown(with event: NSEvent) {
@@ -160,10 +170,10 @@ final class TabOverviewView: NSView {
         switch Int(event.keyCode) {
         case 53: pick(nil)                                   // escape
         case 36, 76, 49: pick(selected)                      // return, enter, space
-        case 123: select(max(0, selected - 1))               // left
-        case 124: select(min(cards.count - 1, selected + 1)) // right
-        case 126: select(max(0, selected - cols))            // up
-        case 125: select(min(cards.count - 1, selected + cols))
+        case 123: select(max(0, selected - 1), byKeyboard: true)               // left
+        case 124: select(min(cards.count - 1, selected + 1), byKeyboard: true) // right
+        case 126: select(max(0, selected - cols), byKeyboard: true)            // up
+        case 125: select(min(cards.count - 1, selected + cols), byKeyboard: true)
         default:
             // ⌘1…9 still pick a tab.
             if event.modifierFlags.contains(.command), let n = Int(event.charactersIgnoringModifiers ?? ""), n >= 1 {
@@ -219,6 +229,13 @@ private final class CardView: NSView {
         layer?.addSublayer(frameLayer)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
                                        owner: self, userInfo: nil))
+        // One button for VoiceOver: the tab's name and what its program is doing (its picture says no more).
+        image.hideFromAccessibility()
+        title.hideFromAccessibility()
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(card.title + (card.status.map { ", " + L10n.t(TerminalWindowController.label(for: $0)) } ?? ""))
+        if index < 9 { setAccessibilityHelp("⌘\(index + 1)") }
     }
 
     @available(*, unavailable)
@@ -247,6 +264,7 @@ private final class CardView: NSView {
     }
 
     private func updateChosen() {
+        setAccessibilitySelected(isChosen)
         CATransaction.begin()
         CATransaction.setAnimationDuration(Motion.duration(Motion.hover))
         frameLayer.opacity = isChosen ? 1 : 0
@@ -255,4 +273,9 @@ private final class CardView: NSView {
 
     override func mouseEntered(with event: NSEvent) { onHover?() }
     override func mouseDown(with event: NSEvent) { onClick?() }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
+    }
 }

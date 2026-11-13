@@ -38,6 +38,7 @@ final class ComposerView: NSView {
         layer?.cornerRadius = 10
         layer?.cornerCurve = .continuous
         layer?.borderWidth = 1
+        setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel(L10n.t("Composer"))
 
@@ -60,7 +61,7 @@ final class ComposerView: NSView {
             button.target = self
             button.action = action
             button.toolTip = L10n.t(label)
-            button.setAccessibilityLabel(L10n.t(label))
+            button.setAccessibleLabel(L10n.t(label))
             addSubview(button)
         }
         for (button, label, action) in [(sendButton, "Send", #selector(send(_:))), (queueButton, "Queue", #selector(queue(_:)))] {
@@ -168,7 +169,7 @@ final class ComposerView: NSView {
         pausedNote.attributedTitle = NSAttributedString(
             string: L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume"),
             attributes: [.font: Typeface.ui(11, .medium), .foregroundColor: NSColor.systemOrange])
-        pausedNote.setAccessibilityLabel(pausedNote.attributedTitle.string)
+        pausedNote.setAccessibleLabel(pausedNote.attributedTitle.string)
         needsLayout = true
         superviewNeedsLayout()
     }
@@ -258,9 +259,7 @@ final class ComposerView: NSView {
         PromptQueues.shared.enqueue(text, for: session)
         textView.string = ""
         ComposerController.saveDraft(of: self)
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: L10n.t("Queued"), .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-        ])
+        AccessibilityNews.announce(L10n.t("Queued"), from: self)
     }
 
     /// The keys' default: what ⌘Return does.
@@ -313,7 +312,7 @@ final class ComposerView: NSView {
         layer?.borderWidth = 0
         popButton.image = NSImage(systemSymbolName: "rectangle.bottomhalf.inset.filled", accessibilityDescription: L10n.t("Pop In"))
         popButton.toolTip = L10n.t("Pop In")
-        popButton.setAccessibilityLabel(L10n.t("Pop In"))
+        popButton.setAccessibleLabel(L10n.t("Pop In"))
         updateColors()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(textView)
@@ -332,7 +331,7 @@ final class ComposerView: NSView {
         layer?.borderWidth = 1
         popButton.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: L10n.t("Pop Out"))
         popButton.toolTip = L10n.t("Pop Out")
-        popButton.setAccessibilityLabel(L10n.t("Pop Out"))
+        popButton.setAccessibleLabel(L10n.t("Pop Out"))
         updateColors()
         ComposerController.attach(self, to: pane)
     }
@@ -455,7 +454,7 @@ private final class QueueRow: NSView {
         ])
         label.lineBreakMode = .byTruncatingTail
         label.toolTip = L10n.t("Edit") + ": " + item.text
-        label.setAccessibilityLabel(L10n.t("Queued prompt %d").replacingOccurrences(of: "%d", with: String(index + 1)) + ": " + item.text)
+        label.setAccessibleLabel(L10n.t("Queued prompt %d").replacingOccurrences(of: "%d", with: String(index + 1)) + ": " + item.text)
         var buttons: [NSButton] = []
         func button(_ symbol: String, _ label: String, _ enabled: Bool, _ act: @escaping () -> Void) {
             let b = ClosureButton(symbol: symbol, label: L10n.t(label), act: act)
@@ -502,7 +501,7 @@ private final class ClosureButton: NSButton {
         image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: label) }
         contentTintColor = .secondaryLabelColor
         toolTip = label
-        setAccessibilityLabel(label)
+        setAccessibleLabel(label)
         target = self
         action = #selector(run(_:))
     }

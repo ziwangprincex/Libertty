@@ -835,7 +835,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         return l
     }()
     private lazy var closeButton: NSButton = {
-        let b = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Pane")!,
+        let b = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.t("Close Pane"))!,
                          target: self, action: #selector(closeButtonClicked(_:)))
         b.isBordered = false
         b.bezelStyle = .circular

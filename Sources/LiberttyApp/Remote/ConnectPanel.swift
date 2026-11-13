@@ -50,6 +50,7 @@ final class ConnectPanel: NSObject, NSWindowDelegate {
 
         let label = NSTextField(labelWithString: "Host:")
         field.placeholderString = "devbox, user@server, or a Host from ~/.ssh/config"
+        field.setAccessibleLabel(L10n.t("Host"))
         field.completes = true
         field.numberOfVisibleItems = 12
         let hint = NSTextField(wrappingLabelWithString:
@@ -103,6 +104,8 @@ final class ConnectPanel: NSObject, NSWindowDelegate {
     }
 
     private func setStatus(_ text: String, busy: Bool, error: Bool = false) {
+        // Connecting, then how it ended: VoiceOver hears those (not every line ssh says on the way).
+        if text != status.stringValue, !busy || status.stringValue.isEmpty { AccessibilityNews.announce(text, from: status, high: error) }
         status.stringValue = text
         status.textColor = error ? .systemRed : .secondaryLabelColor
         if busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }

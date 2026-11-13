@@ -38,7 +38,7 @@ final class TabStrip: NSView {
         layer?.masksToBounds = true
         card.flat = true
         addSubview(card)
-        add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Tab")
+        add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: L10n.t("New Tab"))
         add.isBordered = false
         add.contentTintColor = .secondaryLabelColor
         add.symbolConfiguration = .init(pointSize: 12, weight: .regular)
@@ -49,17 +49,18 @@ final class TabStrip: NSView {
         add.isHidden = true
         addSubview(add)
         workspace.isBordered = false
-        workspace.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Workspaces")
+        workspace.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: L10n.t("Workspaces"))
         workspace.imagePosition = .imageLeading
         workspace.font = Typeface.ui(12.5, .medium)
         workspace.contentTintColor = .secondaryLabelColor
         workspace.symbolConfiguration = .init(pointSize: 11, weight: .regular)
         workspace.target = self
         workspace.action = #selector(showWorkspaces(_:))
-        workspace.toolTip = "Workspaces"
+        workspace.toolTip = L10n.t("Workspaces")
         addSubview(workspace)
+        setAccessibilityElement(true)
         setAccessibilityRole(.tabGroup)
-        setAccessibilityLabel("Tabs")
+        setAccessibilityLabel(L10n.t("Tabs"))
     }
 
     @available(*, unavailable)
@@ -345,13 +346,13 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         title.lineBreakMode = .byTruncatingTail
         title.maximumNumberOfLines = 1
         title.usesSingleLineMode = true
-        close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Tab")
+        close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.t("Close Tab"))
         close.isBordered = false
         close.contentTintColor = .secondaryLabelColor
         close.symbolConfiguration = .init(pointSize: 9, weight: .medium)
         close.target = self
         close.action = #selector(closeIt)
-        close.toolTip = "Close Tab"
+        close.toolTip = L10n.t("Close Tab")
         close.isHidden = true
         newsView.wantsLayer = true
         news.path = CGPath(ellipseIn: CGRect(x: 1, y: 1, width: 6, height: 6), transform: nil)
@@ -359,8 +360,23 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         newsView.layer?.addSublayer(news)
         newsView.isHidden = true
         for v in [badge, tiles, title, newsView, close] { addSubview(v) }
+        // Its name, state and news are in its label; its × (shown under the
+        // pointer only) and renaming are actions VoiceOver offers on it.
+        title.hideFromAccessibility()
         setAccessibilityElement(true)
         setAccessibilityRole(.radioButton)
+        setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: L10n.t("Close Tab")) { [weak self] in
+                guard let self, self.closable else { return false }
+                self.strip?.close(self)
+                return true
+            },
+            NSAccessibilityCustomAction(name: L10n.t("Rename Tab…")) { [weak self] in
+                guard let self else { return false }
+                self.strip?.rename(self)
+                return true
+            },
+        ])
     }
 
     @available(*, unavailable)
@@ -412,9 +428,24 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         toolTip = tip.joined(separator: " · ")
         showNews(tab.news)
         close.isHidden = !(closable && hovering)
-        setAccessibilityLabel(tab.title)
+        setAccessibilityLabel(Self.spoken(tab))
         setAccessibilityValue(selected)
         needsLayout = true
+    }
+
+    /// What VoiceOver says of a tab: its name, then what its glyphs and
+    /// marks show ("server, Waiting for you, 3 panes, new output").
+    static func spoken(_ tab: SidebarTabInfo) -> String {
+        var words = [tab.title]
+        if let status = tab.status { words.append(L10n.t(TerminalWindowController.label(for: status))) }
+        if let percent = tab.progress?.percent { words.append("\(percent)%") }
+        if tab.paneCount > 1 { words.append(L10n.t("%d panes").replacingOccurrences(of: "%d", with: String(tab.paneCount))) }
+        switch tab.news {
+        case .none: break
+        case .printing: words.append(L10n.t("new output"))
+        case .attention: words.append(L10n.t("needs a look"))
+        }
+        return words.joined(separator: ", ")
     }
 
     // The whole tab answers the mouse, its name too; only the × and the

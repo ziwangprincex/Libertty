@@ -85,7 +85,7 @@ final class PaneHeader: NSView {
         branch.imagePosition = .imageLeading
         branch.symbolConfiguration = .init(pointSize: 10, weight: .regular)
         branch.lineBreakMode = .byTruncatingMiddle
-        branch.toolTip = "Show the changes"
+        branch.toolTip = L10n.t("Show the changes")
         branch.target = self
         branch.action = #selector(showChanges)
         branch.isHidden = true
@@ -125,6 +125,9 @@ final class PaneHeader: NSView {
             mark.heightAnchor.constraint(equalToConstant: 1),
         ])
         updateColors()
+        // VoiceOver finds the pane's buttons in a group named for the pane.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
     }
 
     @available(*, unavailable)
@@ -132,7 +135,8 @@ final class PaneHeader: NSView {
 
     override var isFlipped: Bool { true }
 
-    private static func button(_ symbol: String, _ tip: String) -> NSButton {
+    private static func button(_ symbol: String, _ english: String) -> NSButton {
+        let tip = L10n.t(english)
         let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!, target: nil, action: nil)
         b.isBordered = false
         b.symbolConfiguration = .init(pointSize: 12, weight: .regular)
@@ -144,7 +148,9 @@ final class PaneHeader: NSView {
 
     private func update() {
         guard let info else { return }
-        glyph.image = NSImage(systemSymbolName: info.floats ? "apple.terminal" : "doc.text", accessibilityDescription: nil)
+        glyph.image = NSImage(systemSymbolName: info.floats ? "apple.terminal" : "doc.text",
+                              accessibilityDescription: L10n.t(info.floats ? "Terminal" : "Document"))
+        setAccessibilityLabel(L10n.t("Pane") + ", " + info.name)
         name.stringValue = info.name
         detail.stringValue = info.detail
         size.stringValue = info.size

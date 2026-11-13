@@ -18,7 +18,6 @@ final class MenuBarIcon: NSObject, NSMenuDelegate {
             let menu = NSMenu()
             menu.delegate = self
             item.menu = menu
-            item.button?.setAccessibilityLabel("Libertty")
             self.item = item
             update(waiting: waiting)
         } else if !shown, let item {
@@ -37,6 +36,9 @@ final class MenuBarIcon: NSObject, NSMenuDelegate {
         button.imagePosition = .imageLeading
         button.title = count > 0 ? " \(count)" : ""
         button.toolTip = count > 0 ? "\(count) waiting for you" : "Libertty"
+        // Not "Libertty, 2": what the 2 is.
+        button.setAccessibleLabel(count > 0 ? "Libertty, " + L10n.t("%d waiting for you").replacingOccurrences(of: "%d", with: String(count))
+                                            : "Libertty")
     }
 
     /// The menu, as things are when it opens.
