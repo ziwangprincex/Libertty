@@ -216,6 +216,10 @@ if [[ -d $TESTAPP/Contents/Resources/terminfo && ! $APPBIN -ot $LIBERTTY ]]; the
   # The app runs shells itself without session persistence: it carries the texts too.
   expect app-privacy-texts 'A program running in Libertty wants to use the camera' \
     plutil -extract NSCameraUsageDescription raw $TESTAPP/Contents/Info.plist
+  # AppleScript, told to itself (Cocoa reads the dictionary from the bundle's Info.plist).
+  mkdir -p $PRIVATE/applescript-dir
+  expect applescript 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+    $APPBIN --ui-probe "$(sed "s|@DIR@|$PRIVATE/applescript-dir|g" $ROOT/tests/fixtures/applescript.txt)" $OUT
 fi
 
 # A remote host: tests/fixtures/fake-ssh stands in for ssh and runs the

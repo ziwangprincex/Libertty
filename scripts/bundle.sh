@@ -84,6 +84,9 @@ cat > $APP/Contents/Info.plist <<PLIST
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+    <!-- AppleScript: Resources/Libertty.sdef (Sources/LiberttyApp/App/Scripting.swift). -->
+    <key>NSAppleScriptEnabled</key><true/>
+    <key>OSAScriptingDefinition</key><string>Libertty.sdef</string>
     <!-- Default terminal (Libertty ▸ Make Libertty the Default Terminal), folders and scripts opened with Libertty. -->
     <key>CFBundleDocumentTypes</key>
     <array>

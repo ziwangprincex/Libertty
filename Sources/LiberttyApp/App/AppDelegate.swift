@@ -52,6 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         launched = true
+        // AppleScript: the windows front to back (the Quick Terminal's too), and new ones as File ▸ New Window opens them.
+        Scripting.host = Scripting.Host(controllers: { [unowned self] in
+            let all = self.controllers + [QuickTerminal.shared.windowController].compactMap { $0 }
+            let order = NSApp.orderedWindows
+            return all.sorted { a, b in
+                (a.window.flatMap { order.firstIndex(of: $0) } ?? .max) < (b.window.flatMap { order.firstIndex(of: $0) } ?? .max)
+            }
+        }, openWindow: { [unowned self] command, directory in
+            let made = self.open(tabbedInto: nil, command: command, workingDirectory: directory)
+            if made != nil { self.activate() }
+            return made
+        })
         Notifier.shared.onActivate = { [weak self] pane in _ = self?.reveal(paneID: pane) }
         _ = SecureInput.shared
         NSApp.servicesProvider = ServiceProvider()

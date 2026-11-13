@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<!-- Libertty's AppleScript dictionary (Sources/LiberttyApp/App/Scripting.swift). -->
+<dictionary title="Libertty Terminology" xmlns:xi="http://www.w3.org/2003/XInclude">
+    <xi:include href="file:///System/Library/ScriptingDefinitions/CocoaStandard.sdef" xpointer="xpointer(/dictionary/suite)"/>
+
+    <suite name="Libertty Suite" code="Lbty" description="Libertty's windows, tabs and terminal sessions.">
+        <enumeration name="split direction" code="LSdr">
+            <enumerator name="right" code="LSrt"/>
+            <enumerator name="left" code="LSlf"/>
+            <enumerator name="down" code="LSdn"/>
+            <enumerator name="up" code="LSup"/>
+        </enumeration>
+
+        <class-extension extends="application" description="Libertty.">
+            <element type="terminal window" access="r" description="Libertty's windows, front to back.">
+                <cocoa key="scriptWindows"/>
+            </element>
+            <element type="session" access="r" description="Every terminal session of every window.">
+                <cocoa key="scriptSessions"/>
+            </element>
+        </class-extension>
+
+        <class name="terminal window" plural="terminal windows" code="LTwn" description="A Libertty window.">
+            <cocoa class="LiberttyScriptWindow"/>
+            <property name="id" code="ID  " type="text" access="r" description="The window's ID."><cocoa key="uniqueID"/></property>
+            <property name="name" code="pnam" type="text" access="r" description="Its title."><cocoa key="name"/></property>
+            <property name="host" code="Lhst" type="text" access="r" description="The host its sessions run on (empty: this Mac)."><cocoa key="host"/></property>
+            <element type="tab" access="r"><cocoa key="tabs"/></element>
+            <element type="session" access="r"><cocoa key="sessions"/></element>
+        </class>
+
+        <class name="tab" plural="tabs" code="LTab" description="A tab of a window: its split of sessions.">
+            <cocoa class="LiberttyScriptTab"/>
+            <property name="id" code="ID  " type="text" access="r"><cocoa key="uniqueID"/></property>
+            <property name="name" code="pnam" type="text" access="r" description="What the sidebar calls it."><cocoa key="name"/></property>
+            <property name="selected" code="Lsel" type="boolean" access="r" description="Whether it's the window's tab in front."><cocoa key="selected"/></property>
+            <element type="session" access="r"><cocoa key="sessions"/></element>
+        </class>
+
+        <class name="session" plural="sessions" code="LSes" description="A terminal: one program's pane.">
+            <cocoa class="LiberttyScriptSession"/>
+            <property name="id" code="ID  " type="text" access="r" description="Its session ID ($LIBERTTY_SESSION in it)."><cocoa key="uniqueID"/></property>
+            <property name="name" code="pnam" type="text" access="r" description="What its pane is called: the program, or the folder."><cocoa key="name"/></property>
+            <property name="working directory" code="Lcwd" type="text" access="r" description="Where its shell is (empty when unknown)."><cocoa key="workingDirectory"/></property>
+            <property name="program" code="Lprg" type="text" access="r" description="The program its pane shows."><cocoa key="program"/></property>
+            <property name="status" code="Lsts" type="text" access="r" description="idle, working, blocked (waiting for you), done or error."><cocoa key="status"/></property>
+            <property name="host" code="Lhst" type="text" access="r" description="The host it runs on (empty: this Mac)."><cocoa key="host"/></property>
+            <property name="focused" code="Lfoc" type="boolean" access="r" description="Whether its pane has the keyboard in its window."><cocoa key="focused"/></property>
+            <property name="contents" code="Lcnt" type="text" access="r" description="The text on its screen."><cocoa key="contents"/></property>
+            <responds-to command="split"><cocoa method="scriptSplit:"/></responds-to>
+            <responds-to command="focus"><cocoa method="scriptFocus:"/></responds-to>
+        </class>
+
+        <command name="new window" code="LbtyNWin" description="A new window with a shell (or a command).">
+            <cocoa class="LiberttyNewWindowCommand"/>
+            <parameter name="command" code="Lcmd" type="text" optional="yes" description="What to run instead of a shell."><cocoa key="command"/></parameter>
+            <parameter name="directory" code="Ldir" type="text" optional="yes" description="Where it starts."><cocoa key="directory"/></parameter>
+            <result type="session" description="The new window's session."/>
+        </command>
+
+        <command name="new tab" code="LbtyNTab" description="A new tab in a window (the front one if none is given).">
+            <cocoa class="LiberttyNewTabCommand"/>
+            <parameter name="in" code="Lwin" type="terminal window" optional="yes"><cocoa key="window"/></parameter>
+            <parameter name="command" code="Lcmd" type="text" optional="yes" description="What to run instead of a shell."><cocoa key="command"/></parameter>
+            <parameter name="directory" code="Ldir" type="text" optional="yes" description="Where it starts."><cocoa key="directory"/></parameter>
+            <result type="session" description="The new tab's session."/>
+        </command>
+
+        <command name="split" code="LbtySplt" description="A new session beside one (or the focused one).">
+            <cocoa class="LiberttySplitCommand"/>
+            <direct-parameter type="session" optional="yes"/>
+            <parameter name="direction" code="Ldrc" type="split direction" optional="yes" description="Where the new pane goes (right if none)."><cocoa key="direction"/></parameter>
+            <parameter name="command" code="Lcmd" type="text" optional="yes"><cocoa key="command"/></parameter>
+            <parameter name="directory" code="Ldir" type="text" optional="yes"><cocoa key="directory"/></parameter>
+            <result type="session" description="The new session."/>
+        </command>
+
+        <command name="input" code="LbtyInpt" description="Type text into a session, as typed (no Return added).">
+            <cocoa class="LiberttyInputCommand"/>
+            <direct-parameter type="text"/>
+            <parameter name="to" code="Lses" type="session" optional="yes" description="The session (the focused one if none)."><cocoa key="session"/></parameter>
+        </command>
+
+        <command name="run command" code="LbtyRunC" description="Type a command into a session and press Return.">
+            <cocoa class="LiberttyRunCommand"/>
+            <direct-parameter type="text"/>
+            <parameter name="in" code="Lses" type="session" optional="yes" description="The session (the focused one if none)."><cocoa key="session"/></parameter>
+        </command>
+
+        <command name="perform action" code="LbtyPerf" description="Do one of Libertty's actions, by its name (libertty +list-actions): new_split:down, toggle_quick_terminal…">
+            <cocoa class="LiberttyPerformActionCommand"/>
+            <direct-parameter type="text"/>
+            <parameter name="on" code="Lses" type="session" optional="yes" description="The session it acts on (the focused one if none)."><cocoa key="session"/></parameter>
+            <result type="boolean" description="Whether it did something."/>
+        </command>
+
+        <command name="focus" code="LbtyFcus" description="Bring a session's window forward and give its pane the keyboard.">
+            <cocoa class="LiberttyFocusCommand"/>
+            <direct-parameter type="session"/>
+        </command>
+    </suite>
+</dictionary>

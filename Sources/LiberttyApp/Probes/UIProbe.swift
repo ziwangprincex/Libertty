@@ -218,6 +218,14 @@ enum UIProbe {
             _ = PaneRequests.handle(info, in: [controller] + others)
         }
         defer { DistributedNotificationCenter.default().removeObserver(paneRequests) }
+        // AppleScript (the `applescript:` step): this probe's windows, a new one off screen too.
+        Scripting.host = Scripting.Host(controllers: { [controller] + others }, openWindow: { command, directory in
+            guard let other = try? TerminalWindowController(config: Config(), cols: 80, rows: 24) else { return nil }
+            if let w = other.window { hideOffScreen(w, at: NSPoint(x: -20000, y: -21000)) }
+            guard (try? other.start(command: command, workingDirectory: directory ?? scratch)) != nil else { return nil }
+            others.append(other)
+            return other
+        })
         // `+open --wait`'s side of it: the editors that said they closed.
         var closedEditors: Set<String> = []
         let closedObserver = DistributedNotificationCenter.default().addObserver(forName: EditorWait.closed, object: nil, queue: .main) { note in
@@ -521,6 +529,18 @@ enum UIProbe {
                             print("FAIL  ui-probe tree: \(want ? "no" : "still") \(path) in \(shown)")
                             failures += 1
                         }
+                    case .appleScript(let source, let want):
+                        let said = runAppleScript(source)
+                        // Exactly that; an error by its start ("error -1728").
+                        if let want {
+                            if said == want || want.hasPrefix("error") && said.hasPrefix(want) {
+                                print("ok    ui-probe applescript says \(want)")
+                            } else {
+                                print("FAIL  ui-probe applescript: \(source) said \(said.debugDescription), not \(want.debugDescription)")
+                                failures += 1
+                            }
+                        }
+                        pump(0.6)
                     case .expectUndo(let name):
                         // What Edit ▸ Undo would undo ("none": nothing).
                         let said = MainActor.assumeIsolated { () -> String in
@@ -1344,6 +1364,7 @@ enum UIProbe {
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
         case quickLookClick(String), expectQuickLook(String), expectDiagrams(Int)
         case treeSelect(String), treeMenu(String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
+        case appleScript(String, String?)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
         case settings(String), expectSettings(String), expectConfigChange(String)
@@ -1522,6 +1543,10 @@ enum UIProbe {
             case "expect-tree": steps.append(.expectTree(arg, true))
             case "expect-tree-not": steps.append(.expectTree(arg, false))
             case "expect-undo": steps.append(.expectUndo(arg))
+            case "applescript":
+                // SOURCE [==> WHAT IT SAYS]; told to this process (`tell current application`), never another app.
+                if let r = arg.range(of: " ==> ") { steps.append(.appleScript(String(arg[..<r.lowerBound]), String(arg[r.upperBound...]))) }
+                else { steps.append(.appleScript(arg, nil)) }
             case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
             case "expect-sheet-text": steps.append(.expectSheetText(arg))
@@ -1558,6 +1583,22 @@ enum UIProbe {
     /// Keep the run loop alive so the app draws and sessions produce.
     /// What an expectation printed while it may still be asked again.
     private static var held: [String]?
+
+    /// `source` run here, in this process (its Apple events come back to
+    /// it): what it returned, or "error N: what it said". Run from an app
+    /// bundle (the suite's own): Cocoa reads the dictionary from its Info.plist.
+    private static func runAppleScript(_ source: String) -> String {
+        guard Bundle.main.object(forInfoDictionaryKey: "OSAScriptingDefinition") != nil else {
+            return "error: no dictionary here (run this probe from an app bundle)"
+        }
+        var error: NSDictionary?
+        guard let script = NSAppleScript(source: "tell current application\n\(source)\nend tell") else { return "error: didn't compile" }
+        let result = script.executeAndReturnError(&error)
+        if let error {
+            return "error \(error[NSAppleScript.errorNumber] ?? "?"): \(error[NSAppleScript.errorMessage] ?? "")"
+        }
+        return result.stringValue ?? (result.descriptorType == typeTrue ? "true" : result.descriptorType == typeFalse ? "false" : "\(result)")
+    }
 
     /// Lines the steps print: held while an expectation may be asked again.
     private static func print(_ text: String) {
