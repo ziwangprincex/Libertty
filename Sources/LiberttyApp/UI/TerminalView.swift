@@ -11,7 +11,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     let session: TerminalSession
     /// Names this pane in notifications: its liberttyd session, else per view.
     lazy var paneID: String = session.persistentID ?? UUID().uuidString
-    private var renderer: TerminalRenderer!
+    private(set) var renderer: TerminalRenderer!
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
     private var displayLink: CADisplayLink?
     private var idleFrames = 0
@@ -328,6 +328,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         // Something else took the viewport to the bottom (typing, new
         // output while following): the rows line up again.
         if smoothOffset != 0, session.scrollbar.atBottom { setSmoothOffset(0) }
+        if isInMode { modesBeforeFrame() }
         let presented: Bool
         if let observer = onFramePresented {
             // Which output this frame shows, for `--latency-trace`.
@@ -348,6 +349,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             if showsScrollbar { scroller.update(session.scrollbar, reveal: revealScroller) }
             revealScroller = false
             updateBlinkTimer()
+            if hintsActive { hintsAfterFrame() }
         }
         return presented
     }
@@ -830,6 +832,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         updateNameTag(show: showsCloseButton && hovering)
         if hoveredLink != nil { updateGround(of: linkPreview, alpha: 0.92) }
         if showsPendingKeys { updateGround(of: pendingKeysLabel, alpha: 0.92) }
+        modesAppearanceChanged()
     }
 
     /// The × button's disc, in the appearance the pane has now.
@@ -877,12 +880,15 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         scroller.frame = NSRect(x: bounds.width - 16, y: top, width: 16, height: max(0, bounds.height - top))
         if session.host != nil { layoutLinkBanner() }
         if showsPendingKeys { layoutPendingKeys() }
+        layoutModeOverlays()
     }
 
     override func resignFirstResponder() -> Bool {
         session.reportFocus(false)
         setNeedsRender(force: true)
         PendingKeys.shared.cancel(in: self)
+        // Hints are for the keys typed next: elsewhere now. (Copy mode stays.)
+        if hintsActive { endHintMode() }
         return true
     }
 
@@ -1024,7 +1030,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         guard event.type == .keyDown, window?.firstResponder === self, !hasMarkedText() else {
             return super.performKeyEquivalent(with: event)
         }
+        // In copy or hint mode a key without ⌘ is the mode's (keyDown), not a keybind's first.
+        if isInMode, !event.modifierFlags.contains(.command) { return false }
         switch pressKeybind(event) {
+        // (Nor do a keybind's bytes reach the program then: ⌘← is ^A.)
+        case .action(let action) where isInMode && action.sendsInput: return true
+        case .completed(let action) where isInMode && action.sendsInput: return true
         case .action(let action): return ActionDispatcher.perform(action, in: self)
         case .completed(let action): ActionDispatcher.perform(action, in: self); return true
         case .held: return true
@@ -1041,6 +1052,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     /// The keys of a sequence under way, "⌃B …"; none: it's over.
     func showPendingKeys(_ keys: [Trigger]) {
+        pendingSequence = keys
+        updateKeyHints()
         // (Told of none without having shown any: no tag is made for that.)
         guard showsPendingKeys || !keys.isEmpty else { return }
         showsPendingKeys = !keys.isEmpty
@@ -1052,6 +1065,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     override func keyDown(with event: NSEvent) {
+        if isInMode, !hasMarkedText() { return modeKeyDown(event) }
         if !hasMarkedText() {
             switch pressKeybind(event) {
             case .action(let action): if ActionDispatcher.perform(action, in: self) { return }
@@ -1121,13 +1135,15 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     override func keyUp(with event: NSEvent) {
+        // A key the mode had: its release isn't the program's either, even once the mode is over.
+        if modeKeys.remove(event.keyCode) != nil || isInMode { return }
         // Only produces output when the program enabled kitty release events.
         send(event, action: GHOSTTY_KEY_ACTION_RELEASE, text: nil)
     }
 
     override func flagsChanged(with event: NSEvent) {
         modifiersChangedForLinks(event)
-        guard let key = ghosttyKeyForKeyCode[event.keyCode] else { return }
+        guard !isInMode, let key = ghosttyKeyForKeyCode[event.keyCode] else { return }
         let flag: NSEvent.ModifierFlags = switch key {
         case GHOSTTY_KEY_SHIFT_LEFT, GHOSTTY_KEY_SHIFT_RIGHT: .shift
         case GHOSTTY_KEY_CONTROL_LEFT, GHOSTTY_KEY_CONTROL_RIGHT: .control
@@ -1275,9 +1291,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// (Ghostty's copy_to_clipboard:mixed).
     @objc func copy(_ sender: Any?) {
         guard let text = session.selectedText(), !text.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        if let html = session.selectedHTML() { NSPasteboard.general.setString(html, forType: .html) }
+        let board = Self.clipboard
+        board.clearContents()
+        board.setString(text, forType: .string)
+        if let html = session.selectedHTML() { board.setString(html, forType: .html) }
+        // Copy mode: ⌘C copies as y does, and leaves.
+        if copyMode != nil { endCopyMode(copied: text, written: true) }
     }
 
     override func selectAll(_ sender: Any?) {
@@ -1292,7 +1311,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// Programs that track the mouse get the events; Shift bypasses them so
     /// text can still be selected (Otty's default bypass modifier).
     private func reportsMouse(_ event: NSEvent) -> Bool {
-        !isReadOnly && !event.modifierFlags.contains(.shift) && session.isMouseTracking
+        !isReadOnly && !isInMode && !event.modifierFlags.contains(.shift) && session.isMouseTracking
     }
 
     private func report(_ event: NSEvent, _ action: GhosttyMouseAction, button: GhosttyMouseButton?) {
@@ -1325,10 +1344,18 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        pressCell = nil
         // ⌘-click opens a link, even in programs that track the mouse.
         if event.modifierFlags.contains(.command), let link = link(at: event) {
             open(link)
             return
+        }
+        // A click ends hint mode; in copy mode it puts the cursor there (and,
+        // selecting, the selection's end: no new selection starts).
+        if hintsActive { endHintMode() }
+        if let mode = copyMode, !event.modifierFlags.contains(.command) {
+            moveCopyCursor(to: cell(at: event))
+            if mode.selecting != .none { return }
         }
         if reportsMouse(event) {
             pressedButtons.insert(event.buttonNumber)
@@ -1341,6 +1368,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             setNeedsRender(force: true)
             return
         }
+        if event.clickCount == 1 { (pressCell, pressDragged) = (cell(at: event), false) }
         session.selectionGesture(.press, pointer(for: event))
         setNeedsRender(force: true)
     }
@@ -1352,10 +1380,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             report(event, GHOSTTY_MOUSE_ACTION_MOTION, button: Self.button(event))
             return
         }
+        // Copy mode selecting: the press only moved its cursor.
+        if let mode = copyMode, mode.selecting != .none { return }
         if extendingSelection {
             _ = session.extendSelection(to: pointer(for: event))
             return setNeedsRender(force: true)
         }
+        if let pressCell, cell(at: event) != pressCell { pressDragged = true }
         // ⌥-drag selects a rectangle (columns), as in Ghostty and Terminal.
         let direction = session.selectionGesture(.drag, pointer(for: event), rectangle: event.modifierFlags.contains(.option))
         autoscroll(direction, event)
@@ -1368,6 +1399,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             report(event, GHOSTTY_MOUSE_ACTION_RELEASE, button: Self.button(event))
             return
         }
+        if let mode = copyMode, mode.selecting != .none { return }
         if extendingSelection {
             extendingSelection = false
             if copyOnSelect { copy(nil) }
@@ -1376,6 +1408,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         session.selectionGesture(.release, pointer(for: event))
         setNeedsRender(force: true)
         if copyOnSelect { copy(nil) }
+        // A plain click in the command being typed: the shell's cursor goes there.
+        if let pressCell, !pressDragged, event.clickCount == 1,
+           event.modifierFlags.intersection([.command, .option, .shift, .control]).isEmpty {
+            clickToMove(pressCell)
+        }
+        pressCell = nil
     }
 
     // MARK: Selection autoscroll (dragging past the top or bottom)
@@ -1461,7 +1499,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     private var hoveredLink: TerminalLink?
 
-    private func cell(at event: NSEvent) -> (col: Int, row: Int) {
+    func cell(at event: NSEvent) -> (col: Int, row: Int) {
         let p = convert(event.locationInWindow, from: nil)
         let cell = cellSizePoints, pad = padding
         return (Int(floor((p.x - pad.left) / cell.width)), Int(floor((p.y - pad.top + smoothOffset) / cell.height)))
@@ -1485,6 +1523,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     private func updateHoveredLink(_ event: NSEvent) {
+        // Hint mode underlines its targets: hovering leaves them be.
+        guard !hintsActive else { return }
         let link = event.modifierFlags.contains(.command) ? link(at: event) : nil
         guard link != hoveredLink else { return }
         hoveredLink = link
@@ -1659,13 +1699,65 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// It's on screen (asked instead of the tag: asking makes it).
     private var showsPendingKeys = false
 
+    // Copy mode, hint mode, which-key hints, a click at the prompt
+    // (TerminalView+Modes.swift).
+    var copyMode: CopyMode?
+    /// Hint mode is on: these are labeled, and this much of a label typed.
+    var hintsActive = false
+    var hints: [HintTarget] = []
+    var hintTyped = ""
+    /// What the hints were found in: the viewport's place and the grid's
+    /// size; when it moves on, they're found again.
+    var hintPlace: [Int] = []
+    lazy var hintOverlay: NSView = {
+        let overlay = PassThroughView()
+        overlay.wantsLayer = true
+        overlay.layer?.zPosition = 2
+        overlay.isHidden = true
+        addSubview(overlay)
+        return overlay
+    }()
+    /// The mode the pane is in ("Copy Mode", "Hints"), at its bottom right;
+    /// made the first time there's one to show.
+    var modeTagView: NSTextField?
+    var modeTag: NSTextField {
+        if let modeTagView { return modeTagView }
+        let label = PassThroughLabel(labelWithString: "")
+        label.font = Typeface.ui(11, .medium)
+        label.textColor = .labelColor
+        label.wantsLayer = true
+        label.drawsBackground = true
+        label.layer?.cornerRadius = 5
+        label.isHidden = true
+        addSubview(label)
+        label.layer?.zPosition = 2
+        modeTagView = label
+        return label
+    }
+    var keyHints: KeyHintsView?
+    var keyHintsTimer: Timer?
+    /// The keys of the sequence under way, for which-key hints.
+    var pendingSequence: [Trigger] = []
+    /// A left click: the cell it went down on, and whether it was dragged off it.
+    var pressCell: (col: Int, row: Int)?
+    var pressDragged = false
+    /// Keys pressed in copy or hint mode, not yet let go.
+    var modeKeys = Set<UInt16>()
+    /// When the hints were last found (streaming output finds them again at most so often).
+    var hintsFoundAt: CFTimeInterval = 0
+    /// A look for them again is due (output moved them on too soon after the last).
+    var hintsRefreshDue = false
+    /// Puts away a word flashed on the mode tag ("Copied").
+    var modeTagFlash: Timer?
+    var pendingKeysLabelHeight: CGFloat { pendingKeysLabel.frame.height }
+
     /// A tag's ground (the name tag's, the link preview's, the pending keys'),
     /// in the appearance the pane has now: a color with its alpha changed is
     /// resolved once (in the system's appearance, when made), while the
     /// tag's text follows the pane's — light on light, with a dark window
     /// theme on a light system. Taken as the tag is shown, and again when
     /// the appearance changes under it.
-    private func updateGround(of tag: NSTextField, alpha: CGFloat) {
+    func updateGround(of tag: NSTextField, alpha: CGFloat) {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             tag.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(alpha)
         }
@@ -1689,7 +1781,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// How well a tag's text reads on its ground: their WCAG contrast, as
     /// this pane's appearance resolves them, the text's own alpha over the
     /// ground (secondary text is a part-clear black or white).
-    private func contrast(of tag: NSTextField) -> Double? {
+    func contrast(of tag: NSTextField) -> Double? {
         var ratio: Double?
         effectiveAppearance.performAsCurrentDrawingAppearance {
             guard let text = tag.textColor?.usingColorSpace(.sRGB),
@@ -1774,7 +1866,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     /// Web and mail links go to their apps; text files open in Libertty; a
     /// program's link with any other scheme, or to a file that would run
     /// (an app, an installer, an executable), asks first.
-    private func open(_ link: TerminalLink) {
+    func open(_ link: TerminalLink) {
         hoveredLink = nil
         renderer.linkSpans = []
         showLinkPreview(nil)
@@ -1838,6 +1930,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     @objc func paste(_ sender: Any?) {
         guard !isReadOnly else { return }
+        // A paste is for the program: out of copy or hint mode first.
+        if copyMode != nil { endCopyMode() }
+        if hintsActive { endHintMode() }
         let text: String
         switch PasteContent.read(.general, allowsImage: session.host == nil) {
         case .text(let t): text = t
@@ -1915,7 +2010,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             for _ in 0..<abs(rows) { report(event, GHOSTTY_MOUSE_ACTION_PRESS, button: button) }
             return
         }
-        if session.isAlternateScreen, !isReadOnly {
+        if session.isAlternateScreen, !isReadOnly, !isInMode {
             // Full-screen programs without mouse tracking (less, man): the
             // wheel scrolls their content via arrow keys, as alternate scroll mode does.
             let key = rows > 0 ? GHOSTTY_KEY_ARROW_UP : GHOSTTY_KEY_ARROW_DOWN

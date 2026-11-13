@@ -864,6 +864,88 @@ enum UIProbe {
                         // The window, as dragged: where it is, not its size.
                         window.setFrameOrigin(NSPoint(x: window.frame.minX + dx, y: window.frame.minY + dy))
                         pump(0.4)
+                    case .expectMode(let want):
+                        // The focused pane's mode tag ("Copy Mode", "Hints"): "-" for none.
+                        let pane = controller.focusedTerminal
+                        if !tagHolds("mode", shown: pane.modeShown, contrast: pane.modeShown == nil ? nil : pane.contrast(of: pane.modeTag),
+                                     want: want, whole: false) { failures += 1 }
+                    case .expectCopyCursor(let want):
+                        // TEXT@COL: the copy cursor's line has TEXT, the cursor at column COL; "-": no copy mode.
+                        let shown = controller.focusedTerminal.copyCursorShown
+                        let parts = want.split(separator: "@", maxSplits: 1).map(String.init)
+                        let holds = want == "-" ? shown == nil
+                            : shown.map { $0.line.contains(parts[0]) && (parts.count < 2 || Int(parts[1]) == $0.col) } ?? false
+                        if holds {
+                            print("ok    ui-probe copy cursor: \(want)")
+                        } else {
+                            print("FAIL  ui-probe copy cursor: \(shown.map { "“\($0.line)” at \($0.col)" } ?? "none"), not \(want)")
+                            failures += 1
+                        }
+                    case .expectClipboard(let want):
+                        // (The probe's own pasteboard: never what the user copied.)
+                        let copied = TerminalView.clipboard.string(forType: .string) ?? ""
+                        if copied == want {
+                            print("ok    ui-probe copied \(want)")
+                        } else {
+                            print("FAIL  ui-probe copied “\(copied)”, not \(want)")
+                            failures += 1
+                        }
+                    case .expectSelection(let want):
+                        let selected = controller.focusedTerminal.session.selectedText() ?? "-"
+                        if selected == want {
+                            print("ok    ui-probe selected \(want)")
+                        } else {
+                            print("FAIL  ui-probe selected “\(selected)”, not \(want)")
+                            failures += 1
+                        }
+                    case .expectHint(let want):
+                        // A hint on TEXT; "-": hint mode isn't on.
+                        let shown = controller.focusedTerminal.hintsShown
+                        let holds = want == "-" ? shown.isEmpty : shown.contains { $0.text == want }
+                        if holds {
+                            print("ok    ui-probe hint \(want)")
+                        } else {
+                            print("FAIL  ui-probe hint \(want): the hints are \(shown.map { "\($0.label)=\($0.text)" })")
+                            failures += 1
+                        }
+                    case .hint(let text, let copy):
+                        // Type the label of the hint on TEXT (in capitals: copy it).
+                        guard let label = controller.focusedTerminal.hintsShown.first(where: { $0.text.contains(text) })?.label else {
+                            print("FAIL  ui-probe hint: none on \(text)")
+                            failures += 1
+                            break
+                        }
+                        for c in label { _ = press(copy ? c.uppercased() : String(c), in: window) }
+                        pump(0.3)
+                    case .expectKeyHints(let want):
+                        // Which-key hints listing WANT ("V Split Right"): "-" for none shown.
+                        let shown = controller.focusedTerminal.keyHintsShown
+                        let holds = want == "-" ? shown == nil : shown?.contains { $0.contains(want) } == true
+                        if holds {
+                            print("ok    ui-probe key hints: \(want)")
+                        } else {
+                            print("FAIL  ui-probe key hints: \(shown ?? ["none"]), not \(want)")
+                            failures += 1
+                        }
+                    case .clickText(let spec):
+                        // A plain click on TEXT's first cell (TEXT+N: N cells after it), in the
+                        // focused pane (the last line that has it).
+                        var text = spec, offset = 0
+                        if let plus = spec.lastIndex(of: "+"), let n = Int(spec[spec.index(after: plus)...]) {
+                            (text, offset) = (String(spec[..<plus]), n)
+                        }
+                        let pane = controller.focusedTerminal
+                        let rows = pane.session.screenRows().split(separator: "\n", omittingEmptySubsequences: false)
+                        guard let row = rows.lastIndex(where: { $0.contains(text) }),
+                              let at = rows[row].range(of: text, options: .backwards) else {
+                            print("FAIL  ui-probe click-text: no \(text) on screen")
+                            failures += 1
+                            break
+                        }
+                        // Columns, not characters: a wide one (CJK) takes two.
+                        let col = rows[row][..<at.lowerBound].reduce(0) { $0 + (Self.isWide($1) ? 2 : 1) }
+                        pane.probeClick(col: col + offset, row: row)
+                        pump(0.3)
                     case .expectPendingKeys(let want):
                         // The tag of a sequence under way, in the focused pane: "-" for none.
                         // Shown, its text reads on its ground in the appearance the pane
@@ -1262,6 +1344,8 @@ enum UIProbe {
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
+        case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
+        case hint(String, copy: Bool), expectKeyHints(String), clickText(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
@@ -1380,6 +1464,15 @@ enum UIProbe {
             case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
             case "expect-caret-told": steps.append(.expectCaretTold)
             case "expect-pending-keys": steps.append(.expectPendingKeys(arg))
+            case "expect-mode": steps.append(.expectMode(arg))
+            case "expect-copy-cursor": steps.append(.expectCopyCursor(arg))
+            case "expect-clipboard": steps.append(.expectClipboard(arg))
+            case "expect-selection": steps.append(.expectSelection(arg))
+            case "expect-hint": steps.append(.expectHint(arg))
+            case "hint": steps.append(.hint(arg, copy: false))
+            case "hint-copy": steps.append(.hint(arg, copy: true))
+            case "expect-key-hints": steps.append(.expectKeyHints(arg))
+            case "click-text": steps.append(.clickText(arg))
             case "expect-link-preview": steps.append(.expectLinkPreview(arg))
             case "expect-name-tag": steps.append(.expectNameTag(arg))
             case "move":
@@ -1480,6 +1573,14 @@ enum UIProbe {
         let name = String(describing: step)
         guard name.hasPrefix("expect") else { return false }
         return !["expectRegrids", "expectResizeFrames", "expectUnmoved"].contains { name.hasPrefix($0) }
+    }
+
+    /// A character a terminal gives two cells: CJK, Hangul, fullwidth forms.
+    static func isWide(_ c: Character) -> Bool {
+        guard let v = c.unicodeScalars.first?.value else { return false }
+        return (0x1100...0x115F).contains(v) || (0x2E80...0xA4CF).contains(v) || (0xAC00...0xD7A3).contains(v)
+            || (0xF900...0xFAFF).contains(v) || (0xFE30...0xFE4F).contains(v) || (0xFF00...0xFF60).contains(v)
+            || (0xFFE0...0xFFE6).contains(v) || (0x1F300...0x1FAFF).contains(v) || (0x20000...0x3FFFD).contains(v)
     }
 
     /// The run loop for `seconds`, its autoreleased objects let go as it
@@ -1694,6 +1795,15 @@ enum UIProbe {
                                                        width: rect.width, height: rect.height) : rect
                 context.cgContext.draw(image, in: CGRect(x: flipped.minX, y: flipped.maxY - CGFloat(image.height) / scale,
                                                          width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
+                // What the pane shows over its frame (its tags, hint labels): drawn again on top.
+                for overlay in pane.subviews where !overlay.isHidden && overlay.alphaValue > 0 && !(overlay is NSScroller) {
+                    guard let piece = overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds) else { continue }
+                    overlay.cacheDisplay(in: overlay.bounds, to: piece)
+                    guard let cg = piece.cgImage else { continue }
+                    let r = overlay.convert(overlay.bounds, to: view)
+                    let at = view.isFlipped ? NSRect(x: r.minX, y: view.bounds.height - r.maxY, width: r.width, height: r.height) : r
+                    context.cgContext.draw(cg, in: at)
+                }
             }
         }
         if let data = rep.representation(using: .png, properties: [:]), (try? data.write(to: URL(fileURLWithPath: path))) != nil {

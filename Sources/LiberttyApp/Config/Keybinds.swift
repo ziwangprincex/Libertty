@@ -228,6 +228,7 @@ enum Action: Equatable {
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
     case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
+    case toggleCopyMode, toggleHintMode
     case undo, redo
     case openSettings, openConfig, reloadConfig, openThemeEditor, quit
     case ignore, unbind
@@ -263,6 +264,7 @@ enum Action: Equatable {
         ("open_git", .openGit), ("open_browser", .openBrowser), ("focus_address", .focusAddress), ("open_tasks", .openTasks), ("new_canvas", .newCanvas), ("open_profiler", .openProfiler), ("open_board", .openBoard), ("open_plugins", .openPlugins), ("open_screen", .openScreen),
         ("toggle_picture_in_picture", .togglePictureInPicture),
         ("toggle_broadcast_input", .toggleBroadcastInput), ("copy_command_output", .copyCommandOutput),
+        ("toggle_copy_mode", .toggleCopyMode), ("toggle_hint_mode", .toggleHintMode),
         ("undo", .undo), ("redo", .redo),
         ("open_settings", .openSettings), ("open_config", .openConfig), ("reload_config", .reloadConfig), ("open_theme_editor", .openThemeEditor), ("quit", .quit),
         ("ignore", .ignore), ("unbind", .unbind),
@@ -431,6 +433,8 @@ enum Action: Equatable {
         ("undo", "Bring back the pane, tab or window closed last (within undo-timeout)"),
         ("redo", "Close it again"),
         ("copy_command_output", "Copy what the last command printed (needs shell integration)"),
+        ("toggle_copy_mode", "Copy mode: move through the screen and scrollback by key (h j k l, w b e, 0 $, gg G, { } prompts, / ? n N find), select (v V ⌃V) and copy (y); Esc leaves"),
+        ("toggle_hint_mode", "Label every link, path, commit hash and address on screen: type a label to open it (as ⌘-click does), in capitals to copy it"),
         ("write_scrollback_file:open|copy|paste|save", "Put the scrollback in a text file and open it in a tab, copy or paste its path, or save it where you choose"),
         ("write_selection_file:open|copy|paste|save", "The same for the selection"),
         ("toggle_quick_terminal", "Drop a terminal down from the top of the screen, or put it away (good as a global: key)"),
@@ -557,6 +561,7 @@ struct Keybinds: Equatable {
             "cmd+shift+arrow_up=jump_to_prompt:-1", "cmd+shift+arrow_down=jump_to_prompt:1",
             "cmd+arrow_right=text:\\x05", "cmd+arrow_left=text:\\x01", "cmd+backspace=text:\\x15",
             "alt+arrow_left=esc:b", "alt+arrow_right=esc:f",
+            "cmd+shift+c=toggle_copy_mode", "cmd+shift+h=toggle_hint_mode",
         ]
         for i in 1...8 { d.append("cmd+\(i)=goto_tab:\(i)") }
         return d
@@ -666,6 +671,23 @@ struct Keybinds: Equatable {
     /// (a menu shows one press: an action bound only to a sequence has none).
     func trigger(for action: Action) -> Trigger? {
         local.first { $0.action == action }?.trigger
+    }
+
+    /// What can follow `pressed`, the keys of a sequence so far: each next
+    /// key, with the action it completes, nil where it leads further on.
+    /// In the order the keys show (which-key hints).
+    func continuations(after pressed: [Trigger]) -> [(key: Trigger, action: Action?)] {
+        guard !pressed.isEmpty else { return [] }
+        var next: [Trigger: Action?] = [:]
+        for s in sequences where s.triggers.count > pressed.count && s.triggers.starts(with: pressed) {
+            let key = s.triggers[pressed.count]
+            if s.triggers.count == pressed.count + 1 {
+                next.updateValue(s.action, forKey: key)
+            } else if next.index(forKey: key) == nil {
+                next.updateValue(nil, forKey: key)
+            }
+        }
+        return next.map { (key: $0.key, action: $0.value) }.sorted { $0.key.displayString < $1.key.displayString }
     }
 
     /// The keys bound to `action` as shown beside its name: "⌘D", or a

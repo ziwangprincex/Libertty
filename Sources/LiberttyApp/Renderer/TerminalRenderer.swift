@@ -130,8 +130,15 @@ final class TerminalRenderer {
     var blinkOn = true
     private(set) var cursorBlinks = false
 
-    /// The link under the pointer while ⌘ is held, underlined.
+    /// The link under the pointer while ⌘ is held, underlined (hint
+    /// mode: every target's).
     var linkSpans: [TerminalLink.Span] = []
+
+    /// Copy mode's cursor, a block where it is in the viewport (the
+    /// program's own cursor is drawn hollow meanwhile); nil: none.
+    struct MarkedCell: Equatable { var row: Int; var col: Int; var wide: Bool }
+    var copyCursor: MarkedCell?
+    private var drawnCopyCursor: MarkedCell?
 
     // Kitty graphics: this frame's placements, and textures by image id.
     private let imagePipeline: MTLRenderPipelineState
@@ -298,9 +305,10 @@ final class TerminalRenderer {
         let cursorKey = DrawnCursor(cursorNow)
         let cursorChanged = cursorKey != drawnCursor
         let changed = dirty != GHOSTTY_RENDER_STATE_DIRTY_FALSE || force || highlightsChanged || imagesChanged || atlasMoved
-            || cursorChanged
+            || cursorChanged || copyCursor != drawnCopyCursor
         guard changed || offsetChanged || trail != nil else { return false }
         drawnCursor = cursorKey
+        drawnCopyCursor = copyCursor
         // Only the offset moved, or a trail fades: the rows stand; the
         // instances are put together again (the shader shifts them).
         if !changed, pixelOffset == 0 || belowRow != nil || (trail != nil && !offsetChanged) {
@@ -799,8 +807,8 @@ final class TerminalRenderer {
         cursor.size = MemoryLayout<GhosttyRenderStateCursor>.size
         _ = ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_CURSOR, &cursor)
 
-        var cursorGlyph: GlyphInstance?
-        cursorBlinks = cursor.blinking && focused && preedit.isEmpty
+        var cursorGlyph: GlyphInstance?, copyCursorGlyph: GlyphInstance?
+        cursorBlinks = cursor.blinking && focused && preedit.isEmpty && copyCursor == nil
         // A trail runs out even while the cursor isn't drawn (a blink's off half).
         if let t = trail, CACurrentMediaTime() - t.start >= Self.trailDuration { trail = nil }
         if !preedit.isEmpty, cursor.viewport_has_value {
@@ -849,7 +857,7 @@ final class TerminalRenderer {
             }
 
             var style = cursor.visual_style
-            if !focused { style = GHOSTTY_CURSOR_STYLE_BLOCK_HOLLOW }
+            if !focused || copyCursor != nil { style = GHOSTTY_CURSOR_STYLE_BLOCK_HOLLOW }
             switch style {
             case GHOSTTY_CURSOR_STYLE_BLOCK:
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, width, ch), color: color))
@@ -872,11 +880,26 @@ final class TerminalRenderer {
             }
         }
 
+        // Copy mode's cursor: a block, its character in the background color over it.
+        if let mark = copyCursor, mark.row >= 0, mark.row < rows.count, mark.col >= 0, mark.col < Int(columnCount) {
+            let cw = Float(fonts.cellWidth), ch = Float(fonts.cellHeight)
+            scratchRects.append(RectInstance(
+                rect: SIMD4(origin.x + Float(mark.col) * cw, origin.y + Float(mark.row) * ch, cw * (mark.wide ? 2 : 1), ch),
+                color: colors.cursor.packed()))
+            let row = rows[mark.row]
+            if let i = row.glyphColumns.firstIndex(of: UInt16(mark.col)) {
+                var g = row.glyphs[i]
+                if g.flags & 1 == 0 { g.color = (cursorText ?? colors.background).packed() }
+                copyCursorGlyph = g
+            }
+        }
+
         for row in rows {
             scratchGlyphs.append(contentsOf: row.glyphs)
         }
         if let belowRow { scratchGlyphs.append(contentsOf: belowRow.glyphs) }
         if let cursorGlyph { scratchGlyphs.append(cursorGlyph) }
+        if let copyCursorGlyph { scratchGlyphs.append(copyCursorGlyph) }
         if !preedit.isEmpty { scratchGlyphs.append(contentsOf: preeditGlyphs) }
     }
 

@@ -191,4 +191,15 @@ struct KeySequenceTests {
         pending.reset()
         #expect(pane.shown.isEmpty)
     }
+
+    /// Which-key hints: what can follow the keys so far, in key order.
+    @Test func whatCanFollow() {
+        let table = Keybinds(entries: ["ctrl+b>v=new_split:right", "ctrl+b>g>g=scroll_to_top", "ctrl+b>c=new_tab"])
+        let next = table.continuations(after: keys("ctrl+b"))
+        #expect(next.map(\.key.displayString) == ["C", "G", "V"])
+        #expect(next.map(\.action) == [.newTab, nil, .newSplit(.right)])
+        #expect(table.continuations(after: keys("ctrl+b>g")).map(\.action) == [.scrollToTop])
+        #expect(table.continuations(after: []).isEmpty)
+        #expect(table.continuations(after: keys("ctrl+x")).isEmpty)
+    }
 }

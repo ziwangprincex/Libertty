@@ -135,6 +135,12 @@ enum ActionDispatcher {
             }
             if !redone { return false }
         case .copyCommandOutput: controller?.copyLastCommandOutput()
+        case .toggleCopyMode:
+            guard let view else { return false }
+            view.toggleCopyMode()
+        case .toggleHintMode:
+            guard let view else { return false }
+            view.toggleHintMode()
         case .writeScrollbackFile(let then): controller?.writeTextFile(selection: false, then: then)
         case .writeSelectionFile(let then): controller?.writeTextFile(selection: true, then: then)
         case .openSettings: MainActor.assumeIsolated { SettingsWindowController.shared.show() }

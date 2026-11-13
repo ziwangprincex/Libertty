@@ -284,6 +284,8 @@ enum SettingsRegistry {
             item(.terminal, "Padding", "Horizontal padding", "window-padding-x", .stepper(0...100, step: 1, unit: "pt")),
             item(.terminal, "Padding", "Vertical padding", "window-padding-y", .stepper(0...100, step: 1, unit: "pt")),
             bool(.terminal, "Selection", "Copy on selection", "copy-on-select"),
+            bool(.terminal, "Shell", "Click to move the cursor", "cursor-click-to-move",
+                 help: "A click in the command you're typing moves the cursor there.", keywords: "prompt click arrow"),
             item(.terminal, "Clipboard", "Programs may set the clipboard", "clipboard-write", .toggle(on: "allow", off: "deny"),
                  help: "OSC 52: vim, tmux and remote shells use it.", keywords: "osc 52 copy"),
             item(.terminal, "Clipboard", "Programs may read the clipboard", "clipboard-read", .toggle(on: "allow", off: "deny"),
@@ -307,6 +309,8 @@ enum SettingsRegistry {
             }
         }
         all += [
+            bool(.shortcuts, "Key Sequences", "Show the keys that can follow", "key-sequence-hints",
+                 help: "After a sequence's first key (ctrl+b>v), what each next key does.", keywords: "which key prefix hints"),
             custom(.shortcuts, "From Any App", "Show or hide Libertty", id: "global-hotkey", keys: ["global-hotkey"], keywords: "global hotkey"),
             custom(.shortcuts, "From Any App", "New window", id: "global-new-window-hotkey", keys: ["global-new-window-hotkey"], keywords: "global hotkey"),
             custom(.shortcuts, "From Any App", "Quick terminal", id: "quick-terminal-hotkey", keys: ["quick-terminal-hotkey"], keywords: "global hotkey dropdown"),
@@ -489,6 +493,7 @@ enum SettingsShortcuts {
         Group(title: "Text", actions: [
             e("Copy", "copy_to_clipboard"), e("Paste", "paste_from_clipboard"), e("Select All", "select_all"),
             e("Clear Screen", "clear_screen"), e("Copy Output of Last Command", "copy_command_output"),
+            e("Copy Mode", "toggle_copy_mode"), e("Hint Mode", "toggle_hint_mode"),
             e("Increase Font Size", "increase_font_size:1"), e("Decrease Font Size", "decrease_font_size:1"),
             e("Reset Font Size", "reset_font_size"), e("Change Terminal Title…", "prompt_surface_title"),
             e("Terminal Read-only", "toggle_readonly"), e("Export Text As…", "write_scrollback_file:save"),

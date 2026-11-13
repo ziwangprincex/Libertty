@@ -311,6 +311,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         area.findBar.onNavigate = { [weak self] older in self?.findNext(older: older) }
         area.findBar.onArrow = { [weak self] up in
             guard let self else { return }
+            // Copy mode's cursor: up the page or down it, whichever way its search went.
+            if self.searchDocument == nil, self.focusedTerminal.copyMode != nil {
+                return self.focusedTerminal.copySearchStep(older: up)
+            }
             // A document's next match is down the page; a terminal's older one is up.
             self.findNext(older: self.searchDocument == nil ? up : !up)
         }

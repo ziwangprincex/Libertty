@@ -1003,6 +1003,16 @@ final class TerminalSession {
         _ = renderPending.set()
     }
 
+    /// The terminal, under the lock, for the pane's own modes (copy mode,
+    /// hints, a click at the prompt) kept in files of their own: `body`
+    /// reads it, sets its selection or scrolls its viewport, and keeps its
+    /// tracked references — never writes output to it (vt_write) nor takes
+    /// the lock again. `redraw`: what it did changes the frame.
+    func withTerminal<R>(redraw: Bool = false, _ body: (GhosttyTerminal) -> R) -> R {
+        defer { if redraw { markRenderPending() } }
+        return lock.withLock { body(terminal) }
+    }
+
     // MARK: Settings (main thread)
 
     /// Apply the user's settings: colors, scrollback, default cursor and
@@ -1627,6 +1637,59 @@ extension TerminalSession {
         markRenderPending()
     }
 
+    /// Copy mode's n and N: select the nearest match past `point` (a cell
+    /// of the screen, scrollback included), above it (`older`) or below,
+    /// and say where that match starts. The search's own order is newest
+    /// first, its steps from the match selected: walked from there to the
+    /// one nearest the copy-mode cursor. Nil when there's no match that way.
+    func selectMatch(beyond point: ScreenPoint, older: Bool) -> ScreenPoint? {
+        defer { markRenderPending() }
+        return lock.withLock { () -> ScreenPoint? in
+            guard let search, searchResult.active, searchResult.total > 0 else { return nil }
+            defer { refreshSearchLocked() }
+            func selected() -> ScreenPoint? {
+                var match = GhosttySelection()
+                guard ghostty_search_get(search, GHOSTTY_SEARCH_DATA_SELECTED_MATCH, &match) == GHOSTTY_SUCCESS else { return nil }
+                var a = GhosttyPointCoordinate(), b = GhosttyPointCoordinate()
+                guard ghostty_terminal_point_from_grid_ref(terminal, &match.start, GHOSTTY_POINT_TAG_SCREEN, &a) == GHOSTTY_SUCCESS,
+                      ghostty_terminal_point_from_grid_ref(terminal, &match.end, GHOSTTY_POINT_TAG_SCREEN, &b) == GHOSTTY_SUCCESS
+                else { return nil }
+                let first = (a.y, a.x) <= (b.y, b.x) ? a : b
+                return ScreenPoint(x: Int(first.x), y: Int(first.y))
+            }
+            func index() -> Int? {
+                var i = 0
+                return ghostty_search_get(search, GHOSTTY_SEARCH_DATA_SELECTED_INDEX, &i) == GHOSTTY_SUCCESS ? i : nil
+            }
+            /// One match toward the oldest (or the newest); false at that end,
+            /// where it stays (a search that wraps round is taken back).
+            func step(older: Bool) -> Bool {
+                let before = index()
+                _ = older ? ghostty_search_select_next(search) : ghostty_search_select_prev(search)
+                guard let before else { return index() != nil }
+                guard let after = index(), after != before else { return false }
+                if older ? after > before : after < before { return true }
+                _ = older ? ghostty_search_select_prev(search) : ghostty_search_select_next(search)
+                return false
+            }
+            func past(_ p: ScreenPoint) -> Bool { older ? p < point : point < p }
+            if selected() == nil { _ = step(older: true) }
+            guard var at = selected() else { return nil }
+            if past(at) {
+                // Back toward the point, while the next match that way is still past it.
+                while step(older: !older), let p = selected() {
+                    if past(p) { at = p } else { _ = step(older: older); break }
+                }
+                return at
+            }
+            while !past(at) {
+                guard step(older: older), let p = selected() else { return nil }
+                at = p
+            }
+            return at
+        }
+    }
+
     /// Called with `lock` held: catch up with the terminal and recompute
     /// the count and the viewport highlights.
     fileprivate func refreshSearchLocked() {
@@ -1716,11 +1779,11 @@ extension TerminalSession {
     /// URL's own Chinese or Japanese, as in `/wiki/中文` or `佐々木`, is kept:
     /// only the punctuation and symbols of those blocks, and the quotes,
     /// dashes and ellipses Chinese text uses (“…” —— ……), end it).
-    private static let urlPattern = try! NSRegularExpression(
+    static let urlPattern = try! NSRegularExpression(
         pattern: #"(?:https?|ftp|file)://[[^\s<>"'`]--[[\x{2010}-\x{2027}\x{2030}-\x{205E}\x{3000}-\x{303F}\x{FF01}-\x{FF65}]&&[\p{P}\p{S}\p{Zs}]]]+|mailto:[[^\s<>"'`]--[[\x{2010}-\x{2027}\x{2030}-\x{205E}\x{3000}-\x{303F}\x{FF01}-\x{FF65}]&&[\p{P}\p{S}\p{Zs}]]]+"#)
 
     /// Paths as tools print them: `src/a.swift:12:4`, `./x`, `~/y`, `/z/w.txt`.
-    private static let pathPattern = try! NSRegularExpression(pattern: #"[~./]?[\w.@+\-]*(?:/[\w.@+\-]+)+/?(?::\d+){0,2}|[\w@+\-][\w.@+\-]*\.[A-Za-z]\w*(?::\d+){0,2}"#)
+    static let pathPattern = try! NSRegularExpression(pattern: #"[~./]?[\w.@+\-]*(?:/[\w.@+\-]+)+/?(?::\d+){0,2}|[\w@+\-][\w.@+\-]*\.[A-Za-z]\w*(?::\d+){0,2}"#)
 
     /// The link at a viewport cell, if any: a URL (OSC 8 or written out), or
     /// a path to an existing file or folder (relative to the shell's
@@ -1854,32 +1917,43 @@ extension TerminalSession {
 
             let ns = text as NSString
             for match in Self.urlPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-                var range = match.range
-                // Sentence punctuation after a URL isn't part of it; a closing
-                // bracket is, when the URL opened one (Wikipedia-style links).
-                while range.length > 0 {
-                    let last = ns.substring(with: NSRange(location: range.location + range.length - 1, length: 1))
-                    let body = ns.substring(with: range)
-                    let opens = { (o: Character) in body.filter { $0 == o }.count }
-                    if ".,;:!?".contains(last) { range.length -= 1; continue }
-                    if last == ")", opens("(") < opens(")") { range.length -= 1; continue }
-                    if last == "]", opens("[") < opens("]") { range.length -= 1; continue }
-                    break
-                }
+                let range = Self.trimURL(match.range, in: ns)
                 guard range.location <= at, at < range.location + range.length else { continue }
                 return .link(TerminalLink(url: ns.substring(with: range), spans: spans(range.location..<(range.location + range.length)),
                                           explicit: false))
             }
             for match in Self.pathPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-                var range = match.range
-                while range.length > 0, ".,;:)]}'\"".contains(ns.substring(with: NSRange(location: range.location + range.length - 1, length: 1))) {
-                    range.length -= 1
-                }
+                let range = Self.trimPath(match.range, in: ns)
                 guard range.length > 1, range.location <= at, at < range.location + range.length else { continue }
                 return .path(ns.substring(with: range), spans(range.location..<(range.location + range.length)))
             }
             return nil
         }
+    }
+
+    /// A URL found in text, without the sentence's punctuation after it; a
+    /// closing bracket is kept when the URL opened one (Wikipedia-style links).
+    static func trimURL(_ found: NSRange, in ns: NSString) -> NSRange {
+        var range = found
+        while range.length > 0 {
+            let last = ns.substring(with: NSRange(location: range.location + range.length - 1, length: 1))
+            let body = ns.substring(with: range)
+            let opens = { (o: Character) in body.filter { $0 == o }.count }
+            if ".,;:!?".contains(last) { range.length -= 1; continue }
+            if last == ")", opens("(") < opens(")") { range.length -= 1; continue }
+            if last == "]", opens("[") < opens("]") { range.length -= 1; continue }
+            break
+        }
+        return range
+    }
+
+    /// A path found in text, without the punctuation or quote after it.
+    static func trimPath(_ found: NSRange, in ns: NSString) -> NSRange {
+        var range = found
+        while range.length > 0, ".,;:)]}'\"".contains(ns.substring(with: NSRange(location: range.location + range.length - 1, length: 1))) {
+            range.length -= 1
+        }
+        return range
     }
 }
 

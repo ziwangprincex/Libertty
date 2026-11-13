@@ -1,0 +1,17 @@
+# Which-key hints (key-sequence-hints, on by default): after a sequence's
+# first key, what can follow is listed, then put away when it's over.
+key:ctrl+b
+wait:0.6
+expect-key-hints:V Split Right
+expect-key-hints:C New Tab
+expect-pending-keys:⌃B …
+key:escape
+wait:0.3
+expect-key-hints:-
+expect-pending-keys:-
+# Pressed quickly, the sequence never shows it.
+key:ctrl+b
+key:v
+wait:0.6
+expect-key-hints:-
+expect-panes:2
