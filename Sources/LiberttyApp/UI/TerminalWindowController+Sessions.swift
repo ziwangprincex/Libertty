@@ -162,6 +162,13 @@ extension TerminalWindowController {
         Notifier.shared.post(title: title.isEmpty ? self.title(ofPane: pane) : title, body: body, pane: pane.paneID)
     }
 
+    /// A command line the shell ran: remembered for autocomplete (in the
+    /// folder it ran in), unless it's one not to keep (CommandHistory.keeps).
+    func sessionCommandStarted(_ session: TerminalSession, command: String) {
+        guard config.autocompleteHistory else { return }
+        CommandHistory.shared.record(command, folder: CommandHistory.folder(of: session))
+    }
+
     func sessionCommandFinished(_ session: TerminalSession, command: String, exitCode: Int32?, duration: TimeInterval) {
         // It may have changed what a block shows (a commit, a branch), in any window.
         NotificationCenter.default.post(name: Blocks.commandFinished, object: nil)

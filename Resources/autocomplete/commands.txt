@@ -1,0 +1,398 @@
+# Libertty's command specs, for autocomplete's list (⌃⇧Space): subcommands and options of
+# common tools, with what each does. One entry a line, indented two spaces a level:
+#
+#   NAME[|ALIAS…]  DESCRIPTION     a subcommand (or the command, unindented)
+#   -X|--long[=]  DESCRIPTION      an option; one ending in = takes a value
+#   @KIND                          what its arguments are: path, dir, branch, remote,
+#                                  host (~/.ssh/config), script (package.json), target (Makefile)
+#
+# A description is everything after two or more spaces.
+
+cd  Change the shell's folder
+  @dir
+ls  List a folder
+  -l  Long listing
+  -a  Include hidden files
+  -la  Long listing, hidden files too
+  -h  Human-readable sizes
+  @path
+cat  Print files
+  @path
+less  Page through a file
+  @path
+open  Open with the default app
+  -a=  Open with this app
+  -R  Reveal in Finder
+  @path
+code  Open in VS Code
+  @path
+vim|nvim  Edit a file
+  @path
+rm  Remove files
+  -r  Folders and what's in them
+  -f  Don't ask
+  -rf  Folders, without asking
+  @path
+mkdir  Make a folder
+  -p  With its parents
+  @dir
+cp  Copy files
+  -r  Folders too
+  @path
+mv  Move or rename files
+  @path
+ssh  Log in to another machine
+  -p=  Port
+  -i=  Identity file
+  -L=  Forward a local port
+  -J=  Jump host
+  @host
+scp  Copy over ssh
+  -r  Folders too
+  @path
+git  Distributed version control
+  status|st  Show the working tree's state
+    -s|--short  Short format
+    -b|--branch  Show the branch
+  add  Stage changes
+    -A|--all  Every change, new files too
+    -p|--patch  Pick hunks
+    -u|--update  Tracked files only
+    @path
+  commit|ci  Record staged changes
+    -m|--message=  The message
+    -a|--all  Stage tracked changes first
+    --amend  Redo the last commit
+    --no-edit  Keep the message
+    --fixup=  A fixup for a commit
+    -S|--gpg-sign  Sign it
+  push  Send commits to a remote
+    -u|--set-upstream  Track the branch there
+    -f|--force  Overwrite the remote's
+    --force-with-lease  Overwrite only what you've seen
+    --tags  Tags too
+    @remote
+  pull  Fetch and merge
+    --rebase  Rebase instead of merging
+    --ff-only  Only fast-forward
+    @remote
+  fetch  Download from a remote
+    --all  Every remote
+    -p|--prune  Drop what's gone there
+    @remote
+  checkout|co  Switch branches or restore files
+    -b=  A new branch
+    @branch
+  switch|sw  Switch branches
+    -c|--create=  A new branch
+    @branch
+  branch|br  List, make or delete branches
+    -d|--delete=  Delete a merged branch
+    -D=  Delete a branch
+    -m|--move=  Rename a branch
+    -a|--all  Remote branches too
+    -v|--verbose  With their last commits
+    @branch
+  merge  Join a branch into this one
+    --no-ff  Always a merge commit
+    --squash  One change, no merge
+    --abort  Give up a conflicted merge
+    @branch
+  rebase  Reapply commits on another base
+    -i|--interactive  Edit the list first
+    --continue  After resolving
+    --abort  Give it up
+    --onto=  Onto this base
+    @branch
+  log  Show commits
+    --oneline  One line each
+    --graph  Draw the history
+    -p|--patch  With their changes
+    -n=  Only this many
+    --author=  By this author
+    --stat  Files changed
+  diff  Show changes
+    --staged|--cached  What's staged
+    --stat  Files changed
+    --name-only  Only the files' names
+    @path
+  show  Show a commit
+    --stat  Files changed
+  stash  Put changes aside
+    push  Put them aside
+    pop  Take the last back
+    apply  Apply one, keep it
+    list  List them
+    drop  Delete one
+    show  Show one
+  restore  Restore files
+    --staged  Unstage
+    --source=  From this commit
+    @path
+  reset  Move HEAD
+    --soft  Keep changes staged
+    --hard  Discard changes
+    --mixed  Keep changes unstaged
+  clone  Copy a repository
+    --depth=  Only the latest commits
+    --recurse-submodules  With submodules
+  remote  Manage remotes
+    add  Add one
+    remove  Remove one
+    -v  With their URLs
+  tag  Create or list tags
+    -a  Annotated
+    -d  Delete
+  worktree  Manage worktrees
+    add  Add one
+    list  List them
+    remove  Remove one
+  cherry-pick  Apply a commit here
+    --continue  After resolving
+    --abort  Give it up
+  revert  Undo a commit with a new one
+  blame  Who changed each line
+    @path
+  grep  Search tracked files
+  bisect  Find a commit by halving
+    start  Begin
+    good  This one is good
+    bad  This one is bad
+    reset  End
+  submodule  Manage submodules
+    update  Update them
+      --init  Set up new ones
+      --recursive  Theirs too
+  init  Make a repository
+  config  Settings
+    --global  Yours
+    --local  This repository's
+gh  GitHub's command line
+  pr  Pull requests
+    create  Open one
+      --fill  From the commits
+      --draft  As a draft
+    list  List them
+    view  Show one
+      --web  In the browser
+    checkout  Check one out
+    merge  Merge one
+    status  Yours
+  issue  Issues
+    create  Open one
+    list  List them
+    view  Show one
+  repo  Repositories
+    clone  Clone one
+    view  Show one
+      --web  In the browser
+  run  Workflow runs
+    list  List them
+    watch  Follow one
+    view  Show one
+  auth  Sign in
+    login  Sign in
+    status  Who you are
+npm  Node's package manager
+  install|i  Install packages
+    -D|--save-dev  As a dev dependency
+    -g|--global  For your user
+  run  Run a script
+    @script
+  test|t  Run the tests
+  start  Run the start script
+  ci  Clean install from the lock file
+  uninstall|rm  Remove packages
+  update  Update packages
+  outdated  What's out of date
+  publish  Publish the package
+  init  Make a package.json
+  exec  Run a package's command
+pnpm  Fast package manager
+  install|i  Install packages
+  add  Add packages
+    -D|--save-dev  As a dev dependency
+  remove|rm  Remove packages
+  run  Run a script
+    @script
+  dev  Run the dev script
+  build  Run the build script
+  test  Run the tests
+  dlx  Run a package without installing it
+yarn  Package manager
+  add  Add packages
+    -D|--dev  As a dev dependency
+  remove  Remove packages
+  install  Install packages
+  run  Run a script
+    @script
+cargo  Rust's build tool
+  build|b  Compile
+    --release  Optimized
+    --all-targets  Every target
+    -p|--package=  This package
+  run|r  Build and run
+    --release  Optimized
+    --bin=  This binary
+    --example=  This example
+  test|t  Run the tests
+    --release  Optimized
+    --doc  Doc tests only
+  check|c  Check without building
+  clippy  Lint
+    --fix  Apply the fixes
+  fmt  Format
+    --check  Only say what's off
+  add  Add a dependency
+    --dev  As a dev dependency
+  remove  Remove a dependency
+  update  Update the lock file
+  doc  Build the docs
+    --open  And open them
+  new  Make a package
+    --lib  A library
+  publish  Publish to crates.io
+  install  Install a binary
+  bench  Run the benchmarks
+swift  Swift's tools
+  build  Build the package
+    -c|--configuration=  debug or release
+    --product=  This product
+  test  Run the tests
+    --filter=  These tests
+    --parallel  Side by side
+  run  Build and run
+    -c|--configuration=  debug or release
+  package  Manage the package
+    resolve  Resolve dependencies
+    update  Update dependencies
+    init  Make a package
+      --type=  executable, library, …
+    clean  Remove build products
+go  Go's tools
+  build  Compile
+    -o=  Output file
+  run  Compile and run
+    @path
+  test  Run the tests
+    -v  Verbose
+    -run=  These tests
+    -race  With the race detector
+  mod  Modules
+    tidy  Add and drop as needed
+    init  Make a module
+    download  Download them
+  get  Add a dependency
+  fmt  Format
+  vet  Check for mistakes
+  install  Install a command
+make  Build with a Makefile
+  -j=  Jobs at once
+  -C=  In this folder
+  -n  Only print the commands
+  @target
+docker  Containers
+  run  Run a container
+    -it  Interactive, with a terminal
+    -d|--detach  In the background
+    --rm  Remove it after
+    -p|--publish=  Publish a port
+    -v|--volume=  Mount a volume
+    -e|--env=  Set a variable
+    --name=  Its name
+  ps  List containers
+    -a|--all  Stopped ones too
+  images  List images
+  build  Build an image
+    -t|--tag=  Its name
+    -f|--file=  The Dockerfile
+    --no-cache  From scratch
+  exec  Run in a running container
+    -it  Interactive, with a terminal
+  logs  A container's output
+    -f|--follow  Keep following
+  stop  Stop containers
+  start  Start containers
+  rm  Remove containers
+    -f|--force  Running ones too
+  rmi  Remove images
+  pull  Download an image
+  push  Upload an image
+  compose  Multi-container apps
+    up  Start them
+      -d|--detach  In the background
+      --build  Build first
+    down  Stop and remove them
+      -v|--volumes  Their volumes too
+    ps  List them
+    logs  Their output
+      -f|--follow  Keep following
+    build  Build them
+    exec  Run in one
+    restart  Restart them
+  system  The daemon
+    prune  Remove what's unused
+      -a|--all  Unused images too
+kubectl  Kubernetes
+  get  List resources
+    -n|--namespace=  In this namespace
+    -o|--output=  json, yaml, wide, name
+    -A|--all-namespaces  Every namespace
+    -w|--watch  Keep watching
+  describe  Show a resource in detail
+    -n|--namespace=  In this namespace
+  apply  Apply a configuration
+    -f|--filename=  From this file
+    @path
+  delete  Delete resources
+    -f|--filename=  From this file
+    -n|--namespace=  In this namespace
+  logs  A pod's output
+    -f|--follow  Keep following
+    -n|--namespace=  In this namespace
+    -c|--container=  This container
+  exec  Run in a container
+    -it  Interactive, with a terminal
+    -n|--namespace=  In this namespace
+  port-forward  Forward a local port
+  rollout  Manage rollouts
+    status  How it's going
+    restart  Restart it
+    undo  Roll back
+  config  Settings
+    use-context  Switch context
+    get-contexts  List contexts
+    current-context  Which one
+  scale  Change replicas
+    --replicas=  How many
+brew  Homebrew
+  install  Install formulae or casks
+    --cask  A cask (an app)
+  uninstall|remove|rm  Remove one
+  upgrade  Upgrade them
+  update  Update Homebrew
+  list|ls  What's installed
+  search  Search formulae and casks
+  info  About one
+  outdated  What's out of date
+  cleanup  Remove old versions
+  services  Background services
+    list  List them
+    start  Start one
+    stop  Stop one
+    restart  Restart one
+  doctor  Check for problems
+  tap  Add a tap
+python|python3  Python
+  -m=  Run a module
+  -c=  Run this code
+  @path
+pip|pip3  Python's package installer
+  install  Install packages
+    -r|--requirement=  From a file
+    -U|--upgrade  Upgrade them
+    -e|--editable=  Editable, from a path
+  uninstall  Remove packages
+  list  What's installed
+  freeze  Pinned, for requirements.txt
+  show  About one

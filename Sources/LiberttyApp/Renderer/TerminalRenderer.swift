@@ -144,6 +144,21 @@ final class TerminalRenderer {
     /// drawn underlined at the cursor over whatever the grid has there.
     var preedit = ""
 
+    /// Autocomplete's suggestion (fish's ghost text): what the line would go
+    /// on with, dimmed after the cursor, in the cells free there. Not the
+    /// terminal's: nothing was typed until it's accepted.
+    struct Ghost: Equatable {
+        var text: String
+        /// The cursor's cell, viewport rows and columns.
+        var row: Int
+        var col: Int
+        /// Columns it may take (to the row's end, or before a right prompt).
+        var room: Int
+    }
+    var ghost: Ghost?
+    private var drawnGhost: Ghost?
+    private var ghostGlyphs: [GlyphInstance] = []
+
     init(device: MTLDevice, fonts: FontSet) throws {
         self.device = device
         self.fonts = fonts
@@ -284,7 +299,9 @@ final class TerminalRenderer {
         drawnOffset = pixelOffset
         // The composition's glyphs go into the atlas before the rows are
         // placed: one that fills it then wipes it before them, not after.
+        // (The same for a suggestion's.)
         warmPreedit()
+        warmGhost()
         // Wiped since the rows were placed (by a composition, last frame):
         // they point at overwritten space, every one of them.
         let atlasMoved = atlas.generation != rowsGeneration
@@ -299,11 +316,14 @@ final class TerminalRenderer {
         let cursorChanged = cursorKey != drawnCursor
         let changed = dirty != GHOSTTY_RENDER_STATE_DIRTY_FALSE || force || highlightsChanged || imagesChanged || atlasMoved
             || cursorChanged
-        guard changed || offsetChanged || trail != nil else { return false }
+        let ghostChanged = ghost != drawnGhost
+        guard changed || offsetChanged || trail != nil || ghostChanged else { return false }
         drawnCursor = cursorKey
-        // Only the offset moved, or a trail fades: the rows stand; the
-        // instances are put together again (the shader shifts them).
-        if !changed, pixelOffset == 0 || belowRow != nil || (trail != nil && !offsetChanged) {
+        drawnGhost = ghost
+        // Only the offset moved, or a trail fades, or the suggestion changed:
+        // the rows stand; the instances are put together again (the shader
+        // shifts them).
+        if !changed, pixelOffset == 0 || belowRow != nil || ((trail != nil || ghostChanged) && !offsetChanged) {
             if pixelOffset == 0 { belowRow = nil }
             assembleInstances(colors: defaultColors(), focused: lastFocused)
             return true
@@ -800,6 +820,8 @@ final class TerminalRenderer {
         _ = ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_CURSOR, &cursor)
 
         var cursorGlyph: GlyphInstance?
+        /// Where a block cursor covers a cell this frame (a suggestion's first character there takes its text color).
+        var blockCell: (row: Int, col: Int)?
         cursorBlinks = cursor.blinking && focused && preedit.isEmpty
         // A trail runs out even while the cursor isn't drawn (a blink's off half).
         if let t = trail, CACurrentMediaTime() - t.start >= Self.trailDuration { trail = nil }
@@ -853,6 +875,7 @@ final class TerminalRenderer {
             switch style {
             case GHOSTTY_CURSOR_STYLE_BLOCK:
                 scratchRects.append(RectInstance(rect: SIMD4(left, top, width, ch), color: color))
+                blockCell = (Int(cursor.viewport_y), Int(column))
                 // Redraw the glyph under the block in the background color (or
                 // `cursor-text`) so it stays legible.
                 if let i = row.glyphColumns.firstIndex(of: column) {
@@ -876,8 +899,57 @@ final class TerminalRenderer {
             scratchGlyphs.append(contentsOf: row.glyphs)
         }
         if let belowRow { scratchGlyphs.append(contentsOf: belowRow.glyphs) }
+        appendGhost(colors: colors, blockCell: blockCell)
         if let cursorGlyph { scratchGlyphs.append(cursorGlyph) }
+        scratchGlyphs.append(contentsOf: ghostGlyphs)
         if !preedit.isEmpty { scratchGlyphs.append(contentsOf: preeditGlyphs) }
+    }
+
+    /// The suggestion's glyphs, rasterized ahead (as the composition's are).
+    private func warmGhost() {
+        guard let ghost, ghost.room > 0 else { return }
+        var column = 0
+        for character in ghost.text {
+            let span = character.unicodeScalars.first.map(Self.isWide) == true ? 2 : 1
+            guard column + span <= ghost.room else { break }
+            let scalars = character.unicodeScalars
+            _ = scalars.count == 1
+                ? atlas.entry(scalar: scalars.first!.value, style: [], span: span)
+                : atlas.entry(cluster: String(character), style: [], span: span)
+            column += span
+        }
+    }
+
+    /// The suggestion's glyphs, dimmed, from the cursor's cell on as far as
+    /// it has room. Under a block cursor its first character takes the
+    /// cursor's text color, as the grid's would. Not while composing.
+    private func appendGhost(colors: Colors, blockCell: (row: Int, col: Int)?) {
+        ghostGlyphs.removeAll(keepingCapacity: true)
+        guard let ghost, preedit.isEmpty, ghost.row < rows.count, ghost.room > 0 else { return }
+        let cw = Float(fonts.cellWidth), ch = Float(fonts.cellHeight)
+        let top = origin.y + Float(ghost.row) * ch
+        var column = 0
+        let dim = colors.foreground.packed(alpha: 110)
+        for character in ghost.text {
+            let span = character.unicodeScalars.first.map(Self.isWide) == true ? 2 : 1
+            guard column + span <= ghost.room else { break }
+            let scalars = character.unicodeScalars
+            let entry = scalars.count == 1
+                ? atlas.entry(scalar: scalars.first!.value, style: [], span: span)
+                : atlas.entry(cluster: String(character), style: [], span: span)
+            if let e = entry, e.width > 0 {
+                let left = origin.x + Float(ghost.col + column) * cw
+                var color = dim
+                if column == 0, let b = blockCell, b.row == ghost.row, b.col == ghost.col {
+                    color = (cursorText ?? colors.background).packed()
+                }
+                ghostGlyphs.append(GlyphInstance(
+                    rect: SIMD4(left + Float(e.offsetX), top + Float(e.offsetY), Float(e.width), Float(e.height)),
+                    uv: SIMD4(Float(e.x), Float(e.y), Float(e.width), Float(e.height)),
+                    color: color, flags: e.isColor ? 1 : 0))
+            }
+            column += span
+        }
     }
 
     /// Whether the cursor going `from` one cell `to` another is a jump worth

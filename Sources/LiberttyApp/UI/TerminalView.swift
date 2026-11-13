@@ -328,6 +328,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         // Something else took the viewport to the bottom (typing, new
         // output while following): the rows line up again.
         if smoothOffset != 0, session.scrollbar.atBottom { setSmoothOffset(0) }
+        // Autocomplete's suggestion for the line as it is now (none away from a prompt).
+        renderer.ghost = autocompleteGhost()
         let presented: Bool
         if let observer = onFramePresented {
             // Which output this frame shows, for `--latency-trace`.
@@ -883,6 +885,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         session.reportFocus(false)
         setNeedsRender(force: true)
         PendingKeys.shared.cancel(in: self)
+        closeCompletionList()
         return true
     }
 
@@ -1052,6 +1055,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     override func keyDown(with event: NSEvent) {
+        // Autocomplete's keys first (only while its list is open or a
+        // suggestion shows), unless a key sequence is under way.
+        if !hasMarkedText(), PendingKeys.shared.pressed.isEmpty, handleAutocompleteKey(event) { return }
         if !hasMarkedText() {
             switch pressKeybind(event) {
             case .action(let action): if ActionDispatcher.perform(action, in: self) { return }

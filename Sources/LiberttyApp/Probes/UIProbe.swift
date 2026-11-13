@@ -896,6 +896,27 @@ enum UIProbe {
                             print("FAIL  ui-probe the tab in front: \"\(window.title)\", not \(text)")
                             failures += 1
                         }
+                    case .expectGhost(let text):
+                        // As a frame would ask (an off-screen window draws none).
+                        let pane = controller.focusedTerminal
+                        _ = pane.autocompleteGhost()
+                        let shown = pane.ghostShown
+                        if text == "none" ? shown == nil : shown == text {
+                            print("ok    ui-probe ghost \(text == "none" ? "none" : "\"\(text)\"")")
+                        } else {
+                            print("FAIL  ui-probe ghost: \(shown.map { "\"\($0)\"" } ?? "none"), not \(text)")
+                            failures += 1
+                        }
+                    case .expectCompletions(let text):
+                        // (A frame's asking is what has the list follow the line.)
+                        _ = controller.focusedTerminal.autocompleteGhost()
+                        let rows = controller.focusedTerminal.completionListShown
+                        if text == "none" ? rows == nil : rows?.contains(where: { $0.contains(text) }) == true {
+                            print("ok    ui-probe completions \(text)")
+                        } else {
+                            print("FAIL  ui-probe completions: no \(text) in \(rows.map { "\($0)" } ?? "none")")
+                            failures += 1
+                        }
                     case .expectSubtitle(let text):
                         let subtitle = window.subtitle
                         if subtitle.contains(text) {
@@ -1260,6 +1281,9 @@ enum UIProbe {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
+        /// Autocomplete: the focused pane's ghost text ("none": no suggestion),
+        /// and a row of its completion list ("none": not open).
+        case expectGhost(String), expectCompletions(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
@@ -1372,6 +1396,8 @@ enum UIProbe {
             case "expect-background": steps.append(.expectBackground(arg.lowercased()))
             case "expect-font": steps.append(.expectFont(Double(arg) ?? -1))
             case "expect-subtitle": steps.append(.expectSubtitle(arg))
+            case "expect-ghost": steps.append(.expectGhost(arg))
+            case "expect-completions": steps.append(.expectCompletions(arg))
             case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))

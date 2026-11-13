@@ -135,6 +135,9 @@ enum ActionDispatcher {
             }
             if !redone { return false }
         case .copyCommandOutput: controller?.copyLastCommandOutput()
+        // At a prompt only: elsewhere the key is the program's.
+        case .showCompletions: return view?.showCompletions() ?? false
+        case .clearAutocompleteHistory: CommandHistoryClear.ask()
         case .writeScrollbackFile(let then): controller?.writeTextFile(selection: false, then: then)
         case .writeSelectionFile(let then): controller?.writeTextFile(selection: true, then: then)
         case .openSettings: MainActor.assumeIsolated { SettingsWindowController.shared.show() }

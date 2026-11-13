@@ -291,6 +291,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Find Selection", .searchSelection, "text.magnifyingglass")
         command("Copy", .copyToClipboard, "doc.on.doc")
         command("Copy Output of Last Command", .copyCommandOutput, "text.append")
+        command("Show Completions", .showCompletions, "text.line.first.and.arrowtriangle.forward")
+        command("Clear Autocomplete History", .clearAutocompleteHistory, "clock.arrow.circlepath")
         command("Broadcast Input to All Panes", .toggleBroadcastInput, "dot.radiowaves.left.and.right")
         command("Export Text As…", .writeScrollbackFile("save"), "square.and.arrow.up")
         command("Open Scrollback in Tab", .writeScrollbackFile("open"), "doc.text")

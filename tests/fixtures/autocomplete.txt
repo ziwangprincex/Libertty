@@ -1,0 +1,87 @@
+# Autocomplete at the shell's prompt (zsh with shell integration, an empty
+# ZDOTDIR: no plugin of the user's draws suggestions of its own).
+#
+# A command the shell ran is remembered; typing its start shows the rest
+# dimmed after the cursor (ghost text) — and nothing more reaches the shell
+# until a key takes it: → whole, ⌥→ a word.
+type:echo ac-$((40+2)) tail-word
+key:enter
+wait:1.0
+action:clear_screen
+wait:1.0
+expect-not:ac-42
+type:echo ac
+expect-ghost:-$((40+2)) tail-word
+# The shell has only what was typed.
+expect-not:echo ac-
+# ⌥→ takes a word, → the rest.
+key:alt+right
+expect-ghost: tail-word
+expect:echo ac-$((40+2))
+key:right
+expect-ghost:none
+key:enter
+expect:ac-42 tail-word
+# Typing on past what it suggested: none.
+type:echo acx
+expect-ghost:none
+key:ctrl+u
+# The shell's own completions listed under the line (zsh's Tab): none,
+# the arrows there are the shell's.
+type:ls /usr/bin >/dev/null
+key:enter
+wait:0.5
+type:ls /usr/
+expect-ghost:bin >/dev/null
+key:tab
+wait:0.5
+expect:libexec
+expect-ghost:none
+key:ctrl+u
+key:ctrl+l
+wait:0.5
+# In a program (no prompt): none, and → is the program's.
+type:cat
+key:enter
+wait:0.5
+type:echo ac
+expect-ghost:none
+key:ctrl+c
+wait:0.5
+# Lines that start with a space, or look like they hold a secret, aren't remembered.
+type: echo spaced-$((1+1))
+key:enter
+type:export MY_TOKEN=s3cr3t
+key:enter
+wait:0.5
+type:echo sp
+expect-ghost:none
+key:ctrl+u
+type:export MY_T
+expect-ghost:none
+key:ctrl+u
+# The completion list (⌃⇧Space): the word's subcommands, chosen with the
+# arrows, typed with Tab; Esc closes it.
+type:git ch
+key:ctrl+shift+space
+expect-completions:> checkout
+expect-completions:cherry-pick
+key:down
+expect-completions:> cherry-pick
+key:escape
+expect-completions:none
+key:ctrl+shift+space
+expect-completions:> checkout
+key:tab
+expect-completions:none
+expect:git checkout
+key:ctrl+u
+# Typing on with it open: it follows what's typed.
+type:git c
+key:ctrl+shift+space
+expect-completions:> commit
+expect-completions:clone
+type:h
+expect-completions:> checkout
+key:escape
+key:ctrl+u

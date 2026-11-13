@@ -334,6 +334,13 @@ expect password 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT --persist
 expect password-local 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/password.txt)" $OUT
+# Autocomplete at the prompt: ghost text from history, the keys that take it,
+# what's never remembered, the completion list. zsh with an empty ZDOTDIR:
+# the integration, none of the user's plugins.
+mkdir -p $PRIVATE/empty-zdotdir
+expect autocomplete 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  LIBERTTY_SHELL=/bin/zsh ZDOTDIR=$PRIVATE/empty-zdotdir \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/autocomplete.txt)" $OUT
 # focus-follows-mouse: on, the pane under the pointer gets the keyboard; off (the default), it doesn't.
 mkdir -p $PRIVATE/ffm-config/libertty
 print 'focus-follows-mouse = true' > $PRIVATE/ffm-config/libertty/config
