@@ -1,0 +1,31 @@
+# Prompts queued for a pane (PromptQueue) go one at a time, each once the
+# pane's agent is at rest: a stand-in agent (tests/fixtures/fake-agent-queue.c,
+# built as "claude" by tests/run.sh)
+# says idle, working and done (OSC 7501). While it waits for you (blocked)
+# nothing goes. The pane and its tab's row say how many wait.
+type:@DIR@/claude
+key:enter
+wait:1.0
+queue-prompt:first
+queue-prompt:ask
+queue-prompt:third
+# The first goes at once (the agent is at rest); the others wait.
+expect-queue:2
+expect-queue:tag=2 queued
+expect-tab:2: 2 queued
+wait:1.0
+expect-not:GOT[ask]
+wait:2.0
+expect:GOT[first]
+expect-queue:1
+# Waiting for your answer: the last one stays queued.
+wait:2.0
+expect-queue:1
+expect-not:GOT[third]
+wait:3.5
+expect:GOT[ask]
+wait:2.5
+expect:GOT[third]
+expect-queue:0
+expect-queue:untagged
+expect-tab-not:queued

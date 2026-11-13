@@ -426,6 +426,22 @@ mkdir -p $PRIVATE/agent-screen
 cc -o $PRIVATE/agent-screen/codex $ROOT/tests/fixtures/fake-codex.c
 expect agent-screen 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/agent-screen|g" $ROOT/tests/fixtures/agent-screen.txt)" $OUT --persist
+# Prompts for a coding agent: queued ones go one by one as it comes to rest (a
+# stand-in "claude", tests/fixtures/fake-agent-queue.c), never while it waits
+# for you; the composer sends, queues, keeps drafts, asks before line by line.
+mkdir -p $PRIVATE/queue
+cc -o $PRIVATE/queue/claude $ROOT/tests/fixtures/fake-agent-queue.c
+expect prompt-queue 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/prompt-queue.txt)" $OUT
+expect composer 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/composer.txt)" $OUT
+expect prompt-queue-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-cli.txt)" $OUT --persist
+# Fork Conversation: the panes run cat, so the agents' fork commands are only shown.
+mkdir -p $PRIVATE/fork-config/libertty
+print 'command = cat' > $PRIVATE/fork-config/libertty/config
+expect fork-conversation 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/fork-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/fork-conversation.txt)" $OUT --persist
 # Resume Conversation…: one a hook recorded, picked up in a new tab in its
 # folder (no claude on this PATH: only the typed command is looked for).
 mkdir -p $PRIVATE/resume/data $PRIVATE/resume/proj

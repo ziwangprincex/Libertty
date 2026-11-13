@@ -893,6 +893,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         if item.action == #selector(useFloatAsDefault(_:)) { return controller != nil }
         guard let action = (item.representedObject as? ActionBox)?.action else { return true }
         switch action {
+        case .forkConversation:
+            // (The palette and a key say why it can't; the menu only greys out.)
+            guard let controller else { return false }
+            return controller.whyNotFork(controller.focusedTerminal) == nil
         case .toggleSecureInput:
             item.state = SecureInput.shared.requested ? .on : .off
             return true
@@ -1017,6 +1021,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         item("New Tab", .newTab, symbol: "macwindow", in: file)
         item("Go to Directory…", .gotoDirectory, symbol: "folder", in: file)
         item("Resume Conversation…", .resumeConversation, symbol: "bubble.left.and.text.bubble.right", in: file)
+        item("Fork Conversation", .forkConversation(.split), symbol: "arrow.triangle.branch", in: file)
         item("New Tab in Worktree…", .newTabInWorktree, symbol: "arrow.triangle.branch", in: file)
         item("Connect to Host…", .connectToHost, symbol: "network", in: file)
         file.addItem(.separator())
@@ -1046,6 +1051,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         item("Paste", .pasteFromClipboard, selector: #selector(NSText.paste(_:)), in: edit)
         item("Select All", .selectAll, selector: #selector(NSResponder.selectAll(_:)), in: edit)
         item("Copy Output of Last Command", .copyCommandOutput, symbol: "text.append", in: edit)
+        item("Compose Prompt…", .toggleComposer, symbol: "square.and.pencil", in: edit)
+        item("Prompt Queue…", .togglePromptQueue, symbol: "text.line.first.and.arrowtriangle.forward", in: edit)
         edit.addItem(.separator())
         let find = NSMenu(title: "Find")
         let findParent = edit.addItem(withTitle: "Find", action: nil, keyEquivalent: "")

@@ -22,6 +22,9 @@ enum PaneRequests {
         case "resume":
             resume(info, in: controllers)
             return true
+        case "queue":
+            QueueCLI.handle(info, in: controllers)
+            return true
         default:
             return false
         }

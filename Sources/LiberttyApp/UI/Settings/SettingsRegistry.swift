@@ -480,6 +480,8 @@ enum SettingsShortcuts {
             e("Move Divider Left", "resize_split:left,10"), e("Move Divider Right", "resize_split:right,10"),
             e("Equalize Splits", "equalize_splits"), e("Zoom Split", "toggle_split_zoom"), e("Go to Pane…", "goto_pane"),
             e("Jump to Pane Needing You", "goto_attention"), e("Resume Conversation…", "resume_conversation"),
+            e("Fork Conversation", "fork_conversation"), e("Compose Prompt…", "toggle_composer"),
+            e("Prompt Queue…", "toggle_prompt_queue"),
             e("New Tab in Worktree…", "new_tab_in_worktree"), e("Toggle Dark Mode", "toggle_appearance"),
             e("Restart Shell in Pane", "restart_surface"), e("Park Pane", "park_surface"), e("Unpark Pane", "unpark_surface"),
             e("Float Pane", "float_surface"), e("Move Pane to New Tab", "move_surface_to_new_tab"),

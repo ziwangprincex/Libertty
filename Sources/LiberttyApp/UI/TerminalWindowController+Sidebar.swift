@@ -222,6 +222,14 @@ extension TerminalWindowController {
             return unlessSaid(doc.url.isFileURL ? Self.shortDirectory(doc.url.deletingLastPathComponent().path) : (doc.url.host ?? ""))
         }
         let panes = tab.panes
+        // Prompts waiting for its panes (PromptQueue) come first: they're yours.
+        let queued = panes.map { PromptQueues.shared.queue(of: $0.session) }.filter { !$0.isEmpty }
+        if !queued.isEmpty {
+            var all = PromptQueue()
+            for q in queued { q.items.forEach { all.append($0.text) } }
+            all.paused = queued.contains { $0.paused }
+            return TerminalView.queueSummary(all)
+        }
         let reported = panes.compactMap { $0.session.programStatus.headline }.filter { !$0.message.isEmpty }
             .max { $0.state < $1.state }
         if let reported { return reported.message }

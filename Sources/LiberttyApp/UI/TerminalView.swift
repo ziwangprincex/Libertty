@@ -765,6 +765,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         add("Copy", .copyToClipboard, symbol: "doc.on.doc")
         add("Copy Output of Last Command", .copyCommandOutput, symbol: "text.append")
         add("Paste", .pasteFromClipboard, symbol: "doc.on.clipboard")
+        add("Compose Prompt…", .toggleComposer, symbol: "square.and.pencil")
+        if let controller = window?.windowController as? TerminalWindowController,
+           controller.programs[ObjectIdentifier(session)]?.agent != nil {
+            add("Prompt Queue…", .togglePromptQueue, symbol: "text.line.first.and.arrowtriangle.forward")
+            add("Fork Conversation", .forkConversation(.split), symbol: "arrow.triangle.branch")
+            if let why = controller.whyNotFork(self) { menu.items.last?.toolTip = why }
+        }
         menu.addItem(.separator())
         add("Split Right", .newSplit(.right), symbol: "rectangle.righthalf.inset.filled")
         add("Split Down", .newSplit(.down), symbol: "rectangle.bottomhalf.inset.filled")
@@ -1877,6 +1884,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         if item.action == #selector(contextAction(_:)), let action = (item.representedObject as? ActionBox)?.action {
             switch action {
             case .copyToClipboard: return session.selectedText()?.isEmpty == false
+            case .forkConversation:
+                return (window?.windowController as? TerminalWindowController)?.whyNotFork(self) == nil
             case .pasteFromClipboard: return !isReadOnly && PasteContent.canPaste(.general, allowsImage: session.host == nil)
             default: return true
             }
