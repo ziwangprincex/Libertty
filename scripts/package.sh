@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Build an optimized Libertty.app and wrap it in a disk image:
 #   scripts/package.sh            → build/Libertty-<version>.dmg
-# Ad-hoc signed (no Developer ID): on another Mac, the first launch needs
+# Not notarized (signed with Libertty's own certificate, or ad-hoc where
+# this Mac hasn't it: scripts/codesign-identity.sh): on another Mac, the first launch needs
 # System Settings ▸ Privacy & Security ▸ Open Anyway (right-click ▸ Open before
 # macOS 15), or `xattr -dr com.apple.quarantine /Applications/Libertty.app`.
 set -euo pipefail

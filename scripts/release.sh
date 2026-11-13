@@ -46,6 +46,13 @@ mkdir -p build
 [[ build/sign-update -nt scripts/sign-update.swift ]] || swiftc -O scripts/sign-update.swift -o build/sign-update
 [[ $(build/sign-update --public $KEY) == $(cat scripts/update-public-key.txt) ]] \
   || { echo "$KEY doesn't match scripts/update-public-key.txt"; exit 1; }
+# Signed with Libertty's certificate, the one every release has had
+# (scripts/codesign-certificate.txt): with another, or ad-hoc, macOS takes the
+# update for a new app and the permissions people gave it are gone.
+CERT=$(scripts/codesign-identity.sh 2> /dev/null | cut -d' ' -f1) \
+  || { echo "no code-signing identity: scripts/codesign-identity.sh --create (once; keep ~/.config/libertty-release backed up)"; exit 1; }
+[[ $CERT == $(cat scripts/codesign-certificate.txt) ]] \
+  || { echo "this Mac's signing certificate ($CERT) isn't Libertty's ($(cat scripts/codesign-certificate.txt))"; exit 1; }
 grep -q "^## $VERSION\$" docs/CHANGELOG.md || { echo "add a '## $VERSION' section to docs/CHANGELOG.md first"; exit 1; }
 # The tap's commits are this repository's identity (its own git config), never a global one.
 NAME=$(git config --local user.name || true) EMAIL=$(git config --local user.email || true)
@@ -98,6 +105,10 @@ else
   # The version lives in bundle.sh; set it so every later build agrees.
   sed -i '' "s/^VERSION=.*/VERSION=\${LIBERTTY_VERSION:-$VERSION}/" scripts/bundle.sh
   scripts/package.sh
+  for signed in build/Libertty.app build/Libertty.app/Contents/MacOS/liberttyd; do
+    scripts/codesign-identity.sh --requirement $signed | grep -q "H\"${(L)CERT}\"" \
+      || { echo "$signed isn't signed with Libertty's certificate"; exit 1; }
+  done
   rm -rf $OUT
   mkdir -p $OUT
   ditto -c -k --sequesterRsrc --keepParent build/Libertty.app $ZIP
@@ -164,8 +175,8 @@ cask "libertty" do
   app "Libertty.app"
   binary "#{appdir}/Libertty.app/Contents/Resources/bin/libertty"
 
-  # Ad-hoc signed, not notarized: Gatekeeper would refuse to open it (if
-  # this can't be done, macOS asks once, as for the DMG).
+  # Not notarized (signed with Libertty's own certificate): Gatekeeper would
+  # refuse to open it (if this can't be done, macOS asks once, as for the DMG).
   postflight_steps do
     run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Libertty.app"], must_succeed: false
   end

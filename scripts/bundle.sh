@@ -134,9 +134,15 @@ with open(target, "wb") as f:
     plistlib.dump(info, f)
 PY
 
-# Ad-hoc sign so the hardened system lets it run and keeps TCC grants stable.
-codesign --force --sign - $APP/Contents/MacOS/liberttyd >/dev/null
-codesign --force --sign - $APP >/dev/null
+# Signed with Libertty's own certificate where this Mac has it
+# (scripts/codesign-identity.sh): every build then has the same designated
+# requirement, so what macOS lets Libertty and liberttyd do (Full Disk
+# Access, Screen Recording) carries over to the next. Elsewhere ad-hoc, which
+# ties those permissions to this one build.
+SIGN=(--sign -)
+if ID=($(scripts/codesign-identity.sh 2> /dev/null)); then SIGN=(--sign $ID[1] --keychain $ID[2]); fi
+codesign --force $SIGN $APP/Contents/MacOS/liberttyd >/dev/null
+codesign --force $SIGN $APP >/dev/null
 # The swap, in one step (renamex_np): the new bundle takes the name and the
 # old one the build folder's place, never a moment with neither. A first
 # build only claims the name, and fails rather than land inside a bundle

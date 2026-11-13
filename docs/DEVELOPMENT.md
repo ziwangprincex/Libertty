@@ -70,6 +70,18 @@ installed liberttyd takes the sessions back:
 
 ## Releasing
 
+Releases are signed with Libertty's own self-signed certificate (no
+Developer ID, not notarized): `scripts/codesign-identity.sh --create` makes
+it once, in a keychain of its own in `~/.config/libertty-release/` beside the
+update key, and `scripts/codesign-certificate.txt` records which it is.
+`bundle.sh` signs with it where it's there (ad-hoc elsewhere) and
+`release.sh` refuses any other. The point is the designated requirement:
+with the certificate it's the same in every build, so the permissions macOS
+gave Libertty and liberttyd (Full Disk Access, Screen Recording,
+Accessibility) carry over to the next version; ad-hoc, it's the build's own
+hash, and every update loses them. Keep that folder backed up — a new
+certificate makes everyone grant them again.
+
 1. A `## VERSION` section in `docs/CHANGELOG.md`, its first line a `>` summary.
 2. Push; wait for CI to pass on the commit.
 3. `scripts/fetch-linux-liberttyd.sh`, and commit `Resources/remote` if it
