@@ -160,7 +160,11 @@ extension TerminalWindowController {
         tabStrip.show(workspace: workspaces[activeWorkspace].name, of: workspaces.count)
         sidebar.show(tabsShown: config.tabBar.inSidebar)
         sidebar.show(twoLineRows: config.sidebarRows == "comfortable")
-        sidebar.show(tabs: infos, selected: selected)
+        let groups = sidebarGroups()
+        // (A folded group whose tabs are gone stays folded for when they're
+        // back: a folder's repository is found a moment after it shows.)
+        sidebar.show(tabs: infos, selected: selected, groups: groups,
+                     headers: SidebarGroups.showsHeaders(groups, mode: sidebarGrouping), collapsed: collapsedGroups)
         if config.tabBar == .top {
             // A top tab says it in one line (Rex's "zsh ~").
             tabStrip.show(tabs: infos.map { info in

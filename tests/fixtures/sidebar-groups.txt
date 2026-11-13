@@ -1,0 +1,80 @@
+# The sidebar's groups (sidebar-group = project, Kero's projects). tests/run.sh
+# makes two repositories at @DIR@ (alpha, and beta with a src folder) and
+# gives this config dir as @CONFIG@; @BIN@ is the app (its CLI too).
+size:1100x700
+type:cd @DIR@/alpha
+key:enter
+wait:1.0
+# One project, and its header says so (a lone project keeps its name).
+expect-group:alpha · 1 tab
+expect-group-count:1
+tab:here
+wait:1.0
+# A folder inside a repository is the repository's project.
+type:cd @DIR@/beta/src
+key:enter
+wait:1.0
+expect-group:beta · 1 tab
+expect-group:alpha · 1 tab
+expect-group-count:2
+# A new tab opens in the focused pane's folder: beta's.
+tab:here
+wait:1.0
+expect-group:beta · 2 tabs
+expect-tab-count:3
+# Folding a group: only its header, and the tab you're in.
+click:Collapse beta
+expect-group:beta · 2 tabs · collapsed
+expect-shown:2
+tab:1
+expect-shown:1
+# Folded is kept with the window.
+roundtrip:go
+click:Expand beta
+expect-group:beta · 2 tabs
+expect-shown:3
+# Its + opens a tab in the project's folder (after the tab in front, a
+# beta tab: the tabs' own order is alpha, beta, beta, alpha now).
+tab:3
+click:New Tab in alpha
+wait:1.0
+expect-group:alpha · 2 tabs
+expect-tab-count:4
+type:pwd; echo SECOND-ALPHA
+key:enter
+wait:0.5
+expect:@DIR@/alpha
+# ⌘2 is the second tab as listed: alpha's second, not the tabs' second.
+tab:1
+action:goto_tab:2
+expect:SECOND-ALPHA
+action:next_tab
+expect:cd @DIR@/beta/src
+tab:1
+# A session this Mac's liberttyd keeps that no window shows: a row in its
+# project's group; a click shows it in a tab here.
+shell:ID=$(@BIN@ +new-session --cwd @DIR@/beta -e 'sleep 600') && @BIN@ +rename-session $ID kept-job
+expect-elsewhere:kept-job
+expect-group:beta · 2 tabs · 1 not open here
+click-row:kept-job
+wait:1.5
+expect-tab-count:5
+expect-no-elsewhere:kept-job
+expect-group:beta · 3 tabs
+# By host: one machine and nothing elsewhere has no header at all.
+shell:printf 'sidebar-group = host\n' > @CONFIG@/libertty/config
+reload:now
+wait:0.5
+expect-group:none
+expect-shown:5
+# Another session no window shows: This Mac gets its header.
+shell:ID=$(@BIN@ +new-session --cwd @DIR@/alpha -e 'sleep 600') && @BIN@ +rename-session $ID second-job
+expect-elsewhere:second-job
+expect-group:This Mac · 5 tabs · 1 not open here
+# Ungrouped: the list as it always was, no sessions elsewhere.
+shell:printf 'sidebar-group = none\n' > @CONFIG@/libertty/config
+reload:now
+wait:0.5
+expect-group:none
+expect-no-elsewhere:second-job
+expect-shown:5

@@ -211,6 +211,8 @@ extension TerminalWindowController {
         removeWorktreesOnClose()
         if let observer = inboxObserver { NotificationCenter.default.removeObserver(observer) }
         inboxObserver = nil
+        if let observer = groupsObserver { NotificationCenter.default.removeObserver(observer) }
+        groupsObserver = nil
         allPanes.forEach { $0.session.terminate() }
         onClose?(self)
     }

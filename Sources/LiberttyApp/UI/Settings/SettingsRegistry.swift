@@ -191,6 +191,10 @@ enum SettingsRegistry {
                 ("Comfortable", "comfortable"), ("Compact", "compact"),
             ])), help: "Comfortable adds a second line: what the program reports, else its branch and changes, else its folder.",
                  keywords: "two lines subtitle branch"),
+            item(.interface, "Tabs", "Group sidebar tabs", "sidebar-group", .popup(options([
+                ("Don't Group", "none"), ("By Project", "project"), ("By Host", "host"),
+            ])), help: "Grouped, tabs sit under their git repository or folder, or under the machine they run on, with the sessions there that no window shows.",
+                 keywords: "projects hosts sessions detached kero folders"),
             bool(.interface, "Tabs", "Show git status", "git-status",
                  help: "Branches and changes in pane headers and tab rows (Libertty runs git in panes' folders).",
                  keywords: "branch changes diff"),

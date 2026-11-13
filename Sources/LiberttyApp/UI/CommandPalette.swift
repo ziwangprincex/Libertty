@@ -276,6 +276,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
                                       (.attention, "Finished or Failed Tabs"), (.all, "All Tabs")] where activity != shown {
                 command(L10n.t("Sidebar") + ": " + L10n.t(title), .showTabs(activity), "line.3.horizontal.decrease.circle")
             }
+            // Its groups (sidebar-group): the other ways than now.
+            let grouping = ConfigStore.shared.config.sidebarGroup
+            for (mode, title) in [(SidebarGrouping.project, "Group Tabs by Project"), (.host, "Group Tabs by Host"),
+                                  (.none, "Don't Group Tabs")] where mode != grouping {
+                out.append(Item(title: L10n.t("Sidebar") + ": " + L10n.t(title), symbol: "rectangle.3.group") {
+                    MainActor.assumeIsolated { _ = SettingsModel.shared.write("sidebar-group", mode.rawValue) }
+                })
+            }
         }
         command("Zoom Split", .toggleSplitZoom, "arrow.up.left.and.arrow.down.right")
         command("Equalize Splits", .equalizeSplits, "square.split.2x2")

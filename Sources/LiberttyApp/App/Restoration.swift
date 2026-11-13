@@ -22,6 +22,8 @@ struct SavedWindow: Codable {
     var tabs: [SavedTab]
     /// The ssh destination the window's sessions run on (nil: this Mac).
     var host: String?
+    /// The sidebar's groups folded away (`sidebar-group`), by id.
+    var collapsedGroups: [String]?
 
     /// Whether any of its panes' sessions is among `live`: a window whose
     /// programs have all ended isn't worth bringing back as fresh shells.
@@ -338,9 +340,11 @@ extension TerminalWindowController {
         }
         // Full screen saves the frame it will come back to.
         let frame = window.styleMask.contains(.fullScreen) ? (savedNonFullScreenFrame ?? window.frame) : window.frame
-        return SavedWindow(frame: NSStringFromRect(frame), sidebar: isSidebarShown, inspector: isInspectorShown,
-                           fontSize: Double(focusedTerminal.fontSize),
-                           selected: selectedIndex, tabs: saved, host: host?.destination)
+        var kept = SavedWindow(frame: NSStringFromRect(frame), sidebar: isSidebarShown, inspector: isInspectorShown,
+                               fontSize: Double(focusedTerminal.fontSize),
+                               selected: selectedIndex, tabs: saved, host: host?.destination)
+        if !collapsedGroups.isEmpty { kept.collapsedGroups = collapsedGroups.sorted() }
+        return kept
     }
 
     private static func savedTab(_ tab: TerminalTab) -> SavedTab {
@@ -497,6 +501,7 @@ extension TerminalWindowController {
         let controller = TerminalWindowController(restoring: tabs, selected: selected, frame: frame.width > 0 ? frame : nil,
                                                   showSidebar: saved.sidebar, showInspector: saved.inspector, config: config)
         controller.markRestored(unstarted: unstarted)
+        controller.collapsedGroups = Set(saved.collapsedGroups ?? [])
         if let host { controller.bind(to: host) }
         return controller
     }

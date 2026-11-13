@@ -604,6 +604,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         return opened
     }
 
+    /// A window showing session `id` of `host`'s liberttyd (nil: this Mac's),
+    /// as its one tab (a sidebar's row of a session not open here).
+    func openWindow(showing id: String, on host: String?, directory: String? = nil) {
+        let config = ConfigStore.shared.config
+        let saved = SavedWindow(frame: "", sidebar: config.windowSidebar, inspector: config.windowInspector, fontSize: nil,
+                                selected: 0, tabs: [SavedTab(panes: SavedPane(session: id, directory: directory))], host: host)
+        if let controller = TerminalWindowController.restore(saved, live: [id], config: config) { show(controller) }
+        activate()
+    }
+
     /// A window whose sessions run on `host` (set up already, see ConnectPanel).
     @discardableResult
     func openWindow(on host: RemoteHost, command: String? = nil) -> TerminalWindowController? {

@@ -555,6 +555,17 @@ mkdir -p $SR
   && printf 'one\n' > a.txt && git add -A && git commit -qm First && printf 'two\n' >> a.txt )
 expect sidebar-rows 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@REPO@|$SR|g" $ROOT/tests/fixtures/sidebar-rows.txt)" $OUT
+# The sidebar's groups (sidebar-group): by project, folding, a group's +, the
+# sessions no window shows; by host. A liberttyd of its own: the sessions it
+# makes for that end with it.
+SG=$PRIVATE/sidebar-groups
+mkdir -p $SG/config/libertty $SG/repos/alpha $SG/repos/beta/src
+for r in alpha beta; do ( cd $SG/repos/$r && git init -q -b main ); done
+print 'sidebar-group = project' > $SG/config/libertty/config
+expect sidebar-groups 'ui-probe: all passed' env XDG_CONFIG_HOME=$SG/config LIBERTTY_DAEMON_SOCKET=$SG/d.sock \
+  LIBERTTY_DAEMON_LOG=$SG/d.log $LIBERTTY --ui-probe "$(sed -e "s|@DIR@|$SG/repos|g" -e "s|@CONFIG@|$SG/config|g" \
+  -e "s|@BIN@|$LIBERTTY|g" $ROOT/tests/fixtures/sidebar-groups.txt)" $OUT --persist
+LIBERTTY_DAEMON_SOCKET=$SG/d.sock $LIBERTTY +daemon stop --force > /dev/null 2>&1
 # A diff document: files fold, all at once too, side by side once wide.
 expect diff-document 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/diff-document.txt)" $OUT

@@ -205,6 +205,18 @@ final class SidebarViewController: NSViewController {
     private let tabsScroll = NSScrollView()
     private var tabsHeight: NSLayoutConstraint!
     private var tabs: [SidebarTabInfo] = []
+    /// The groups the tabs are in (`sidebar-group`; none: one list), whether
+    /// they have headers, and those folded away.
+    private var groups: [SidebarGroup] = []
+    private var headers = false
+    private var collapsed: Set<String> = []
+    /// The table's rows: the tabs, and with headers the groups' headers and
+    /// their sessions not open here. Ungrouped, row N is tab N.
+    private var rows: [SidebarRow] = []
+    /// Each tab's row in the table; nil while its group is folded away.
+    private var tableRows: [Int?] = []
+    /// Each tab's place in the list as shown (grouped, not the tabs' own order).
+    private var listed: [Int] = []
 
     private let files = FileTreeView()
     /// The file tree (the UI probe).
@@ -483,11 +495,86 @@ final class SidebarViewController: NSViewController {
             || tab.detail.lowercased().contains(filterText))
     }
 
-    /// The tabs the filters leave showing, by index.
-    var shownRows: [Int] { tabs.indices.filter { matches(tabs[$0]) } }
+    /// The tabs the filters leave showing, by index (not those in a folded group).
+    var shownRows: [Int] { tabs.indices.filter { matches(tabs[$0]) && tableRow(ofTab: $0) != nil } }
 
     /// Whether the filters show tab `row`.
-    func shows(row: Int) -> Bool { tabs.indices.contains(row) && matches(tabs[row]) }
+    func shows(row: Int) -> Bool { tabs.indices.contains(row) && matches(tabs[row]) && tableRow(ofTab: row) != nil }
+
+    /// The headers showing, as they say it (`--ui-probe`): "api · 2 tabs · collapsed · 1 not open here".
+    var shownGroups: [String] {
+        rows.indices.compactMap { r -> String? in
+            guard case .header(let g) = rows[r], shows(tableRow: r) else { return nil }
+            let group = groups[g]
+            var parts = [group.title, GroupHeaderCell.count(group.tabs.count)]
+            if collapsed.contains(group.id) { parts.append("collapsed") }
+            if !group.elsewhere.isEmpty { parts.append("\(group.elsewhere.count) not open here") }
+            return parts.joined(separator: " · ")
+        }
+    }
+
+    /// The sessions not open here showing, title and folder (`--ui-probe`).
+    var shownElsewhere: [String] {
+        rows.indices.compactMap { r -> String? in
+            guard case .elsewhere(let g, let k) = rows[r], shows(tableRow: r) else { return nil }
+            let s = groups[g].elsewhere[k]
+            return [s.title, s.detail].filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+    }
+
+    /// Where the row showing `text` is, in the window (`--ui-probe` clicks
+    /// it): a header's title, a session's title or folder, a tab's name.
+    func windowRect(ofRowShowing text: String) -> NSRect? {
+        let r = rows.indices.first { r in
+            guard shows(tableRow: r) else { return false }
+            switch rows[r] {
+            case .header(let g): return groups[g].title == text
+            case .elsewhere(let g, let k): return groups[g].elsewhere[k].title == text || groups[g].elsewhere[k].detail == text
+            case .tab(let i): return tabs[i].title == text
+            }
+        }
+        guard let r else { return nil }
+        tabsTable.scrollRowToVisible(r)
+        tabsTable.layoutSubtreeIfNeeded()
+        return tabsTable.convert(tabsTable.rect(ofRow: r), to: nil)
+    }
+
+    /// A session not open here shows with every tab only (it has no
+    /// program state to filter by), and when the filter's text is in it.
+    private func matches(_ session: ElsewhereSession) -> Bool {
+        activity == .all && (filterText.isEmpty || session.title.lowercased().contains(filterText)
+            || session.detail.lowercased().contains(filterText))
+    }
+
+    /// Whether the table's row `r` shows: a tab or session the filters
+    /// leave, a header with anything left under it (folded or not).
+    private func shows(tableRow r: Int) -> Bool {
+        guard rows.indices.contains(r) else { return false }
+        switch rows[r] {
+        case .tab(let i): return tabs.indices.contains(i) && matches(tabs[i])
+        case .elsewhere(let g, let k): return matches(groups[g].elsewhere[k])
+        case .header(let g):
+            return groups[g].tabs.contains { tabs.indices.contains($0) && matches(tabs[$0]) } || groups[g].elsewhere.contains(where: matches)
+        }
+    }
+
+    /// The tab in the table's row `r`, if it's a tab's.
+    private func tab(atTableRow r: Int) -> Int? {
+        guard rows.indices.contains(r), case .tab(let i) = rows[r] else { return nil }
+        return i
+    }
+
+    /// Tab `i`'s row in the table; nil while its group is folded away.
+    private func tableRow(ofTab i: Int) -> Int? { tableRows.indices.contains(i) ? tableRows[i] : nil }
+
+    private func height(of row: SidebarRow) -> CGFloat {
+        switch row {
+        case .tab, .elsewhere: return rowHeight
+        case .header: return Self.headerHeight
+        }
+    }
+
+    private static let headerHeight: CGFloat = 26
 
     func show(activity: TabActivity) {
         guard activity != self.activity else { return }
@@ -503,26 +590,28 @@ final class SidebarViewController: NSViewController {
 
     /// The rows again, after a filter changed.
     private func refilter() {
-        tabsTable.noteHeightOfRows(withIndexesChanged: IndexSet(tabs.indices))
-        for row in tabs.indices {
-            tabsTable.view(atColumn: 0, row: row, makeIfNecessary: false)?.isHidden = !matches(tabs[row])
+        tabsTable.noteHeightOfRows(withIndexesChanged: IndexSet(rows.indices))
+        for row in rows.indices {
+            tabsTable.view(atColumn: 0, row: row, makeIfNecessary: false)?.isHidden = !shows(tableRow: row)
         }
         fitTabsHeight()
         placeSelectionCard()
     }
 
-    /// Return in the filter: the first tab it shows.
+    /// Return in the filter: the first tab it shows (as listed).
     private func selectFirstMatch() {
-        guard let row = tabs.firstIndex(where: matches) else { return }
-        controller?.selectTab(at: row)
+        guard let row = rows.indices.first(where: { tab(atTableRow: $0) != nil && shows(tableRow: $0) }),
+              let i = tab(atTableRow: row) else { return }
+        controller?.selectTab(at: i)
         controller?.focusTerminal()
     }
 
     private func fitTabsHeight() {
         let shown = tabs.filter(matches).count
         let folded = tabs.count - shown
-        tabsHeight.constant = CGFloat(shown) * (rowHeight + Self.rowSpacing)
-            + CGFloat(folded) * (Self.foldedRowHeight + Self.rowSpacing) + 2
+        tabsHeight.constant = rows.indices.reduce(2) { height, r in
+            height + (shows(tableRow: r) ? self.height(of: rows[r]) : Self.foldedRowHeight) + Self.rowSpacing
+        }
         // How many, and how many of them show while filtered: "1/4".
         tabCount.stringValue = folded > 0 ? "\(shown)/\(tabs.count)" : String(tabs.count)
     }
@@ -557,16 +646,21 @@ final class SidebarViewController: NSViewController {
 
     // MARK: Tabs
 
-    func show(tabs: [SidebarTabInfo], selected: Int) {
+    func show(tabs: [SidebarTabInfo], selected: Int, groups: [SidebarGroup] = [], headers: Bool = false, collapsed: Set<String> = []) {
+        let layout = SidebarGroups.rows(tabCount: tabs.count, groups: groups, headers: headers, collapsed: collapsed, selected: selected)
+        // The same rows in the same places: only what's in them may differ.
+        // (A tab may come or go out of sight, in a folded group: then too.)
+        let sameRows = layout == rows && headers == self.headers && tabs.count == self.tabs.count
         if let rename = renaming {
             // A name being typed in place: the other rows update around
             // the field. When the rows themselves change (a tab came, went
             // or moved; another was selected) the name is kept first, and
             // keeping it brings the rows up to date.
-            if tabs.count == self.tabs.count, selected == rename.row, rename.cell?.isEditing == true,
+            if tabs.count == self.tabs.count, sameRows, groups == self.groups, collapsed == self.collapsed,
+               selected == rename.row, rename.cell?.isEditing == true,
                let tab = rename.tab, controller?.tab(at: rename.row) === tab {
-                let changed = IndexSet(tabs.indices.filter { $0 != rename.row && tabs[$0] != self.tabs[$0] })
-                for i in changed { self.tabs[i] = tabs[i] }
+                let changed = IndexSet(tabs.indices.filter { $0 != rename.row && tabs[$0] != self.tabs[$0] }.compactMap(tableRow(ofTab:)))
+                for i in tabs.indices where i != rename.row { self.tabs[i] = tabs[i] }
                 if !changed.isEmpty {
                     tabsTable.reloadData(forRowIndexes: changed, columnIndexes: [0])
                     // A row may start or stop matching the filter meanwhile.
@@ -578,32 +672,59 @@ final class SidebarViewController: NSViewController {
             }
             if finishRename() { return }
         }
-        if tabs != self.tabs {
-            if tabs.count == self.tabs.count {
+        if !sameRows {
+            // Rows came, went or moved: all of them again (the selection
+            // follows below, as the window's, not as a pick).
+            self.tabs = tabs
+            self.groups = groups
+            self.headers = headers
+            self.collapsed = collapsed
+            rows = layout
+            var places = [Int?](repeating: nil, count: tabs.count)
+            for (r, row) in layout.enumerated() { if case .tab(let i) = row, places.indices.contains(i) { places[i] = r } }
+            tableRows = places
+            // Where each tab is as listed (⌘1–⌘9 go by it), folded ones counted.
+            listed = Array(repeating: 0, count: tabs.count)
+            for (n, i) in (headers ? groups.flatMap(\.tabs) : Array(tabs.indices)).enumerated() where listed.indices.contains(i) {
+                listed[i] = n
+            }
+            syncingSelection = true
+            tabsTable.reloadData()
+            syncingSelection = false
+            fitTabsHeight()
+        } else {
+            if tabs != self.tabs {
                 // Only the rows that changed: reloading them all drops the
                 // selection, the hover and the rows' spinners.
-                let changed = IndexSet(tabs.indices.filter { tabs[$0] != self.tabs[$0] })
+                let changed = IndexSet(tabs.indices.filter { tabs[$0] != self.tabs[$0] }.compactMap(tableRow(ofTab:)))
                 self.tabs = tabs
                 tabsTable.reloadData(forRowIndexes: changed, columnIndexes: [0])
                 tabsTable.noteHeightOfRows(withIndexesChanged: changed)
-            } else {
-                self.tabs = tabs
-                tabsTable.reloadData()
+                fitTabsHeight()
             }
-            fitTabsHeight()
+            if groups != self.groups || collapsed != self.collapsed {
+                // The headers and the sessions not open here say it again.
+                self.groups = groups
+                self.collapsed = collapsed
+                let others = IndexSet(rows.indices.filter { tab(atTableRow: $0) == nil })
+                tabsTable.reloadData(forRowIndexes: others, columnIndexes: [0])
+                tabsTable.noteHeightOfRows(withIndexesChanged: others)
+                fitTabsHeight()
+            }
         }
-        if tabsTable.selectedRow != selected {
+        let want = tableRow(ofTab: selected) ?? -1
+        if tabsTable.selectedRow != want {
             // The window's selection shown, not the user picking a tab: it
             // mustn't select it again (that takes the keyboard to the terminal).
             syncingSelection = true
-            tabsTable.selectRowIndexes([selected], byExtendingSelection: false)
+            if want >= 0 { tabsTable.selectRowIndexes([want], byExtendingSelection: false) } else { tabsTable.deselectAll(nil) }
             syncingSelection = false
         }
         // Brought into view when the selection moves, not at every update
         // (the list scrolled to look for another tab stays where it is).
         if selected != scrolledTo.row || tabs.count != scrolledTo.count {
             scrolledTo = (selected, tabs.count)
-            tabsTable.scrollRowToVisible(selected)
+            if want >= 0 { tabsTable.scrollRowToVisible(want) }
         }
         placeSelectionCard()
     }
@@ -626,7 +747,7 @@ final class SidebarViewController: NSViewController {
         tabsTable.layoutSubtreeIfNeeded()
         let row = tabsTable.selectedRow
         // None for a row the filter folded away.
-        let shown = row >= 0 && row < tabsTable.numberOfRows && tabs.indices.contains(row) && matches(tabs[row])
+        let shown = row >= 0 && row < tabsTable.numberOfRows && tab(atTableRow: row) != nil && shows(tableRow: row)
         let rect = shown ? tabsTable.rect(ofRow: row) : .zero
         selectionCard.move(to: rect)
         // Keep it under every row view, including ones added since.
@@ -636,12 +757,18 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func tabClicked(_ sender: Any?) {
-        let row = tabsTable.clickedRow
-        if row >= 0 { controller?.selectTab(at: row) }
+        // (A header's and a session's rows take their own clicks.)
+        if let i = tab(atTableRow: tabsTable.clickedRow) { controller?.selectTab(at: i) }
     }
 
     private func tabMenu() -> NSMenu {
         let menu = NSMenu()
+        addTabItems(to: menu)
+        menu.delegate = self
+        return menu
+    }
+
+    private func addTabItems(to menu: NSMenu) {
         menu.addItem(withTitle: "Rename Tab…", action: #selector(renameTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Reset Name", action: #selector(resetTabName(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Duplicate Tab", action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
@@ -653,8 +780,45 @@ final class SidebarViewController: NSViewController {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Close Other Tabs", action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
-        menu.delegate = self
-        return menu
+    }
+
+    /// A header's menu: fold or unfold it, a tab there, and how to group.
+    private func addGroupItems(to menu: NSMenu, _ group: SidebarGroup) {
+        let folded = collapsed.contains(group.id)
+        menu.addItem(withTitle: L10n.t(folded ? "Expand Group" : "Collapse Group"), action: #selector(toggleMenuGroup(_:)), keyEquivalent: "").target = self
+        if controller?.canOpenTab(in: group) == true {
+            menu.addItem(withTitle: L10n.t("New Tab Here"), action: #selector(newTabInMenuGroup(_:)), keyEquivalent: "").target = self
+        }
+        menu.addItem(.separator())
+        addGroupingItems(to: menu)
+    }
+
+    /// Group Tabs by Project, by Host, or not (`sidebar-group`).
+    private func addGroupingItems(to menu: NSMenu) {
+        let now = ConfigStore.shared.config.sidebarGroup
+        for (mode, title) in [(SidebarGrouping.project, "Group Tabs by Project"), (.host, "Group Tabs by Host"), (.none, "Don't Group Tabs")] {
+            let item = menu.addItem(withTitle: L10n.t(title), action: #selector(groupTabs(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = mode == now ? .on : .off
+        }
+    }
+
+    /// A session's menu: show it here.
+    private func addElsewhereItems(to menu: NSMenu) {
+        menu.addItem(withTitle: L10n.t("Show in a Tab"), action: #selector(showMenuElsewhere(_:)), keyEquivalent: "").target = self
+    }
+
+    /// The header or the session the menu was opened on (as it was then).
+    private var menuGroup: SidebarGroup?
+    private var menuElsewhere: ElsewhereSession?
+
+    @objc private func toggleMenuGroup(_ sender: Any?) { menuGroup.map { controller?.toggleSidebarGroup($0.id) } }
+    @objc private func newTabInMenuGroup(_ sender: Any?) { menuGroup.map { controller?.newTab(in: $0) } }
+    @objc private func showMenuElsewhere(_ sender: Any?) { menuElsewhere.map { controller?.showElsewhere($0) } }
+    @objc private func groupTabs(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        MainActor.assumeIsolated { _ = SettingsModel.shared.write("sidebar-group", mode) }
     }
 
     /// The tab the menu was opened on. Its items find its row again when
@@ -672,8 +836,8 @@ final class SidebarViewController: NSViewController {
     func beginRename(row: Int) {
         // One at a time: one under way is kept first.
         finishRename()
-        guard row >= 0, row < tabs.count, let tab = controller?.tab(at: row),
-              let cell = tabsTable.view(atColumn: 0, row: row, makeIfNecessary: true) as? TabCell else { return }
+        guard row >= 0, row < tabs.count, let tab = controller?.tab(at: row), let tableRow = tableRow(ofTab: row),
+              let cell = tabsTable.view(atColumn: 0, row: tableRow, makeIfNecessary: true) as? TabCell else { return }
         renameCount += 1
         let token = renameCount
         renaming = Rename(tab: tab, row: row, cell: cell, token: token)
@@ -728,8 +892,7 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func renameTabInPlace(_ sender: Any?) {
-        let row = tabsTable.clickedRow
-        guard row >= 0 else { return }
+        guard let row = tab(atTableRow: tabsTable.clickedRow) else { return }
         controller?.selectTab(at: row)
         beginRename(row: row)
     }
@@ -746,14 +909,19 @@ final class SidebarViewController: NSViewController {
         if row >= 0 { controller?.renameTab(at: row, to: "") }
     }
 
-    /// The next row up or down that the filters show: Move Up/Down passes
-    /// the tabs folded away, so the tab moves where it can be seen.
+    /// The next tab up or down that the filters show, as the rows list
+    /// them: Move Up/Down passes the tabs folded away, so the tab moves
+    /// where it can be seen — within its group (its project or host is
+    /// what puts it there).
     private func shownRow(from row: Int, by step: Int) -> Int? {
-        guard row >= 0 else { return nil }
-        var i = row + step
-        while tabs.indices.contains(i) {
-            if matches(tabs[i]) { return i }
-            i += step
+        guard row >= 0, var r = tableRow(ofTab: row) else { return nil }
+        r += step
+        while rows.indices.contains(r) {
+            switch rows[r] {
+            case .header: return nil
+            case .tab(let i) where shows(tableRow: r): return i
+            default: r += step
+            }
         }
         return nil
     }
@@ -787,7 +955,7 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc fileprivate func closeTab(_ sender: Any?) {
-        let row = (sender as? NSButton).map { tabsTable.row(for: $0) } ?? menuRow
+        let row = (sender as? NSButton).map { tab(atTableRow: tabsTable.row(for: $0)) ?? -1 } ?? menuRow
         if row >= 0 { controller?.closeTab(at: row) }
     }
 
@@ -891,7 +1059,32 @@ extension StatusBadge {
 }
 
 extension SidebarViewController: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) { menuTab = controller?.tab(at: tabsTable.clickedRow) }
+    /// The menu is the clicked row's: a tab's, a header's or a session's.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let row = tabsTable.clickedRow
+        menu.removeAllItems()
+        menuTab = nil
+        menuGroup = nil
+        menuElsewhere = nil
+        switch rows.indices.contains(row) ? rows[row] : nil {
+        case .header(let g)?:
+            menuGroup = groups[g]
+            addGroupItems(to: menu, groups[g])
+        case .elsewhere(let g, let k)?:
+            menuElsewhere = groups[g].elsewhere[k]
+            addElsewhereItems(to: menu)
+        case .tab(let i)?:
+            menuTab = controller?.tab(at: i)
+            addTabItems(to: menu)
+            // How the tabs are grouped, one level down.
+            menu.addItem(.separator())
+            let grouping = NSMenu()
+            addGroupingItems(to: grouping)
+            menu.addItem(withTitle: L10n.t("Group Tabs"), action: nil, keyEquivalent: "").submenu = grouping
+        case nil:
+            addTabItems(to: menu)
+        }
+    }
 }
 
 extension SidebarViewController: NSMenuItemValidation {
@@ -917,34 +1110,58 @@ extension SidebarViewController: NSMenuItemValidation {
 }
 
 extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int { tabs.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let cell = (tableView.makeView(withIdentifier: TabCell.identifier, owner: self) as? TabCell) ?? TabCell()
-        cell.configure(tabs[row], index: row, count: tabs.count, closeTarget: self)
-        cell.onPane = { [weak self] id, choice in self?.controller?.choosePane(id, choice) }
-        cell.isHidden = !matches(tabs[row])
-        return cell
+        let view: NSView
+        switch rows[row] {
+        case .tab(let i):
+            let cell = (tableView.makeView(withIdentifier: TabCell.identifier, owner: self) as? TabCell) ?? TabCell()
+            cell.configure(tabs[i], index: listed.indices.contains(i) ? listed[i] : i, count: tabs.count, closeTarget: self)
+            cell.onPane = { [weak self] id, choice in self?.controller?.choosePane(id, choice) }
+            view = cell
+        case .header(let g):
+            let group = groups[g]
+            let cell = (tableView.makeView(withIdentifier: GroupHeaderCell.identifier, owner: self) as? GroupHeaderCell) ?? GroupHeaderCell()
+            cell.configure(group, byHost: ConfigStore.shared.config.sidebarGroup == .host, folded: collapsed.contains(group.id),
+                           canAdd: controller?.canOpenTab(in: group) == true)
+            cell.onToggle = { [weak self] in self?.controller?.toggleSidebarGroup(group.id) }
+            cell.onAdd = { [weak self] in self?.controller?.newTab(in: group) }
+            view = cell
+        case .elsewhere(let g, let k):
+            let cell = (tableView.makeView(withIdentifier: ElsewhereCell.identifier, owner: self) as? ElsewhereCell) ?? ElsewhereCell()
+            cell.configure(groups[g].elsewhere[k], twoLines: twoLineRows)
+            let session = groups[g].elsewhere[k]
+            cell.onOpen = { [weak self] in self?.controller?.showElsewhere(session) }
+            view = cell
+        }
+        view.isHidden = !shows(tableRow: row)
+        return view
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        tabs.indices.contains(row) && !matches(tabs[row]) ? Self.foldedRowHeight : rowHeight
+        guard rows.indices.contains(row) else { return rowHeight }
+        return shows(tableRow: row) ? height(of: rows[row]) : Self.foldedRowHeight
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { TabRowView() }
 
+    /// Only a tab's row is picked; a header's and a session's are clicked.
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { tab(atTableRow: row) != nil }
+
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = tabsTable.selectedRow
         placeSelectionCard()
-        guard !syncingSelection, row >= 0, controller?.tab(at: row) !== controller?.selectedTab else { return }
-        controller?.selectTab(at: row)
+        guard !syncingSelection, let i = tab(atTableRow: row), controller?.tab(at: i) !== controller?.selectedTab else { return }
+        controller?.selectTab(at: i)
     }
 
     // Drag to reorder; onto another window's tabs to move it there; out of
     // every window for a window of its own (Rex's tear-off).
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        guard let i = tab(atTableRow: row) else { return nil }
         let item = NSPasteboardItem()
-        item.setString("\(view.window?.windowNumber ?? 0):\(row)", forType: .liberttyTab)
+        item.setString("\(view.window?.windowNumber ?? 0):\(i)", forType: .liberttyTab)
         return item
     }
 
@@ -966,17 +1183,19 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
                    dropOperation: NSTableView.DropOperation) -> Bool {
         guard let (from, tab, index) = source(of: info), let controller else { return false }
+        // Where among the tabs: after the one above the drop in its group.
+        let at = SidebarGroups.insertionIndex(above: row, rows: rows, groups: groups, tabCount: tabs.count)
         if from === controller {
-            controller.moveTab(from: index, to: index < row ? row - 1 : row)
+            controller.moveTab(from: index, to: index < at ? at - 1 : at)
         } else {
-            controller.take(tab, from: from, at: row)
+            controller.take(tab, from: from, at: at)
         }
         return true
     }
 
     func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint,
                    forRowIndexes rowIndexes: IndexSet) {
-        draggedTab = rowIndexes.first.flatMap { controller?.tab(at: $0) }
+        draggedTab = rowIndexes.first.flatMap(tab(atTableRow:)).flatMap { controller?.tab(at: $0) }
     }
 
     /// Dropped where nothing took it, outside every Libertty window: a window of its own there.
@@ -1386,6 +1605,191 @@ private final class TabRowView: NSTableRowView {
     }
 
     private var cell: TabCell? { subviews.lazy.compactMap { $0 as? TabCell }.first }
+}
+
+/// A group's header (`sidebar-group`, Kero's projects): a chevron that
+/// folds the group away, its name and how many tabs, and + for a new tab
+/// there. A click anywhere else on it folds it too.
+private final class GroupHeaderCell: NSTableCellView {
+    static let identifier = NSUserInterfaceItemIdentifier("GroupHeaderCell")
+    private let chevron = NSButton()
+    private let name = NSTextField(labelWithString: "")
+    private let count = NSTextField(labelWithString: "")
+    private let add = NSButton()
+    var onToggle: (() -> Void)?
+    var onAdd: (() -> Void)?
+
+    /// "3 tabs", in the interface's language.
+    static func count(_ n: Int) -> String { "\(n) " + L10n.t(n == 1 ? "tab" : "tabs") }
+
+    /// "New Tab in %@" with `name` in it, in the interface's language.
+    private static func say(_ english: String, _ name: String) -> String {
+        L10n.t(english).replacingOccurrences(of: "%@", with: name)
+    }
+
+    init() {
+        super.init(frame: .zero)
+        identifier = Self.identifier
+        chevron.isBordered = false
+        chevron.contentTintColor = .tertiaryLabelColor
+        chevron.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
+        chevron.target = self
+        chevron.action = #selector(toggle(_:))
+        name.font = Typeface.ui(11.5, .semibold)
+        name.textColor = .secondaryLabelColor
+        name.lineBreakMode = .byTruncatingMiddle
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        count.font = Typeface.hint
+        count.textColor = .tertiaryLabelColor
+        count.setContentHuggingPriority(.required, for: .horizontal)
+        count.setContentCompressionResistancePriority(.required, for: .horizontal)
+        add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
+        add.isBordered = false
+        add.contentTintColor = .tertiaryLabelColor
+        add.symbolConfiguration = .init(pointSize: 11, weight: .regular)
+        add.target = self
+        add.action = #selector(addTab(_:))
+        for v in [chevron, name, count, add] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            chevron.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            chevron.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
+            chevron.widthAnchor.constraint(equalToConstant: 12),
+            name.leadingAnchor.constraint(equalTo: chevron.trailingAnchor, constant: 4),
+            name.centerYAnchor.constraint(equalTo: chevron.centerYAnchor),
+            count.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 6),
+            count.centerYAnchor.constraint(equalTo: chevron.centerYAnchor),
+            count.trailingAnchor.constraint(lessThanOrEqualTo: add.leadingAnchor, constant: -6),
+            add.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            add.centerYAnchor.constraint(equalTo: chevron.centerYAnchor),
+        ])
+        // One group for VoiceOver: "Project api, 3 tabs, collapsed", its chevron and + in it.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func toggle(_ sender: Any?) { onToggle?() }
+    @objc private func addTab(_ sender: Any?) { onAdd?() }
+
+    // A click on the header (not on its buttons) folds it, as its chevron
+    // does; a ⌃-click is the table's, for the menu.
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) { super.mouseDown(with: event) }
+    }
+    override func mouseUp(with event: NSEvent) {
+        guard !event.modifierFlags.contains(.control) else { return super.mouseUp(with: event) }
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onToggle?() }
+    }
+
+    func configure(_ group: SidebarGroup, byHost: Bool, folded: Bool, canAdd: Bool) {
+        name.stringValue = group.title
+        name.toolTip = group.project.map { group.host == nil ? ($0 as NSString).abbreviatingWithTildeInPath : $0 } ?? group.host
+        count.stringValue = String(group.tabs.count)
+        let fold = Self.say(folded ? "Expand %@" : "Collapse %@", group.title)
+        chevron.image = NSImage(systemSymbolName: folded ? "chevron.right" : "chevron.down", accessibilityDescription: fold)
+        chevron.toolTip = fold
+        chevron.setAccessibilityLabel(fold)
+        let new = Self.say("New Tab in %@", group.title)
+        add.toolTip = new
+        add.setAccessibilityLabel(new)
+        add.isHidden = !canAdd
+        var said = [Self.say(byHost ? "Host %@" : "Project %@", group.title), Self.count(group.tabs.count)]
+        if !group.elsewhere.isEmpty { said.append("\(group.elsewhere.count) " + L10n.t("not open here")) }
+        if folded { said.append(L10n.t("collapsed")) }
+        setAccessibilityLabel(said.joined(separator: ", "))
+    }
+}
+
+/// A session a liberttyd keeps that no window here shows (Kero's sidebar
+/// lists them with the tabs): fainter than a tab, and a click shows it in one.
+private final class ElsewhereCell: NSTableCellView {
+    static let identifier = NSUserInterfaceItemIdentifier("ElsewhereCell")
+    private let icon = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+    private let subtitle = NSTextField(labelWithString: "")
+    private var titleCenter: NSLayoutConstraint!
+
+    init() {
+        super.init(frame: .zero)
+        identifier = Self.identifier
+        icon.image = NSImage(systemSymbolName: "rectangle.dashed", accessibilityDescription: nil)
+        icon.contentTintColor = .tertiaryLabelColor
+        icon.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        for field in [title, subtitle] {
+            field.lineBreakMode = .byTruncatingTail
+            field.maximumNumberOfLines = 1
+            field.usesSingleLineMode = true
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+        subtitle.font = Typeface.secondary
+        subtitle.textColor = .tertiaryLabelColor
+        for v in [icon, title, subtitle] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(v)
+        }
+        // Where a tab's glyph and name are.
+        NSLayoutConstraint.activate([
+            icon.centerXAnchor.constraint(equalTo: leadingAnchor, constant: 17),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 36),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor),
+            subtitle.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+        ])
+        titleCenter = title.centerYAnchor.constraint(equalTo: centerYAnchor)
+        titleCenter.isActive = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(_ session: ElsewhereSession, twoLines: Bool) {
+        // Shown by another Mac (or an attach elsewhere), or by nothing.
+        let state = L10n.t(session.clients > 0 ? "shown elsewhere" : "not open here")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let text = NSMutableAttributedString(string: session.title, attributes: [
+            .font: Typeface.row, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph,
+        ])
+        let detail = twoLines ? session.detail : [session.detail, state].filter { !$0.isEmpty }.joined(separator: " · ")
+        if !detail.isEmpty {
+            text.append(NSAttributedString(string: "  " + detail, attributes: [
+                .font: Typeface.secondary, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph,
+            ]))
+        }
+        title.attributedStringValue = text
+        subtitle.stringValue = state
+        subtitle.isHidden = !twoLines
+        titleCenter.constant = twoLines ? -8 : 0
+        toolTip = L10n.t("Show in a Tab")
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel([session.title, session.detail, state].filter { !$0.isEmpty }.joined(separator: ", "))
+        setAccessibilityHelp(L10n.t("Show in a Tab"))
+    }
+
+    /// VoiceOver's press: what a click does.
+    var onOpen: (() -> Void)?
+    override func accessibilityPerformPress() -> Bool {
+        onOpen?()
+        return onOpen != nil
+    }
+
+    // The row's own click (it isn't a tab's to select): it shows the
+    // session; a ⌃-click is the table's, for the menu.
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) { super.mouseDown(with: event) }
+    }
+    override func mouseUp(with event: NSEvent) {
+        guard !event.modifierFlags.contains(.control) else { return super.mouseUp(with: event) }
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onOpen?() }
+    }
 }
 
 /// The selected tab's white card. It moves between rows with a stretch:
