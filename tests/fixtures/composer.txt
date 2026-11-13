@@ -1,0 +1,72 @@
+# The composer (⌘⇧E): a prompt written there goes to the pane as one paste,
+# then Return (⌘Return); put away with Esc, it keeps its draft; ⌘⇧Return
+# queues it and stays open; several lines into a program that didn't ask for
+# bracketed paste asks first. The pane runs a stand-in agent
+# (tests/fixtures/fake-agent-queue.c, built as "claude" by tests/run.sh), which
+# reads a line at a time.
+type:@DIR@/claude
+key:enter
+wait:1.0
+key:cmd+shift+e
+expect-composer:open
+type:hello
+key:cmd+enter
+wait:2.0
+expect:GOT[hello]
+expect-composer:closed
+# A draft stays when it's put away.
+key:cmd+shift+e
+type:draft
+key:escape
+expect-composer:closed
+expect-composer:text=draft
+key:cmd+shift+e
+expect-composer:text=draft
+# Queued: it stays open for the next; the agent at rest takes it.
+key:cmd+shift+enter
+expect-composer:open
+expect-composer:text=
+wait:2.5
+expect:GOT[draft]
+# ⌘⇧E again puts it away.
+key:cmd+shift+e
+expect-composer:closed
+# The prompt queue (⌘⇧M): the same composer, ⌘Return queuing.
+key:cmd+shift+m
+expect-composer:open
+type:queued one
+key:cmd+enter
+expect-composer:open
+wait:2.5
+expect:GOT[queued one]
+# Several lines, and sh's read didn't ask for bracketed paste: a queued one
+# can't go as one paste, so the queue stops for you…
+type:one
+key:enter
+type:two
+key:cmd+enter
+wait:1.5
+expect-queue:paused
+expect-queue:1
+expect-queue:tag=paused
+expect-not:GOT[one]
+click:Remove from Queue
+expect-queue:0
+expect-queue:untagged
+# …and sending it asks first.
+key:cmd+shift+e
+type:one
+key:enter
+type:two
+key:cmd+enter
+expect-sheet:yes
+sheet:Cancel
+expect-sheet:no
+expect-composer:text=one\ntwo
+# Popped out into a window of its own, and back.
+composer:pop-out
+expect-composer:popped
+composer:pop-in
+expect-composer:open
+key:escape
+expect-composer:closed

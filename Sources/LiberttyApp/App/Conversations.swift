@@ -62,6 +62,18 @@ enum Conversations {
         }
     }
 
+    /// What the shell types to start a new conversation from this one's
+    /// transcript, the original left as it was (its own agent's fork):
+    /// Claude Code's --fork-session, Codex's fork. Nil for agents without one.
+    static func forkCommand(_ c: Conversation) -> String? {
+        guard isValidID(c.id) else { return nil }
+        switch c.agent {
+        case "claude": return "claude --resume \(c.id) --fork-session"
+        case "codex": return "codex fork \(c.id)"
+        default: return nil
+        }
+    }
+
     /// Every conversation, the last to be active first.
     static func load(from url: URL = url) -> [Conversation] {
         guard let data = try? Data(contentsOf: url),

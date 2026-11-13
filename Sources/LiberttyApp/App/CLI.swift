@@ -82,6 +82,7 @@ enum CLI {
         case "+wait": status = waitSession(rest)
         case "+events": status = events(rest)
         case "+prompt": status = prompt(rest)
+        case "+queue": status = QueueCLI.run(rest)
         case "+focus": status = focusSession(rest)
         case "+rename-session": status = renameSession(rest)
         case "+history": status = history(rest)
@@ -209,6 +210,9 @@ enum CLI {
           libertty +prompt ID TEXT... [--quiet MS] [--timeout SECONDS] [-n LINES]
                                          ask another agent: type TEXT and Return, wait until its screen has been
                                          quiet MS ms (3000), print its last LINES lines (40)
+          libertty +queue [ID] TEXT...      queue a prompt for a pane (this one without ID): it goes when the pane's
+                                         agent is at rest (or its shell at its prompt), the next after it's done;
+                                         prints how many wait. --list: what's queued; --clear: drop them all
           libertty +focus ID                bring the pane showing it to the front
           libertty +rename-session [ID] NAME
                                          name a session (this pane's without ID); its tab shows the name

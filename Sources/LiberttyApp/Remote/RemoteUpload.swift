@@ -122,7 +122,29 @@ extension TerminalView {
     /// to take them, what this Mac's paths would be is typed instead, as
     /// before, for files (an image has none worth typing).
     func uploadAndType(urls: [URL] = [], image png: Data? = nil) {
-        guard let host = session.host else { return }
+        upload(urls: urls, image: png) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .sent(let paths):
+                guard !paths.isEmpty else { return }
+                self.sendInput(paths.map(ShellQuote.quote).joined(separator: " ") + " ")
+            case .unsupported:
+                if !urls.isEmpty {
+                    self.sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
+                } else {
+                    self.uploadFailed(L10n.t("The host's liberttyd is older and takes no files. Connect to it again to update it."))
+                }
+            case .failed(let why):
+                self.uploadFailed(why)
+            }
+        }
+    }
+
+    /// Files or an image sent to this pane's host, and the outcome told on
+    /// the main thread (the composer puts the paths in its text instead of
+    /// typing them). While they go, the pane says so.
+    func upload(urls: [URL], image png: Data?, then done: @escaping (RemoteUpload.Outcome) -> Void) {
+        guard let host = session.host else { return done(.failed("This pane isn't on another machine")) }
         let batch = RemoteUpload.newBatch()
         let items: [RemoteUpload.Item], top: [String]
         if let png {
@@ -133,10 +155,10 @@ extension TerminalView {
             do {
                 (items, top) = try RemoteUpload.items(for: urls)
             } catch {
-                return uploadFailed("\(error)")
+                return done(.failed("\(error)"))
             }
         }
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else { return done(.sent([])) }
         let address = host.address
         uploadsUnderWay += 1
         showUploadTag(L10n.t("Uploading to %@…").replacingOccurrences(of: "%@", with: host.destination))
@@ -146,19 +168,7 @@ extension TerminalView {
                 guard let self else { return }
                 self.uploadsUnderWay -= 1
                 if self.uploadsUnderWay == 0 { self.showUploadTag(nil) }
-                switch outcome {
-                case .sent(let paths):
-                    guard !paths.isEmpty else { return }
-                    self.sendInput(paths.map(ShellQuote.quote).joined(separator: " ") + " ")
-                case .unsupported:
-                    if !urls.isEmpty {
-                        self.sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
-                    } else {
-                        self.uploadFailed(L10n.t("The host's liberttyd is older and takes no files. Connect to it again to update it."))
-                    }
-                case .failed(let why):
-                    self.uploadFailed(why)
-                }
+                done(outcome)
             }
         }
     }

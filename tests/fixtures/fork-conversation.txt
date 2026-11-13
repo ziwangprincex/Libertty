@@ -1,0 +1,22 @@
+# Fork Conversation: the coding agent's conversation in a pane, carried on
+# in a new pane beside it (or a tab) by the agent's own fork. Run with
+# `command = cat` (so the forks' command lines are only shown, never run)
+# and --persist (a pane's conversation goes by its session).
+conversation:claude:abc123
+action:fork_conversation
+wait:6.5
+expect-panes:2
+expect:claude --resume abc123 --fork-session
+# Codex's, into a tab.
+conversation:codex:019a77
+action:fork_conversation:tab
+wait:6.5
+expect-tab-count:2
+expect:codex fork 019a77
+# A pane whose conversation Libertty doesn't know says why it can't.
+action:fork_conversation
+expect-sheet:yes
+expect-sheet-text:Can't fork the conversation
+sheet:OK
+expect-sheet:no
+expect-tab-count:2

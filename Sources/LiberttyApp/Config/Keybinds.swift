@@ -209,6 +209,8 @@ extension Array where Element == Trigger {
 enum Action: Equatable {
     enum Direction: String, CaseIterable { case left, right, up, down }
     enum SplitTarget: Equatable { case direction(Direction), previous, next }
+    /// Where Fork Conversation puts the fork.
+    enum ForkPlace: String, CaseIterable { case split, tab, window }
 
     case newWindow, newTab, newSplit(Direction), newSplitAuto
     case closeSurface, closeTab, closeWindow, closeAllWindows
@@ -230,6 +232,7 @@ enum Action: Equatable {
     case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
     case toggleCopyMode, toggleHintMode, quickLook
     case undo, redo
+    case toggleComposer, togglePromptQueue, forkConversation(ForkPlace)
     case openSettings, openConfig, reloadConfig, openThemeEditor, quit
     case ignore, unbind
 
@@ -267,6 +270,7 @@ enum Action: Equatable {
         ("toggle_copy_mode", .toggleCopyMode), ("toggle_hint_mode", .toggleHintMode),
         ("quick_look", .quickLook),
         ("undo", .undo), ("redo", .redo),
+        ("toggle_composer", .toggleComposer), ("toggle_prompt_queue", .togglePromptQueue),
         ("open_settings", .openSettings), ("open_config", .openConfig), ("reload_config", .reloadConfig), ("open_theme_editor", .openThemeEditor), ("quit", .quit),
         ("ignore", .ignore), ("unbind", .unbind),
     ]
@@ -297,6 +301,10 @@ enum Action: Equatable {
             guard let a = arg?.trimmingCharacters(in: .whitespaces).lowercased(), let activity = TabActivity(rawValue: a) else { return nil }
             self = .showTabs(activity)
         case "move_surface_to_tab": guard let n = integer(), n > 0 else { return nil }; self = .moveSurfaceToTab(n)
+        case "fork_conversation":
+            guard let place = arg == nil ? .split : ForkPlace(rawValue: arg!.trimmingCharacters(in: .whitespaces).lowercased())
+            else { return nil }
+            self = .forkConversation(place)
         case "write_scrollback_file", "write_selection_file":
             let then = arg?.trimmingCharacters(in: .whitespaces).lowercased() ?? "open"
             guard ["open", "copy", "paste", "save"].contains(then) else { return nil }
@@ -340,6 +348,8 @@ enum Action: Equatable {
         case .gotoWorkspace(let n): return "goto_workspace:\(n)"
         case .showTabs(let activity): return "show_tabs:\(activity.rawValue)"
         case .moveSurfaceToTab(let n): return "move_surface_to_tab:\(n)"
+        case .forkConversation(.split): return "fork_conversation"
+        case .forkConversation(let place): return "fork_conversation:\(place.rawValue)"
         case .writeScrollbackFile(let then): return "write_scrollback_file:\(then)"
         case .writeSelectionFile(let then): return "write_selection_file:\(then)"
         case .navigateSearch(let next): return "navigate_search:" + (next ? "next" : "previous")
@@ -431,6 +441,9 @@ enum Action: Equatable {
         ("connect_to_host", "A window whose sessions run on another machine over ssh, and survive the link dropping"),
         ("toggle_picture_in_picture", "Show the focused pane, live, in a small window that floats over every app, or close it"),
         ("toggle_broadcast_input", "Type into every pane of the tab at once, or stop"),
+        ("toggle_composer", "Write a prompt for the focused pane in the composer: several lines, undo, rich text pasted as Markdown; ⌘Return sends it as one paste, ⌘⇧Return queues it"),
+        ("toggle_prompt_queue", "The focused pane's prompt queue, in its composer: prompts that go one by one as the pane's agent (or shell) is ready for them"),
+        ("fork_conversation:split|tab|window", "Carry the coding agent's conversation in the focused pane on in a new pane (or tab, or window) as a conversation of its own (Claude Code, Codex)"),
         ("undo", "Bring back the pane, tab or window closed last (within undo-timeout)"),
         ("redo", "Close it again"),
         ("copy_command_output", "Copy what the last command printed (needs shell integration)"),
@@ -548,6 +561,7 @@ struct Keybinds: Equatable {
             "cmd+alt+shift+w=close_all_windows",
             "cmd+shift+r=prompt_tab_title", "cmd+p=goto_pane", "cmd+j=goto_attention", "cmd+shift+o=resume_conversation", "cmd+alt+t=new_tab_in_worktree", "cmd+shift+l=toggle_appearance",
             "cmd+y=quick_look",
+            "cmd+shift+e=toggle_composer", "cmd+shift+m=toggle_prompt_queue",
             "cmd+shift+bracket_left=previous_tab", "cmd+shift+bracket_right=next_tab",
             "ctrl+shift+tab=previous_tab", "ctrl+tab=next_tab", "cmd+9=last_tab",
             "cmd+d=new_split:right", "cmd+shift+d=new_split:down",

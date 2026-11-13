@@ -419,10 +419,13 @@ final class TerminalSession {
     /// the window reads on them needn't be told it.
     var daemonWatchesAgents: Bool { (pty as? RemotePTY)?.watchesAgents ?? false }
 
-    /// On a host only the shell integration's marks can say.
+    /// On a host, what its liberttyd says is in front (`reportedProgram`);
+    /// from an older one, only the shell integration's marks can say.
     var hasForegroundProgram: Bool {
         guard !hasExited else { return false }
-        return host == nil ? pty?.hasForegroundProgram ?? false : lock.withLock { promptState == .running }
+        if host == nil { return pty?.hasForegroundProgram ?? false }
+        if daemonWatchesAgents { return reportedProgram != nil }
+        return lock.withLock { promptState == .running }
     }
 
     /// The process group in front of a shell's terminal: its leader's pid

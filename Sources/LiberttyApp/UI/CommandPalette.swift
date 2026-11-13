@@ -254,6 +254,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Go to Pane…", .gotoPane, "rectangle.3.group")
         command("Jump to Pane Needing You", .gotoAttention, "exclamationmark.bubble")
         command("Resume Conversation…", .resumeConversation, "bubble.left.and.text.bubble.right")
+        command("Compose Prompt…", .toggleComposer, "square.and.pencil")
+        command("Prompt Queue…", .togglePromptQueue, "text.line.first.and.arrowtriangle.forward")
+        if controller?.host == nil { command("Fork Conversation", .forkConversation(.split), "arrow.triangle.branch") }
         command("Toggle Dark Mode", .toggleAppearance, "circle.lefthalf.filled")
         if controller?.host == nil { command("New Tab in Worktree…", .newTabInWorktree, "arrow.triangle.branch") }
         // Keep the Mac awake (keep-awake), each choice but the one it is.

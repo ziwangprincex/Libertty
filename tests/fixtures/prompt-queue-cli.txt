@@ -1,0 +1,17 @@
+# libertty +queue from a pane's shell (its own pane, by $LIBERTTY_SESSION;
+# run with --persist): the prompt waits for the shell's next prompt, then
+# goes; --list says what's queued, --clear drops them.
+type:libertty +queue 'echo QUEUED-$((40+2))'; echo LIST-$(libertty +queue --list | grep -c QUEUED); sleep 2
+key:enter
+wait:0.8
+expect-queue:1
+expect:LIST-1
+wait:2.5
+expect:QUEUED-42
+expect-queue:0
+type:libertty +queue 'echo NE$((1))VER'; libertty +queue --clear; echo LISTED-$(libertty +queue --list | wc -l | tr -d ' '); sleep 1
+key:enter
+wait:2.5
+expect:LISTED-0
+expect-queue:0
+expect-not:NE1VER

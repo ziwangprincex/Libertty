@@ -645,6 +645,7 @@ final class SidebarViewController: NSViewController {
         menu.addItem(withTitle: "Rename Tab…", action: #selector(renameTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Reset Name", action: #selector(resetTabName(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Duplicate Tab", action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Fork Conversation", action: #selector(forkConversation(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Move Up", action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Move Down", action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
@@ -773,6 +774,12 @@ final class SidebarViewController: NSViewController {
         controller?.moveTabToNewWindow(tab)
     }
 
+    /// The tab's focused pane's agent conversation, carried on in a new pane beside it.
+    @objc private func forkConversation(_ sender: Any?) {
+        guard let pane = menuTab?.focusedPane else { return }
+        controller?.forkConversation(of: pane)
+    }
+
     @objc private func duplicateTab(_ sender: Any?) {
         let row = menuRow
         guard row >= 0 else { return }
@@ -896,6 +903,14 @@ extension SidebarViewController: NSMenuItemValidation {
         case #selector(moveTabDown(_:)): return shownRow(from: row, by: 1) != nil
         case #selector(moveTabToNewWindow(_:)): return controller?.tab(at: row).map { controller?.canMoveTabOut($0) == true } ?? false
         case #selector(resetTabName(_:)): return row >= 0 && !(controller?.tabNameOverride(at: row) ?? "").isEmpty
+        case #selector(forkConversation(_:)):
+            // Only where an agent runs; greyed out, with why, where its conversation isn't known.
+            guard let pane = menuTab?.focusedPane, let controller,
+                  controller.programs[ObjectIdentifier(pane.session)]?.agent != nil else { item.isHidden = true; return false }
+            item.isHidden = false
+            let why = controller.whyNotFork(pane)
+            item.toolTip = why
+            return why == nil
         default: return true
         }
     }

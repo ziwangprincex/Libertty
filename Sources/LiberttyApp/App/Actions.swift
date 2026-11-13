@@ -134,6 +134,9 @@ enum ActionDispatcher {
                 return true
             }
             if !redone { return false }
+        case .toggleComposer: ComposerController.toggle(in: view)
+        case .togglePromptQueue: ComposerController.toggle(in: view, queue: true)
+        case .forkConversation(let place): controller?.forkConversation(of: view, into: place)
         case .copyCommandOutput: controller?.copyLastCommandOutput()
         case .toggleCopyMode:
             guard let view else { return false }

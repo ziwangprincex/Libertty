@@ -33,6 +33,10 @@ enum RemoteControlPolicy {
             let sub = args.first { !$0.hasPrefix("-") }
             return sub == "stop" || sub == "restart" ? message : nil
         }
+        if command == "+queue" {
+            // Prompts typed into a pane later: driving; what's queued: reading.
+            return args.contains("--list") ? nil : message
+        }
         if command == "+rename-session" {
             // An agent naming its own task: that pane's, given or implied.
             let mine = environment["LIBERTTY_SESSION"] ?? ""
@@ -44,6 +48,8 @@ enum RemoteControlPolicy {
 
     /// Whether the app refuses a request it was sent.
     static func refuses(_ info: [String: String], config: Config) -> Bool {
-        !config.remoteControl && drivingKinds.contains(info["kind"] ?? "action")
+        guard !config.remoteControl else { return false }
+        if info["kind"] == "queue" { return info["op"] != "list" }
+        return drivingKinds.contains(info["kind"] ?? "action")
     }
 }

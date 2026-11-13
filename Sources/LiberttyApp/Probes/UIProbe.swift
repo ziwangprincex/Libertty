@@ -892,6 +892,67 @@ enum UIProbe {
                             print("FAIL  ui-probe searching: \(count) panes, not \(n)")
                             failures += 1
                         }
+                    case .composer(let what):
+                        let pane = controller.focusedTerminal
+                        let open = ComposerController.composer(of: pane)
+                        switch what {
+                        case "open": ComposerController.show(in: pane)
+                        case "queue": ComposerController.show(in: pane, queue: true)
+                        case "close": open?.closeComposer(nil)
+                        case "pop-out":
+                            // Off screen, as the probe's own window is.
+                            open?.popOut(at: NSPoint(x: -20000, y: -22000))
+                        case "pop-in": open?.popIn()
+                        default:
+                            print("FAIL  ui-probe composer: no such step \(what)")
+                            failures += 1
+                        }
+                        pump(0.3)
+                    case .expectComposer(let what):
+                        let pane = controller.focusedTerminal
+                        let open = ComposerController.composer(of: pane)
+                        let ok: Bool, seen: String
+                        if what.hasPrefix("text=") {
+                            let want = Action.unescape(String(what.dropFirst(5))) ?? ""
+                            seen = open?.textView.string ?? ComposerController.draft(of: pane)
+                            ok = seen == want
+                        } else {
+                            seen = open == nil ? "closed" : open?.window_ != nil ? "popped" : "open"
+                            ok = what == "open" ? open != nil : what == seen
+                        }
+                        if ok { print("ok    ui-probe composer \(what)") } else {
+                            print("FAIL  ui-probe composer: \(seen.debugDescription), not \(what)")
+                            failures += 1
+                        }
+                    case .queuePrompt(let text):
+                        PromptQueues.shared.enqueue(Action.unescape(text) ?? text, for: controller.focusedTerminal.session)
+                        pump(0.1)
+                    case .expectQueue(let what):
+                        let pane = controller.focusedTerminal
+                        let queue = PromptQueues.shared.queue(of: pane.session)
+                        let ok: Bool
+                        switch what {
+                        case "paused": ok = queue.paused
+                        case "running": ok = !queue.paused
+                        case "untagged": ok = pane.queueTagShown == nil
+                        case let tag where tag.hasPrefix("tag="): ok = pane.queueTagShown?.contains(tag.dropFirst(4)) == true
+                        default: ok = queue.items.count == Int(what)
+                        }
+                        if ok { print("ok    ui-probe queue \(what)") } else {
+                            let paused = queue.paused ? ", paused" : ""
+                            print("FAIL  ui-probe queue: \(queue.items.count) queued\(paused), tag \(pane.queueTagShown ?? "none"); not \(what)")
+                            failures += 1
+                        }
+                    case .conversation(let spec):
+                        let parts = spec.split(separator: ":").map(String.init)
+                        let pane = controller.focusedTerminal
+                        if parts.count == 2, let session = pane.session.persistentID {
+                            Conversations.record(agent: parts[0], id: parts[1], session: session,
+                                                 directory: pane.session.workingDirectory ?? NSTemporaryDirectory())
+                        } else {
+                            print("FAIL  ui-probe conversation: \(spec) (needs AGENT:ID, and --persist)")
+                            failures += 1
+                        }
                     case .expectPanes(let n):
                         let count = controller.selectedPaneCount
                         if count == n { print("ok    ui-probe \(n) panes") } else {
@@ -1488,6 +1549,10 @@ enum UIProbe {
         /// COLSxROWS ("close": it goes); whether the pane says it's sized by
         /// another; its tag's click.
         case otherWindow(String), expectSized(Bool), fitHere
+        /// The focused pane's composer and prompt queue: `composer:open|queue|close|pop-out|pop-in`,
+        /// `expect-composer:open|closed|popped|text=TEXT`, `queue-prompt:TEXT`,
+        /// `expect-queue:N|tag=TEXT|paused|running`, `conversation:AGENT:ID` (a record for the focused pane).
+        case composer(String), expectComposer(String), queuePrompt(String), expectQueue(String), conversation(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
@@ -1638,6 +1703,11 @@ enum UIProbe {
             case "undo": steps.append(.undo)
             case "redo": steps.append(.redo)
             case "expect-panes": steps.append(.expectPanes(Int(arg) ?? -1))
+            case "composer": steps.append(.composer(arg))
+            case "expect-composer": steps.append(.expectComposer(arg))
+            case "queue-prompt": steps.append(.queuePrompt(arg))
+            case "expect-queue": steps.append(.expectQueue(arg))
+            case "conversation": steps.append(.conversation(arg))
             case "focus-event": steps.append(.focusEvent(arg == "in"))
             case "expect-searching": steps.append(.expectSearching(Int(arg) ?? -1))
             case "expect-no-open-animation": steps.append(.expectNoOpenAnimation)
