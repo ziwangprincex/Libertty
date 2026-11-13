@@ -15,9 +15,9 @@ final class ConnectPanel: NSObject, NSWindowDelegate {
     private let connectButton = NSButton(title: "Connect", target: nil, action: nil)
     private var connecting: String?
 
-    private static let recentKey = "RecentHosts"
+    nonisolated private static let recentKey = "RecentHosts"
 
-    static var recentHosts: [String] { UserDefaults.standard.stringArray(forKey: recentKey) ?? [] }
+    nonisolated static var recentHosts: [String] { UserDefaults.standard.stringArray(forKey: recentKey) ?? [] }
 
     static func remember(_ destination: String) {
         var list = recentHosts.filter { $0 != destination }
@@ -151,10 +151,18 @@ final class ConnectPanel: NSObject, NSWindowDelegate {
         case .success:
             setStatus("", busy: false)
             Self.remember(destination)
+            SavedHosts.add(destination)
             panel?.orderOut(nil)
             (NSApp.delegate as? AppDelegate)?.openWindows(on: host, held: held)
         case .failure(let error):
             setStatus((error as? LocalizedError)?.errorDescription ?? "\(error)", busy: false, error: true)
+            // A changed host key, keys ssh-agent hasn't got: what to do, then again.
+            if let problem = SSHRecovery.diagnose(host.lastSSHErrors) {
+                SSHRecovery.offer(problem, destination: destination, in: panel) { [weak self] in
+                    self?.field.stringValue = destination
+                    self?.connect(nil)
+                }
+            }
         }
     }
 

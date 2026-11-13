@@ -1350,6 +1350,9 @@ struct ProgramStatePage: View {
 struct RemoteHostsPage: View {
     @ObservedObject var model: SettingsModel
     @ViewState private var hosts: [String] = []
+    /// Bumped as hosts connect and fail, so their rows say so.
+    @ViewState private var tick = 0
+    @ViewState private var adding = ""
 
     var body: some View {
         Form {
@@ -1369,24 +1372,129 @@ struct RemoteHostsPage: View {
                     .padding(.vertical, 22)
                 } else {
                     ForEach(hosts, id: \.self) { host in
-                        LabeledContent {
-                            Button("Connect") { ConnectPanel.shared.show(destination: host) }
-                        } label: {
-                            Label(host, systemImage: "globe")
-                        }
+                        HostRow(destination: host, tick: tick)
+                    }
+                    .onMove { offsets, to in
+                        SavedHosts.move(fromOffsets: offsets, toOffset: to)
+                        hosts = SavedHosts.all
                     }
                 }
+                HStack {
+                    TextField(text: $adding, prompt: Text(L10n.t("devbox, user@server, or a Host from ~/.ssh/config"))) {
+                        Text(L10n.t("Add a Host"))
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(add)
+                    Button(L10n.t("Add"), action: add).disabled(!SavedHosts.isValid(adding.trimmingCharacters(in: .whitespaces)))
+                }
             } header: {
-                if !hosts.isEmpty { Text("Hosts You Connected To") }
+                if !hosts.isEmpty { Text("Your Hosts") }
             } footer: {
                 HStack {
+                    if !hosts.isEmpty {
+                        Text(L10n.t("Drag to reorder. Connect opens a window whose sessions run there."))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     Spacer()
                     Button("Connect to Host…") { ConnectPanel.shared.show() }
                 }
             }
+            Section(L10n.t("ssh in a Pane")) {
+                ForEach(SettingsRegistry.items(on: .remoteHosts).filter { $0.key != nil }) { item in
+                    SettingsRow(model: model, item: item)
+                }
+                let known = TerminfoCLI.known()
+                LabeledContent(L10n.t("Hosts with Libertty's terminfo")) {
+                    HStack {
+                        Text(known.isEmpty ? L10n.t("None yet") : known.joined(separator: ", "))
+                            .foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                        if !known.isEmpty {
+                            Button(L10n.t("Forget")) {
+                                _ = TerminfoCLI.run(["forget", "--all"])
+                                tick += 1
+                            }
+                        }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
-        .onAppear { hosts = ConnectPanel.recentHosts }
+        .onAppear { hosts = SavedHosts.all }
+        .onReceive(NotificationCenter.default.publisher(for: SavedHosts.changed)) { _ in hosts = SavedHosts.all }
+        .onReceive(NotificationCenter.default.publisher(for: RemoteHost.statusChanged)) { _ in tick += 1 }
+    }
+
+    private func add() {
+        let host = adding.trimmingCharacters(in: .whitespaces)
+        guard SavedHosts.add(host) else { return }
+        adding = ""
+        hosts = SavedHosts.all
+    }
+}
+
+/// One host: how it is (connecting, connected, what went wrong), and what
+/// can be done (connect, check, retry, remove).
+private struct HostRow: View {
+    let destination: String
+    let tick: Int
+
+    var body: some View {
+        let host = RemoteHost.named(destination)
+        let (symbol, status) = Self.status(host)
+        LabeledContent {
+            HStack(spacing: 6) {
+                if host.needsUser {
+                    Button(L10n.t("Fix…")) { fix(host) }
+                }
+                Button(L10n.t("Connect")) { ConnectPanel.shared.show(destination: destination) }
+                Menu {
+                    Button(L10n.t("Check Connection")) { check(host) }
+                    Divider()
+                    Button(L10n.t("Remove")) { SavedHosts.remove(destination) }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .accessibilityLabel(L10n.t("More for %@").replacingOccurrences(of: "%@", with: destination))
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(destination)
+                    Text(status).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+        .id("\(destination)-\(tick)")
+    }
+
+    static func status(_ host: RemoteHost) -> (symbol: String, text: String) {
+        if host.isConnecting { return ("arrow.triangle.2.circlepath", L10n.t("Connecting…")) }
+        if let error = host.lastError {
+            let why = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            let first = why.split(separator: "\n").last.map(String.init) ?? why
+            return (host.needsUser ? "exclamationmark.triangle" : "wifi.slash", first)
+        }
+        if let info = host.info { return ("checkmark.circle", L10n.t("Connected") + " · " + info.os + " " + info.arch) }
+        return ("circle", L10n.t("Not connected"))
+    }
+
+    private func check(_ host: RemoteHost) {
+        host.retry()
+        DispatchQueue.global(qos: .userInitiated).async { _ = try? host.prepare() }
+    }
+
+    private func fix(_ host: RemoteHost) {
+        if let problem = SSHRecovery.diagnose(host.lastSSHErrors) {
+            SSHRecovery.offer(problem, destination: destination, in: NSApp.keyWindow) { check(host) }
+        } else {
+            check(host)
+        }
     }
 }
 

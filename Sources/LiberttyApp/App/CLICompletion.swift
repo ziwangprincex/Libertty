@@ -100,6 +100,8 @@ enum CLISpec {
         Command(name: "+diff", summary: "this repository's changes beside the terminal",
                 flags: [Flag("--turn", nil, "what an agent changed in its last turn"), Flag("--branch", nil, "since the default branch")]),
         Command(name: "+connect", summary: "a window on another machine", arguments: [.host]),
+        Command(name: "+hosts", summary: "the hosts you keep (Settings ▸ Remote Hosts)",
+                arguments: [.choice(["list", "add", "remove", "check"]), .host]),
         Command(name: "+terminfo", summary: "xterm-ghostty's terminfo on a host you ssh to",
                 flags: [Flag("--all", nil, "every host (forget)")],
                 arguments: [.choice(["setup", "status", "show", "forget"]), .host]),

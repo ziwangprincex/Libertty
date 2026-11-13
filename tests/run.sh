@@ -631,6 +631,8 @@ expect layout-store 'layout-store: all passed' $LIBERTTY --layout-store-probe
 expect cli-wait 'cli-wait: all passed' zsh $ROOT/tests/cli-wait-test.sh $LIBERTTY
 # +daemon, +clients, completion, exit statuses, remote-control (a config of its own: it reads remote-control).
 expect cli-admin 'cli-admin: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config zsh $ROOT/tests/cli-admin-test.sh $LIBERTTY
+# libertty +hosts: the hosts you keep, and check connecting to one (fake-ssh).
+expect hosts 'hosts: all passed' zsh $ROOT/tests/hosts-test.sh $LIBERTTY
 # libertty +terminfo: xterm-ghostty's terminfo on a host you ssh to (a stand-in ssh), and the ssh that keeps it.
 expect terminfo 'terminfo: all passed' zsh $ROOT/tests/terminfo-test.sh $LIBERTTY
 expect send-key 'send-key: all passed' zsh $ROOT/tests/send-key-test.sh $LIBERTTY

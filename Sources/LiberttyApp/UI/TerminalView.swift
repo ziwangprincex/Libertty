@@ -1660,6 +1660,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     @objc private func retryLink(_ sender: Any?) {
         guard let host = session.host else { return }
+        // Something to fix first (a changed host key): asked, then tried again.
+        if let problem = SSHRecovery.diagnose(host.lastSSHErrors) {
+            SSHRecovery.offer(problem, destination: host.destination, in: window) { [weak self] in
+                host.retry()
+                guard let self, let host = self.session.host else { return }
+                self.fillLinkBanner(host)
+                self.layoutLinkBanner()
+            }
+            return
+        }
         host.retry()
         fillLinkBanner(host)
         layoutLinkBanner()

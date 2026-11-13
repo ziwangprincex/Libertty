@@ -80,6 +80,27 @@ final class RemoteHost: @unchecked Sendable {
 
     var info: Info? { stateLock.withLock { prepared } }
     var lastError: Error? { stateLock.withLock { lastFailure?.error } }
+    /// All ssh said when it last failed (the error keeps its last lines):
+    /// what SSHRecovery reads a changed host key's fingerprint from.
+    var lastSSHErrors: String { stateLock.withLock { fullErrors } }
+    private var fullErrors = ""
+    /// Setting up or logging in right now.
+    var isConnecting: Bool { stateLock.withLock { connecting } }
+    private var connecting = false
+
+    /// A host connected, failed or is trying again (on the main thread): the
+    /// Remote Hosts list follows.
+    static let statusChanged = Notification.Name("LiberttyRemoteHostStatusChanged")
+
+    private func statusChanged() {
+        DispatchQueue.main.async { NotificationCenter.default.post(name: Self.statusChanged, object: self) }
+    }
+
+    /// What ssh said, kept whole, as the failure it makes.
+    private func sshFailure(_ errors: String, status: Int32) -> Failure {
+        stateLock.withLock { fullErrors = errors }
+        return Failure.ssh(Self.sshError(errors, status: status))
+    }
 
     // MARK: ssh
 
@@ -166,7 +187,7 @@ final class RemoteHost: @unchecked Sendable {
         if stateLock.withLock({ waitingForUser }) { return false }
         let login = run("true")
         if login.status == 0 { return true }
-        fail(Failure.ssh(Self.sshError(login.errors, status: login.status)))
+        fail(sshFailure(login.errors, status: login.status))
         return false
     }
 
@@ -231,6 +252,7 @@ final class RemoteHost: @unchecked Sendable {
             waitingForUser = false
             lastFailure = nil
         }
+        statusChanged()
     }
 
     private func fail(_ error: Error) {
@@ -241,17 +263,25 @@ final class RemoteHost: @unchecked Sendable {
             lastFailure = (Date(), error)
             waitingForUser = needsUser
         }
+        statusChanged()
     }
 
     /// Reach the host, install or update Libertty's helper there if needed, and
     /// make sure its liberttyd runs (blocking; not on the main thread).
     @discardableResult
     func prepare(progress: (String) -> Void = { _ in }) throws -> Info {
+        stateLock.withLock { connecting = true }
+        statusChanged()
+        defer {
+            stateLock.withLock { connecting = false }
+            statusChanged()
+        }
         do {
             let info = try setUp(progress: progress)
             stateLock.withLock {
                 prepared = info
                 lastFailure = nil
+                fullErrors = ""
             }
             return info
         } catch {
@@ -267,7 +297,7 @@ final class RemoteHost: @unchecked Sendable {
     private func setUp(progress: (String) -> Void) throws -> Info {
         progress("Connecting to \(destination)…")
         let probe = run("sh -s", input: Data(Self.probeScript.utf8))
-        guard probe.status == 0 else { throw Failure.ssh(Self.sshError(probe.errors, status: probe.status)) }
+        guard probe.status == 0 else { throw sshFailure(probe.errors, status: probe.status) }
         var fields: [String: String] = [:]
         for line in probe.output.split(separator: "\n") {
             guard let eq = line.firstIndex(of: "=") else { continue }

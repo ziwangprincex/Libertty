@@ -377,6 +377,12 @@ enum SettingsRegistry {
 
         // Remote Hosts
         all.append(custom(.remoteHosts, "", "Remote Hosts", id: "remote-hosts", keywords: "ssh connect host server"))
+        all += [
+            bool(.remoteHosts, "ssh in a Pane", "Send TERM=xterm-256color", "ssh-env",
+                 help: "Hosts without Libertty's terminfo still work; hosts that have it keep xterm-ghostty.", keywords: "ssh term terminfo"),
+            bool(.remoteHosts, "ssh in a Pane", "Install Libertty's terminfo on a host the first time", "ssh-terminfo",
+                 help: "When you ssh to a host to log in: once, in its ~/.terminfo, with its own tic.", keywords: "ssh terminfo tic xterm-ghostty"),
+        ]
 
         // Advanced (Rex's Developer)
         all += [
