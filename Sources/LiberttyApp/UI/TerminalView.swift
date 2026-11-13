@@ -949,6 +949,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         resizeFrames += 1
         pinContents()
         renderer.render(session, into: metalLayer, focused: isFocused, force: true)
+        // (Shown with the window's transaction: no presented time to tell.)
+        onFramePresented?(session.outputMark.count, 0)
         // This was the display link's frame too: drawing it twice would hold
         // every drawable and stall the next step for up to a second.
         forceRedraw = false

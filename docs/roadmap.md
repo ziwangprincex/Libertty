@@ -278,6 +278,6 @@ Kero（github.com/egoist/kero，MIT）是给编程 agent 用的终端。下面�
 | Vi 复制模式、链接提示模式 | Otty | ✅ ⌘⇧C / ⌘⇧H；`CopyModeTests`、`HintTests`，`copy-mode.txt`、`hints.txt` |
 | beta 更新通道 | Rex preview | ✅ `auto-update-channel`；`VersionTests`（semver 预发布排序）。⚠️ `beta-channel` release 要第一次发版时才会建出来 |
 | 内存 | Otty Memory Report | ✅ 同字体的 pane 共用一个从 1024² 起步的字形图集，shader 每块 GPU 只编译一次：4 个 pane 从 250 MB 降到 59 MB（footprint 实测） |
-| 冷启动 | Tern 公开写 151 ms | ✅ `--startup-bench`（`bench/startup.sh`，`--sample` 看主线程每段花在哪）：菜单图标改成打开时才加载、Web Access 面板用到才建、字体在后台线程预热；release 构建窗口不上屏时，到画出提示符的第一帧从约 300 ms 降到约 165 ms。⬜ 上屏的数字、和其他终端对比要在空闲的屏幕上跑（会抢焦点，留给你） |
+| 冷启动 | Tern 公开写 151 ms | ✅ `--startup-bench`（`bench/startup.sh`，`--sample` 看主线程每段花在哪）：菜单图标改成打开时才加载、Web Access 面板用到才建、字体在后台线程预热；release 构建窗口不上屏时，到画出提示符的第一帧从约 305 ms 降到约 260 ms（同一台机器上交替各跑 12 次的中位数；机器状态不同，同一个构建也测到过 155 ms，所以只比同一时段的数字）。⬜ 上屏的数字、和其他终端对比要在空闲的屏幕上跑（会抢焦点，留给你） |
 | 空闲开销 / 共享 poller | Tern | ✅ 评估后不做共享 poller（见第 6 节）；改成压缩完成后定时器停下：100 个空闲会话的 liberttyd 每 10 秒唤醒从约 92 次降到约 2 次；`IdleCompressorTests` |
 

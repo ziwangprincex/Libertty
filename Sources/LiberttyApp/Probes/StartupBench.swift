@@ -36,7 +36,8 @@ enum StartupBench {
         let view = controller.focusedTerminal
         view.onFramePresented = { [weak view] output, presented in
             // The frame was on screen at `presented` (host time), a moment
-            // ago; off screen it never was (no time): done drawing, now.
+            // ago; off screen, or drawn with a resize, there's no time: done
+            // drawing, now.
             let now = Date().timeIntervalSince1970
             let at = presented > 0 ? now - max(0, CACurrentMediaTime() - presented) : now
             if !marks.contains(where: { $0.name == "frame" }) { marks.append(("frame", at)) }
@@ -48,7 +49,7 @@ enum StartupBench {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
             guard !finished else { return }
-            print("startup-bench: no prompt drawn in 15 s")
+            print("startup-bench failed: no prompt drawn in 15 s")
             exit(1)
         }
     }

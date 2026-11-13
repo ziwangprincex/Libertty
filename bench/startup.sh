@@ -45,10 +45,11 @@ run() {
 run > /dev/null
 lines=()
 for i in $(seq $RUNS); do
-  line=$(run | grep '^startup-bench:')
+  line=$(run | grep '^startup-bench')
   print -r -- $line
-  lines+=($line)
+  [[ $line == 'startup-bench:'* ]] && lines+=($line)
 done
+(( ${#lines} )) || { print -u2 "no run finished"; exit 1; }
 print -rl -- $lines | python3 -I -c '
 import sys, statistics
 stages = {}
