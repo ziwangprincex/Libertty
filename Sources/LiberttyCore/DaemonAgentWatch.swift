@@ -1,3 +1,10 @@
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(Glibc)
+import Glibc
+#endif
 #if os(Linux)
 import Dispatch
 import FoundationEssentials  // not Foundation: on Linux that brings 45 MB of ICU

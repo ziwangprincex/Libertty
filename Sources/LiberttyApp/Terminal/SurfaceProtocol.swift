@@ -61,8 +61,10 @@ enum SurfaceProtocol {
             return .delete(payload)
         case "s":
             if payload.hasPrefix("b64:") {
+                // (Nothing left once the unknown characters are skipped is
+                // bad too: some Foundations give empty data for "@@@", others nil.)
                 guard let data = Data(base64Encoded: String(payload.dropFirst(4)), options: .ignoreUnknownCharacters),
-                      let json = String(data: data, encoding: .utf8) else { throw ParseError("s: bad base64") }
+                      !data.isEmpty, let json = String(data: data, encoding: .utf8) else { throw ParseError("s: bad base64") }
                 return .set(json)
             }
             guard payload.hasPrefix("{") else { throw ParseError("s wants JSON or b64:") }
