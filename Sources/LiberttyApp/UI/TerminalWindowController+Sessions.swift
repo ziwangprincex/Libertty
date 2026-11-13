@@ -140,6 +140,8 @@ extension TerminalWindowController {
 
     func sessionProgramStatusChanged(_ session: TerminalSession) {
         updateTitle()
+        // It may have started or stopped reading a password.
+        SecureInput.shared.refresh()
         notifyIfNeeded(session)
         noteTurn(session)
         onAttentionChange?()

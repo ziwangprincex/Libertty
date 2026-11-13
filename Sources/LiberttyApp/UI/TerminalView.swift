@@ -385,6 +385,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         session.reportFocus(window?.isKeyWindow == true)
         setNeedsRender(force: true)
         onFocus?(self)
+        // (Once the window's first responder is this one.)
+        DispatchQueue.main.async { SecureInput.shared.refresh() }
         return true
     }
 
@@ -883,6 +885,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         session.reportFocus(false)
         setNeedsRender(force: true)
         PendingKeys.shared.cancel(in: self)
+        DispatchQueue.main.async { SecureInput.shared.refresh() }
         return true
     }
 

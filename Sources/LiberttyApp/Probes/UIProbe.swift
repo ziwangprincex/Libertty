@@ -904,6 +904,14 @@ enum UIProbe {
                             print("FAIL  ui-probe subtitle: no \(text) in \"\(subtitle)\"")
                             failures += 1
                         }
+                    case .expectSecureInput(let on):
+                        let wants = SecureInput.wantsForPassword(controller.focusedTerminal)
+                        if wants == on {
+                            print("ok    ui-probe secure input \(on ? "on" : "off") for a password")
+                        } else {
+                            print("FAIL  ui-probe secure input: \(wants ? "on" : "off"), not \(on ? "on" : "off")")
+                            failures += 1
+                        }
                     case .updateInBackground:
                         // auto-update = download's daily check, now; then, with
                         // auto-update-restart = idle, the restart when nobody's looking.
@@ -1260,6 +1268,9 @@ enum UIProbe {
         case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
+        /// Whether the focused pane would have Secure Keyboard Entry on for a
+        /// password (the probe's window is never key, so not the system's state).
+        case expectSecureInput(Bool)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
@@ -1372,6 +1383,7 @@ enum UIProbe {
             case "expect-background": steps.append(.expectBackground(arg.lowercased()))
             case "expect-font": steps.append(.expectFont(Double(arg) ?? -1))
             case "expect-subtitle": steps.append(.expectSubtitle(arg))
+            case "expect-secure-input": steps.append(.expectSecureInput(arg == "yes"))
             case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))

@@ -281,6 +281,9 @@ struct Config: Equatable {
     /// OSC 52: programs (vim over ssh, tmux) setting / reading the clipboard.
     var clipboardWrite = true
     var clipboardRead = false
+    /// Secure Keyboard Entry by itself while the pane with the keyboard reads
+    /// a password (Otty's Auto Secure Input).
+    var secureInputOnPassword = true
 
     /// The effective key table, including the global-hotkey shorthands.
     var keybindTable: Keybinds {
@@ -455,6 +458,7 @@ struct Config: Equatable {
         ("ssh-env", "With term = xterm-ghostty, have ssh send TERM=xterm-256color, so hosts without Ghostty's terminfo still work (needs shell integration)."),
         ("clipboard-write", "allow or deny programs setting the clipboard (OSC 52; vim, tmux and remote shells use it)."),
         ("clipboard-read", "allow or deny programs reading the clipboard (OSC 52). Denied by default: anything you copied would be readable."),
+        ("secure-input-on-password", "Turn on Secure Keyboard Entry while the pane you type in reads a password (sudo, ssh, read -s), and off again after: other apps can't read the keys you type there. On by default."),
         ("window-save-state", "default, never or always: reopen the windows, tabs and splits you had. With session-persistence the programs come back as they were; without, a new shell starts in each pane's last directory."),
         ("config-file", "Also load this file (relative to this one); a leading ? makes a missing file fine. Repeatable."),
     ]
@@ -582,6 +586,7 @@ struct Config: Equatable {
         case "quick-terminal-autohide": return [String(quickTerminalAutohide)]
         case "clipboard-write": return [clipboardWrite ? "allow" : "deny"]
         case "clipboard-read": return [clipboardRead ? "allow" : "deny"]
+        case "secure-input-on-password": return [String(secureInputOnPassword)]
         case "config-file": return []
         default: return []
         }
@@ -1061,6 +1066,9 @@ struct Config: Equatable {
             }
             guard ["allow", "deny"].contains(v) else { return "allow or deny" }
             if isWrite { clipboardWrite = v == "allow" } else { clipboardRead = v == "allow" }
+        case "secure-input-on-password":
+            if reset { secureInputOnPassword = defaults.secureInputOnPassword; return nil }
+            guard let x = bool() else { return "true or false" }; secureInputOnPassword = x
         case "markdown-rendered":
             if reset { markdownRendered = defaults.markdownRendered; return nil }
             guard let x = bool() else { return "true or false" }; markdownRendered = x
