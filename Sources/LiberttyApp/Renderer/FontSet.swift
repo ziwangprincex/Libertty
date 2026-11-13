@@ -24,6 +24,9 @@ final class FontSet {
     /// `font-thicken`: how much heavier to draw (0 none, 1 the most); the
     /// rasterizer strokes glyphs by it.
     let thicken: CGFloat
+    /// What it was made from: two font sets with the same draw the same
+    /// glyphs, so their panes share an atlas (GlyphAtlas.shared).
+    let key: String
 
     static let preferredFamilies = [FontRegistry.bundledFamily, "JetBrains Mono", "SF Mono", "Menlo"]
 
@@ -65,6 +68,8 @@ final class FontSet {
         self.pointSize = pointSize
         self.scale = scale
         self.thicken = max(0, min(1, thicken))
+        key = [family, fallbacks.joined(separator: "\u{1}"), styles.regular, styles.bold, styles.italic, styles.boldItalic,
+               "\(pointSize)", "\(scale)", "\(cellHeightAdjust)", "\(cellWidthAdjust)", "\(self.thicken)"].joined(separator: "\u{0}")
         let pixelSize = pointSize * scale
 
         let families = family.isEmpty ? Self.preferredFamilies : [family] + Self.preferredFamilies

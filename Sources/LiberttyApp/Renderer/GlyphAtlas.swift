@@ -23,11 +23,35 @@ final class GlyphAtlas {
     /// Bumped when the atlas is wiped; renderers must rebuild cached instances.
     private(set) var generation = 0
 
-    init(device: MTLDevice, fonts: FontSet, size: Int = 4096) {
+    /// Starts small and doubles as it fills (`reset`). It used to start at
+    /// 4096², 64 MB, for every pane: memory macOS keeps whole once a pane is
+    /// resized (measured: each split added 64 MB).
+    init(device: MTLDevice, fonts: FontSet, size: Int = 1024) {
         self.device = device
         self.fonts = fonts
         self.size = size
         texture = Self.makeTexture(device, size)
+    }
+
+    private final class Weak {
+        weak var atlas: GlyphAtlas?
+        init(_ atlas: GlyphAtlas) { self.atlas = atlas }
+    }
+    nonisolated(unsafe) private static var pool: [String: Weak] = [:]
+    private static let poolLock = NSLock()
+
+    /// The atlas of every pane drawing with fonts like these (the same font,
+    /// size, scale, metrics): its glyphs rasterized once, its memory once,
+    /// however many panes. A pane that wipes it to make room bumps
+    /// `generation`, and each pane rebuilds its rows at its next frame.
+    static func shared(device: MTLDevice, fonts: FontSet) -> GlyphAtlas {
+        poolLock.lock()
+        defer { poolLock.unlock() }
+        if let atlas = pool[fonts.key]?.atlas, atlas.device === device { return atlas }
+        pool = pool.filter { $0.value.atlas != nil }
+        let atlas = GlyphAtlas(device: device, fonts: fonts)
+        pool[fonts.key] = Weak(atlas)
+        return atlas
     }
 
     private static func makeTexture(_ device: MTLDevice, _ size: Int) -> MTLTexture {

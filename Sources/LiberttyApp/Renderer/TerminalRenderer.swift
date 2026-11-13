@@ -156,8 +156,28 @@ final class TerminalRenderer {
         self.fonts = fonts
         guard let queue = device.makeCommandQueue() else { throw TerminalError.libghostty("command queue") }
         self.queue = queue
-        atlas = GlyphAtlas(device: device, fonts: fonts)
+        atlas = GlyphAtlas.shared(device: device, fonts: fonts)
+        (rectPipeline, glyphPipeline, imagePipeline) = try Self.pipelines(device)
 
+        var s: GhosttyRenderState?
+        guard ghostty_render_state_new(nil, &s) == GHOSTTY_SUCCESS, let s,
+              ghostty_render_state_row_iterator_new(nil, &rowIterator) == GHOSTTY_SUCCESS,
+              ghostty_render_state_row_cells_new(nil, &rowCells) == GHOSTTY_SUCCESS
+        else { throw TerminalError.libghostty("render state") }
+        state = s
+    }
+
+    private typealias Pipelines = (rect: MTLRenderPipelineState, glyph: MTLRenderPipelineState, image: MTLRenderPipelineState)
+    nonisolated(unsafe) private static var compiled: [ObjectIdentifier: Pipelines] = [:]
+    private static let compiledLock = NSLock()
+
+    /// The shaders, compiled from source once per GPU (there's no offline
+    /// compiler with the Command Line Tools): every pane after the first
+    /// takes them as they are.
+    private static func pipelines(_ device: MTLDevice) throws -> Pipelines {
+        compiledLock.lock()
+        defer { compiledLock.unlock() }
+        if let made = compiled[ObjectIdentifier(device)] { return made }
         let library = try device.makeLibrary(source: shaderSource, options: nil)
         func pipeline(_ vertex: String, _ fragment: String) throws -> MTLRenderPipelineState {
             let desc = MTLRenderPipelineDescriptor()
@@ -174,16 +194,10 @@ final class TerminalRenderer {
             color.destinationAlphaBlendFactor = .oneMinusSourceAlpha
             return try device.makeRenderPipelineState(descriptor: desc)
         }
-        rectPipeline = try pipeline("rect_vertex", "rect_fragment")
-        glyphPipeline = try pipeline("glyph_vertex", "glyph_fragment")
-        imagePipeline = try pipeline("image_vertex", "image_fragment")
-
-        var s: GhosttyRenderState?
-        guard ghostty_render_state_new(nil, &s) == GHOSTTY_SUCCESS, let s,
-              ghostty_render_state_row_iterator_new(nil, &rowIterator) == GHOSTTY_SUCCESS,
-              ghostty_render_state_row_cells_new(nil, &rowCells) == GHOSTTY_SUCCESS
-        else { throw TerminalError.libghostty("render state") }
-        state = s
+        let made = (try pipeline("rect_vertex", "rect_fragment"), try pipeline("glyph_vertex", "glyph_fragment"),
+                    try pipeline("image_vertex", "image_fragment"))
+        compiled[ObjectIdentifier(device)] = made
+        return made
     }
 
     deinit {
@@ -194,7 +208,7 @@ final class TerminalRenderer {
 
     func setFonts(_ fonts: FontSet) {
         self.fonts = fonts
-        atlas = GlyphAtlas(device: device, fonts: fonts)
+        atlas = GlyphAtlas.shared(device: device, fonts: fonts)
         rows.removeAll()
         rowsGeneration = -1
     }
