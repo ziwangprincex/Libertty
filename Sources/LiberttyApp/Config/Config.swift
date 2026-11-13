@@ -409,7 +409,7 @@ struct Config: Equatable {
         ("editor-keymap", "default or vim: the editor's keys."),
         ("browser-search", "The browser's search, %s standing for the words typed (default DuckDuckGo)."),
         ("jupyter", "The jupyter command notebooks run their cells with (default: the one on your login shell's PATH)."),
-        ("browser-automation", "Let libertty +browser read and act in the browser's pages (text, html, eval, click, type, screenshot, url) — for scripts and agents. Off by default: a page may be one you're signed in to."),
+        ("browser-automation", "Let libertty +browser read and act in the browser's pages (snapshot, text, click, type, wait, eval, screenshot, cookies…) — for scripts and agents. Off by default: a page may be one you're signed in to."),
         ("remote-control", "Let libertty commands (scripts, coding agents) drive Libertty: +split, +focus, +move-pane, +action, +new-window, +send, +send-key, +prompt, +new-session, +kill-session, +resume, +daemon stop and restart. false: they may still read (+list-sessions, +capture, +wait, +events) and name their own session. It keeps well-behaved tools out; it's no sandbox. Set it in Settings or here: +set doesn't change it."),
         ("markdown-rendered", "Show Markdown files rendered; false shows their source (View ▸ Show Markdown Source toggles one)."),
         ("session-persistence", "Keep shells and programs running in liberttyd when Libertty quits (or crashes, or updates); the next launch shows them again. Closing a pane or window still ends it. Takes effect at the next launch."),

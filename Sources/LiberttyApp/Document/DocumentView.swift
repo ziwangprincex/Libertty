@@ -146,6 +146,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         isEditing = editing
         if editing { rendered = false }
         if editing && Self.isMarkdown(url) { showsSource = true }  // (didSet does nothing before init ends)
+        if kind == .web {
+            Self.browsersMade += 1
+            browserID = "b\(Self.browsersMade)"
+        } else {
+            browserID = ""
+        }
         web = WKWebView()
         super.init(frame: .zero)
         if kind == .web { makeBrowserBar() }
@@ -260,16 +266,59 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     /// ⌘L in a browser.
     func focusAddress() { browserBar?.focusAddress() }
 
-    /// Run `script` in the page (`+browser eval`, text, click…): its value, or
-    /// what went wrong. `own`: in a world of its own, where the page's scripts
-    /// can't stand in for `querySelector` or `innerText` (eval means the page's).
-    func pageScript(_ script: String, own: Bool = false, completion: @escaping (Any?, String?) -> Void) {
-        web.evaluateJavaScript(script, in: nil, in: own ? .defaultClient : .page) { result in
+    /// Run `script` in the page's own world (`+browser eval`): its value, or what went wrong.
+    func pageScript(_ script: String, completion: @escaping (Any?, String?) -> Void) {
+        web.evaluateJavaScript(script, in: nil, in: .page) { result in
             switch result {
             case .success(let value): completion(value, nil)
-            case .failure(let error): completion(nil, error.localizedDescription)
+            case .failure(let error): completion(nil, Self.message(of: error))
             }
         }
+    }
+
+    // MARK: Automation (`libertty +browser`)
+
+    /// How `+browser` names this page (a browser's: `b1`, `b2`…, in the order
+    /// they were opened, for as long as Libertty runs); empty for documents.
+    let browserID: String
+    private static var browsersMade = 0
+
+    /// `op` of the automation library (BrowserScript) with `arguments`: its
+    /// answer's text, or what went wrong. A page navigating meanwhile, or
+    /// with nothing loaded, answers with an error too.
+    func automate(_ op: String, _ arguments: [String: Any], completion: @escaping (_ ok: Bool, _ text: String) -> Void) {
+        web.callAsyncJavaScript(BrowserScript.call(op), arguments: ["a": arguments], in: nil, in: BrowserScript.world) { result in
+            switch result {
+            case .success(let value):
+                let answer = value as? [String: Any] ?? [:]
+                if answer["ok"] as? Bool == true { completion(true, answer["text"] as? String ?? "") }
+                else { completion(false, answer["error"] as? String ?? "the page gave no answer") }
+            case .failure(let error):
+                completion(false, Self.message(of: error))
+            }
+        }
+    }
+
+    var pageTitle: String { web.title ?? "" }
+    var isPageLoading: Bool { web.isLoading }
+    /// The cookies its pages keep (every browser's: they share WebKit's store).
+    var cookieStore: WKHTTPCookieStore { web.configuration.websiteDataStore.httpCookieStore }
+
+    /// A page never shown yet (opened in a tab not in front, or restored
+    /// there) has no size: nothing in it could be clicked, scrolled or
+    /// pictured. Until it's shown it takes `size` (its window's). One in a
+    /// window is AppKit's to size (a split's new pane grows from nothing).
+    func lendSize(_ size: NSSize) {
+        guard window == nil, bounds.width < 1 || bounds.height < 1, size.width >= 1, size.height >= 1 else { return }
+        setFrameSize(size)
+        layoutSubtreeIfNeeded()
+    }
+
+    /// What a script's failure says: the exception itself, not WebKit's "A JavaScript exception occurred".
+    private static func message(of error: Error) -> String {
+        let info = (error as NSError).userInfo
+        if let message = info["WKJavaScriptExceptionMessage"] as? String, !message.isEmpty { return message }
+        return error.localizedDescription
     }
 
     // A link or button that wants a file: it goes to Downloads (the page's

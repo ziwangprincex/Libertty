@@ -579,7 +579,7 @@ print 'browser-automation = true' > $PRIVATE/browser-config/libertty/config
 settle
 SERIAL=1
 expect browser-automation 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/browser-config $LIBERTTY --ui-probe \
-  "$(sed -e "s|@SITE@|http://127.0.0.1:$PORT|g" -e "s|@HOST@|127.0.0.1:$PORT|g" -e "s|@OUT@|$OUT|g" $ROOT/tests/fixtures/browser-automation.txt)" $OUT
+  "$(sed -e "s|@SITE@|http://127.0.0.1:$PORT|g" -e "s|@HOST@|127.0.0.1:$PORT|g" -e "s|@OUT@|$OUT|g" $ROOT/tests/fixtures/browser-automation.txt)" $OUT --persist
 SERIAL=0
 kill $SITE_PID 2>/dev/null
 # Park Pane / Unpark Pane.

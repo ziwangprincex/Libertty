@@ -48,8 +48,9 @@ enum CLISpec {
     static let states = ["idle", "working", "blocked", "waiting", "done", "error", "failed"]
     static let eventKinds = ["session-started", "session-ended", "command-started", "command-finished", "prompt", "title",
                              "directory", "label", "input-mode", "bell", "status"]
-    static let browserOps = ["open", "go", "back", "forward", "reload", "url", "text", "html", "eval", "click", "type",
-                             "screenshot"]
+    static let browserOps = ["list", "open", "go", "back", "forward", "reload", "url", "title", "text", "html", "snapshot",
+                             "eval", "click", "hover", "check", "uncheck", "type", "press", "select", "scroll", "wait",
+                             "cookies", "screenshot"]
     static let daemonCommands = ["status", "stop", "restart", "logs"]
     static let directions: [Flag] = ["--right", "--left", "--down", "--up"].map { Flag($0) }
 
@@ -89,7 +90,11 @@ enum CLISpec {
                         Flag("--wait", nil, "until it's closed (EDITOR)")],
                 arguments: [.file], repeats: true),
         Command(name: "+browser", summary: "the browser block",
-                flags: [Flag("--split", nil, "beside the terminal")], arguments: [.choice(browserOps), .text], repeats: true),
+                flags: [Flag("--split", nil, "beside the terminal"), Flag("--tab", nil, "in a tab of its own"),
+                        Flag("--pane", .text), Flag("--beside", .session), Flag("--no-focus", nil, "the keyboard stays"),
+                        Flag("--ref", .text), Flag("--enter", nil, "then Return"), Flag("--timeout", .number),
+                        Flag("--interactive", nil, "only what can be acted on"), Flag("--json")],
+                arguments: [.choice(browserOps), .text], repeats: true),
         Command(name: "+render-markdown", summary: "the HTML Libertty renders for a Markdown file", arguments: [.file]),
         Command(name: "+render-diff", summary: "the HTML Libertty renders for a diff", arguments: [.file], hidden: true),
         Command(name: "+diff", summary: "this repository's changes beside the terminal",

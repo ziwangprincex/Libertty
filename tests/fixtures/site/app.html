@@ -1,0 +1,49 @@
+<!doctype html><html><head><title>Probe App</title></head>
+<body>
+<h1>Form page</h1>
+<nav aria-label="Main"><a href="index.html">Home</a></nav>
+<form id="f">
+  <label for="who">Your name</label> <input id="who" placeholder="Name">
+  <label><input type="checkbox" id="agree"> I agree</label>
+  <select id="color" aria-label="Color"><option value="r">Red</option><option value="g">Green</option><option value="b">Blue</option></select>
+  <textarea id="notes" aria-label="Notes"></textarea>
+  <button type="submit">Send</button>
+</form>
+<div id="card" style="cursor:pointer">Open the card</div>
+<input id="search" aria-label="Search">
+<input id="qty" type="number" aria-label="Quantity" value="3">
+<p id="status">Nothing yet</p>
+<button id="later">Show later</button>
+<button id="cover">Cover it</button>
+<button id="under">Under</button>
+<div id="overlay" style="position:fixed;inset:0;display:none;background:rgba(0,0,0,.3)"></div>
+<script>
+const say = (s) => document.getElementById('status').textContent = s;
+// As a framework's controlled field: what it holds comes from input events alone.
+let name = '';
+const seen = [];
+document.getElementById('who').addEventListener('input', e => { name = e.target.value; seen.push(e.isTrusted ? 'trusted' : 'synthetic'); });
+document.getElementById('f').addEventListener('submit', e => {
+  e.preventDefault();
+  say('sent ' + name + ' agree=' + document.getElementById('agree').checked + ' color=' + document.getElementById('color').value
+    + ' notes=' + document.getElementById('notes').value.replace(/\n/g, '|') + ' input=' + seen[seen.length - 1]);
+});
+const card = document.getElementById('card');
+const steps = [];
+for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) card.addEventListener(type, () => steps.push(type));
+card.addEventListener('click', e => say('card ' + steps.join(',') + ' at ' + (e.clientX > 0 ? 'its middle' : 'the corner')));
+document.getElementById('later').addEventListener('click', () => setTimeout(() => {
+  const d = document.createElement('div');
+  d.id = 'late';
+  d.textContent = 'Here at last';
+  document.body.appendChild(d);
+}, 700));
+document.getElementById('cover').addEventListener('click', () => { document.getElementById('overlay').style.display = 'block'; });
+document.getElementById('under').addEventListener('click', () => say('under clicked'));
+// An old autocomplete: it reads the field when a key comes up.
+const keys = [];
+document.getElementById('search').addEventListener('keydown', e => keys.push(e.key));
+document.getElementById('search').addEventListener('keyup', e => say('keyup ' + e.target.value + ' after ' + keys.join('')));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') say('escaped ' + e.keyCode); });
+document.cookie = 'probe' + location.port + '=kept; path=/';
+</script></body></html>

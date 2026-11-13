@@ -30,6 +30,76 @@ extension TerminalWindowController {
         return documents(in: everyTab).last { $0.kind == .web }
     }
 
+    /// Every browser of the window, with where it is: "tab 2", "tab 1 beside
+    /// SESSION" (its tab's terminal), "workspace 2 tab 1" (`+browser list`).
+    var browsers: [(page: DocumentView, place: String, beside: String?)] {
+        let groups = workspaceTabs
+        return groups.enumerated().flatMap { w, group in
+            group.enumerated().flatMap { t, tab -> [(page: DocumentView, place: String, beside: String?)] in
+                let workspace = groups.count > 1 ? "workspace \(w + 1) " : ""
+                if let doc = tab.document, doc.kind == .web { return [(doc, "\(workspace)tab \(t + 1)", nil)] }
+                let beside = (tab.focusedPane ?? tab.panes.first)?.session.persistentID
+                return tab.documentPanes.filter { $0.kind == .web }.map { doc in
+                    (doc, "\(workspace)tab \(t + 1)" + (beside.map { " beside \($0)" } ?? ""), beside)
+                }
+            }
+        }
+    }
+
+    /// The browser beside the pane showing session `id`: one in its tab.
+    func browser(besideSession id: String) -> DocumentView? {
+        guard let pane = pane(showing: id), let tab = owningTab(of: pane) else { return nil }
+        return tab.documentPanes.last { $0.kind == .web }
+    }
+
+    /// `+browser open`: a browser on `url` in a tab of its own, or with
+    /// `split` beside a terminal (`pane`, in its own tab, whichever that is;
+    /// else the focused one) — or the one already showing it there. With
+    /// `focus` it comes forward with the keyboard in it; without, nothing in
+    /// front changes (an agent's page beside its terminal while you type).
+    func openBrowserPage(_ url: URL, beside pane: TerminalView?, split: Bool, focus: Bool) -> DocumentView? {
+        let fresh = url.absoluteString == "about:blank"
+        if split {
+            let anchor = pane ?? (selectedTab.isTerminal ? selectedTab : terminalTab).focusedPane
+            guard let anchor, let tab = tab(containing: anchor), let container = tab.container else { return nil }
+            if !fresh, let open = tab.documentPanes.first(where: { $0.kind == .web && $0.url.standardizedFileURL == url.standardizedFileURL }) {
+                open.reload()
+                if focus { reveal(open, in: tab) }
+                return open
+            }
+            let doc = makeDocument(url)
+            container.split(anchor, with: doc, toward: .right)
+            if focus {
+                reveal(doc, in: tab)
+                if fresh { DispatchQueue.main.async { doc.focusAddress() } }
+            }
+            updateSidebar()
+            return doc
+        }
+        if !fresh, let open = tabs.first(where: { $0.document?.kind == .web && $0.document?.url.standardizedFileURL == url.standardizedFileURL }) {
+            if focus { select(open) }
+            return open.document
+        }
+        let doc = makeDocument(url)
+        let tab = TerminalTab(document: doc)
+        tabs.insert(tab, at: (tabs.firstIndex { $0 === selectedTab } ?? tabs.count - 1) + 1)
+        if focus {
+            select(tab)
+            if fresh { DispatchQueue.main.async { doc.focusAddress() } }
+        } else {
+            // Laid out as it will be shown, while it loads unseen.
+            doc.lendSize(pageSize)
+            updateSidebar()
+        }
+        return doc
+    }
+
+    /// What a page in a tab of this window has to draw in.
+    var pageSize: NSSize {
+        let size = area.bounds.size
+        return size.width >= 1 && size.height >= 1 ? size : NSSize(width: 1280, height: 800)
+    }
+
     /// This window's terminals, for blocks (the task manager): shells and names.
     var blockTerminals: [BlockTerminal] {
         allPanes.compactMap { pane in
