@@ -9,9 +9,14 @@ extension TerminalWindowController {
     /// How the sidebar groups the tabs (none while they're along the top).
     var sidebarGrouping: SidebarGrouping { config.tabBar.inSidebar && !isQuick ? config.sidebarGroup : .none }
 
-    /// Whether this window lists sessions not open here: its sidebar is
-    /// grouped and on screen (`ElsewhereSessions` reads while one is).
-    var wantsElsewhereSessions: Bool { sidebarGrouping != .none && window?.isVisible == true }
+    /// Whether this window's sidebar wants the sessions not open here read
+    /// again: it's grouped and shown, in a window you can see, of the app
+    /// you're using (`ElsewhereSessions` reads while one does; a probe's
+    /// window, off screen and never active, does too).
+    var wantsElsewhereSessions: Bool {
+        guard sidebarGrouping != .none, isSidebarShown, let window, window.isVisible else { return false }
+        return Probe.running || (NSApp.isActive && window.occlusionState.contains(.visible))
+    }
 
     /// Where a tab is: the machine its focused pane runs on (an ssh in it
     /// counts), and the project — the repository around its folder, else
@@ -57,10 +62,22 @@ extension TerminalWindowController {
 
     /// The tabs as a grouped sidebar lists them (a folded group's too), else
     /// in their order: ⌘1–⌘9 and the next and previous tab go by what you see.
-    var tabsAsListed: [TerminalTab] {
+    var tabsAsListed: [TerminalTab] { tabOrderAsListed.map { tabs[$0] } }
+
+    /// The tabs' indices as the sidebar lists them.
+    var tabOrderAsListed: [Int] {
         let mode = sidebarGrouping
-        guard mode != .none else { return tabs }
-        return SidebarGroups.groups(mode, places: tabs.map(place(of:)), elsewhere: []).flatMap(\.tabs).map { tabs[$0] }
+        guard mode != .none else { return Array(tabs.indices) }
+        return SidebarGroups.groups(mode, places: tabs.map(place(of:)), elsewhere: []).flatMap(\.tabs)
+    }
+
+    /// Tab `i` moved to before the `position`th of `group`'s tabs (the
+    /// sidebar's Move Up and Down, and its drags): the group's tabs trade
+    /// places among themselves, so the groups keep their order.
+    func moveTab(_ i: Int, within group: [Int], before position: Int) {
+        guard let order = SidebarGroups.reorder(count: tabs.count, group: group, moving: i, before: position) else { return }
+        tabs = order.map { tabs[$0] }
+        updateSidebar()
     }
 
     /// Whether a group's + can open a tab there: on this window's machine,
@@ -80,23 +97,36 @@ extension TerminalWindowController {
     /// window's machine; otherwise in a window on its machine (a new one if
     /// there's none) — every tab of a window runs where the window does.
     func showElsewhere(_ session: ElsewhereSession) {
+        let app = NSApp.delegate as? AppDelegate
+        // Shown already (a row not yet read again, clicked twice): that pane.
+        for controller in app?.allControllers ?? [self] {
+            for pane in controller.allPanes where pane.session.persistentID == session.id
+                && (pane.session.host?.destination ?? controller.host?.destination) == session.host {
+                guard let tab = controller.everyTab.first(where: { $0.everyPane.contains { $0 === pane } }) else { continue }
+                controller.reveal(pane, in: tab)
+                controller.window?.makeKeyAndOrderFront(nil)
+                return
+            }
+        }
         // Its folder as the list read it, for a program that never says
         // (its tab then groups where its row was).
         func attach(in controller: TerminalWindowController) {
-            controller.attachTab(session.id)
-            guard let dir = session.directory, let pane = controller.selectedTab.focusedPane,
-                  pane.session.persistentID == session.id else { return }
-            pane.session.assumeWorkingDirectory(dir)
-            controller.updateSidebar()
+            guard controller.attachTab(session.id, on: session.host) else { return }
+            if let dir = session.directory, let pane = controller.selectedTab.focusedPane, pane.session.persistentID == session.id {
+                pane.session.assumeWorkingDirectory(dir)
+                controller.updateSidebar()
+            }
+            // Every window's rows: it's open here now.
+            NotificationCenter.default.post(name: SidebarGroups.changed, object: nil)
         }
         if session.host == host?.destination { return attach(in: self) }
-        let app = NSApp.delegate as? AppDelegate
         if let there = app?.windowControllers.first(where: { $0.host?.destination == session.host }) {
             attach(in: there)
             there.window?.makeKeyAndOrderFront(nil)
             return
         }
         app?.openWindow(showing: session.id, on: session.host, directory: session.directory)
+        NotificationCenter.default.post(name: SidebarGroups.changed, object: nil)
     }
 
     /// What each group's header says, as shown (`--ui-probe`): "api · 2 tabs · collapsed · 1 not open here".

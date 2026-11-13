@@ -54,6 +54,8 @@ tab:1
 # A session this Mac's liberttyd keeps that no window shows: a row in its
 # project's group; a click shows it in a tab here.
 shell:ID=$(@BIN@ +new-session --cwd @DIR@/beta -e 'sleep 600') && @BIN@ +rename-session $ID kept-job
+# (The list is read every 4 s.)
+wait:4
 expect-elsewhere:kept-job
 expect-group:beta · 2 tabs · 1 not open here
 click-row:kept-job
@@ -61,6 +63,22 @@ wait:1.5
 expect-tab-count:5
 expect-no-elsewhere:kept-job
 expect-group:beta · 3 tabs
+# A name being typed in place outlives the sessions' list read again
+# meanwhile (a session elsewhere more): what's typed after it still goes in.
+tab:1
+key:cmd+shift+r
+wait:0.4
+type:renamed-
+shell:ID=$(@BIN@ +new-session --cwd @DIR@/beta -e 'sleep 600') && @BIN@ +rename-session $ID during-rename && echo $ID > @CONFIG@/during-rename-id
+wait:5
+type:tab
+key:enter
+wait:0.5
+expect-tab:renamed-tab
+expect-elsewhere:during-rename
+shell:@BIN@ +kill-session $(cat @CONFIG@/during-rename-id)
+wait:4
+expect-no-elsewhere:during-rename
 # By host: one machine and nothing elsewhere has no header at all.
 shell:printf 'sidebar-group = host\n' > @CONFIG@/libertty/config
 reload:now
@@ -69,6 +87,8 @@ expect-group:none
 expect-shown:5
 # Another session no window shows: This Mac gets its header.
 shell:ID=$(@BIN@ +new-session --cwd @DIR@/alpha -e 'sleep 600') && @BIN@ +rename-session $ID second-job
+# (The list is read every 4 s.)
+wait:4
 expect-elsewhere:second-job
 expect-group:This Mac · 5 tabs · 1 not open here
 # Ungrouped: the list as it always was, no sessions elsewhere.

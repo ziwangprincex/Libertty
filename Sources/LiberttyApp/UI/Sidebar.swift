@@ -525,15 +525,7 @@ final class SidebarViewController: NSViewController {
     /// Where the row showing `text` is, in the window (`--ui-probe` clicks
     /// it): a header's title, a session's title or folder, a tab's name.
     func windowRect(ofRowShowing text: String) -> NSRect? {
-        let r = rows.indices.first { r in
-            guard shows(tableRow: r) else { return false }
-            switch rows[r] {
-            case .header(let g): return groups[g].title == text
-            case .elsewhere(let g, let k): return groups[g].elsewhere[k].title == text || groups[g].elsewhere[k].detail == text
-            case .tab(let i): return tabs[i].title == text
-            }
-        }
-        guard let r else { return nil }
+        guard let r = tableRow(showing: text) else { return nil }
         // The whole window laid out first: a row just added grows the
         // table's height constraint, and until the window's next layout
         // the table (and its rows) sit where they were.
@@ -543,11 +535,52 @@ final class SidebarViewController: NSViewController {
         return tabsTable.convert(tabsTable.rect(ofRow: r), to: nil)
     }
 
+    /// Whether a click at `point` (in the window) would land on the row
+    /// showing `text` (`--ui-probe` checks before it clicks).
+    func rowShowing(_ text: String, isAt point: NSPoint) -> Bool {
+        guard let r = tableRow(showing: text), let content = view.window?.contentView,
+              let row = tabsTable.rowView(atRow: r, makeIfNecessary: false),
+              let hit = content.hitTest(content.convert(point, from: nil)) else { return false }
+        return hit.isDescendant(of: row)
+    }
+
+    private func tableRow(showing text: String) -> Int? {
+        rows.indices.first { r in
+            guard shows(tableRow: r) else { return false }
+            switch rows[r] {
+            case .header(let g): return groups[g].title == text
+            case .elsewhere(let g, let k): return groups[g].elsewhere[k].title == text || groups[g].elsewhere[k].detail == text
+            case .tab(let i): return tabs[i].title == text
+            }
+        }
+    }
+
     /// A session not open here shows with every tab only (it has no
     /// program state to filter by), and when the filter's text is in it.
     private func matches(_ session: ElsewhereSession) -> Bool {
         activity == .all && (filterText.isEmpty || session.title.lowercased().contains(filterText)
             || session.detail.lowercased().contains(filterText))
+    }
+
+    /// The rows that aren't tabs' under rows that stay: said again when
+    /// their groups changed (a list read again, a group folded), and a
+    /// header shown or hidden again when its tabs changed under a filter
+    /// (it shows while one of them matches).
+    private func refreshOtherRows(groups: [SidebarGroup], collapsed: Set<String>, tabsChanged: Bool) {
+        let others = IndexSet(rows.indices.filter { tab(atTableRow: $0) == nil })
+        if groups != self.groups || collapsed != self.collapsed {
+            self.groups = groups
+            self.collapsed = collapsed
+            tabsTable.reloadData(forRowIndexes: others, columnIndexes: [0])
+            tabsTable.noteHeightOfRows(withIndexesChanged: others)
+        } else if tabsChanged, activity != .all || !filterText.isEmpty {
+            let headers = IndexSet(others.filter { if case .header = rows[$0] { true } else { false } })
+            tabsTable.noteHeightOfRows(withIndexesChanged: headers)
+            for r in headers { tabsTable.view(atColumn: 0, row: r, makeIfNecessary: false)?.isHidden = !shows(tableRow: r) }
+        } else {
+            return
+        }
+        fitTabsHeight()
     }
 
     /// Whether the table's row `r` shows: a tab or session the filters
@@ -659,9 +692,26 @@ final class SidebarViewController: NSViewController {
             // A name being typed in place: the other rows update around
             // the field. When the rows themselves change (a tab came, went
             // or moved; another was selected) the name is kept first, and
-            // keeping it brings the rows up to date.
-            if tabs.count == self.tabs.count, sameRows, groups == self.groups, collapsed == self.collapsed,
-               selected == rename.row, rename.cell?.isEditing == true,
+            // keeping it brings the rows up to date. (The groups' headers
+            // and sessions changing under the same rows — a list read
+            // again, every few seconds — leave the field be; sessions
+            // elsewhere coming or going wait for the name, which brings
+            // the sidebar up to date as it ends.)
+            // The rows and groups the tabs make (a group of sessions elsewhere only comes last).
+            func tabsOnly(_ rows: [SidebarRow], _ groups: [SidebarGroup]) -> [SidebarRow] {
+                rows.filter {
+                    switch $0 {
+                    case .elsewhere: return false
+                    case .header(let g): return groups.indices.contains(g) && !groups[g].tabs.isEmpty
+                    case .tab: return true
+                    }
+                }
+            }
+            func tabGroups(_ groups: [SidebarGroup]) -> [SidebarGroup] { groups.filter { !$0.tabs.isEmpty }.map(\.withoutElsewhere) }
+            let onlyElsewhereMoved = !sameRows && headers == self.headers && tabs.count == self.tabs.count
+                && collapsed == self.collapsed && tabsOnly(layout, groups) == tabsOnly(rows, self.groups)
+                && tabGroups(groups) == tabGroups(self.groups)
+            if sameRows || onlyElsewhereMoved, selected == rename.row, rename.cell?.isEditing == true,
                let tab = rename.tab, controller?.tab(at: rename.row) === tab {
                 let changed = IndexSet(tabs.indices.filter { $0 != rename.row && tabs[$0] != self.tabs[$0] }.compactMap(tableRow(ofTab:)))
                 for i in tabs.indices where i != rename.row { self.tabs[i] = tabs[i] }
@@ -669,6 +719,10 @@ final class SidebarViewController: NSViewController {
                     tabsTable.reloadData(forRowIndexes: changed, columnIndexes: [0])
                     // A row may start or stop matching the filter meanwhile.
                     tabsTable.noteHeightOfRows(withIndexesChanged: changed)
+                }
+                // (With rows to come or go, the groups stay as the rows are.)
+                refreshOtherRows(groups: sameRows ? groups : self.groups, collapsed: collapsed, tabsChanged: !changed.isEmpty)
+                if !changed.isEmpty {
                     fitTabsHeight()
                     placeSelectionCard()
                 }
@@ -697,6 +751,7 @@ final class SidebarViewController: NSViewController {
             syncingSelection = false
             fitTabsHeight()
         } else {
+            var tabsChanged = false
             if tabs != self.tabs {
                 // Only the rows that changed: reloading them all drops the
                 // selection, the hover and the rows' spinners.
@@ -704,17 +759,10 @@ final class SidebarViewController: NSViewController {
                 self.tabs = tabs
                 tabsTable.reloadData(forRowIndexes: changed, columnIndexes: [0])
                 tabsTable.noteHeightOfRows(withIndexesChanged: changed)
-                fitTabsHeight()
+                tabsChanged = true
             }
-            if groups != self.groups || collapsed != self.collapsed {
-                // The headers and the sessions not open here say it again.
-                self.groups = groups
-                self.collapsed = collapsed
-                let others = IndexSet(rows.indices.filter { tab(atTableRow: $0) == nil })
-                tabsTable.reloadData(forRowIndexes: others, columnIndexes: [0])
-                tabsTable.noteHeightOfRows(withIndexesChanged: others)
-                fitTabsHeight()
-            }
+            refreshOtherRows(groups: groups, collapsed: collapsed, tabsChanged: tabsChanged)
+            if tabsChanged { fitTabsHeight() }
         }
         let want = tableRow(ofTab: selected) ?? -1
         if tabsTable.selectedRow != want {
@@ -930,14 +978,18 @@ final class SidebarViewController: NSViewController {
         return nil
     }
 
-    @objc private func moveTabUp(_ sender: Any?) {
-        let row = menuRow
-        if let to = shownRow(from: row, by: -1) { controller?.moveTab(from: row, to: to) }
-    }
+    @objc private func moveTabUp(_ sender: Any?) { moveTab(menuRow, by: -1) }
 
-    @objc private func moveTabDown(_ sender: Any?) {
-        let row = menuRow
-        if let to = shownRow(from: row, by: 1) { controller?.moveTab(from: row, to: to) }
+    @objc private func moveTabDown(_ sender: Any?) { moveTab(menuRow, by: 1) }
+
+    /// Tab `i` past the next one shown up or down, among its group's tabs
+    /// (their places in the window's order stay theirs: the groups keep
+    /// their order).
+    private func moveTab(_ i: Int, by step: Int) {
+        guard let to = shownRow(from: i, by: step) else { return }
+        let group = headers ? groups.first(where: { $0.tabs.contains(i) })?.tabs ?? [] : Array(tabs.indices)
+        guard let k = group.firstIndex(of: to) else { return }
+        controller?.moveTab(i, within: group, before: step > 0 ? k + 1 : k)
     }
 
     @objc private func moveTabToNewWindow(_ sender: Any?) {
@@ -1180,21 +1232,27 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
-        guard op == .above, let (from, tab, _) = source(of: info), let controller else { return [] }
-        return from === controller || controller.canTake(tab, from: from) ? .move : []
+        guard op == .above, let (from, tab, index) = source(of: info), let controller else { return [] }
+        // In this window, only among its group's tabs (its project or host puts it there).
+        if from === controller { return dropPlace(above: row, dragged: index) != nil ? .move : [] }
+        return controller.canTake(tab, from: from) ? .move : []
     }
 
     func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
                    dropOperation: NSTableView.DropOperation) -> Bool {
         guard let (from, tab, index) = source(of: info), let controller else { return false }
-        // Where among the tabs: after the one above the drop in its group.
-        let at = SidebarGroups.insertionIndex(above: row, rows: rows, groups: groups, tabCount: tabs.count)
         if from === controller {
-            controller.moveTab(from: index, to: index < at ? at - 1 : at)
+            guard let place = dropPlace(above: row, dragged: index) else { return false }
+            controller.moveTab(index, within: place.group, before: place.position)
         } else {
-            controller.take(tab, from: from, at: at)
+            // Where among the tabs: after the one above the drop in its group.
+            controller.take(tab, from: from, at: SidebarGroups.insertionIndex(above: row, rows: rows, groups: groups, tabCount: tabs.count))
         }
         return true
+    }
+
+    private func dropPlace(above row: Int, dragged: Int) -> (group: [Int], position: Int)? {
+        SidebarGroups.dropPlace(above: row, rows: rows, groups: groups, headers: headers, tabCount: tabs.count, dragged: dragged)
     }
 
     func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint,
@@ -1792,7 +1850,8 @@ private final class ElsewhereCell: NSTableCellView {
     }
     override func mouseUp(with event: NSEvent) {
         guard !event.modifierFlags.contains(.control) else { return super.mouseUp(with: event) }
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onOpen?() }
+        // (A double click's second half: the first already showed it.)
+        if event.clickCount <= 1, bounds.contains(convert(event.locationInWindow, from: nil)) { onOpen?() }
     }
 }
 

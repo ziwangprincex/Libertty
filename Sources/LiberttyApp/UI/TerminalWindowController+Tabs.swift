@@ -154,9 +154,13 @@ extension TerminalWindowController {
     }
 
     /// A tab showing a session liberttyd already runs (`libertty +attach`, a
-    /// sidebar row of one not open here) — this window's host's, on a
-    /// host's window; shown elsewhere too, it mirrors.
-    func attachTab(_ id: String) {
+    /// sidebar row of one not open here), on `machine` (nil: this Mac) —
+    /// which must be this window's: every tab of a window runs where the
+    /// window does, and an ID is only its own machine's. Shown elsewhere
+    /// too, it mirrors. Whether a tab came.
+    @discardableResult
+    func attachTab(_ id: String, on machine: String?) -> Bool {
+        guard machine == host?.destination else { return false }
         do {
             let session: TerminalSession
             if let host {
@@ -173,8 +177,10 @@ extension TerminalWindowController {
             let index = (tabs.firstIndex { $0 === selectedTab } ?? tabs.count - 1) + 1
             tabs.insert(tab, at: index)
             select(tab)
+            return true
         } catch {
             showError(error)
+            return false
         }
     }
 
@@ -325,9 +331,12 @@ extension TerminalWindowController {
             return
         }
         let home = workspaces[activeWorkspace].id
+        // The tab to show instead: the next as the sidebar lists them (a
+        // grouped one's order), else the one before.
+        let next = tab === selectedTab ? SidebarGroups.successor(of: i, in: tabOrderAsListed).map { tabs[$0] } : nil
         tabs.remove(at: i)
         if tab === terminalTab, let other = tabs.last(where: \.isTerminal) { terminalTab = other }
-        if tab === selectedTab { select(tabs[min(i, tabs.count - 1)]) } else { updateSidebar() }
+        if tab === selectedTab { select(next ?? tabs[min(i, tabs.count - 1)]) } else { updateSidebar() }
         tab.content.removeFromSuperview()
         tab.everyPane.forEach { PictureInPicture.paneClosed($0) }
         documentsClosed(documents(in: [tab]))

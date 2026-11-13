@@ -1610,13 +1610,23 @@ enum UIProbe {
                             failures += 1
                         }
                     case .clickRow(let text):
-                        // A real click on the sidebar's row: its table's own action.
-                        guard let rect = controller.sidebar.windowRect(ofRowShowing: text), let content = window.contentView else {
-                            print("FAIL  ui-probe click-row: no row shows \(text)")
+                        // A real click on the sidebar's row: its table's own action — once
+                        // what's under the spot is that row (a list read again just now
+                        // may still be moving the rows).
+                        var spot: NSPoint?
+                        for _ in 0..<15 {
+                            if let rect = controller.sidebar.windowRect(ofRowShowing: text) {
+                                let p = NSPoint(x: rect.minX + 60, y: rect.midY)
+                                if controller.sidebar.rowShowing(text, isAt: p) { spot = p; break }
+                            }
+                            pump(0.2)
+                        }
+                        guard let spot, let content = window.contentView else {
+                            print("FAIL  ui-probe click-row: no row shows \(text) where a click would land")
                             failures += 1
                             break
                         }
-                        let point = content.convert(NSPoint(x: rect.minX + 60, y: rect.midY), from: nil)
+                        let point = content.convert(spot, from: nil)
                         click(x: point.x, y: content.bounds.height - point.y, in: window)
                         pump(0.4)
                     case .expectWorkspace(let text):
