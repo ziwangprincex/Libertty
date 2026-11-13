@@ -94,6 +94,7 @@ enum CLI {
         case "+agent-hook": status = AgentCLI.hook(rest)
         case "+agent-setup": status = AgentCLI.setup(rest)
         case "+agents": status = AgentRulesCLI.run(rest)
+        case "+surface": status = SurfaceCLI.run(rest)
         case "+completions": status = completions(rest)
         case "+complete": status = complete(rest)
         case "+daemon": status = daemonCommand(rest)
@@ -248,6 +249,10 @@ enum CLI {
           libertty +agents [--check]        the coding agents whose screens Libertty reads (Codex, Gemini, …): its own,
                                          and yours in ~/.config/libertty/agents (herdr's manifests, TOML or JSON);
                                          --check: what of yours can't be read (exits 1)
+          libertty +surface show ID [--rows N | --overlay POSITION] [--title T] ELEMENTS | remove ID | clear
+                                         native UI in this terminal's output (docs/surface-protocol.md); ELEMENTS
+                                         is a JSON list, - for stdin; +surface read [--timeout S] waits for an
+                                         event (a click, a choice) and prints it; +surface query: is it drawn here
 
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)

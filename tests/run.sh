@@ -337,6 +337,23 @@ expect password-local 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-
 # A session in two windows: a pane of another size than its program's says so, and takes it back.
 expect sized-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sized-elsewhere.txt)" $OUT --persist
+# Surfaces (OSC 7502, docs/surface-protocol.md): a program draws native UI in its output, hears
+# a choice, typing and a click, and its card dims when it ends; through liberttyd too; off, nothing.
+mkdir -p $PRIVATE/surfaces $PRIVATE/surfaces-off-config/libertty $PRIVATE/lenses
+cp $ROOT/tests/fixtures/surface-probe.py $ROOT/tests/fixtures/surface-flood.py $PRIVATE/surfaces/
+print 'surfaces = false' > $PRIVATE/surfaces-off-config/libertty/config
+SURFACES=(sed "s|@DIR@|$PRIVATE/surfaces|g; s|@TOOLS@|$ROOT/tools/surface|g")
+expect surfaces 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$($SURFACES $ROOT/tests/fixtures/surfaces.txt)" $OUT
+expect surfaces-persist 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$($SURFACES $ROOT/tests/fixtures/surfaces-persist.txt)" $OUT --persist
+expect surfaces-off 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/surfaces-off-config \
+  $LIBERTTY --ui-probe "$($SURFACES $ROOT/tests/fixtures/surfaces-off.txt)" $OUT
+expect surface-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/surface-cli.txt)" $OUT
+# Command lenses: git status, cc's errors, grep -rn's matches as lists on their command lines.
+expect lenses 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/lenses|g" $ROOT/tests/fixtures/lenses.txt)" $OUT
 # focus-follows-mouse: on, the pane under the pointer gets the keyboard; off (the default), it doesn't.
 mkdir -p $PRIVATE/ffm-config/libertty
 print 'focus-follows-mouse = true' > $PRIVATE/ffm-config/libertty/config

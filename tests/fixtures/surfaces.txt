@@ -1,0 +1,64 @@
+# Surfaces (docs/surface-protocol.md): a program (surface-probe.py, through
+# tools/surface/surface.py) asks, draws a card in its output, hears a choice,
+# a typed note and a click, updates the card and draws an overlay. When it
+# ends, the overlay goes and the card stays in the output, dimmed, its
+# controls off; the screen cleared under it, it goes. Run with --persist
+# too: the bytes go through liberttyd, and a second window on the session
+# gets its screen back, without the surfaces (they're the window's).
+# @TOOLS@: tools/surface; @DIR@: this test's folder.
+type:python3 @DIR@/surface-probe.py @TOOLS@
+key:enter
+wait:2.0
+expect:SUPPORTED 1
+expect:SHOWN
+expect-surface:demo
+expect-surface-text:demo=Deploy now?
+expect-surface-text:demo=From
+expect-surface-live:demo=yes
+surface-choose:demo=env=prod
+wait:0.6
+expect:EVENT select env  prod
+surface-submit:demo=note=hello
+wait:0.6
+expect:EVENT submit note hello
+surface-press:demo=deploy
+wait:1.0
+expect:EVENT click deploy hello
+expect-surface-text:demo=Deploying
+expect-surface:ov
+wait:2.0
+expect:DONE
+wait:0.8
+# The program ended: its overlay went, its card stays, dimmed.
+expect-no-surface:ov
+expect-surface:demo
+expect-surface-live:demo=no
+# The shell got nothing of the protocol's.
+expect-not:7502
+# The screen cleared: the card goes up into the scrollback with the output
+# it was in, out of view.
+type:clear
+key:enter
+wait:1.2
+expect-no-surface:demo
+# A program that shows a card and ends at once: the card stays above the
+# prompt, ended (the prompt isn't taken for the card's own program's time).
+type:printf '\n\n\n\033]7502;s;{"id":"quick","rows":3,"elements":[{"type":"text","text":"Q"}]}\a'
+key:enter
+wait:1.0
+expect-surface:quick
+expect-surface-live:quick=no
+# One drawn from the cursor's row down, where the prompt then draws: gone.
+type:printf '\033]7502;s;{"id":"under","rows":2,"anchor":"cursor","elements":[{"type":"text","text":"U"}]}\a'
+key:enter
+wait:1.0
+expect-no-surface:under
+# A flood: a hundred overlays (16 kept), cleared; then a thousand updates of
+# one card: the rate holds them back, and the last is what shows.
+type:clear; python3 @DIR@/surface-flood.py
+key:enter
+wait:0.8
+expect-surface-count:16
+wait:2.2
+expect:FLOODED
+expect-surface-text:card=update 999

@@ -1,0 +1,21 @@
+# Command lenses: a finished command's output read as a list, offered on its
+# command line. git status (its files), a compiler's errors (cc), grep -rn's
+# matches; a command no lens knows gets none. @DIR@: this test's folder.
+shell:cd @DIR@ && git init -q repo && cd repo && printf 'a\n' > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -qm init && printf 'b\n' >> a.txt && printf 'needle here\n' > n.txt
+type:cd @DIR@/repo && git status
+key:enter
+wait:1.5
+expect-lens:2 files
+shell:printf 'int main(void) { return missing; }\n' > @DIR@/bad.c
+type:cc -fsyntax-only @DIR@/bad.c
+key:enter
+wait:2.5
+expect-lens:1 error
+type:grep -rn needle @DIR@/repo
+key:enter
+wait:1.5
+expect-lens:1 match
+type:echo plain output
+key:enter
+wait:1.0
+expect-lens-count:3

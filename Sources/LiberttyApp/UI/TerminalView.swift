@@ -42,6 +42,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         didSet { if isReadOnly != oldValue { setNeedsRender(force: true) } }
     }
     private var optionAsAlt = Config.OptionAsAlt.false
+    /// What its programs draw over it (SurfaceProtocol) and its commands' lenses.
+    private(set) lazy var surfaceOverlay = SurfaceOverlay(pane: self)
 
     // IME state
     private var markedText = NSMutableAttributedString()
@@ -120,6 +122,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         renderer = try TerminalRenderer(device: device, fonts: FontSet(pointSize: fontSize, scale: 2))
         apply(config)
         registerForDraggedTypes([.fileURL, .string])
+        surfaceOverlay.start()
     }
 
     // MARK: Drag and drop: files (sidebar, Finder) type their quoted paths
@@ -353,6 +356,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             revealScroller = false
             updateBlinkTimer()
             if hintsActive { hintsAfterFrame() }
+            // What programs drew (and lenses) follow their rows.
+            if surfaceOverlay.isShowing { surfaceOverlay.layout() }
         }
         return presented
     }
@@ -886,6 +891,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         if session.host != nil { layoutLinkBanner() }
         if showsPendingKeys { layoutPendingKeys() }
         layoutModeOverlays()
+        if surfaceOverlay.isShowing { surfaceOverlay.layout() }
     }
 
     override func resignFirstResponder() -> Bool {

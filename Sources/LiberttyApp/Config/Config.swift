@@ -165,6 +165,10 @@ struct Config: Equatable {
     /// `libertty` commands may drive Libertty (split, focus, type into
     /// sessions…); false leaves them reading only (RemoteControlPolicy).
     var remoteControl = true
+    /// Programs may draw native UI in their output (OSC 7502, SurfaceProtocol).
+    var surfaces = true
+    /// Which lenses finished commands may offer (CommandLenses); empty: none.
+    var commandLenses = Set(CommandLenses.Kind.allCases)
     /// Ghostty's `window-vsync`. Off: frames go to the screen as soon as
     /// they're drawn (full screen always syncs). On: never tears, but types
     /// up to two frames later.
@@ -417,6 +421,8 @@ struct Config: Equatable {
         ("browser-automation", "Let libertty +browser read and act in the browser's pages (snapshot, text, click, type, wait, eval, screenshot, cookies…) — for scripts and agents. Off by default: a page may be one you're signed in to."),
         ("remote-control", "Let libertty commands (scripts, coding agents) drive Libertty: +split, +focus, +move-pane, +action, +new-window, +send, +send-key, +prompt, +new-session, +kill-session, +resume, +daemon stop and restart. false: they may still read (+list-sessions, +capture, +wait, +events) and name their own session. It keeps well-behaved tools out; it's no sandbox. Set it in Settings or here: +set doesn't change it."),
         ("markdown-rendered", "Show Markdown files rendered; false shows their source (View ▸ Show Markdown Source toggles one)."),
+        ("surfaces", "Let programs draw native panels in their output or over their pane (OSC 7502, Libertty's surface protocol: docs/surface-protocol.md) — buttons, lists, tables, progress, forms — and hear what you click. Each says which program drew it. false: the sequence does nothing, as in a terminal without it."),
+        ("command-lenses", "Offer a list view of what finished commands printed, on their command line: git-status (files to open, diff, stage), diagnostics (compiler errors and warnings: swift, cargo, tsc, go, clang, make), search (rg, grep -n, git grep). true (all), false, or some of them: git-status,diagnostics."),
         ("session-persistence", "Keep shells and programs running in liberttyd when Libertty quits (or crashes, or updates); the next launch shows them again. Closing a pane or window still ends it. Takes effect at the next launch."),
         ("desktop-notifications", "Show notifications programs ask for (OSC 9, OSC 777), and when a program reports it needs you (OSC 7501: approval, a question, sign-in) or finished, while you're elsewhere."),
         ("notify-on-command-finish", "never, unfocused or always: notify when a command that ran at least notify-on-command-finish-after ends (needs shell integration)."),
@@ -543,6 +549,8 @@ struct Config: Equatable {
         case "jupyter": return [jupyter]
         case "browser-automation": return [String(browserAutomation)]
         case "remote-control": return [String(remoteControl)]
+        case "surfaces": return [String(surfaces)]
+        case "command-lenses": return [CommandLenses.settingValue(commandLenses)]
         case "window-vsync": return [String(windowVsync)]
         case "session-persistence": return [String(sessionPersistence)]
         case "window-save-state": return [windowSaveState.rawValue]
@@ -1114,6 +1122,15 @@ struct Config: Equatable {
         case "remote-control":
             if reset { remoteControl = defaults.remoteControl; return nil }
             guard let x = bool() else { return "true or false" }; remoteControl = x
+        case "surfaces":
+            if reset { surfaces = defaults.surfaces; return nil }
+            guard let x = bool() else { return "true or false" }; surfaces = x
+        case "command-lenses":
+            if reset { commandLenses = defaults.commandLenses; return nil }
+            guard let x = CommandLenses.parseSetting(v) else {
+                return "true, false, or some of " + CommandLenses.Kind.allCases.map(\.rawValue).joined(separator: ", ")
+            }
+            commandLenses = x
         default:
             return "unknown key (libertty +show-config --default lists them)"
         }
