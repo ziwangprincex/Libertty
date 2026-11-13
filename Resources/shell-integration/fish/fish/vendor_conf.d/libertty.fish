@@ -39,10 +39,21 @@ end
 # fish_prompt this early would stop fish autoloading the user's own.
 
 # TERM=xterm-ghostty is unknown to most remote hosts: ssh with a TERM every
-# host has (`ssh-env`). The user's own ssh function wins.
-if set -q LIBERTTY_SSH_TERM; and not functions -q ssh
+# host has (`ssh-env`), but keep it for a host that has its terminfo
+# (`libertty +terminfo setup`, or by itself with `ssh-terminfo`). The user's
+# own ssh function wins.
+if begin; set -q LIBERTTY_SSH_TERM; or set -q LIBERTTY_SSH_TERMINFO; end; and not functions -q ssh
     function ssh --wraps ssh
-        TERM=$LIBERTTY_SSH_TERM command ssh $argv
+        set -l term $LIBERTTY_SSH_TERM
+        if begin; test "$LIBERTTY_SSH_TERMINFO" = auto; or begin; set -q LIBERTTY_SSH_TERMINFO; and test -s "$LIBERTTY_TERMINFO_HOSTS"; end; end
+            and command -q libertty
+            set term (command libertty +terminfo ssh-term -- $argv); or set term $LIBERTTY_SSH_TERM
+        end
+        if test -n "$term"
+            TERM=$term command ssh $argv
+        else
+            command ssh $argv
+        end
     end
 end
 

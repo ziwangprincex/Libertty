@@ -94,9 +94,18 @@ if [[ -z "${_LIBERTTY_BASH_INTEGRATED-}" ]]; then
     }
 
     # TERM=xterm-ghostty is unknown to most remote hosts: ssh with a TERM
-    # every host has (`ssh-env`). The user's own ssh function or alias wins.
-    if [[ -n "${LIBERTTY_SSH_TERM-}" ]] && ! builtin declare -F ssh >/dev/null && ! builtin alias ssh >/dev/null 2>&1; then
-        ssh() { TERM=$LIBERTTY_SSH_TERM command ssh "$@"; }
+    # every host has (`ssh-env`), but keep it for a host that has its
+    # terminfo (`libertty +terminfo setup`, or by itself with
+    # `ssh-terminfo`). The user's own ssh function or alias wins.
+    if [[ -n "${LIBERTTY_SSH_TERM-}${LIBERTTY_SSH_TERMINFO-}" ]] && ! builtin declare -F ssh >/dev/null && ! builtin alias ssh >/dev/null 2>&1; then
+        ssh() {
+            local term=${LIBERTTY_SSH_TERM-}
+            if [[ ${LIBERTTY_SSH_TERMINFO-} == auto || ( -n ${LIBERTTY_SSH_TERMINFO-} && -s ${LIBERTTY_TERMINFO_HOSTS-} ) ]] \
+                && builtin type -P libertty >/dev/null 2>&1; then
+                term=$(command libertty +terminfo ssh-term -- "$@") || term=${LIBERTTY_SSH_TERM-}
+            fi
+            if [[ -n $term ]]; then TERM=$term command ssh "$@"; else command ssh "$@"; fi
+        }
     fi
 
     # `libertty` completes (its +commands, session IDs, actions, settings),

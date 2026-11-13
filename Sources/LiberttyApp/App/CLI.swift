@@ -94,6 +94,7 @@ enum CLI {
         case "+agent-hook": status = AgentCLI.hook(rest)
         case "+agent-setup": status = AgentCLI.setup(rest)
         case "+agents": status = AgentRulesCLI.run(rest)
+        case "+terminfo": status = TerminfoCLI.run(rest)
         case "+completions": status = completions(rest)
         case "+complete": status = complete(rest)
         case "+daemon": status = daemonCommand(rest)
@@ -251,6 +252,9 @@ enum CLI {
 
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
+          libertty +terminfo setup [SSH ARGS…] | status | show | forget HOST | --all
+                                         xterm-ghostty's terminfo on a host you ssh to yourself: then ssh in
+                                         Libertty keeps TERM=xterm-ghostty there (ssh-terminfo = true: by itself)
           --host HOST                    with +list-sessions, +new-session, +capture, +send, +send-key,
                                          +kill-session, +wait, +events, +split, +move-pane, +daemon or +clients:
                                          that machine's sessions

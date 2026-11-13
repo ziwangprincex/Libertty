@@ -1414,8 +1414,13 @@ final class TerminalSession {
         if config.term == "xterm-ghostty", let terminfo = AppResources.url("terminfo") {
             env["TERM"] = "xterm-ghostty"
             env["TERMINFO"] = terminfo.path
-            // Remote hosts may not know it: Libertty's shell integration has ssh use this.
+            // Remote hosts may not know it: Libertty's shell integration has
+            // ssh use this, but on a host that has it (`libertty +terminfo`).
             if config.sshEnv { env["LIBERTTY_SSH_TERM"] = "xterm-256color" }
+            // `auto`: ssh-terminfo installs it on a new host; `known`: only the
+            // hosts that have it (the wrapper asks nobody while there are none).
+            env["LIBERTTY_SSH_TERMINFO"] = config.sshTerminfo ? "auto" : "known"
+            env["LIBERTTY_TERMINFO_HOSTS"] = TerminfoCLI.listURL.path
         } else {
             env["TERM"] = config.term == "xterm-ghostty" ? "xterm-256color" : config.term
         }

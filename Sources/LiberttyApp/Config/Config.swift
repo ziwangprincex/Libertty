@@ -286,6 +286,9 @@ struct Config: Equatable {
     var term = "xterm-ghostty"
     /// With xterm-ghostty, ssh gets TERM=xterm-256color, which every host knows.
     var sshEnv = true
+    /// Ghostty's `ssh-terminfo` (a shell-integration feature there): install
+    /// xterm-ghostty's terminfo on a host the first time you ssh to it.
+    var sshTerminfo = false
     /// OSC 52: programs (vim over ssh, tmux) setting / reading the clipboard.
     var clipboardWrite = true
     var clipboardRead = false
@@ -467,6 +470,7 @@ struct Config: Equatable {
         ("quick-terminal-autohide", "Put the quick terminal away when you click elsewhere."),
         ("term", "TERM for new shells: xterm-ghostty (default; Libertty ships its terminfo, since Libertty's terminal is Ghostty's) or any other name, e.g. xterm-256color."),
         ("ssh-env", "With term = xterm-ghostty, have ssh send TERM=xterm-256color, so hosts without Ghostty's terminfo still work (needs shell integration)."),
+        ("ssh-terminfo", "The first time you ssh to a host (to log in, not to run a command), install xterm-ghostty's terminfo there (~/.terminfo, by the host's own tic) and keep TERM=xterm-ghostty for it after (needs shell integration). Off by default; libertty +terminfo setup HOST does it for one host."),
         ("clipboard-write", "allow or deny programs setting the clipboard (OSC 52; vim, tmux and remote shells use it)."),
         ("clipboard-read", "allow or deny programs reading the clipboard (OSC 52). Denied by default: anything you copied would be readable."),
         ("secure-input-on-password", "Turn on Secure Keyboard Entry while the pane you type in reads a password (sudo, ssh, read -s), and off again after: other apps can't read the keys you type there. On by default."),
@@ -569,6 +573,7 @@ struct Config: Equatable {
             }.joined(separator: ",")]
         case "term": return [term]
         case "ssh-env": return [String(sshEnv)]
+        case "ssh-terminfo": return [String(sshTerminfo)]
         case "cursor-style-blink": return [cursorStyleBlink.map(String.init) ?? ""]
         case "undo-timeout": return [num(undoTimeout) + "s"]
         case "wait-after-command": return [String(waitAfterCommand)]
@@ -971,6 +976,9 @@ struct Config: Equatable {
         case "ssh-env":
             if reset { sshEnv = defaults.sshEnv; return nil }
             guard let x = bool() else { return "true or false" }; sshEnv = x
+        case "ssh-terminfo":
+            if reset { sshTerminfo = defaults.sshTerminfo; return nil }
+            guard let x = bool() else { return "true or false" }; sshTerminfo = x
         case "cursor-style-blink":
             if reset { cursorStyleBlink = nil; return nil }
             guard let x = bool() else { return "true, false or empty" }; cursorStyleBlink = x
