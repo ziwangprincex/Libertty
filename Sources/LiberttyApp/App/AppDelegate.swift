@@ -811,10 +811,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         guard let info = note.userInfo as? [String: String], RemoteControl.isForUs(info) else { return }
         if info["kind"] == "open" { return handleOpen(info) }
         if info["kind"] == "browser" {
-            // A window to act in: the front one, or a new one for `open`.
-            let controller = frontController ?? (info["op"] == "open" ? open(tabbedInto: nil) : nil)
-            BrowserAutomation.handle(info, in: controller)
-            if info["op"] == "open" { activate() }
+            // A window to open one in: the front one, or a new one when there's none.
+            BrowserAutomation.handle(info, in: allControllers, front: frontController, newWindow: { open(tabbedInto: nil) },
+                                     activate: { activate() })
             return
         }
         if info["kind"] == "connect", let destination = info["host"] {

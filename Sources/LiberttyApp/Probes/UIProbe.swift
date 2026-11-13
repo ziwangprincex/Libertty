@@ -110,8 +110,8 @@ import LiberttyCore
 ///                         (else the first that contains it)
 ///   page-type:SELECTOR=TEXT  type TEXT into the field SELECTOR finds (`textarea`, `.dialog .field`)
 ///   expect-shell:COMMAND ==> TEXT  COMMAND's output (sh -c) contains TEXT
-///   browser:OP ARG ==> TEXT   what `libertty +browser OP ARG` would do here; its answer contains
-///                         TEXT (`!TEXT`: it failed with TEXT). Without ` ==> `, just do it.
+///   browser:ARGS ==> TEXT  what `libertty +browser ARGS` does here (ARGS split as a shell does); what
+///                         it prints contains TEXT (`!TEXT`: it failed, saying TEXT). Without ` ==> `, just do it.
 ///   bar:TEXT              type TEXT in the browser's address bar and press Return
 ///   roundtrip:            save this window's layout and build a window from it: same workspaces, same parked panes
 ///   expect-float:yes|no  whether the tab in front shows a floating pane card (Float Pane)
@@ -208,11 +208,14 @@ enum UIProbe {
             others.append(other)
             return other
         }
-        // `libertty +split` and `+move-pane` from its panes' shells, to this
-        // probe (requests name its private liberttyd's socket).
+        // `libertty +split`, `+move-pane` and `+browser` from its panes' shells,
+        // to this probe (requests name its private liberttyd's socket).
         let paneRequests = DistributedNotificationCenter.default().addObserver(
             forName: RemoteControl.notification, object: nil, queue: .main) { note in
             guard let info = note.userInfo as? [String: String], RemoteControl.isForUs(info) else { return }
+            if info["kind"] == "browser" {
+                return BrowserAutomation.handle(info, in: [controller] + others, front: controller, newWindow: { nil }, activate: {})
+            }
             _ = PaneRequests.handle(info, in: [controller] + others)
         }
         defer { DistributedNotificationCenter.default().removeObserver(paneRequests) }
@@ -532,31 +535,25 @@ enum UIProbe {
                         bar.field.stringValue = text
                         bar.onNavigate?(text)
                         pump(0.8)
-                    case .browser(let op, let arg, let want):
-                        let token = UUID().uuidString
-                        let out = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-browser-\(token)")
-                        var answer: Bool?
-                        let center = DistributedNotificationCenter.default()
-                        let observer = center.addObserver(forName: BrowserAutomation.replied, object: nil, queue: .main) { note in
-                            if note.userInfo?["token"] as? String == token { answer = note.userInfo?["ok"] as? String == "1" }
+                    case .browser(let call, let want):
+                        // As `libertty +browser CALL` does, handed to this probe's windows.
+                        let result: (out: String, err: String, status: Int32)
+                        switch BrowserAutomation.parse(Self.words(call), caller: nil) {
+                        case .failure(let why): result = ("", why.text, 2)
+                        case .success(let request):
+                            result = BrowserAutomation.perform(request, deliver: { info in
+                                BrowserAutomation.handle(info, in: [controller] + others, front: controller, newWindow: { nil }, activate: {})
+                            }, pump: Self.pump)
                         }
-                        var info = ["op": op, "token": token, "out": out.path]
-                        if op == "type" { info["arg"] = arg.replacingOccurrences(of: " | ", with: "\u{1f}") }
-                        else if op == "screenshot" { info["file"] = arg } else { info["arg"] = arg }
-                        BrowserAutomation.handle(info, in: controller)
-                        let deadline = Date().addingTimeInterval(8)
-                        while answer == nil, Date() < deadline { pump(0.05) }
-                        center.removeObserver(observer)
-                        let said = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
-                        try? FileManager.default.removeItem(at: out)
                         pump(0.4)
                         guard let want else { continue }
                         let failed = want.hasPrefix("!")
                         let text = failed ? String(want.dropFirst()) : want
-                        if answer == !failed, text.isEmpty || said.contains(text) {
-                            print("ok    ui-probe browser \(op) \(failed ? "refused" : "says") \(text)")
+                        let said = result.status == 0 ? result.out : result.err
+                        if (result.status == 0) == !failed, text.isEmpty || said.contains(text) {
+                            print("ok    ui-probe browser \(call.prefix(40)) \(failed ? "refused" : "says") \(text.prefix(60))")
                         } else {
-                            print("FAIL  ui-probe browser \(op): \(answer.map { $0 ? "ok" : "failed" } ?? "no answer"), said \(String(said.prefix(200)).debugDescription)")
+                            print("FAIL  ui-probe browser \(call): status \(result.status), said \(String(said.prefix(300)).debugDescription), not \(want.debugDescription)")
                             failures += 1
                         }
                     case .pageWait:
@@ -1269,7 +1266,7 @@ enum UIProbe {
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
         case settings(String), expectSettings(String), expectConfigChange(String)
-        case browser(op: String, arg: String, want: String?), bar(String)
+        case browser(call: String, want: String?), bar(String)
         /// The window's frame, in points (to compare shots with another app's).
         case size(CGFloat, CGFloat)
     }
@@ -1443,8 +1440,7 @@ enum UIProbe {
                 // ` ==> TEXT`, or a bare ` ==>` at the end (the line's trailing space is trimmed): "it worked".
                 let (call, want): (String, String?) = arg.hasSuffix(" ==>") ? (String(arg.dropLast(4)), "")
                     : arg.range(of: " ==> ").map { (String(arg[..<$0.lowerBound]), String(arg[$0.upperBound...])) } ?? (arg, nil)
-                let words = call.split(separator: " ", maxSplits: 1).map(String.init)
-                steps.append(.browser(op: words.first ?? "", arg: words.count > 1 ? words[1] : "", want: want))
+                steps.append(.browser(call: call, want: want))
             case "expect-page": steps.append(.expectPage(arg, true))
             case "expect-page-not": steps.append(.expectPage(arg, false))
             case "page-click": steps.append(.pageClick(arg))
@@ -1480,6 +1476,30 @@ enum UIProbe {
         let name = String(describing: step)
         guard name.hasPrefix("expect") else { return false }
         return !["expectRegrids", "expectResizeFrames", "expectUnmoved"].contains { name.hasPrefix($0) }
+    }
+
+    /// A step's command line as a shell would split it: words, '…' and "…"
+    /// quoting (a backslash escapes in double quotes and bare).
+    static func words(_ line: String) -> [String] {
+        var words: [String] = [], word = "", inWord = false
+        var quote: Character?, escaped = false
+        for c in line {
+            if escaped { word.append(c); escaped = false; continue }
+            if c == "\\", quote != "'" { escaped = true; inWord = true; continue }
+            if let q = quote {
+                if c == q { quote = nil } else { word.append(c) }
+                continue
+            }
+            if c == "'" || c == "\"" { quote = c; inWord = true; continue }
+            if c == " " || c == "\t" {
+                if inWord { words.append(word); word = ""; inWord = false }
+                continue
+            }
+            word.append(c)
+            inWord = true
+        }
+        if inWord { words.append(word) }
+        return words
     }
 
     /// The run loop for `seconds`, its autoreleased objects let go as it

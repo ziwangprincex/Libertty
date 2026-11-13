@@ -1,30 +1,45 @@
 # The browser block with browser-automation = true (this run's own config).
 size:1280x800
 wait:0.5
-browser:open @SITE@/index.html ==> @SITE@
+browser:open @SITE@/index.html ==> b1
 page-wait:go
 expect-tab:Probe Home
-expect-page:Home page
 browser:url ==> /index.html
+browser:title ==> Probe Home
 browser:text ==> Home page
 # Typing and clicking in the page.
-browser:type #name | Libertty ==> 
-browser:click #go ==> 
-browser:eval document.getElementById('out').textContent ==> Hello, Libertty
+browser:type #name Libertty ==>
+browser:click #go ==>
+browser:eval "document.getElementById('out').textContent" ==> Hello, Libertty
 browser:click #nothing-here ==> !nothing matches
-# Links, history, a new-window link staying here.
-browser:click #next ==> 
+browser:text #out ==> Hello, Libertty
+browser:html #out ==> <p id="out">
+browser:type ==> !which element
+browser:frobnicate ==> !unknown +browser command
+# The page as roles and names, what can be acted on with a ref; acting by ref.
+browser:snapshot ==> heading "Home page" [level=1]
+browser:snapshot ==> link "Second page" [ref=e1] → second.html
+browser:snapshot ==> button "Greet" [ref=e4]
+browser:snapshot --interactive ==> textbox [ref=e3]
+browser:type --ref e3 Ada ==>
+browser:click --ref e4 ==>
+browser:text #out ==> Hello, Ada
+browser:snapshot ==> textbox [ref=e3]: "Ada"
+browser:snapshot #out ==> paragraph "Hello, Ada"
+# Links, history, a new-window link staying here; refs end with the page.
+browser:click #next ==>
 wait:0.8
 expect-tab:Second
-browser:back ==> 
+browser:click --ref e4 ==> !no e4 on this page
+browser:back ==>
 wait:0.8
 expect-tab:Probe Home
-browser:forward ==> 
+browser:forward ==>
 wait:0.8
 expect-tab:Second
-browser:back ==> 
+browser:back ==>
 wait:0.8
-browser:click #popup ==> 
+browser:click #popup ==>
 wait:0.8
 expect-tab:Second
 # The address bar: an address without its scheme, and back home.
@@ -34,3 +49,102 @@ expect-tab:Probe Home
 browser:screenshot @OUT@/browser-shot.png ==> browser-shot.png
 expect-shell:test -s @OUT@/browser-shot.png && echo yes ==> yes
 shot:browser.png
+# A page in a tab not in front, driven by its ID (b2 is the popup's tab): nothing comes forward.
+browser:open --no-focus @SITE@/app.html ==> b3
+wait:1.5
+expect-page:Home page
+expect-page-not:Form page
+browser:list ==> b3  @SITE@/app.html
+browser:wait --pane b3 --load ==>
+browser:title --pane b3 ==> Probe App
+browser:snapshot --pane b3 ==> textbox "Your name"
+browser:snapshot --pane b3 ==> checkbox "I agree"
+browser:snapshot --pane b3 ==> combobox "Color" [ref=
+browser:snapshot --pane b3 ==> option "Green"
+browser:snapshot --pane b3 ==> navigation "Main"
+browser:type --pane b3 #who Ada ==>
+browser:check --pane b3 #agree ==>
+browser:select --pane b3 #color Green ==> g
+browser:select --pane b3 #color Purple ==> !no option "Purple"
+browser:type --pane b3 #notes one ==>
+browser:press --pane b3 Enter #notes ==>
+browser:type --pane b3 #notes two --append ==>
+browser:press --pane b3 Enter #who ==>
+browser:text --pane b3 #status ==> sent Ada agree=true color=g notes=one|two input=trusted
+browser:uncheck --pane b3 #agree ==>
+browser:eval --pane b3 "String(document.getElementById('agree').checked)" ==> false
+expect-page:Home page
+browser:snapshot --pane b3 #f ==> checkbox "I agree" [ref=
+browser:snapshot --pane b3 #f ==> combobox "Color" [ref=e
+browser:click --pane b3 #card ==>
+browser:text --pane b3 #status ==> card pointerdown,mousedown,pointerup,mouseup at its middle
+browser:snapshot --pane b3 --interactive ==> clickable "Open the card" [ref=
+# Key by key, for a page that listens to keys; what the field held goes first.
+browser:type --pane b3 #search old ==>
+browser:type --pane b3 #search "a B" --keys ==>
+browser:text --pane b3 #status ==> keyup a B after a B
+browser:type --pane b3 #search " c" --append ==>
+browser:eval --pane b3 "document.getElementById('search').value" ==> a B c
+browser:type --pane b3 #search "" --append ==>
+browser:eval --pane b3 "document.getElementById('search').value" ==> a B c
+# A number field's value is replaced, not added to.
+browser:type --pane b3 #qty 7 ==>
+browser:eval --pane b3 "document.getElementById('qty').value + '!'" ==> 7!
+# Waiting: for what a page shows later, what goes, where it is.
+browser:click --pane b3 #later ==>
+browser:wait --pane b3 #late --timeout 0.1 ==> !waited 0.1 s: nothing shown matches #late
+browser:wait --pane b3 #late ==>
+browser:wait --pane b3 --text "Here at last" ==>
+browser:wait --pane b3 --url *app.html ==>
+browser:wait --pane b3 #nothing --gone --timeout 1 ==>
+browser:wait --pane b3 "#[" ==> !not a CSS selector
+# What a dialog covers isn't clicked through it (unless forced); keys reach the page.
+browser:click --pane b3 #cover ==>
+browser:click --pane b3 #under ==> !is covered by <div#overlay>
+browser:click --pane b3 #under --force ==>
+browser:text --pane b3 #status ==> under clicked
+browser:press --pane b3 Escape ==>
+browser:text --pane b3 #status ==> escaped 27
+browser:press --pane b3 hyper+q ==> !not a key
+# Cookies: saved (this user's only), cleared, loaded back. This host's only: the store is every probe's.
+browser:cookies --pane b3 clear --domain 127.0.0.1 ==> cleared
+browser:reload --pane b3 ==>
+wait:0.8
+browser:wait --pane b3 --load ==>
+browser:cookies --pane b3 save @OUT@/browser-cookies.json --domain 127.0.0.1 ==> 1 cookie saved to
+expect-shell:grep -c '"name": "probe' @OUT@/browser-cookies.json ==> 1
+expect-shell:stat -f %Lp @OUT@/browser-cookies.json ==> 600
+browser:cookies --pane b3 clear --domain 127.0.0.1 ==> 1 cookie cleared
+browser:eval --pane b3 "document.cookie.includes('=kept') ? 'still' : 'gone'" ==> gone
+browser:cookies --pane b3 load @OUT@/browser-cookies.json ==> 1 cookie loaded
+browser:eval --pane b3 "document.cookie.includes('=kept') ? 'still' : 'gone'" ==> still
+browser:cookies --pane b3 load @OUT@/nothing-here.json ==> !can't read
+# A picture of the page no one sees.
+browser:screenshot --pane b3 @OUT@/browser-hidden.png ==> browser-hidden.png
+expect-shell:test -s @OUT@/browser-hidden.png && echo yes ==> yes
+browser:click --pane b9 #x ==> !no browser or session b9
+# From a terminal, as an agent would: the page beside it is the one meant; the keyboard stays.
+tab:1
+wait:0.5
+type:libertty +browser open --split --no-focus @SITE@/second.html; echo "OPENED=$?"
+key:enter
+wait:2
+expect:OPENED=0
+expect-panes:2
+expect-focus:1
+type:T=$(libertty +browser title); echo "TITLE=$T"
+key:enter
+wait:1
+expect:TITLE=Second
+type:echo "BESIDE=$(libertty +browser list | grep -c 'second.html.*tab 1 beside .*[*]$')"
+key:enter
+wait:1
+expect:BESIDE=1
+type:libertty +browser wait '#nope' --timeout 0.2; echo "WAITED=$?"
+key:enter
+wait:1.5
+expect:WAITED=124
+type:libertty +browser click; echo "USAGE=$?"
+key:enter
+wait:1
+expect:USAGE=2

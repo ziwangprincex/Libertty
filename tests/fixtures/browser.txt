@@ -1,6 +1,12 @@
 # The browser block, against a local server at @SITE@ (tests/run.sh starts it).
-# Reading pages needs browser-automation: off, it's refused.
-browser:open @SITE@/index.html ==> @SITE@
+# Reading pages needs browser-automation: off, it's refused; opening isn't.
+browser:open @SITE@/index.html ==> b1
 page-wait:go
 expect-tab:Probe Home
 browser:text ==> !browser-automation
+browser:snapshot ==> !browser-automation
+browser:list ==> !browser-automation
+browser:click #go ==> !browser-automation
+browser:cookies save /tmp/never-written.json ==> !browser-automation
+expect-shell:test -e /tmp/never-written.json || echo absent ==> absent
+browser:reload ==>

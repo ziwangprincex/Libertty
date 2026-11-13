@@ -676,9 +676,25 @@ enum AgentCLI {
         - `libertty +open [--split] FILE[:LINE]` — a file in a tab, or with --split beside this terminal.
         - `libertty +diff [--turn | --branch] [GIT DIFF ARGS]` — this repository's changes, rendered beside the
           terminal; `--turn`: only what changed since your turn began; `--branch`: since the default branch.
-        - `libertty +browser open --split URL` — a page beside the terminal (e.g. the dev server).
+        - `libertty +browser open --split --no-focus URL` — a page beside this terminal (e.g. the dev server);
+          prints its ID. `--no-focus` leaves the user where they are.
         - `libertty +focus ID` — bring the pane showing a session to the front. Don't move the user around
           unless they asked.
+
+        ## Trying a web page (needs `browser-automation = true` in the user's config)
+
+        `+browser` commands act on the page beside this terminal (or `--pane ID`: a browser's ID from
+        `+browser list`, or a session's for the page beside it), even when it isn't in front.
+        - `libertty +browser snapshot [--interactive]` — the page as roles and names; what can be acted on
+          has a ref (`[ref=e12]`). Refs last until the page navigates: take a new snapshot after.
+        - `libertty +browser click --ref e12`, `type --ref e5 TEXT [--enter]`, `select --ref e7 VALUE`,
+          `check`/`uncheck --ref e3`, `press KEY` (Enter, Tab, Escape…), `hover`, `scroll down` — a CSS
+          selector works in place of `--ref REF`. What a dialog covers says so instead of being clicked.
+        - `libertty +browser wait SELECTOR | --text TEXT | --url PATTERN | --load [--gone] [--timeout S]` —
+          until it holds (exit status 124 when the time runs out); `text [SELECTOR]`, `url`, `title`,
+          `eval JS` (in the page), `screenshot FILE.png` (look at it), `reload`, `back`.
+        - `libertty +browser cookies save FILE` / `load FILE` — keep a signed-in session for the next run.
+        If it says browser-automation is off, ask the user; don't change their config yourself.
 
         ## This session
 

@@ -129,10 +129,24 @@ enum CLI {
                                          show Markdown (rendered) or source files in a tab, or with
                                          --split beside the focused terminal; --edit in the editor;
                                          --wait returns once it's closed (EDITOR="libertty +open --wait")
-          libertty +browser open [--split] URL | go URL | back | forward | reload
-                                         the browser block (a tab, or --split beside the terminal)
-          libertty +browser url | text | html | eval JS | click SELECTOR | type SELECTOR TEXT | screenshot FILE
-                                         read and act in the browser in front (browser-automation = true)
+          libertty +browser open [--split | --tab] [--beside SESSION] [--no-focus] [URL]
+                                         the browser block (a tab, or --split beside a terminal); prints its ID.
+                                         --no-focus: nothing comes forward, the keyboard stays where it is
+          libertty +browser go URL | back | forward | reload
+          libertty +browser [--pane ID] COMMAND…
+                                         read and act in a page (browser-automation = true): the one --pane
+                                         names (its ID, or a session's: the browser beside it), else the
+                                         one beside this terminal, else the one in front. COMMAND is one of
+                list [--json] | url | title | text [SELECTOR] | html [SELECTOR] | eval JS | screenshot FILE.png
+                snapshot [--interactive] [--max N] [SELECTOR | --ref REF]
+                                         the page as a tree of roles and names; what can be acted on has a
+                                         ref (e12) the commands below take in place of a selector
+                click | hover | check | uncheck (SELECTOR | --ref REF) [--force]
+                type (SELECTOR | --ref REF) TEXT [--append] [--keys] [--enter] | press KEY [SELECTOR | --ref REF]
+                select (SELECTOR | --ref REF) VALUE... | scroll (up|down|left|right|top|bottom) [PIXELS] | scroll SELECTOR
+                wait (SELECTOR | --text TEXT | --url PATTERN | --load) [--gone] [--timeout S]
+                                         until it holds; exits 124 when the time (10 s) runs out
+                cookies save FILE | cookies load FILE | cookies clear [--domain HOST]
           libertty +render-markdown FILE    print the HTML Libertty renders for a Markdown file
           libertty +diff [--turn | --branch] [GIT DIFF ARGS]
                                          this repository's changes, rendered beside the terminal; --turn: what an
@@ -1307,57 +1321,22 @@ enum CLI {
     }
 
     /// `libertty +browser OP …`: one request to the running app; its answer
-    /// comes back in a private file, announced by a notification.
+    /// comes back in a private file, announced by a notification (BrowserAutomation).
     private static func browser(_ args: [String]) -> Int32 {
-        let usage = "usage: libertty +browser open [--split] URL | go URL | back | forward | reload | url | text | html | eval JS | click SELECTOR | type SELECTOR TEXT | screenshot FILE"
-        guard let op = args.first else { fail(usage); return 2 }
-        var rest = Array(args.dropFirst())
-        let split = rest.contains("--split")
-        rest.removeAll { $0 == "--split" }
-        var info = ["kind": "browser", "op": op, "split": split ? "1" : "0"]
-        switch op {
-        case "open": info["arg"] = rest.first ?? ""
-        case "go", "eval", "click":
-            guard let arg = rest.first, rest.count == 1 else { fail(usage); return 2 }
-            info["arg"] = arg
-        case "type":
-            guard rest.count == 2 else { fail(usage); return 2 }
-            info["arg"] = rest[0] + "\u{1f}" + rest[1]
-        case "screenshot":
-            guard let file = rest.first else { fail(usage); return 2 }
-            info["file"] = URL(fileURLWithPath: (file as NSString).expandingTildeInPath).standardizedFileURL.path
-        case "back", "forward", "reload", "url", "text", "html":
-            guard rest.isEmpty else { fail(usage); return 2 }
-        default:
-            fail(usage)
+        let request: BrowserAutomation.Request
+        switch BrowserAutomation.parse(args, caller: ProcessInfo.processInfo.environment["LIBERTTY_SESSION"]) {
+        case .success(let made): request = made
+        case .failure(let why):
+            fail(why.text)
             return 2
         }
         guard liberttyRunning else { fail("Libertty isn't running"); return 1 }
-        let token = UUID().uuidString
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-browser-\(token)")
-        info["token"] = token
-        info["out"] = out.path
-        var answer: Bool?
-        let center = DistributedNotificationCenter.default()
-        let observer = center.addObserver(forName: BrowserAutomation.replied, object: nil, queue: .main) { note in
-            guard note.userInfo?["token"] as? String == token else { return }
-            answer = note.userInfo?["ok"] as? String == "1"
+        let (out, err, status) = BrowserAutomation.perform(request, deliver: RemoteControl.post) {
+            RunLoop.main.run(until: Date().addingTimeInterval($0))
         }
-        defer {
-            center.removeObserver(observer)
-            try? FileManager.default.removeItem(at: out)
-        }
-        RemoteControl.post(info)
-        let deadline = Date().addingTimeInterval(30)
-        while answer == nil, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
-        guard let ok = answer else { fail("no answer from Libertty"); return 1 }
-        let text = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
-        if ok {
-            if !text.isEmpty { print(text) }
-            return 0
-        }
-        fail(text.isEmpty ? "\(op) failed" : text)
-        return 1
+        if !out.isEmpty { print(out) }
+        if !err.isEmpty { fail(err) }
+        return status
     }
 
     private static func newWindow(_ args: [String], tab: Bool) -> Int32 {
