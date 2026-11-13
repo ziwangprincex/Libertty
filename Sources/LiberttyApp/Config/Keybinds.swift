@@ -232,6 +232,7 @@ enum Action: Equatable {
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
     case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
     case toggleCopyMode, toggleHintMode, quickLook
+    case showCompletions, clearAutocompleteHistory
     case undo, redo
     case toggleComposer, togglePromptQueue, forkConversation(ForkPlace)
     case openSettings, openConfig, reloadConfig, openThemeEditor, quit
@@ -271,6 +272,7 @@ enum Action: Equatable {
         ("toggle_broadcast_input", .toggleBroadcastInput), ("copy_command_output", .copyCommandOutput),
         ("toggle_copy_mode", .toggleCopyMode), ("toggle_hint_mode", .toggleHintMode),
         ("quick_look", .quickLook),
+        ("show_completions", .showCompletions), ("clear_autocomplete_history", .clearAutocompleteHistory),
         ("undo", .undo), ("redo", .redo),
         ("toggle_composer", .toggleComposer), ("toggle_prompt_queue", .togglePromptQueue),
         ("open_settings", .openSettings), ("open_config", .openConfig), ("reload_config", .reloadConfig), ("open_theme_editor", .openThemeEditor), ("quit", .quit),
@@ -454,6 +456,8 @@ enum Action: Equatable {
         ("toggle_copy_mode", "Copy mode: move through the screen and scrollback by key (h j k l, w b e, 0 $, gg G, { } prompts, / ? n N find), select (v V ⌃V) and copy (y); Esc leaves"),
         ("toggle_hint_mode", "Label every link, path, commit hash and address on screen: type a label to open it (as ⌘-click does), in capitals to copy it"),
         ("quick_look", "Preview the files and web pages on screen with Quick Look, ← → between them (⇧⌘-click previews one); again closes"),
+        ("show_completions", "At the shell's prompt: a list of ways to go on with the word you're typing (commands, subcommands, options, files, branches) and lines from your history; elsewhere the key goes to the program"),
+        ("clear_autocomplete_history", "Forget the command lines remembered for autocomplete"),
         ("write_scrollback_file:open|copy|paste|save", "Put the scrollback in a text file and open it in a tab, copy or paste its path, or save it where you choose"),
         ("write_selection_file:open|copy|paste|save", "The same for the selection"),
         ("toggle_quick_terminal", "Drop a terminal down from the top of the screen, or put it away (good as a global: key)"),
@@ -584,6 +588,8 @@ struct Keybinds: Equatable {
             "alt+arrow_left=esc:b", "alt+arrow_right=esc:f",
             "cmd+shift+c=toggle_copy_mode", "cmd+shift+h=toggle_hint_mode",
             "cmd+alt+f=toggle_floating_panes", "cmd+alt+shift+f=new_floating_pane",
+            // (Not ⌃Space: macOS takes it for the input source, and ⌃⌥Space too.)
+            "ctrl+shift+space=show_completions",
         ]
         for i in 1...8 { d.append("cmd+\(i)=goto_tab:\(i)") }
         return d

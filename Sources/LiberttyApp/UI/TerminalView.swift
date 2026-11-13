@@ -336,6 +336,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         // output while following): the rows line up again.
         if smoothOffset != 0, session.scrollbar.atBottom { setSmoothOffset(0) }
         if isInMode { modesBeforeFrame() }
+        // Autocomplete's suggestion for the line as it is now (none away
+        // from a prompt, nor in copy or hint mode).
+        renderer.ghost = isInMode ? nil : autocompleteGhost()
         let presented: Bool
         if let observer = onFramePresented {
             // Which output this frame shows, for `--latency-trace`.
@@ -920,6 +923,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         // Hints are for the keys typed next: elsewhere now. (Copy mode stays.)
         if hintsActive { endHintMode() }
         DispatchQueue.main.async { SecureInput.shared.refresh() }
+        closeCompletionList()
         return true
     }
 
@@ -1097,6 +1101,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     override func keyDown(with event: NSEvent) {
         if isInMode, !hasMarkedText() { return modeKeyDown(event) }
+        // Autocomplete's keys first (only while its list is open or a
+        // suggestion shows), unless a key sequence is under way.
+        if !hasMarkedText(), PendingKeys.shared.pressed.isEmpty, handleAutocompleteKey(event) { return }
         if !hasMarkedText() {
             switch pressKeybind(event) {
             case .action(let action): if ActionDispatcher.perform(action, in: self) { return }

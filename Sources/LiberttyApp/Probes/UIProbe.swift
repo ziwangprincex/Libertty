@@ -1136,6 +1136,27 @@ enum UIProbe {
                             print("FAIL  ui-probe the tab in front: \"\(window.title)\", not \(text)")
                             failures += 1
                         }
+                    case .expectGhost(let text):
+                        // As a frame would ask (an off-screen window draws none).
+                        let pane = controller.focusedTerminal
+                        _ = pane.autocompleteGhost()
+                        let shown = pane.ghostShown
+                        if text == "none" ? shown == nil : shown == text {
+                            print("ok    ui-probe ghost \(text == "none" ? "none" : "\"\(text)\"")")
+                        } else {
+                            print("FAIL  ui-probe ghost: \(shown.map { "\"\($0)\"" } ?? "none"), not \(text)")
+                            failures += 1
+                        }
+                    case .expectCompletions(let text):
+                        // (A frame's asking is what has the list follow the line.)
+                        _ = controller.focusedTerminal.autocompleteGhost()
+                        let rows = controller.focusedTerminal.completionListShown
+                        if text == "none" ? rows == nil : rows?.contains(where: { $0.contains(text) }) == true {
+                            print("ok    ui-probe completions \(text)")
+                        } else {
+                            print("FAIL  ui-probe completions: no \(text) in \(rows.map { "\($0)" } ?? "none")")
+                            failures += 1
+                        }
                     case .expectSubtitle(let text):
                         let subtitle = window.subtitle
                         if subtitle.contains(text) {
@@ -1665,6 +1686,9 @@ enum UIProbe {
         /// saying; a second window on the session showing TEXT, with none.
         case expectSurface(String, Bool), expectSurfaceText(String), expectSurfaceLive(String), surfaceAct(String, String)
         case expectLens(String), attachCopy(String)
+        /// Autocomplete: the focused pane's ghost text ("none": no suggestion),
+        /// and a row of its completion list ("none": not open).
+        case expectGhost(String), expectCompletions(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
@@ -1796,6 +1820,8 @@ enum UIProbe {
             case "expect-lens": steps.append(.expectLens(arg))
             case "expect-lens-count": steps.append(.expectLens("#" + arg))
             case "attach-copy": steps.append(.attachCopy(arg))
+            case "expect-ghost": steps.append(.expectGhost(arg))
+            case "expect-completions": steps.append(.expectCompletions(arg))
             case "expect-selected": steps.append(.expectSelected(arg))
             case "hover": steps.append(.hover(Int(arg) ?? 0))
             case "expect-focus": steps.append(.expectFocus(Int(arg) ?? 0))

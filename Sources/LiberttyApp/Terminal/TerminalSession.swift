@@ -24,6 +24,7 @@ protocol TerminalSessionDelegate: AnyObject {
     func sessionLinkChanged(_ session: TerminalSession)
     func sessionLabelChanged(_ session: TerminalSession)
     func sessionSearchChanged(_ session: TerminalSession)
+    func sessionCommandStarted(_ session: TerminalSession, command: String)
 }
 
 extension TerminalSessionDelegate {
@@ -36,6 +37,10 @@ extension TerminalSessionDelegate {
     func sessionDesktopNotification(_ session: TerminalSession, title: String, body: String) {}
     /// A command ended (OSC 133 D after C), with how long it ran.
     func sessionCommandFinished(_ session: TerminalSession, command: String, exitCode: Int32?, duration: TimeInterval) {}
+    /// A command started (OSC 133 C), its line as the shell gave it (not
+    /// sanitized: a line of several is still several), in the folder the
+    /// shell was in (`workingDirectory`, not yet changed by it).
+    func sessionCommandStarted(_ session: TerminalSession, command: String) {}
     /// OSC 9;4 progress changed (`session.progress`).
     func sessionProgressChanged(_ session: TerminalSession) {}
     /// A session on a host: its link went down or came back (`session.linkUp`).
@@ -84,6 +89,9 @@ final class TerminalSession {
     /// semantic-prompt callback sets it while parsing).
     private var promptState = PromptState.unknown
     private enum PromptState { case unknown, prompt, running }
+    /// The shell marked where its input starts (OSC 133 B) at this prompt:
+    /// what's typed is told from the prompt then (fish marks none). Under `lock`.
+    private var inputMarked = false
     /// Output slices parsed so far and when the last one landed (latency
     /// tracing); guarded by `lock`.
     private var outputCount: UInt64 = 0
@@ -665,19 +673,26 @@ final class TerminalSession {
         if let text = plain {
             scrollToBottom()
             pty?.write(Data(text.utf8))
+            inputMark &+= 1
             return true
         }
         guard ok, len > 0 else { return false }
         scrollToBottom()
         pty?.write(Data(bytes: out, count: len))
+        inputMark &+= 1
         return true
     }
+
+    /// Bumped (main thread) each time a key or text goes to the program:
+    /// with `outputMark`, whether the screen may not yet show what was typed.
+    private(set) var inputMark: UInt64 = 0
 
     /// Text committed by an input method goes to the program as-is.
     func sendText(_ text: String) {
         guard !text.isEmpty else { return }
         scrollToBottom()
         pty?.write(Data(text.utf8))
+        inputMark &+= 1
     }
 
     enum PasteOutcome { case pasted, nothing, needsConfirmation }
@@ -1266,6 +1281,8 @@ final class TerminalSession {
         surfaces.semantic(event.kind, primary: event.prompt_kind == GHOSTTY_SEMANTIC_PROMPT_PROMPT_PRIMARY, terminal: terminal, session: self)
         switch event.kind {
         case GHOSTTY_SEMANTIC_PROMPT_PROMPT_START, GHOSTTY_SEMANTIC_PROMPT_INPUT_START:
+            if event.kind == GHOSTTY_SEMANTIC_PROMPT_INPUT_START { inputMarked = true }
+            else if promptState != .prompt { inputMarked = false }
             promptState = .prompt
         case GHOSTTY_SEMANTIC_PROMPT_COMMAND_END:
             promptState = .prompt
@@ -1279,7 +1296,15 @@ final class TerminalSession {
             }
         case GHOSTTY_SEMANTIC_PROMPT_OUTPUT_START:
             promptState = .running
-            commandStart = (CACurrentMediaTime(), ProgramStatusStore.sanitize(String(event.command)))
+            inputMarked = false
+            let raw = String(event.command)
+            commandStart = (CACurrentMediaTime(), ProgramStatusStore.sanitize(raw))
+            if !raw.isEmpty {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.delegate?.sessionCommandStarted(self, command: raw)
+                }
+            }
         default: break
         }
     }
@@ -2356,5 +2381,100 @@ extension TerminalSession {
         send(Key(action: GHOSTTY_KEY_ACTION_PRESS, key: physical, mods: mods,
                  consumedMods: text != nil && shift ? GhosttyMods(GHOSTTY_MODS_SHIFT) : 0,
                  text: text, unshiftedCodepoint: unshifted, composing: false))
+    }
+}
+
+// MARK: - Autocomplete
+
+extension TerminalSession {
+    /// The command line being edited at the shell's prompt (PromptLine), with
+    /// the cursor's cell: nil unless the shell is at a prompt it marked (OSC
+    /// 133, input start included) on the main screen, with nothing on the
+    /// row under the line — where zsh or bash list completions of their own,
+    /// whose menu the arrows may be moving through. Reads only the rows it
+    /// needs (the cursor's logical line, a multi-row prompt's rows above it,
+    /// the row below), so it's cheap enough to ask before every frame.
+    func promptLine() -> (line: PromptLine, cursor: (row: Int, col: Int))? {
+        lock.withLock {
+            guard promptState == .prompt, inputMarked else { return nil }
+            var screen = GHOSTTY_TERMINAL_SCREEN_PRIMARY
+            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &screen)
+            guard screen == GHOSTTY_TERMINAL_SCREEN_PRIMARY else { return nil }
+            var cx: UInt16 = 0, cy: UInt16 = 0
+            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_X, &cx)
+            _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &cy)
+            let cols = Int(size.cols), rowCount = Int(size.rows)
+            let y = Int(cy)
+            guard y < rowCount else { return nil }
+
+            func ref(_ x: Int, _ y: Int) -> GhosttyGridRef? {
+                var point = GhosttyPoint()
+                point.tag = GHOSTTY_POINT_TAG_ACTIVE
+                point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
+                var r = GhosttyGridRef()
+                return ghostty_terminal_grid_ref(terminal, point, &r) == GHOSTTY_SUCCESS ? r : nil
+            }
+            func flags(_ y: Int) -> (wraps: Bool, mark: PromptLine.Row.Mark) {
+                guard var r = ref(0, y) else { return (false, .none) }
+                var row: GhosttyRow = 0
+                guard ghostty_grid_ref_row(&r, &row) == GHOSTTY_SUCCESS else { return (false, .none) }
+                var wraps = false
+                var mark = GHOSTTY_ROW_SEMANTIC_NONE
+                _ = ghostty_row_get(row, GHOSTTY_ROW_DATA_WRAP, &wraps)
+                _ = ghostty_row_get(row, GHOSTTY_ROW_DATA_SEMANTIC_PROMPT, &mark)
+                let m: PromptLine.Row.Mark = mark == GHOSTTY_ROW_SEMANTIC_PROMPT ? .prompt
+                    : mark == GHOSTTY_ROW_SEMANTIC_PROMPT_CONTINUATION ? .continuation : .none
+                return (wraps, m)
+            }
+            var scalars = [UInt32](repeating: 0, count: 16)
+            func row(_ y: Int) -> PromptLine.Row {
+                let f = flags(y)
+                var cells: [PromptLine.Cell] = []
+                cells.reserveCapacity(cols)
+                for x in 0..<cols {
+                    guard var r = ref(x, y) else { cells.append(.blank()); continue }
+                    var raw: GhosttyCell = 0
+                    guard ghostty_grid_ref_cell(&r, &raw) == GHOSTTY_SUCCESS else { cells.append(.blank()); continue }
+                    var wide = GHOSTTY_CELL_WIDE_NARROW
+                    var semantic = GHOSTTY_CELL_SEMANTIC_OUTPUT
+                    _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide)
+                    _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_SEMANTIC_CONTENT, &semantic)
+                    let kind: PromptLine.Cell.Kind = semantic == GHOSTTY_CELL_SEMANTIC_INPUT ? .input
+                        : semantic == GHOSTTY_CELL_SEMANTIC_PROMPT ? .prompt : .output
+                    if wide == GHOSTTY_CELL_WIDE_SPACER_TAIL || wide == GHOSTTY_CELL_WIDE_SPACER_HEAD {
+                        cells.append(PromptLine.Cell(text: "", kind: kind, spacer: true))
+                        continue
+                    }
+                    var n = 0
+                    var text = ""
+                    if ghostty_grid_ref_graphemes(&r, &scalars, scalars.count, &n) == GHOSTTY_SUCCESS, n > 0 {
+                        text.unicodeScalars.append(contentsOf: scalars.prefix(n).compactMap(Unicode.Scalar.init))
+                    }
+                    cells.append(PromptLine.Cell(text: text, kind: kind))
+                }
+                return PromptLine.Row(cells: cells, wraps: f.wraps, mark: f.mark)
+            }
+            // The logical line's rows (wrapped onto from above, and on below),
+            // and a multi-row prompt's above its first.
+            var top = y
+            while top > 0, flags(top - 1).wraps { top -= 1 }
+            if flags(top).mark == .continuation {
+                var k = top - 1
+                while k >= 0, y - k <= 12 {
+                    top = k
+                    if flags(k).mark != .continuation { break }
+                    k -= 1
+                }
+            }
+            var bottom = y
+            while bottom < rowCount - 1, flags(bottom).wraps, bottom - y < 8 { bottom += 1 }
+            // The row under the line: a completion listing of the shell's own there.
+            if bottom + 1 < rowCount, row(bottom + 1).cells.contains(where: { !$0.text.isEmpty && $0.text != " " }) {
+                return nil
+            }
+            let rows = (top...bottom).map(row)
+            guard let line = PromptLine.read(rows, cursor: (y - top, Int(cx))) else { return nil }
+            return (line, (y, Int(cx)))
+        }
     }
 }

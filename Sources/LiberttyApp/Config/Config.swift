@@ -251,6 +251,15 @@ struct Config: Equatable {
     var webAccessInput = true
     /// Ghostty's `mouse-hide-while-typing`.
     var mouseHideWhileTyping = false
+    /// Autocomplete's ghost text at the shell's prompt (fish's suggestions):
+    /// the likeliest line from your history, dimmed after the cursor.
+    var autocomplete = true
+    /// Remember the commands your shells run, for autocomplete.
+    var autocompleteHistory = true
+    /// The keys that take a suggestion whole, and one word of it (only while
+    /// one shows; otherwise they're the program's as ever).
+    var autocompleteAccept = [Trigger("arrow_right")!, Trigger("end")!, Trigger("ctrl+f")!]
+    var autocompleteAcceptWord = [Trigger("alt+arrow_right")!]
     /// Trackpad scrolling moves the content by points, not whole rows.
     var scrollSmooth = true
     /// Trackpad gestures over a terminal: pinch to zoom a pane, swipe for the sidebar (Rex's).
@@ -459,6 +468,10 @@ struct Config: Equatable {
         ("web-access-port", "The port Web Access listens on."),
         ("web-access-input", "Whether a browser may type into panes (false: watch only)."),
         ("mouse-hide-while-typing", "Hide the mouse pointer while you type; moving it brings it back."),
+        ("autocomplete", "At the shell's prompt (with shell integration), show the likeliest way to finish what you type, from your history, dimmed after the cursor; autocomplete-accept takes it. Nothing is sent until you do. The completion list (show_completions, ⌃⇧Space) works either way."),
+        ("autocomplete-history", "Remember the command lines your shells run (in which folder, how often), privately in Libertty's data folder, for autocomplete. Lines starting with a space and ones that look like they hold a secret (a token, a password, KEY=…) are never kept."),
+        ("autocomplete-accept", "The keys that take autocomplete's suggestion, comma-separated (default arrow_right,end,ctrl+f). Only while one shows: otherwise they reach the program as ever."),
+        ("autocomplete-accept-word", "The keys that take the suggestion's next word (default alt+arrow_right)."),
         ("scroll-smooth", "Trackpad scrolling follows your fingers point by point (true) or moves whole rows (false)."),
         ("trackpad-gestures", "Trackpad gestures over a terminal: spread two fingers over a pane of a split to zoom it, pinch to restore it, and swipe sideways, either way, to show or hide the sidebar (sidebar-swipe)."),
         ("sidebar-swipe", "How a two-finger swipe sideways over a terminal shows or hides the sidebar: option (with Option held, the default), swipe (any swipe), or off."),
@@ -597,6 +610,10 @@ struct Config: Equatable {
         case "web-access-port": return [String(webAccessPort)]
         case "web-access-input": return [String(webAccessInput)]
         case "mouse-hide-while-typing": return [String(mouseHideWhileTyping)]
+        case "autocomplete": return [String(autocomplete)]
+        case "autocomplete-history": return [String(autocompleteHistory)]
+        case "autocomplete-accept": return [autocompleteAccept.map(\.configString).joined(separator: ",")]
+        case "autocomplete-accept-word": return [autocompleteAcceptWord.map(\.configString).joined(separator: ",")]
         case "scroll-smooth": return [String(scrollSmooth)]
         case "trackpad-gestures": return [String(trackpadGestures)]
         case "sidebar-swipe": return [sidebarSwipe.rawValue]
@@ -1025,6 +1042,27 @@ struct Config: Equatable {
         case "mouse-hide-while-typing":
             if reset { mouseHideWhileTyping = defaults.mouseHideWhileTyping; return nil }
             guard let x = bool() else { return "true or false" }; mouseHideWhileTyping = x
+        case "autocomplete":
+            if reset { autocomplete = defaults.autocomplete; return nil }
+            guard let x = bool() else { return "true or false" }; autocomplete = x
+        case "autocomplete-history":
+            if reset { autocompleteHistory = defaults.autocompleteHistory; return nil }
+            guard let x = bool() else { return "true or false" }; autocompleteHistory = x
+        case "autocomplete-accept", "autocomplete-accept-word":
+            let word = key == "autocomplete-accept-word"
+            if reset {
+                if word { autocompleteAcceptWord = defaults.autocompleteAcceptWord } else { autocompleteAccept = defaults.autocompleteAccept }
+                return nil
+            }
+            // "none" (or "false"): no key takes it.
+            var keys: [Trigger] = []
+            if !["none", "false"].contains(v.lowercased()) {
+                for part in v.split(separator: ",") {
+                    guard let t = Trigger(String(part)) else { return "keys like arrow_right,end,ctrl+f (or none)" }
+                    keys.append(t)
+                }
+            }
+            if word { autocompleteAcceptWord = keys } else { autocompleteAccept = keys }
         case "scroll-smooth":
             if reset { scrollSmooth = defaults.scrollSmooth; return nil }
             guard let x = bool() else { return "true or false" }; scrollSmooth = x

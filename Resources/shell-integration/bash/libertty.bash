@@ -83,10 +83,13 @@ if [[ -z "${_LIBERTTY_BASH_INTEGRATED-}" ]]; then
         [[ "$BASH_COMMAND" == _libertty_precmd* ]] && return 0
         _libertty_command_ran=1
         # The line as typed, from history (HISTCONTROL may leave it out: then none).
+        # history prints "%5d  %s": the number and one space go, then the
+        # other space — not the line's own leading one, which says "don't
+        # remember this" (ignorespace), and autocomplete honors it.
         local line
         line=$(HISTTIMEFORMAT= builtin history 1 2>/dev/null)
         line=${line#*[0-9] }
-        line=${line#"${line%%[![:space:]]*}"}
+        line=${line# }
         line=${line//%/%25}
         line=${line//;/%3B}
         line=${line//$'\n'/%0A}

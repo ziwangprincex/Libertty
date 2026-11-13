@@ -363,6 +363,13 @@ expect surface-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-con
 # Command lenses: git status, cc's errors, grep -rn's matches as lists on their command lines.
 expect lenses 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/lenses|g" $ROOT/tests/fixtures/lenses.txt)" $OUT
+# Autocomplete at the prompt: ghost text from history, the keys that take it,
+# what's never remembered, the completion list. zsh with an empty ZDOTDIR:
+# the integration, none of the user's plugins.
+mkdir -p $PRIVATE/empty-zdotdir
+expect autocomplete 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  LIBERTTY_SHELL=/bin/zsh ZDOTDIR=$PRIVATE/empty-zdotdir \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/autocomplete.txt)" $OUT
 # focus-follows-mouse: on, the pane under the pointer gets the keyboard; off (the default), it doesn't.
 mkdir -p $PRIVATE/ffm-config/libertty
 print 'focus-follows-mouse = true' > $PRIVATE/ffm-config/libertty/config

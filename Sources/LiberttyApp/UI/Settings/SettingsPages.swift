@@ -506,6 +506,12 @@ struct CustomRow: View {
             .toggleStyle(.switch)
         case "agent-setup":
             AgentRow(model: model, item: item)
+        case "autocomplete-history-clear":
+            LabeledContent {
+                Button(L10n.t("Clear History…")) { CommandHistoryClear.ask() }
+            } label: {
+                RowLabel(model: model, item: item)
+            }
         case "config-file":
             ConfigFileRows(model: model, item: item)
         case "theme-import":
