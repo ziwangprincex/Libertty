@@ -115,7 +115,7 @@ public final class DaemonServer {
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
     static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions",
-                           "agentScreen", "foreground"]
+                           "agentScreen", "foreground", "upload"]
 
     private init(path: String) {
         self.path = path
@@ -328,6 +328,15 @@ public final class DaemonServer {
                     "message": "", "title": "", "source": "screen",
                 ])
                 connection.send(.result, json: ["ok": true])
+            case .upload:
+                // A file a window pastes or drops on a pane here (another machine's, usually).
+                guard let (header, body) = frame.headerAndBody, let batch = header["batch"] as? String,
+                      let path = header["path"] as? String else { fail("bad upload"); continue }
+                do {
+                    connection.send(.result, json: ["ok": true, "path": try Uploads.store(body, batch: batch, relativePath: path)])
+                } catch {
+                    fail("\(error)")
+                }
             case .permissions:
                 // What macOS lets it (and so its sessions' programs) get at.
                 connection.send(.result, json: ["ok": true, "access": PrivacyAccess.report()])

@@ -103,6 +103,20 @@ extension ProbeLauncher {
             // Where that shell is, as the host has it: the pane's name and its
             // new splits go by it.
             check("folder there", wait(5) { shell.workingDirectory != nil })
+            // A file pasted or dropped on a pane there goes there first (RemoteUpload):
+            // the shell there reads it where liberttyd says it is.
+            let drop = FileManager.default.temporaryDirectory.appendingPathComponent("drop-\(getpid()).txt")
+            try? "uploaded-ok".write(to: drop, atomically: true, encoding: .utf8)
+            if let (items, top) = try? RemoteUpload.items(for: [drop]),
+               case .sent(let paths) = RemoteUpload.send(items, top: top, batch: RemoteUpload.newBatch(), to: host.address),
+               let path = paths.first {
+                check("upload named as it was", path.hasSuffix("/" + drop.lastPathComponent))
+                shell.sendText("cat \(ShellQuote.quote(path))\n")
+                check("upload read there", wait(5) { shell.scrollbackText().contains("uploaded-ok") })
+            } else {
+                check("upload sent", false)
+            }
+            try? FileManager.default.removeItem(at: drop)
             shell.terminate()
             print(failed.isEmpty ? "remote-probe: all passed" : "remote-probe failed: \(failed)")
             exit(failed.isEmpty ? 0 : 1)

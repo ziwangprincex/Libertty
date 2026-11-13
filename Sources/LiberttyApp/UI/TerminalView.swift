@@ -133,7 +133,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         let pasteboard = sender.draggingPasteboard
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
            !urls.isEmpty {
-            sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
+            // On another machine they go there first (RemoteUpload).
+            if session.host != nil { uploadAndType(urls: urls) } else {
+                sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
+            }
         } else if let text = pasteboard.string(forType: .string) {
             // As a paste: text that may run commands asks first (it used to go nowhere).
             if session.paste(text, allowUnsafe: false) == .needsConfirmation { confirmUnsafePaste(text) }
@@ -1841,6 +1844,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     @objc func paste(_ sender: Any?) {
         guard !isReadOnly else { return }
+        // On another machine, files and a screenshot go there first (RemoteUpload).
+        if session.host != nil, pasteRemotely(.general) { return }
         let text: String
         switch PasteContent.read(.general, allowsImage: session.host == nil) {
         case .text(let t): text = t
@@ -1880,12 +1885,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         if item.action == #selector(contextAction(_:)), let action = (item.representedObject as? ActionBox)?.action {
             switch action {
             case .copyToClipboard: return session.selectedText()?.isEmpty == false
-            case .pasteFromClipboard: return !isReadOnly && PasteContent.canPaste(.general, allowsImage: session.host == nil)
+            case .pasteFromClipboard: return !isReadOnly && PasteContent.canPaste(.general)
             default: return true
             }
         }
         if item.action == #selector(paste(_:)) {
-            return PasteContent.canPaste(.general, allowsImage: session.host == nil)
+            return PasteContent.canPaste(.general)
         }
         if item.action == #selector(copy(_:)) {
             return session.selectedText() != nil

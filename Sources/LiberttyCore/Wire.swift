@@ -55,6 +55,7 @@ public enum Wire {
         case report = 22      // {id, state, record?, app?}: a program's state the app read on the session's screen
                               // (an agent's spinner, its permission dialog) → result {ok}; a `status` event
         case permissions = 23 // → result {ok, access: {full-disk|screen|camera|microphone|local-network: granted|denied|not-asked|unknown}}
+        case upload = 40      // header {batch, path} | the file's bytes: kept where liberttyd runs → result {ok, path}
 
         // Daemon → client
         case welcome = 101    // {version, build, pid, features?}

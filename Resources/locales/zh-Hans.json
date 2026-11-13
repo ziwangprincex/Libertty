@@ -490,5 +490,8 @@
   "Bold italic style": "粗斜体样式",
   "Automatic": "自动",
   "As regular": "同常规",
-  "Which of the font's faces each kind of text uses.": "每种文字用这款字体里的哪个字形（字重、斜体）。"
+  "Which of the font's faces each kind of text uses.": "每种文字用这款字体里的哪个字形（字重、斜体）。",
+  "Uploading to %@…": "正在上传到 %@…",
+  "Couldn't send that to the host": "无法发送到主机",
+  "The host's liberttyd is older and takes no files. Connect to it again to update it.": "主机上的 liberttyd 版本较旧，不能接收文件。重新连接主机即可更新它。"
 }
