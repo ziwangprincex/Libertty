@@ -2425,7 +2425,10 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         if TabCell.endedByCancel(note) { renaming?.cancelled = true }
         if Probe.running {
             let movement = note.userInfo?["NSTextMovement"].map { "\($0)" } ?? "none"
-            FileHandle.standardError.write(Data("rename: ended, movement \(movement), cancelled \(renaming?.cancelled == true)\n".utf8))
+            FileHandle.standardError.write(Data("rename: ended, movement \(movement), cancelled \(renaming?.cancelled == true), first responder \(String(describing: window?.firstResponder.map { type(of: $0) }))\n".utf8))
+            // Who ended it (for a CI log; the frames are this build's symbols).
+            let frames = Thread.callStackSymbols.dropFirst().prefix(28).joined(separator: "\n  ")
+            FileHandle.standardError.write(Data("rename: ended from\n  \(frames)\n".utf8))
         }
         endRename(field)
     }

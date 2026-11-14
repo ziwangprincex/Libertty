@@ -256,6 +256,9 @@ enum UIProbe {
                         }
                         pump(0.15)
                     case .type(let text):
+                        if controller.sidebar.fileTree.renameField != nil {
+                            FileHandle.standardError.write(Data("probe: type \(text) to \(String(describing: window.firstResponder.map { type(of: $0) }))\n".utf8))
+                        }
                         for spec in text.map(String.init) { _ = press(spec, in: CommandPalette.openPanel ?? window) }
                         pump(0.35)
                     case .click(let x, let y):
