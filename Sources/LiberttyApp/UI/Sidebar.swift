@@ -2404,7 +2404,10 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard let renaming, control === renaming.field else { return false }
-        if selector == #selector(NSResponder.cancelOperation(_:)) {
+        if Probe.running { FileHandle.standardError.write(Data("rename: command \(selector)\n".utf8)) }
+        // Esc, as the field editor may name it (complete: is NSTextView's Esc
+        // for word completion, which a name has no use for).
+        if selector == #selector(NSResponder.cancelOperation(_:)) || selector == #selector(NSTextView.complete(_:)) {
             self.renaming?.cancelled = true
             window?.makeFirstResponder(outline)
             return true
@@ -2420,6 +2423,10 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         guard let field = note.object as? NSTextField, field === renaming?.field else { return }
         // Esc that AppKit ended the editing with itself, not through doCommandBy.
         if TabCell.endedByCancel(note) { renaming?.cancelled = true }
+        if Probe.running {
+            let movement = note.userInfo?["NSTextMovement"].map { "\($0)" } ?? "none"
+            FileHandle.standardError.write(Data("rename: ended, movement \(movement), cancelled \(renaming?.cancelled == true)\n".utf8))
+        }
         endRename(field)
     }
 
