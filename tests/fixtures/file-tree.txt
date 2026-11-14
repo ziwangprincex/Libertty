@@ -25,11 +25,11 @@ sheet-type:src
 sheet:Create
 expect-sheet-text:is there already
 sheet:OK
-# Renamed in place: the stem is selected, so typing replaces it.
+# Renamed in place: the stem is selected, so typing replaces it. (type-then:
+# the key at once after the text: see UIProbe's typeThen.)
 tree-select:a.txt
 tree-menu:Rename
-type:b
-key:enter
+type-then:enter:b
 expect-tree:b.txt
 expect-tree-not:a.txt
 undo:go
@@ -38,15 +38,13 @@ expect-tree-not:b.txt
 # Esc leaves the name as it was.
 tree-select:a.txt
 tree-menu:Rename
-type:zzz
-key:escape
+type-then:escape:zzz
 expect-tree:a.txt
 expect-tree-not:zzz.txt
 # Return on a selected file renames it too (Finder's key).
 tree-select:a.txt
 key:enter
-type:c
-key:enter
+type-then:enter:c
 expect-tree:c.txt
 expect-undo:Rename
 undo:go

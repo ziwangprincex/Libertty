@@ -2404,7 +2404,6 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard let renaming, control === renaming.field else { return false }
-        if Probe.running { FileHandle.standardError.write(Data("rename: command \(selector)\n".utf8)) }
         // Esc, as the field editor may name it (complete: is NSTextView's Esc
         // for word completion, which a name has no use for).
         if selector == #selector(NSResponder.cancelOperation(_:)) || selector == #selector(NSTextView.complete(_:)) {
@@ -2423,13 +2422,6 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         guard let field = note.object as? NSTextField, field === renaming?.field else { return }
         // Esc that AppKit ended the editing with itself, not through doCommandBy.
         if TabCell.endedByCancel(note) { renaming?.cancelled = true }
-        if Probe.running {
-            let movement = note.userInfo?["NSTextMovement"].map { "\($0)" } ?? "none"
-            FileHandle.standardError.write(Data("rename: ended, movement \(movement), cancelled \(renaming?.cancelled == true), first responder \(String(describing: window?.firstResponder.map { type(of: $0) }))\n".utf8))
-            // Who ended it (for a CI log; the frames are this build's symbols).
-            let frames = Thread.callStackSymbols.dropFirst().prefix(28).joined(separator: "\n  ")
-            FileHandle.standardError.write(Data("rename: ended from\n  \(frames)\n".utf8))
-        }
         endRename(field)
     }
 

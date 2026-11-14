@@ -256,10 +256,19 @@ enum UIProbe {
                         }
                         pump(0.15)
                     case .type(let text):
-                        if controller.sidebar.fileTree.renameField != nil {
-                            FileHandle.standardError.write(Data("probe: type \(text) to \(String(describing: window.firstResponder.map { type(of: $0) }))\n".utf8))
-                        }
                         for spec in text.map(String.init) { _ = press(spec, in: CommandPalette.openPanel ?? window) }
+                        pump(0.35)
+                    case .typeThen(let text, let key):
+                        // The text, then the key at once, with no layout between: in
+                        // a window that isn't key (a probe's never is), macOS 15
+                        // ends a field's editing as it lays the field out after
+                        // typing, and the key would find no field (a real window
+                        // with the keyboard keeps it).
+                        for spec in text.map(String.init) { _ = press(spec, in: CommandPalette.openPanel ?? window) }
+                        if !press(key, in: CommandPalette.openPanel ?? window) {
+                            print("FAIL  ui-probe type-then: unknown key \(key)")
+                            failures += 1
+                        }
                         pump(0.35)
                     case .click(let x, let y):
                         click(x: x, y: y, in: window)
@@ -1733,7 +1742,7 @@ enum UIProbe {
     }
 
     private enum Step {
-        case key(String), type(String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
+        case key(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         /// Whether the focused pane would have Secure Keyboard Entry on for a
@@ -1826,6 +1835,10 @@ enum UIProbe {
             switch verb {
             case "key": steps.append(.key(arg))
             case "type": steps.append(.type(arg))
+            case "type-then":
+                // `type-then:KEY:TEXT`
+                let parts = arg.split(separator: ":", maxSplits: 1).map(String.init)
+                if parts.count == 2 { steps.append(.typeThen(text: parts[1], key: parts[0])) }
             case "click":
                 let xy = arg.split(separator: ",").compactMap { Double($0) }
                 steps.append(xy.count == 2 ? .click(x: xy[0], y: xy[1]) : .clickLabeled(arg))
