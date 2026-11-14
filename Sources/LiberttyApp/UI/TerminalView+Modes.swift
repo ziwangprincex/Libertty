@@ -78,9 +78,11 @@ extension TerminalView {
     var keyHintsShown: [String]? { keyHints.flatMap { $0.isHidden ? nil : $0.rows } }
 
     /// Where copy goes: the clipboard, or while a probe runs a pasteboard
-    /// of its own, so a test never takes what the user copied.
+    /// of its own, so a test never takes what the user copied — its own
+    /// process's (a named pasteboard is the whole Mac's: probes running at
+    /// once took each other's copies).
     static var clipboard: NSPasteboard {
-        Probe.running ? NSPasteboard(name: NSPasteboard.Name("dev.libertty.probe")) : .general
+        Probe.running ? NSPasteboard(name: NSPasteboard.Name("dev.libertty.probe.\(getpid())")) : .general
     }
 
     func writeClipboard(_ text: String) {
