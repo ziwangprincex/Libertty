@@ -58,6 +58,8 @@ shell:ID=$(@BIN@ +new-session --cwd @DIR@/beta -e 'sleep 600') && @BIN@ +rename-
 wait:4
 expect-elsewhere:kept-job
 expect-group:beta · 2 tabs · 1 not open here
+# VoiceOver reads every control there by what it does (a group's + is "New Tab in beta", not "plus").
+expect-unlabeled-sidebar:0
 click-row:kept-job
 wait:1.5
 expect-tab-count:5

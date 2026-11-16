@@ -77,13 +77,36 @@ extension TerminalWindowController {
         unpark(pane)
     }
 
-    /// Close it, as ⌘W closes a pane (asking first when a program runs).
+    /// Close it, as ⌘W closes a pane: asking first when a program runs,
+    /// and kept for Edit ▸ Undo as a split's pane is.
     func closeFloating(_ pane: TerminalView) {
-        confirmIfBusy([pane], noun: "pane") { [weak self] in
+        confirmIfBusy([pane], noun: "pane") { [weak self] in self?.removeFloating(pane) }
+    }
+
+    /// Out of its tab, the keyboard back to the split's pane; its program
+    /// runs on for `undo-timeout` (Edit ▸ Undo Close Pane brings it back
+    /// where it was), then ends.
+    func removeFloating(_ pane: TerminalView, undoable: Bool = true) {
+        guard let tab = owningTab(of: pane), let i = tab.parked.firstIndex(where: { $0.pane === pane }) else { return }
+        let hadKeyboard = window?.firstResponder === pane
+        let entry = tab.parked.remove(at: i)
+        syncFloats(of: tab)
+        if hadKeyboard, tab === selectedTab, let split = tab.focusedPane { window?.makeFirstResponder(split) }
+        if undoable, !pane.session.hasExited, CloseUndo.shared.enabled {
+            CloseUndo.shared.closed("Close Pane", restore: { [weak self, weak tab] in
+                guard let self, let tab, self.tabs.contains(where: { $0 === tab }), !pane.session.hasExited else { return nil }
+                if tab !== self.selectedTab { self.select(tab) }
+                tab.parked.append(entry)
+                self.syncFloats(of: tab)
+                self.window?.makeFirstResponder(pane)
+                self.updateSidebar()
+                return { [weak self] in self?.removeFloating(pane) }
+            }, expire: { pane.session.terminate() })
+        } else {
             pane.session.terminate()
-            // Its end (sessionExited) takes it out of the tab.
-            self?.updateSidebar()
         }
+        Notifier.shared.clear(pane: pane.paneID)
+        updateSidebar()
     }
 
     /// Make a tab's floating views match its parked panes: one for each
@@ -99,8 +122,8 @@ extension TerminalWindowController {
             pane.isFloating = true
             let float = FloatingTerminalView(pane: pane, fraction: entry.floating ?? FloatingTerminalView.defaultFraction)
             float.title = { [weak self, weak pane] in
-                guard let self, let pane else { return "" }
-                return self.title(ofPane: pane)
+                guard let self, let pane else { return ("", "") }
+                return self.compactLabel(of: pane)
             }
             float.onMinimize = { [weak self, weak pane] in pane.map { self?.minimizeFloating($0) } }
             float.onDock = { [weak self, weak pane] in pane.map { self?.dockFloating($0) } }
@@ -118,6 +141,17 @@ extension TerminalWindowController {
             container.addFloat(float)
         }
         container.floats.forEach { $0.refreshTitle() }
+    }
+
+    /// A pane named in a small space (a floating pane's bar, the composer's
+    /// header): as its header names it, the folder by its own name alone.
+    func compactLabel(of pane: TerminalView) -> (name: String, detail: String) {
+        let (name, detail) = label(of: pane)
+        // At a prompt the folder is the name.
+        if detail.isEmpty, name.contains("/") { return ((name as NSString).lastPathComponent, "") }
+        guard detail.contains("/") else { return (name, detail) }
+        let folder = (detail as NSString).lastPathComponent
+        return (name, folder.isEmpty ? detail : folder)
     }
 
     /// Every tab's floating views as its parked panes say (the sidebar's update).

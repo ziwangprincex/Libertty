@@ -9,6 +9,8 @@ key:enter
 wait:1.0
 key:cmd+shift+e
 expect-composer:open
+# Its header names the pane as the pane's header does: the agent, and its folder by its own name.
+expect-composer:title~Claude Code  libertty-ui-probe
 type:hello
 key:cmd+enter
 wait:2.0
@@ -50,6 +52,19 @@ expect-queue:paused
 expect-queue:1
 expect-queue:tag=paused
 expect-not:GOT[one]
+# Removed by hand, a prompt is yours still: Edit ▸ Undo puts it back where it
+# was, Redo takes it out again.
+queue-prompt:second
+queue-prompt:third
+expect-queue:order=one\ntwo|second|third
+click:Remove from Queue
+expect-queue:order=second|third
+expect-undo:Remove from Queue
+undo:go
+expect-queue:order=one\ntwo|second|third
+redo:go
+expect-queue:order=second|third
+click:Remove from Queue
 click:Remove from Queue
 expect-queue:0
 expect-queue:untagged

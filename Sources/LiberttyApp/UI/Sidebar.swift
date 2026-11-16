@@ -1323,7 +1323,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         // Rex shows no key hints on its rows (the menu and ⌘1–9 still work).
         shortcut.alphaValue = 0
         subtitle.font = Typeface.secondary
-        subtitle.textColor = .tertiaryLabelColor
+        subtitle.textColor = Ink.secondary
         subtitle.lineBreakMode = .byTruncatingTail
         subtitle.maximumNumberOfLines = 1
         subtitle.usesSingleLineMode = true
@@ -1334,7 +1334,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         paneCount.image = NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: "Panes")
         paneCount.imagePosition = .imageLeading
         paneCount.symbolConfiguration = .init(pointSize: 9, weight: .regular)
-        paneCount.contentTintColor = .tertiaryLabelColor
+        paneCount.contentTintColor = Ink.secondary
         paneCount.toolTip = L10n.t("List this tab's panes")
         paneCount.target = self
         paneCount.action = #selector(listPanes(_:))
@@ -1438,7 +1438,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         ])
         if !shown.detail.isEmpty {
             text.append(NSAttributedString(string: "  " + shown.detail, attributes: [
-                .font: Typeface.secondary, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: shown.paragraph,
+                .font: Typeface.secondary, .foregroundColor: Ink.secondary, .paragraphStyle: shown.paragraph,
             ]))
         }
         title.attributedStringValue = text
@@ -1702,7 +1702,7 @@ private final class GroupHeaderCell: NSTableCellView {
         super.init(frame: .zero)
         identifier = Self.identifier
         chevron.isBordered = false
-        chevron.contentTintColor = .tertiaryLabelColor
+        chevron.contentTintColor = Ink.control
         chevron.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
         chevron.target = self
         chevron.action = #selector(toggle(_:))
@@ -1711,12 +1711,12 @@ private final class GroupHeaderCell: NSTableCellView {
         name.lineBreakMode = .byTruncatingMiddle
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         count.font = Typeface.hint
-        count.textColor = .tertiaryLabelColor
+        count.textColor = Ink.secondary
         count.setContentHuggingPriority(.required, for: .horizontal)
         count.setContentCompressionResistancePriority(.required, for: .horizontal)
         add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
         add.isBordered = false
-        add.contentTintColor = .tertiaryLabelColor
+        add.contentTintColor = Ink.control
         add.symbolConfiguration = .init(pointSize: 11, weight: .regular)
         add.target = self
         add.action = #selector(addTab(_:))
@@ -1764,10 +1764,11 @@ private final class GroupHeaderCell: NSTableCellView {
         let fold = Self.say(folded ? "Expand %@" : "Collapse %@", group.title)
         chevron.image = NSImage(systemSymbolName: folded ? "chevron.right" : "chevron.down", accessibilityDescription: fold)
         chevron.toolTip = fold
-        chevron.setAccessibilityLabel(fold)
+        chevron.setAccessibleLabel(fold)
         let new = Self.say("New Tab in %@", group.title)
         add.toolTip = new
-        add.setAccessibilityLabel(new)
+        // (On the cell too: VoiceOver reads a button's cell, which would say "plus".)
+        add.setAccessibleLabel(new)
         add.isHidden = !canAdd
         var said = [Self.say(byHost ? "Host %@" : "Project %@", group.title), Self.count(group.tabs.count)]
         if !group.elsewhere.isEmpty { said.append("\(group.elsewhere.count) " + L10n.t("not open here")) }
@@ -1791,6 +1792,7 @@ private final class ElsewhereCell: NSTableCellView {
         icon.image = NSImage(systemSymbolName: "rectangle.dashed", accessibilityDescription: nil)
         icon.contentTintColor = .tertiaryLabelColor
         icon.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        icon.hideFromAccessibility()
         for field in [title, subtitle] {
             field.lineBreakMode = .byTruncatingTail
             field.maximumNumberOfLines = 1
@@ -1798,7 +1800,7 @@ private final class ElsewhereCell: NSTableCellView {
             field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
         subtitle.font = Typeface.secondary
-        subtitle.textColor = .tertiaryLabelColor
+        subtitle.textColor = Ink.secondary
         for v in [icon, title, subtitle] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
@@ -1826,12 +1828,12 @@ private final class ElsewhereCell: NSTableCellView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let text = NSMutableAttributedString(string: session.title, attributes: [
-            .font: Typeface.row, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph,
+            .font: Typeface.row, .foregroundColor: Ink.secondary, .paragraphStyle: paragraph,
         ])
         let detail = twoLines ? session.detail : [session.detail, state].filter { !$0.isEmpty }.joined(separator: " · ")
         if !detail.isEmpty {
             text.append(NSAttributedString(string: "  " + detail, attributes: [
-                .font: Typeface.secondary, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph,
+                .font: Typeface.secondary, .foregroundColor: Ink.secondary, .paragraphStyle: paragraph,
             ]))
         }
         title.attributedStringValue = text

@@ -59,6 +59,33 @@ enum Probe {
     }
 }
 
+/// Text and glyphs that say less than what's beside them, in shades that
+/// still read. macOS's tertiary label is about 3.3:1 on the sidebar and
+/// the composer, under WCAG's 4.5:1 for text and 3:1 for a control.
+enum Ink {
+    /// A row's second line, a count, a key hint: 4.5:1 or more on the
+    /// window's canvas, a selected row and the composer, light or dark.
+    /// Opaque: a label draws a see-through color darker than it says (as
+    /// if twice), so an alpha can't be trusted to land anywhere in particular.
+    static let secondary = NSColor(name: NSColor.Name("LiberttyInkSecondary")) { appearance in
+        let (light, dark) = secondaryGray
+        return NSColor(srgbRed: isDark(appearance) ? dark : light, green: isDark(appearance) ? dark : light,
+                       blue: isDark(appearance) ? dark : light, alpha: 1)
+    }
+    /// A small control's glyph (a group's + and chevron): 3:1 or more.
+    static let control = NSColor(name: NSColor.Name("LiberttyInkControl")) { appearance in
+        isDark(appearance) ? NSColor(white: 1, alpha: controlAlpha.dark) : NSColor(white: 0, alpha: controlAlpha.light)
+    }
+
+    static let secondaryGray: (light: CGFloat, dark: CGFloat) = (0x60 / 255.0, 0xa0 / 255.0)
+    static let controlAlpha: (light: CGFloat, dark: CGFloat) = (0.5, 0.48)
+
+    static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua])
+            .map { $0 == .darkAqua || $0 == .accessibilityHighContrastDarkAqua } ?? false
+    }
+}
+
 enum Radius {
     static let panel: CGFloat = 16
     static let card: CGFloat = 12

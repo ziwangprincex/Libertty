@@ -23,9 +23,25 @@ action:toggle_floating_panes
 wait:0.4
 expect-floating:1 keyboard
 roundtrip:go
-# ⌘W in it closes it, and only it.
+# Its bar names it as its header does: the folder by its own name.
+expect-floating-title:libertty-ui-probe
+# ⌘W in it closes it, and only it: the keyboard back in the split, and
+# Edit ▸ Undo brings it back, its shell still running, as a split's pane.
 key:cmd+w
 wait:1.0
 expect-floating:0
 expect-panes:1
 expect:SPLIT-43
+expect-focus:1
+expect-undo:Close Pane
+undo:go
+wait:0.6
+expect-floating:1 keyboard
+type:echo BACK-$((40+4))
+key:enter
+wait:0.6
+expect:BACK-44
+key:cmd+w
+wait:1.0
+expect-floating:0
+expect-focus:1

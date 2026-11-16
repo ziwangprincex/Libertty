@@ -357,6 +357,10 @@ extension TerminalWindowController {
         }
         // A parked program ended: nothing to bring back.
         if let tab = everyTab.first(where: { $0.parked.contains { $0.pane === pane } }) {
+            // A floating pane with the keyboard: it goes back to the split.
+            if window?.firstResponder === pane, tab === selectedTab, let split = tab.focusedPane {
+                window?.makeFirstResponder(split)
+            }
             tab.parked.removeAll { $0.pane === pane }
             pane.isParked = false
             PictureInPicture.paneClosed(pane)

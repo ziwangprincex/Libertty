@@ -18,7 +18,8 @@ final class FloatingTerminalView: NSView {
     var onChange: ((CGRect) -> Void)?
     /// A click in it: in front of the others.
     var onActivate: (() -> Void)?
-    var title: () -> String = { "" }
+    /// What runs in it and where, as its pane's header would say it.
+    var title: () -> (name: String, detail: String) = { ("", "") }
 
     static let barHeight: CGFloat = 26
     static let minimum = NSSize(width: 220, height: 120)
@@ -52,13 +53,18 @@ final class FloatingTerminalView: NSView {
         bar.wantsLayer = true
         titleLabel.font = Typeface.ui(11.5, .medium)
         titleLabel.textColor = .secondaryLabelColor
-        titleLabel.lineBreakMode = .byTruncatingTail
+        // Narrow, the middle goes: the program at the start and the folder's
+        // own name at the end stay.
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let minimize = Self.button("minus", L10n.t("Minimize (it keeps running)"), self, #selector(minimize(_:)))
         let dock = Self.button("rectangle.split.2x1", L10n.t("Put in the Split"), self, #selector(dock(_:)))
         let close = Self.button("xmark", L10n.t("Close"), self, #selector(close(_:)))
         let stack = NSStackView(views: [close, minimize, titleLabel, dock])
-        stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
+        // Each button a 22-point target, their centers 26 apart: Minimize
+        // isn't a near miss from Close.
+        stack.spacing = 4
+        stack.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 2, right: 4)
         stack.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -84,8 +90,15 @@ final class FloatingTerminalView: NSView {
         b.symbolConfiguration = .init(pointSize: 10.5, weight: .semibold)
         b.contentTintColor = .secondaryLabelColor
         b.toolTip = tip
+        b.setAccessibleLabel(tip)
+        b.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            b.widthAnchor.constraint(equalToConstant: Self.buttonSize), b.heightAnchor.constraint(equalToConstant: Self.buttonSize),
+        ])
         return b
     }
+
+    static let buttonSize: CGFloat = 22
 
     @objc private func minimize(_ sender: Any?) { onMinimize?() }
     @objc private func dock(_ sender: Any?) { onDock?() }
@@ -107,13 +120,26 @@ final class FloatingTerminalView: NSView {
     private func layoutInside() {
         bar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Self.barHeight)
         pane.frame = NSRect(x: 0, y: Self.barHeight, width: bounds.width, height: max(0, bounds.height - Self.barHeight))
-        titleLabel.stringValue = title()
+        refreshTitle()
     }
 
     func refreshTitle() {
-        titleLabel.stringValue = title()
-        setAccessibilityLabel(L10n.t("Floating pane") + (titleLabel.stringValue.isEmpty ? "" : ", " + titleLabel.stringValue))
+        let (name, detail) = title()
+        let text = NSMutableAttributedString(string: name, attributes: [
+            .font: Typeface.ui(11.5, .semibold), .foregroundColor: NSColor.labelColor,
+        ])
+        if !detail.isEmpty {
+            text.append(NSAttributedString(string: "  " + detail, attributes: [
+                .font: Typeface.ui(11.5), .foregroundColor: Ink.secondary,
+            ]))
+        }
+        if titleLabel.attributedStringValue != text { titleLabel.attributedStringValue = text }
+        let said = [name, detail].filter { !$0.isEmpty }.joined(separator: ", ")
+        setAccessibilityLabel(L10n.t("Floating pane") + (said.isEmpty ? "" : ", " + said))
     }
+
+    /// The bar's title as shown (`--ui-probe`).
+    var shownTitle: String { titleLabel.stringValue }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()

@@ -13,6 +13,8 @@ final class ComposerView: NSView {
 
     let textView = ComposerTextView()
     private let scroll = NSScrollView()
+    /// The header as shown (`--ui-probe`).
+    var shownTitle: String { title.stringValue }
     private let title = NSTextField(labelWithString: "")
     private let hint = NSTextField(labelWithString: "")
     private let sendButton = NSButton()
@@ -44,10 +46,11 @@ final class ComposerView: NSView {
 
         title.font = Typeface.ui(11.5, .medium)
         title.textColor = .secondaryLabelColor
-        title.lineBreakMode = .byTruncatingTail
+        // Narrow, the middle goes: "Composer — Claude Code" and the folder's own name stay.
+        title.lineBreakMode = .byTruncatingMiddle
         addSubview(title)
         hint.font = Typeface.ui(11)
-        hint.textColor = .tertiaryLabelColor
+        hint.textColor = Ink.secondary
         hint.lineBreakMode = .byTruncatingTail
         addSubview(hint)
 
@@ -145,7 +148,10 @@ final class ComposerView: NSView {
         hint.stringValue = keys.0 + " " + L10n.t("Send") + "  ·  " + keys.1 + " " + L10n.t("Queue") + "  ·  ⌥⌘↩ "
             + L10n.t("Insert") + "  ·  esc " + L10n.t("Close")
         if let pane {
-            let name = TerminalWindowController.title(ofPane: pane)
+            // The pane as its header names it: two agents in one folder are told apart.
+            let label: (name: String, detail: String) = (pane.window?.windowController as? TerminalWindowController)?
+                .compactLabel(of: pane) ?? (TerminalWindowController.title(ofPane: pane), "")
+            let name = [label.name, label.detail].filter { !$0.isEmpty }.joined(separator: "  ")
             title.stringValue = L10n.t("Composer") + " — " + name
         }
         needsLayout = true
@@ -463,7 +469,7 @@ private final class QueueRow: NSView {
         }
         button("chevron.up", "Move Up", index > 0) { composer?.pane.map { s in PromptQueues.shared.update(s.session) { $0.move(id, by: -1) } } }
         button("chevron.down", "Move Down", index < count - 1) { composer?.pane.map { s in PromptQueues.shared.update(s.session) { $0.move(id, by: 1) } } }
-        button("xmark", "Remove from Queue", true) { composer?.pane.map { s in PromptQueues.shared.update(s.session) { $0.remove(id) } } }
+        button("xmark", "Remove from Queue", true) { composer?.pane.map { s in PromptQueues.shared.removeUndoably(id, from: s.session) } }
         addSubview(label)
         buttons.forEach(addSubview)
         self.label = label

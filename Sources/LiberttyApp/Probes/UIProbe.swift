@@ -931,6 +931,10 @@ enum UIProbe {
                             let want = Action.unescape(String(what.dropFirst(5))) ?? ""
                             seen = open?.textView.string ?? ComposerController.draft(of: pane)
                             ok = seen == want
+                        } else if what.hasPrefix("title~") {
+                            // Its header contains this.
+                            seen = open?.shownTitle ?? "closed"
+                            ok = seen.contains(what.dropFirst(6))
                         } else {
                             seen = open == nil ? "closed" : open?.window_ != nil ? "popped" : "open"
                             ok = what == "open" ? open != nil : what == seen
@@ -951,11 +955,15 @@ enum UIProbe {
                         case "running": ok = !queue.paused
                         case "untagged": ok = pane.queueTagShown == nil
                         case let tag where tag.hasPrefix("tag="): ok = pane.queueTagShown?.contains(tag.dropFirst(4)) == true
+                        // The prompts in their order: `order=two|three`.
+                        case let order where order.hasPrefix("order="):
+                            ok = queue.items.map(\.text).joined(separator: "|") == (Action.unescape(String(order.dropFirst(6))) ?? "")
                         default: ok = queue.items.count == Int(what)
                         }
                         if ok { print("ok    ui-probe queue \(what)") } else {
                             let paused = queue.paused ? ", paused" : ""
-                            print("FAIL  ui-probe queue: \(queue.items.count) queued\(paused), tag \(pane.queueTagShown ?? "none"); not \(what)")
+                            let order = queue.items.map(\.text).joined(separator: "|")
+                            print("FAIL  ui-probe queue: \(queue.items.count) queued (\(order))\(paused), tag \(pane.queueTagShown ?? "none"); not \(what)")
                             failures += 1
                         }
                     case .conversation(let spec):
@@ -1327,6 +1335,25 @@ enum UIProbe {
                             print("ok    ui-probe \(yes ? "sized by another window" : "sized by this pane")")
                         } else {
                             print("FAIL  ui-probe sized tag: \(shown ?? "none"), program \(String(describing: controller.focusedTerminal.session.programSize))")
+                            failures += 1
+                        }
+                    case .expectUnlabeledSidebar(let want):
+                        // The sidebar's own controls VoiceOver would read by role or icon alone.
+                        let inSidebar = Self.unlabeledControls().filter(\.inSidebar)
+                        if inSidebar.count == want {
+                            print("ok    ui-probe unlabeled in the sidebar: \(want)")
+                        } else {
+                            print("FAIL  ui-probe unlabeled in the sidebar: \(inSidebar.count), not \(want)")
+                            for u in inSidebar { print("      \(u.role): \(u.description)") }
+                            failures += 1
+                        }
+                    case .expectFloatingTitle(let want):
+                        // What the first shown floating pane's bar says (contains).
+                        let titles = (controller.selectedTab.container?.floats ?? []).map(\.shownTitle)
+                        if titles.contains(where: { $0.contains(want) }) {
+                            print("ok    ui-probe floating title \(want)")
+                        } else {
+                            print("FAIL  ui-probe floating title: \(titles), not \(want)")
                             failures += 1
                         }
                     case .expectFloating(let want):
@@ -1768,7 +1795,7 @@ enum UIProbe {
         /// and a row of its completion list ("none": not open).
         case expectGhost(String), expectCompletions(String)
         /// Controls in the app's windows on screen that VoiceOver reads by their role alone (the sidebar's apart).
-        case expectUnlabeled(Int, String)
+        case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String)
         /// Something VoiceOver was told (AccessibilityNews) since the last of these said it ("-": nothing).
         case expectAnnounced(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
@@ -1923,6 +1950,8 @@ enum UIProbe {
             case "caret-ask": steps.append(.caretAsk)
             case "header-pointer": steps.append(.headerPointer(arg == "on"))
             case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
+            case "expect-unlabeled-sidebar": steps.append(.expectUnlabeledSidebar(Int(arg) ?? -1))
+            case "expect-floating-title": steps.append(.expectFloatingTitle(arg))
             case "expect-unlabeled":
                 // `expect-unlabeled:0 palette`: how many, then what's on screen (for the output).
                 let words = arg.split(separator: " ", maxSplits: 1).map(String.init)

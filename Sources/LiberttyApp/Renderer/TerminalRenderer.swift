@@ -957,6 +957,11 @@ final class TerminalRenderer {
         }
     }
 
+    /// How much of the text's color a suggestion has: 3.5:1 or more on the
+    /// default themes' backgrounds (it's read before it's taken), and still
+    /// well short of what's typed (some 15:1).
+    static let ghostAlpha: UInt8 = 140
+
     /// The suggestion's glyphs, dimmed, from the cursor's cell on as far as
     /// it has room. Under a block cursor its first character takes the
     /// cursor's text color, as the grid's would. Not while composing.
@@ -966,7 +971,7 @@ final class TerminalRenderer {
         let cw = Float(fonts.cellWidth), ch = Float(fonts.cellHeight)
         let top = origin.y + Float(ghost.row) * ch
         var column = 0
-        let dim = colors.foreground.packed(alpha: 110)
+        let dim = colors.foreground.packed(alpha: Self.ghostAlpha)
         for character in ghost.text {
             let span = character.unicodeScalars.first.map(Self.isWide) == true ? 2 : 1
             guard column + span <= ghost.room else { break }

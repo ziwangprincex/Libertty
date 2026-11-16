@@ -60,6 +60,12 @@ struct PromptQueue: Equatable {
 
     mutating func remove(_ id: UUID) { items.removeAll { $0.id == id } }
 
+    /// Back at `index` (or the end): one removed, put back.
+    mutating func insert(_ item: Item, at index: Int) {
+        guard !items.contains(where: { $0.id == item.id }) else { return }
+        items.insert(item, at: max(0, min(items.count, index)))
+    }
+
     mutating func move(_ id: UUID, by offset: Int) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         let j = max(0, min(items.count - 1, i + offset))
@@ -190,6 +196,30 @@ final class PromptQueues {
 
     func enqueue(_ text: String, for session: TerminalSession) {
         update(session) { $0.append(text) }
+    }
+
+    /// A queued prompt out of its queue, by hand (the composer's ×): its
+    /// text is the user's, so Edit ▸ Undo (⌘Z) puts it back where it was,
+    /// and Redo takes it out again.
+    @MainActor
+    func removeUndoably(_ id: UUID, from session: TerminalSession) {
+        let items = queue(of: session).items
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        let item = items[index]
+        update(session) { $0.remove(id) }
+        let manager = CloseUndo.shared.manager
+        let name = L10n.t("Remove from Queue")
+        manager.registerUndo(withTarget: self) { [weak session] queues in
+            MainActor.assumeIsolated {
+                guard let session, !session.hasExited else { return }
+                queues.update(session) { $0.insert(item, at: index) }
+                manager.registerUndo(withTarget: queues) { [weak session] queues in
+                    MainActor.assumeIsolated { session.map { queues.removeUndoably(id, from: $0) } }
+                }
+                manager.setActionName(name)
+            }
+        }
+        manager.setActionName(name)
     }
 
     private func startIfNeeded() {
