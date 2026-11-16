@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.2
+
+> liberttyd no longer takes every terminal with it: the crash agents in two sessions set off about once an hour is fixed, and should liberttyd still go, a guardian keeps every program running while a new liberttyd carries on, the windows' screens as they were.
+
+- **The crash is fixed.** With coding agents in two sessions or more, liberttyd's watch of their screens could trap on a clock read in the wrong order: one session's time, read just before another's look was noted, came out earlier than it, and the unsigned difference ended the process — about once an hour, every session with it, every window closing. The time is read under the lock now.
+- **liberttyd going away no longer ends your programs.** A second liberttyd (`liberttyd --guardian`, in Activity Monitor too) holds each session's pty, so when liberttyd crashes, is killed (`kill -9`) or is let go by the system, the shells and agents never notice. The guardian starts a new liberttyd and hands it every session as an update does; the windows reconnect within a second or so. The screens went with the crash, so each window keeps its own and gives it back: nothing is lost on screen, and `+capture` and other windows have it again. Until then a program's output waits in its pty (5 s at most with no window).
+- It stands aside when liberttyd goes on purpose: `+daemon stop`, an update or `+daemon restart`, liberttyd leaving once idle, and `kill` (SIGTERM) end or hand over the sessions as before. Three times in a minute and it gives up: something brings liberttyd down again and again, and the sessions end with it.
+- If macOS keeps asking for Screen Recording although Libertty is on in its list: that grant is from before 0.7.0 and names that build's ad-hoc signature, which no later build matches (Libertty is signed with its own certificate since). `tccutil reset ScreenCapture dev.libertty.terminal`, then grant it once more; it carries over to every update from then on.
+- Fixed: a session starting while another was handed to a newer liberttyd could inherit that one's pty (the copy handed over wasn't close-on-exec).
+- Inside: liberttyd's protocol gains `restore` (a window's screen for a session that lost liberttyd's), `keep`, `update`, `forget` and `standDown` (liberttyd to its guardian), and `recovered` in `attached`; a host's older liberttyd works on without them. `Libertty --crash-probe` (a window across a SIGKILL of liberttyd) and `tests/daemon-crash-test.sh` (a crash, a crash loop, SIGTERM) in the suite; `AgentScreenTests.userRulesFromManyQueues` reproduces the trap.
+
 ## 0.7.1
 
 > A look over 0.7.0's new screens: removing a queued prompt and closing a floating pane can be undone, the sidebar's quieter text and the autocomplete suggestion read in light mode, and a background tab's mark shows only what its icon doesn't already say.
