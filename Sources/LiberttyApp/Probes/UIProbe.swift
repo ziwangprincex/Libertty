@@ -1030,6 +1030,7 @@ enum UIProbe {
                         let all = Self.unlabeledControls()
                         let outside = all.filter { !$0.inSidebar }
                         print("info  ui-probe sidebar\(what): \(all.count - outside.count) unlabeled")
+                        for u in all where u.inSidebar { print("      \(u.role): \(u.description)") }
                         if outside.count == want {
                             print("ok    ui-probe unlabeled controls\(what): \(want)")
                         } else {
@@ -2286,11 +2287,41 @@ enum UIProbe {
         (view as? TerminalView).map { [$0] } ?? view.subviews.flatMap(terminals(in:))
     }
 
+    /// The view as the window server would show it, drawn here: its layer
+    /// tree rendered, each terminal's frame put in its own layer for the
+    /// render (Metal's drawables don't render), so what's above a terminal
+    /// (a floating pane's card, the composer, a list) stays above it.
+    private static func drawnImage(of view: NSView, scale: CGFloat) -> NSBitmapImageRep? {
+        guard let root = view.layer, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let width = Int(view.bounds.width * scale), height = Int(view.bounds.height * scale)
+        guard width > 0, height > 0,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.scaleBy(x: scale, y: scale)
+        var restore: [(layer: CALayer, contents: Any?, scale: CGFloat, gravity: CALayerContentsGravity)] = []
+        for pane in terminals(in: view) where !pane.isHiddenOrHasHiddenAncestor {
+            guard let image = pane.thumbnail(), let layer = pane.layer, pane.bounds.width > 0 else { continue }
+            restore.append((layer, layer.contents, layer.contentsScale, layer.contentsGravity))
+            layer.contents = image
+            layer.contentsScale = CGFloat(image.width) / pane.bounds.width
+            layer.contentsGravity = .resize  // (the image is the bounds' size)
+        }
+        root.render(in: context)
+        for r in restore {
+            r.layer.contents = r.contents
+            r.layer.contentsScale = r.scale
+            r.layer.contentsGravity = r.gravity
+        }
+        guard let image = context.makeImage() else { return nil }
+        let rep = NSBitmapImageRep(cgImage: image)
+        rep.size = view.bounds.size
+        return rep
+    }
+
     /// The window's pixels, as winshot takes them (one window, no others).
     /// Off every screen (a probe's) or while the display sleeps, the window
-    /// server has no image of it; then the window's views draw themselves
-    /// into a bitmap instead, each terminal's own frame over it (above its
-    /// overlays: a find bar, a dimmed pane show as if absent). Says which it was.
+    /// server has no image of it; then it's drawn here (`drawnImage`). Says
+    /// which it was.
     private static func capture(_ window: NSWindow, to path: String) {
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
                                                  withIntermediateDirectories: true)
@@ -2305,33 +2336,9 @@ enum UIProbe {
             return
         }
         guard let view = window.contentView?.superview ?? window.contentView,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+              let rep = drawnImage(of: view, scale: window.backingScaleFactor) else {
             print("ui-probe: couldn't capture \(path)")
             return
-        }
-        view.cacheDisplay(in: view.bounds, to: rep)
-        // Terminals draw with Metal, which drawing the views leaves out: each
-        // pane's own frame over its place.
-        if let context = NSGraphicsContext(bitmapImageRep: rep) {
-            // (The context is in points, bottom-left; the images in pixels.)
-            let scale = CGFloat(rep.pixelsWide) / view.bounds.width
-            for pane in terminals(in: view) where !pane.isHiddenOrHasHiddenAncestor {
-                guard let image = pane.thumbnail() else { continue }
-                let rect = pane.convert(pane.bounds, to: view)
-                let flipped = view.isFlipped ? NSRect(x: rect.minX, y: view.bounds.height - rect.maxY,
-                                                       width: rect.width, height: rect.height) : rect
-                context.cgContext.draw(image, in: CGRect(x: flipped.minX, y: flipped.maxY - CGFloat(image.height) / scale,
-                                                         width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
-                // What the pane shows over its frame (its tags, hint labels): drawn again on top.
-                for overlay in pane.subviews where !overlay.isHidden && overlay.alphaValue > 0 && !(overlay is NSScroller) {
-                    guard let piece = overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds) else { continue }
-                    overlay.cacheDisplay(in: overlay.bounds, to: piece)
-                    guard let cg = piece.cgImage else { continue }
-                    let r = overlay.convert(overlay.bounds, to: view)
-                    let at = view.isFlipped ? NSRect(x: r.minX, y: view.bounds.height - r.maxY, width: r.width, height: r.height) : r
-                    context.cgContext.draw(cg, in: at)
-                }
-            }
         }
         if let data = rep.representation(using: .png, properties: [:]), (try? data.write(to: URL(fileURLWithPath: path))) != nil {
             print("shot \(path) (drawn: off every screen, or the display asleep)")

@@ -597,6 +597,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     /// What the pane shows right now, as an image (tab overview).
     func thumbnail() -> CGImage? {
+        // What a frame sets before it draws (an off-screen window draws none).
+        if isInMode { modesBeforeFrame() }
+        renderer.ghost = isInMode ? nil : autocompleteGhost()
         let scale = metalLayer.contentsScale
         // The next on-screen frame redraws everything (the snapshot consumed the dirty state).
         defer { setNeedsRender(force: true) }
