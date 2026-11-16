@@ -53,6 +53,8 @@ public final class DaemonServer {
             guard fd >= 0 else { exit(1) }
             exit(libertty_bridge(STDIN_FILENO, STDOUT_FILENO, fd) == 0 ? 0 : 1)
         }
+        // Started by liberttyd to keep its sessions' ptys open should it go (DaemonGuardian).
+        if arguments.contains("--guardian") { DaemonGuardian.main() }
         let path = Wire.socketPath
         Wire.prepareDirectory(for: path)
         let server = DaemonServer(path: path)
@@ -67,6 +69,17 @@ public final class DaemonServer {
                 if tries > 500 { log("takeover: the old liberttyd still holds the lock"); exit(1) }
                 usleep(10_000)
             }
+        } else if arguments.contains("--recover") {
+            // Started by the guardian of a liberttyd that went away: the lock
+            // first (another liberttyd may have been started meanwhile), then
+            // the sessions, from the guardian on stdin.
+            var tries = 0
+            while flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+                tries += 1
+                if tries > 500 { log("recover: another liberttyd serves \(path)"); exit(1) }
+                usleep(10_000)
+            }
+            server.recover()
         } else if flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
             log("another liberttyd serves \(path)")
             exit(0)
@@ -125,6 +138,12 @@ public final class DaemonServer {
     private init(path: String) {
         self.path = path
         build = Self.buildID(ofExecutable: currentExecutablePath() ?? CommandLine.arguments[0])
+        GuardianLink.shared.sessions = { [weak self] in
+            guard let self else { return [] }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            return self.sessions.values.sorted { $0.created < $1.created }
+        }
     }
 
     static func log(_ message: String) {
@@ -157,6 +176,7 @@ public final class DaemonServer {
         Self.log("listening on \(path) (build \(build), \(sessions.count) sessions)")
         scheduleExitIfIdle()
         keepFilesFresh()
+        endOnTerm()
         while true {
             let fd = libertty_sock_accept(listener)
             if fd < 0 {
@@ -207,6 +227,23 @@ public final class DaemonServer {
 
     private var freshness: DispatchSourceTimer?
 
+    /// `kill` asks liberttyd to go, as it always ended it: its sessions with
+    /// it, not saved by the guardian (only a crash, a SIGKILL or the like is).
+    private func endOnTerm() {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+        source.setEventHandler { [self] in
+            GuardianLink.shared.standDown()
+            Self.log("SIGTERM; ending")
+            removeOwnSocket()
+            exit(0)
+        }
+        source.resume()
+        terminated = source
+    }
+
+    private var terminated: DispatchSourceSignal?
+
     /// Nothing to keep and nobody connected: go away after a grace period
     /// (a window about to open shouldn't pay for a cold start).
     private func scheduleExitIfIdle() {
@@ -221,6 +258,7 @@ public final class DaemonServer {
             lock.unlock()
             guard idle else { return }
             Self.log("idle, exiting")
+            GuardianLink.shared.standDown()
             removeOwnSocket()
             exit(0)
         }
@@ -238,13 +276,16 @@ public final class DaemonServer {
         session.onEnd = { [weak self] ended in
             guard let self else { return }
             self.lock.lock()
-            if self.sessions[ended.id] === ended { self.sessions[ended.id] = nil }
+            let ours = self.sessions[ended.id] === ended
+            if ours { self.sessions[ended.id] = nil }
             self.lock.unlock()
+            if ours { GuardianLink.shared.forget(ended.id) }
             self.scheduleExitIfIdle()
         }
         lock.lock()
         sessions[session.id] = session
         lock.unlock()
+        GuardianLink.shared.keep(session)
         DaemonEvents.shared.publish("session-started", session: session.id, ["command": session.command])
     }
 
@@ -440,6 +481,9 @@ public final class DaemonServer {
                 _ = body.withUnsafeBytes { connection.send(.result, header: ["client": pick?.client ?? ""], body: $0) }
             case .takeover:
                 handOver(to: connection)
+            case .restore:
+                // The window's screen, for a session that lost ours in a crash.
+                bound?.restore(frame.payload, from: connection)
             case .shutdown:
                 lock.lock()
                 let all = Array(sessions.values)
@@ -450,6 +494,8 @@ public final class DaemonServer {
                     continue
                 }
                 lock.unlock()
+                // The guardian mustn't save them: ending them is the point.
+                GuardianLink.shared.standDown()
                 all.forEach { $0.terminate() }
                 connection.send(.result, json: ["ok": true])
                 Self.log("shutdown requested; ended \(all.count) sessions")
@@ -502,6 +548,8 @@ public final class DaemonServer {
         exitTimer?.cancel()
         let all = sessions.values.sorted { $0.created < $1.created }
         lock.unlock()
+        // The newer one has a guardian of its own once it has them.
+        GuardianLink.shared.standDown()
         // No new connections; the new liberttyd binds the path when we're done.
         sysShutdown(listener)
         Self.log("handing \(all.count) sessions over")
@@ -532,9 +580,33 @@ public final class DaemonServer {
     /// New side: take every session from the liberttyd currently on the socket.
     private func takeOver() {
         guard let old = Connection.connect(to: path) else { return }
+        let (adopted, oldPID) = takeSessions(from: old)
+        Self.log("took over \(adopted) sessions from liberttyd[\(oldPID)]")
+        // The old one unlinks nothing; wait for it to be gone before binding.
+        for _ in 0..<200 where oldPID > 0 && kill(pid_t(oldPID), 0) == 0 { usleep(10_000) }
+    }
+
+    /// `--recover`: take every session from the guardian that started us (on
+    /// stdin), which held them when the liberttyd before us went away.
+    private func recover() {
+        let fd = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 0)
+        // Nothing of ours may read the guardian's socket as stdin.
+        let null = open("/dev/null", O_RDONLY | O_CLOEXEC)
+        if null >= 0 {
+            dup2(null, STDIN_FILENO)
+            sysClose(null)
+        }
+        guard fd >= 0 else { return }
+        let (adopted, guardian) = takeSessions(from: Connection(fd: fd))
+        Self.log("recovered \(adopted) sessions from guardian liberttyd[\(guardian)]; their screens come back from the windows")
+    }
+
+    /// Ask whoever is on `old` for every session, as a takeover's new side:
+    /// how many were taken, and the pid it said it was.
+    private func takeSessions(from old: Connection) -> (Int, Int) {
         old.setReceiveTimeout(15)
         old.send(.hello, json: ["version": Wire.version])
-        guard let welcome = old.receive(), welcome.kind == .welcome else { return }
+        guard let welcome = old.receive(), welcome.kind == .welcome else { return (0, 0) }
         let oldPID = welcome.json["pid"] as? Int ?? 0
         old.send(.takeover)
         var adopted = 0
@@ -568,9 +640,7 @@ public final class DaemonServer {
                 close(fd)
             }
         }
-        Self.log("took over \(adopted) sessions from liberttyd[\(oldPID)]")
-        // The old one unlinks nothing; wait for it to be gone before binding.
-        for _ in 0..<200 where oldPID > 0 && kill(pid_t(oldPID), 0) == 0 { usleep(10_000) }
+        return (adopted, oldPID)
     }
 }
 
@@ -581,7 +651,8 @@ final class DaemonSession {
     let created: Double
     let command: String
     private let pty: PTY
-    private let terminal: GhosttyTerminal
+    /// Replaced only by a window's `restore` (under `lock`).
+    private var terminal: GhosttyTerminal
     private let queue: DispatchQueue
     /// Guards the terminal and the attached clients. Output is queued for
     /// the windows and parsed under it, so an attach sees a snapshot and
@@ -634,7 +705,7 @@ final class DaemonSession {
         if request.inheritEnvironment == true {
             var base = ProcessInfo.processInfo.environment
             // Ours, not the session's.
-            for key in ["PWD", "OLDPWD", "SHLVL", "_", "LIBERTTY_DAEMON_RESPONSIBLE"] { base[key] = nil }
+            for key in ["PWD", "OLDPWD", "SHLVL", "_", "LIBERTTY_DAEMON_RESPONSIBLE", "LIBERTTY_RECOVERIES"] { base[key] = nil }
             environment = base.merging(request.environment) { $1 }
         }
         let directory = FileManager.default.fileExists(atPath: request.workingDirectory) ? request.workingDirectory
@@ -666,6 +737,8 @@ final class DaemonSession {
             }
             terminal = t
         }
+        // From a guardian, its liberttyd gone: no screen came along.
+        awaitingRestore = header["recovered"] as? Bool ?? false
         pty = try PTY(adopting: fd, pid: pid, queue: queue)
         configure()
     }
@@ -675,27 +748,7 @@ final class DaemonSession {
     }
 
     private func configure() {
-        let me = UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, me)
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY, unsafeBitCast(daemonWritePty, to: UnsafeRawPointer.self))
-        // What `+wait` and `+events` follow.
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SEMANTIC_PROMPT,
-                                 unsafeBitCast(daemonSemanticPrompt, to: UnsafeRawPointer.self))
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TITLE_CHANGED,
-                                 unsafeBitCast(daemonTitleChanged, to: UnsafeRawPointer.self))
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PWD_CHANGED,
-                                 unsafeBitCast(daemonPwdChanged, to: UnsafeRawPointer.self))
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_BELL, unsafeBitCast(daemonBell, to: UnsafeRawPointer.self))
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PROGRAM_STATUS,
-                                 unsafeBitCast(daemonProgramStatus, to: UnsafeRawPointer.self))
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PROGRESS_REPORT,
-                                 unsafeBitCast(daemonProgressReport, to: UnsafeRawPointer.self))
-        TerminalDefaults.apply(to: terminal, scrollback: scrollback)
-        KittyGraphics.enableForDaemon(on: terminal)
-        // Snapshots must work mid-sequence: remember unfinished input.
-        var continuation = 16 << 20
-        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_CONTINUATION_MAX_BYTES, &continuation)
-
+        configureTerminal()
         agentWatch = AgentWatch(
             foreground: { [weak self] in
                 guard let self else { return nil }
@@ -719,7 +772,98 @@ final class DaemonSession {
             defer { self.lock.unlock() }
             body(self.terminal)
         }
-        pty.startReading()
+        if awaitingRestore {
+            // Not for long without a window to give its screen back.
+            queue.asyncAfter(deadline: .now() + Self.restoreWait) { [weak self] in self?.restore(nil, from: nil) }
+        } else {
+            pty.startReading()
+        }
+    }
+
+    /// The callbacks and settings our copy of the terminal needs (a new one too).
+    private func configureTerminal() {
+        let me = UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, me)
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY, unsafeBitCast(daemonWritePty, to: UnsafeRawPointer.self))
+        // What `+wait` and `+events` follow.
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SEMANTIC_PROMPT,
+                                 unsafeBitCast(daemonSemanticPrompt, to: UnsafeRawPointer.self))
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TITLE_CHANGED,
+                                 unsafeBitCast(daemonTitleChanged, to: UnsafeRawPointer.self))
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PWD_CHANGED,
+                                 unsafeBitCast(daemonPwdChanged, to: UnsafeRawPointer.self))
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_BELL, unsafeBitCast(daemonBell, to: UnsafeRawPointer.self))
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PROGRAM_STATUS,
+                                 unsafeBitCast(daemonProgramStatus, to: UnsafeRawPointer.self))
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_PROGRESS_REPORT,
+                                 unsafeBitCast(daemonProgressReport, to: UnsafeRawPointer.self))
+        TerminalDefaults.apply(to: terminal, scrollback: scrollback)
+        KittyGraphics.enableForDaemon(on: terminal)
+        // Snapshots must work mid-sequence: remember unfinished input.
+        var continuation = 16 << 20
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_CONTINUATION_MAX_BYTES, &continuation)
+    }
+
+    // MARK: After a crash (DaemonGuardian)
+
+    /// It came from a guardian, the liberttyd before us gone and its screen
+    /// with it (under `lock`): the program's output waits in the pty until a
+    /// window gives its copy back (`restore`), so the two go on from the same
+    /// screen — `restoreWait` at most, or `attachWait` after a window
+    /// attached (one that has no copy to give).
+    private var awaitingRestore = false
+    private static let restoreWait: TimeInterval = 5
+    private static let attachWait: TimeInterval = 1.5
+
+    /// A window's screen for ours (nil: none came; go on with an empty one).
+    /// Every other window that can take one gets it too: they may have shown
+    /// nothing (one opened since), or less.
+    func restore(_ snapshot: Data?, from connection: Connection?) {
+        lock.lock()
+        guard awaitingRestore else { return lock.unlock() }
+        awaitingRestore = false
+        if let snapshot, let restored = Snapshots.decode(snapshot, trackContinuation: true) {
+            ghostty_terminal_free(terminal)
+            terminal = restored
+            configureTerminal()
+            let cw = UInt32(size.widthPx) / UInt32(max(1, size.cols))
+            let ch = UInt32(size.heightPx) / UInt32(max(1, size.rows))
+            _ = ghostty_terminal_resize(terminal, max(1, size.cols), max(1, size.rows), cw, ch)
+            let screen = catchUpFrames()
+            for c in clients where c.connection !== connection && c.takesSnapshots {
+                for (kind, data) in screen { c.send(kind, data) }
+            }
+            DaemonServer.log("session \(id): a window gave back its screen")
+        }
+        lock.unlock()
+        // On `queue`, in step with a takeover's `release` (then it mustn't read).
+        queue.async { [self] in pty.startReading() }
+    }
+
+    /// What its guardian holds of it: the takeover header (no snapshot) and a
+    /// copy of the pty master, close-on-exec (no shell may inherit it). Nil
+    /// once it ended.
+    func guardianCopy() -> ([String: Any], Int32)? {
+        let fd = fcntl(pty.master, F_DUPFD_CLOEXEC, 0)
+        guard fd >= 0 else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        guard endStatus == nil else {
+            sysClose(fd)
+            return nil
+        }
+        return (handoffHeader(), fd)
+    }
+
+    /// What a new liberttyd needs besides the pty and a snapshot (under `lock`).
+    private func handoffHeader() -> [String: Any] {
+        var header: [String: Any] = [
+            "id": id, "pid": Int(pty.pid), "created": created, "command": command, "scrollback": scrollback,
+            "cols": Int(size.cols), "rows": Int(size.rows), "widthPx": Int(size.widthPx), "heightPx": Int(size.heightPx),
+            "label": name,
+        ]
+        if awaitingRestore { header["recovered"] = true }
+        return header
     }
 
     // MARK: Output (queue)
@@ -983,7 +1127,13 @@ final class DaemonSession {
         header["agentScreen"] = true
         // And tells every window the program's size as it changes (`ptySize`).
         header["sizes"] = true
-        if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
+        if awaitingRestore {
+            // Our screen went in a crash: a window that kept its copy gives it
+            // back; one that has none doesn't keep the program waiting long.
+            header["recovered"] = true
+            outbox.send(.attached, Connection.headed(header, body: UnsafeRawBufferPointer(start: nil, count: 0)))
+            queue.asyncAfter(deadline: .now() + Self.attachWait) { [weak self] in self?.restore(nil, from: nil) }
+        } else if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
         } else {
@@ -1156,6 +1306,8 @@ final class DaemonSession {
         queue.asyncAfter(deadline: .now() + Self.resyncDelay, execute: work)
         lock.unlock()
         pty.resize(newSize)
+        GuardianLink.shared.update(id, ["cols": Int(newSize.cols), "rows": Int(newSize.rows),
+                                        "widthPx": Int(newSize.widthPx), "heightPx": Int(newSize.heightPx)])
     }
 
     /// How long after the last resize the screen is sent again (GoRex's
@@ -1283,6 +1435,7 @@ final class DaemonSession {
         let frame = (try? JSONSerialization.data(withJSONObject: ["label": clean])) ?? Data()
         for c in clients { c.send(.label, frame) }
         lock.unlock()
+        GuardianLink.shared.update(id, ["label": clean])
         DaemonEvents.shared.publish("label", session: id, ["label": clean])
     }
 
@@ -1304,11 +1457,9 @@ final class DaemonSession {
         clients = []
         primary = nil
         let snapshot = Snapshots.encode(terminal) ?? Data()
-        let header: [String: Any] = [
-            "id": id, "pid": Int(pty.pid), "created": created, "command": command, "scrollback": scrollback,
-            "cols": Int(size.cols), "rows": Int(size.rows), "widthPx": Int(size.widthPx), "heightPx": Int(size.heightPx),
-            "label": name,
-        ]
+        // Still waiting for a window's screen: the new one waits instead.
+        let header = handoffHeader()
+        awaitingRestore = false
         return (fd, header, snapshot)
     }
 }

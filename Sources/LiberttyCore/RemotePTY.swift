@@ -26,6 +26,10 @@ public final class RemotePTY: TerminalBackend {
     public var onExit: ((Int32) -> Void)?
     /// After a redial: the session's state as liberttyd has it now (on `queue`).
     public var onReattach: ((Data) -> Void)?
+    /// After a redial to a liberttyd that recovered the session from a crash
+    /// of the one before (DaemonGuardian), its screen lost: this window's
+    /// copy, a snapshot, to give it back (on `queue`). The window keeps its own.
+    public var onRecovered: (() -> Data?)?
     /// Mid-stream: the session's state, sent in place of output this window
     /// fell too far behind to be sent (on `queue`, in order with output).
     public var onCatchUp: ((Data) -> Void)?
@@ -297,10 +301,12 @@ public final class RemotePTY: TerminalBackend {
             guard let c = address.connect() else { continue }
             c.setBufferSizes(1 << 21)
             let snapshot: Data
+            let recovered: Bool
             do {
                 let (pid, data, label, mode, header) = try Self.attach(c, id: id)
                 self.pid = pid
                 snapshot = data
+                recovered = header["recovered"] as? Bool ?? false
                 setLabel(label)
                 if let mode { queue.async { [weak self] in self?.onInputModeChange?(mode) } }
                 took(header, tell: true)
@@ -325,10 +331,16 @@ public final class RemotePTY: TerminalBackend {
             fallback = nil
             stateLock.unlock()
             if settled(c) { return false }
-            // Before reading on: output from the old connection still queued
-            // applies first, and nothing from the new one can land in a
-            // drain that runs before the snapshot (and be thrown away by it).
-            queue.sync { onReattach?(snapshot) }
+            if recovered {
+                // Its screen went with the liberttyd that crashed: ours is
+                // still right (it waited for us), so we keep it and give it back.
+                if let mine = queue.sync(execute: { onRecovered?() }) { _ = c.send(.restore, mine) }
+            } else {
+                // Before reading on: output from the old connection still queued
+                // applies first, and nothing from the new one can land in a
+                // drain that runs before the snapshot (and be thrown away by it).
+                queue.sync { onReattach?(snapshot) }
+            }
             queue.async { [weak self] in self?.onLinkChange?(true) }
             return true
         }

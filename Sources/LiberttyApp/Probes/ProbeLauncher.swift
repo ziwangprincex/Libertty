@@ -52,6 +52,7 @@ enum ProbeLauncher {
         if args.contains("--selection-probe") { selectionProbe() }
         if args.contains("--paste-probe") { pasteProbe() }
         if args.contains("--clear-probe") { clearProbe() }
+        if args.contains("--crash-probe") { crashProbe() }
         if args.contains("--scrollbar-probe") { scrollbarProbe() }
         if args.contains("--column-fit-probe") { columnFitProbe() }
         if args.contains("--git-probe") { gitProbe() }

@@ -338,6 +338,11 @@ final class TerminalSession {
         }
         if let remote = backend as? RemotePTY {
             remote.onReattach = { [weak self] snapshot in self?.replaceTerminal(with: snapshot) }
+            // liberttyd crashed and a new one has the program, not its screen: ours.
+            remote.onRecovered = { [weak self] in
+                guard let self else { return nil }
+                return self.lock.withLock { Snapshots.encode(self.terminal) }
+            }
             // Fell behind and skipped ahead: the session as it is now. The
             // size is liberttyd's already — another window may have set it,
             // and saying ours again would take it back.

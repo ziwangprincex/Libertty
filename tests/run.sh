@@ -718,6 +718,10 @@ expect layout-store 'layout-store: all passed' $LIBERTTY --layout-store-probe
 expect cli-wait 'cli-wait: all passed' zsh $ROOT/tests/cli-wait-test.sh $LIBERTTY
 # +daemon, +clients, completion, exit statuses, remote-control (a config of its own: it reads remote-control).
 expect cli-admin 'cli-admin: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config zsh $ROOT/tests/cli-admin-test.sh $LIBERTTY
+# liberttyd crashing: its guardian gives the sessions to a new one (not if it
+# keeps crashing; a kill still ends them), and a window keeps its screen.
+expect daemon-crash 'daemon-crash: all passed' zsh $ROOT/tests/daemon-crash-test.sh $LIBERTTY
+expect crash-window 'crash-probe: all passed' $LIBERTTY --crash-probe
 # libertty +hosts: the hosts you keep, and check connecting to one (fake-ssh).
 expect hosts 'hosts: all passed' zsh $ROOT/tests/hosts-test.sh $LIBERTTY
 # libertty +terminfo: xterm-ghostty's terminfo on a host you ssh to (a stand-in ssh), and the ssh that keeps it.

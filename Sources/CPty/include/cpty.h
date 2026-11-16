@@ -98,6 +98,10 @@ int libertty_sock_recv_fd(int sock);
 /// when macOS asks the user about its programs' privacy access.
 pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
                               int responsible);
+/// The same with stdin from `in_fd` (liberttyd's guardian: the socket it
+/// talks to liberttyd over).
+pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
+                                    int responsible, int in_fd);
 
 /// A connected pair of Unix stream sockets (close-on-exec, no SIGPIPE).
 int libertty_socketpair(int fds[2]);

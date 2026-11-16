@@ -149,9 +149,10 @@ public final class PTY: TerminalBackend {
         wakeRead = wake[0]
     }
 
-    /// Begin delivering output; set `onOutput` and `onExit` first.
+    /// Begin delivering output; set `onOutput` and `onExit` first. Not once
+    /// released (on `queue`, then, to be sure of it).
     public func startReading() {
-        guard !reading else { return }
+        guard !reading, !released else { return }
         reading = true
         let bytes = ByteQueue()
         let queue = self.queue
@@ -314,7 +315,8 @@ public final class PTY: TerminalBackend {
         closeWake()
         if reading { done.wait() }
         // The child may have exited meanwhile: then the output above was its last.
-        let copy = dup(fd.raw)
+        // Close-on-exec: a shell starting meanwhile mustn't inherit it.
+        let copy = fcntl(fd.raw, F_DUPFD_CLOEXEC, 0)
         return copy >= 0 ? copy : nil
     }
 }

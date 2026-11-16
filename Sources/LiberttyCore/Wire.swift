@@ -62,11 +62,21 @@ public enum Wire {
         case log = 26         // {from?, lines?} → result {ok, path, text, end}: its log from byte `from` on
                               // (at most 1 MB), or its last `lines` lines; `end` is where the text stops
         case restart = 27     // → result {ok, pid}: a liberttyd from its own file takes every session over
+        case restore = 28     // a window's copy of its session (a snapshot), when the liberttyd it attached
+                              // to lost the screen (`recovered` in `attached`): it goes on from there
         case upload = 40      // header {batch, path} | the file's bytes: kept where liberttyd runs → result {ok, path}
+
+        // liberttyd → its guardian (DaemonGuardian), after hello/welcome:
+        case keep = 50        // {id, pid, created, command, scrollback, cols, rows, widthPx, heightPx, label}:
+                              // hold this session's pty; `ack`, then the master by SCM_RIGHTS
+        case update = 51      // {id, cols?, rows?, widthPx?, heightPx?, label?}: what changed since
+        case forget = 52      // {id}: it ended
+        case standDown = 53   // liberttyd exits on purpose (and its sessions with it, or to a newer one)
 
         // Daemon → client
         case welcome = 101    // {version, build, pid, features?}
-        case attached = 102   // u32 header length | header JSON {id, pid, cols, rows, label?, echo?, canonical?} | snapshot
+        case attached = 102   // u32 header length | header JSON {id, pid, cols, rows, label?, echo?, canonical?,
+                              // recovered?} | snapshot (none when recovered: see `restore`)
         case output = 103     // program output
         case exited = 104     // {status}
         case result = 105     // {ok, error?, …}

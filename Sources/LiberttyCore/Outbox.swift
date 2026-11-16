@@ -43,6 +43,8 @@ final class Outbox {
     }
 
     private let catchUp: Bool
+    /// It can be sent a snapshot mid-stream (it attached with `catchUp`).
+    var takesSnapshots: Bool { catchUp }
     private let cond = NSCondition()
     private var frames: [Frame] = []
     /// Budgeted bytes in `frames`.

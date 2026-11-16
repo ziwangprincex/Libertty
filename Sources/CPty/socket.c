@@ -172,15 +172,24 @@ int libertty_sock_recv_fd(int sock) {
     return fd;
 }
 
+pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
+                              int responsible) {
+    return libertty_spawn_detached_stdin(path, argv, envp, log_path, responsible, -1);
+}
+
 #ifdef __linux__
 // No POSIX_SPAWN_CLOEXEC_DEFAULT here: fork, start a session, close what
 // isn't ours to pass on, exec.
-pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
-                              int responsible) {
+pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
+                                    int responsible, int in_fd) {
     (void)responsible;  // a macOS notion
     int out = open(log_path ? log_path : "/dev/null", O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
-    int in = open("/dev/null", O_RDONLY | O_CLOEXEC);
-    if (out < 0 || in < 0) return -1;
+    int in = in_fd >= 0 ? fcntl(in_fd, F_DUPFD_CLOEXEC, 0) : open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (out < 0 || in < 0) {
+        if (out >= 0) close(out);
+        if (in >= 0) close(in);
+        return -1;
+    }
     long max = sysconf(_SC_OPEN_MAX);
     if (max < 0 || max > 65536) max = 65536;
     pid_t pid = fork();
@@ -226,8 +235,8 @@ static void disclaim_responsibility(posix_spawnattr_t *attr) {
     if (disclaim) disclaim(attr, 1);
 }
 
-pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
-                              int responsible) {
+pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
+                                    int responsible, int in_fd) {
     posix_spawnattr_t attr;
     posix_spawn_file_actions_t actions;
     posix_spawnattr_init(&attr);
@@ -242,7 +251,8 @@ pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const 
     sigemptyset(&none);
     posix_spawnattr_setsigdefault(&attr, &all);
     posix_spawnattr_setsigmask(&attr, &none);
-    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    if (in_fd >= 0) posix_spawn_file_actions_adddup2(&actions, in_fd, STDIN_FILENO);
+    else posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
     posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, log_path ? log_path : "/dev/null",
                                      O_WRONLY | O_CREAT | O_APPEND, 0600);
     posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
