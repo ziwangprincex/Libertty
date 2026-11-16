@@ -1724,6 +1724,9 @@ enum UIProbe {
                 pump(0.15)
             }
         }
+        // What waits to be undone ends now, as quitting ends it: a closed pane
+        // kept for Undo would keep its liberttyd (a private one) running on.
+        MainActor.assumeIsolated { CloseUndo.shared.expireAll() }
         controller.close()
         print(failures == 0 ? "ui-probe: all passed" : "ui-probe: \(failures) failed")
         exit(failures == 0 ? 0 : 1)
