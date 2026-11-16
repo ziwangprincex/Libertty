@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.1
+
+> A look over 0.7.0's new screens: removing a queued prompt and closing a floating pane can be undone, the sidebar's quieter text and the autocomplete suggestion read in light mode, and a background tab's mark shows only what its icon doesn't already say.
+
+- **Removing a queued prompt can be undone**: the composer's × keeps it for Edit ▸ Undo, back where it was in the queue; Redo takes it out again.
+- **Closing a floating pane can be undone** (⌘W or its ×), as a split's pane can: its program runs on for `undo-timeout`. The keyboard goes back to the split's pane — also when a floating pane's program ends by itself, where it used to go nowhere. The bar's buttons are bigger targets (22 points, 26 apart): minimize and close were 17 apart.
+- **Quieter text that still reads**: a sidebar row's second line and folder, a group's count, the sessions not open here and the composer's key hints are 4.5:1 or more on their ground, light or dark (were as low as 3.3:1 in light mode); a group's + and fold arrow 3:1 or more (were 1.9:1).
+- **The autocomplete suggestion reads in light mode** (3.7:1, was 2.7:1; 5.0:1 dark), still well short of what's typed.
+- A floating pane's bar and the composer's header name the pane as its header does — the program and the folder's own name, truncated in the middle ("Composer — Claude Code  api") — not the full path cut off at its end.
+- VoiceOver names a group's + and fold arrow ("New Tab in api"; it read "plus"), and no longer reads the icon of a session not open here.
+- **A background tab's mark**: the dot while its program printed is gone (an agent's tab already spins while it works; a dev server's log kept it lit). The ring for a command of 3 s or more, or a bell, finished out of sight stays, only where the tab's icon shows no state of its own, and in a two-line row it sits on the name's line, not between the lines. The top tabs alike.
+- The tab overview's cards show each pane as it is, its suggestion and modes included.
+- Inside: `--ui-probe`'s shots render the window's layers in order (a floating pane's bar or the composer was drawn under the terminal's text), and a probe ends pending undos before it closes; it gains `expect-unlabeled-sidebar`, `expect-floating-title`, `expect-composer:title~`, `expect-queue:order=` and `expect-news`; InkContrastTests and `sidebar-news.txt` in the suite.
+
 ## 0.7.0
 
 > After Rex Beta 1957, Kero 2.1.35, Otty 1.6.5 and Tern 0.8.3: permissions that survive updates, files and screenshots pasted into a host's pane go to the host, liberttyd watching agents' screens with no window open, autocomplete at the prompt, a composer and a prompt queue for agents, floating panes, copy and hint modes, Quick Look, programs that draw native UI in their output, AppleScript, Remote Hosts, a sidebar grouped by project or host, and a faster launch.
