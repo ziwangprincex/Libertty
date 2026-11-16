@@ -465,7 +465,12 @@ final class UserRules: @unchecked Sendable {
     private var failures: [String: String] = [:]
     private var stamp = ""
     private var checked: UInt64 = 0
-    private static let every: UInt64 = 3_000_000_000
+    /// How long between looks, in nanoseconds (a test looks at every call).
+    private let every: UInt64
+
+    init(every: UInt64 = 3_000_000_000) {
+        self.every = every
+    }
 
     func manifests() -> [String: AgentScreen.Manifest] {
         refreshIfDue()
@@ -478,9 +483,12 @@ final class UserRules: @unchecked Sendable {
     }
 
     private func refreshIfDue() {
-        let now = monotonicNanos()
+        // The clock is read under the lock: each session's watch calls this
+        // from its own queue, and a time read before another's `checked`
+        // was set would be earlier than it (an unsigned underflow, a crash).
         let due: Bool = lock.withLock {
-            guard checked == 0 || now - checked >= Self.every else { return false }
+            let now = monotonicNanos()
+            guard checked == 0 || now - checked >= every else { return false }
             checked = now
             return true
         }

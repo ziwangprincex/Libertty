@@ -16,6 +16,17 @@ struct AgentScreenTests {
         return AgentScreen.detect(manifest, input)
     }
 
+    /// Every session's watch reads the rules from its own queue, at once: a
+    /// time read before another's look was noted is earlier than it. The
+    /// unsigned difference trapped, and liberttyd went with every session.
+    /// (Looking at every call, so every call notes its time.)
+    @Test func userRulesFromManyQueues() {
+        let rules = UserRules(every: 1)
+        DispatchQueue.concurrentPerform(iterations: 8) { _ in
+            for _ in 0..<2000 { _ = rules.manifests() }
+        }
+    }
+
     /// Every rule compiles (a regex ICU can't read fails the load), for
     /// every agent Libertty tells by its process name.
     @Test func manifestsLoad() throws {
