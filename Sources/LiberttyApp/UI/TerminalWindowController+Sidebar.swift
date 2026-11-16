@@ -371,8 +371,8 @@ extension TerminalWindowController {
                     for pane in self.allPanes where agentsChanged.contains(ObjectIdentifier(pane.session)) {
                         self.pokeAgentScreen(pane)
                     }
-                    // A background tab started or stopped printing: that's
-                    // news its row shows, whether or not a tile changed.
+                    // A tab's news came or went (a ring cleared by a look):
+                    // its row shows it, whether or not a tile changed.
                     let news = self.tabs.map(self.news(of:))
                     let newsChanged = news != self.shownNews
                     // updateSidebar schedules the next poll; with nothing

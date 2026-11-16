@@ -115,7 +115,7 @@ extension TerminalWindowController {
         }
     }
 
-    // MARK: Tab news (GoRex): printing now, or something happened unseen
+    // MARK: Tab news (GoRex): something happened unseen
 
     private func markAttention(_ pane: TerminalView) {
         guard attention.insert(ObjectIdentifier(pane)).inserted else { return }
@@ -128,14 +128,7 @@ extension TerminalWindowController {
         guard tab !== selectedTab || window?.isVisible != true else { return .none }
         // A parked build finishing counts: it's the reason to look.
         let panes = tab.everyPane
-        if panes.contains(where: { attention.contains(ObjectIdentifier($0)) }) { return .attention }
-        // The output clock, not render requests: a hidden tab never draws,
-        // so after its first frame it stops asking to.
-        let now = CACurrentMediaTime()
-        let printing = panes.contains { pane in
-            programs[ObjectIdentifier(pane.session)] != nil && now - pane.session.outputMark.time < Self.printingFor
-        }
-        return printing ? .printing : .none
+        return panes.contains(where: { attention.contains(ObjectIdentifier($0)) }) ? .attention : .none
     }
 
     func sessionProgramStatusChanged(_ session: TerminalSession) {

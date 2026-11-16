@@ -572,10 +572,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// Each tab's news as the sidebar shows it now.
     var shownNews: [TabNews] = []
 
-    /// How long after a program's last output its tab still shows it
-    /// printing (the pane's dot, too).
-    static let printingFor: CFTimeInterval = 1.5
-
     /// OSC 7501: a program that now needs you (or is done) while you're elsewhere.
     /// Its most urgent record decides; each way of telling you follows its own
     /// setting and its own memory: a notification and the pane's lit edge

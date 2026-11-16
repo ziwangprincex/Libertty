@@ -357,6 +357,7 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         newsView.wantsLayer = true
         news.path = CGPath(ellipseIn: CGRect(x: 1, y: 1, width: 6, height: 6), transform: nil)
         news.lineWidth = 1.2
+        news.fillColor = nil
         newsView.layer?.addSublayer(news)
         newsView.isHidden = true
         for v in [badge, tiles, title, newsView, close] { addSubview(v) }
@@ -426,7 +427,8 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         if tab.parked > 0 { tip.append("\(tab.parked) parked") }
         if let status = tab.status { tip.append(TerminalWindowController.label(for: status)) }
         toolTip = tip.joined(separator: " · ")
-        showNews(tab.news)
+        newsView.isHidden = !tab.showsNews
+        if tab.showsNews { news.strokeColor = Accent.color.cgColor }
         close.isHidden = !(closable && hovering)
         setAccessibilityLabel(Self.spoken(tab))
         setAccessibilityValue(selected)
@@ -434,17 +436,13 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
     }
 
     /// What VoiceOver says of a tab: its name, then what its glyphs and
-    /// marks show ("server, Waiting for you, 3 panes, new output").
+    /// marks show ("server, Waiting for you, 3 panes, needs a look").
     static func spoken(_ tab: SidebarTabInfo) -> String {
         var words = [tab.title]
         if let status = tab.status { words.append(L10n.t(TerminalWindowController.label(for: status))) }
         if let percent = tab.progress?.percent { words.append("\(percent)%") }
         if tab.paneCount > 1 { words.append(L10n.t("%d panes").replacingOccurrences(of: "%d", with: String(tab.paneCount))) }
-        switch tab.news {
-        case .none: break
-        case .printing: words.append(L10n.t("new output"))
-        case .attention: words.append(L10n.t("needs a look"))
-        }
+        if tab.showsNews { words.append(L10n.t("needs a look")) }
         return words.joined(separator: ", ")
     }
 
@@ -480,26 +478,9 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         editor?.frame = NSRect(x: x - 3, y: (h - 22) / 2, width: max(60, bounds.width - x - 4), height: 22)
     }
 
-    private func showNews(_ value: TabNews) {
-        let accent = Accent.color.cgColor
-        switch value {
-        case .none:
-            newsView.isHidden = true
-        case .printing:
-            newsView.isHidden = false
-            news.fillColor = accent
-            news.strokeColor = nil
-        case .attention:
-            newsView.isHidden = false
-            news.fillColor = nil
-            news.strokeColor = accent
-        }
-    }
-
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        if news.fillColor != nil { news.fillColor = Accent.color.cgColor }
-        if news.strokeColor != nil { news.strokeColor = Accent.color.cgColor }
+        if !newsView.isHidden { news.strokeColor = Accent.color.cgColor }
     }
 
     // MARK: Mouse

@@ -1,0 +1,17 @@
+# A background tab's news: a ring beside its name, on the name's line (the
+# row has two), and only where its badge doesn't already say what
+# happened there. Both ring the bell out of sight; the agent's badge shows
+# it working, so its row needs no ring. Looking at a tab clears its ring.
+type:printf '\033]2;RINGER\a'; (sleep 1.5; printf '\a'); sleep 60
+key:enter
+tab:new
+type:printf '\033]2;AGENT\a\033]7501;state=working:app=probe\a'; (sleep 1.5; printf '\a'); sleep 60
+key:enter
+tab:new
+type:printf '\033]2;LOOKER\a'
+key:enter
+wait:3
+expect-news:1:RINGER
+tab:1
+wait:0.5
+expect-news:0

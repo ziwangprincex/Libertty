@@ -63,13 +63,19 @@ enum TabActivity: String, CaseIterable {
     }
 }
 
-/// A background tab's news, shown as a small mark beside its title.
+/// A background tab's news, shown as a small ring beside its title.
 enum TabNews: Equatable {
     case none
-    /// A program in it printed just now.
-    case printing
     /// Something finished or rang the bell there since you last looked.
     case attention
+}
+
+extension SidebarTabInfo {
+    /// The ring shows only what the tab's badge doesn't: a program's own
+    /// status (working, done, waiting) already says what happened there.
+    var showsNews: Bool {
+        news == .attention && StatusBadge.look(status: status, progress: progress, programs: !tiles.isEmpty) == .none
+    }
 }
 
 /// A tab's state at a glance: a progress ring (determinate or spinning),
@@ -519,6 +525,18 @@ final class SidebarViewController: NSViewController {
             guard case .elsewhere(let g, let k) = rows[r], shows(tableRow: r) else { return nil }
             let s = groups[g].elsewhere[k]
             return [s.title, s.detail].filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+    }
+
+    /// The tabs whose row shows a news ring, each with how far the ring's
+    /// middle sits from its name's, up or down (`--ui-probe`).
+    var shownNews: [(title: String, offCenter: CGFloat)] {
+        view.window?.contentView?.layoutSubtreeIfNeeded()
+        return tabs.indices.compactMap { i in
+            guard shows(row: i), let r = tableRow(ofTab: i),
+                  let cell = tabsTable.view(atColumn: 0, row: r, makeIfNecessary: false) as? TabCell,
+                  let off = cell.newsOffCenter else { return nil }
+            return (tabs[i].title, off)
         }
     }
 
@@ -1289,7 +1307,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     private var countCenter: NSLayoutConstraint!
     /// Picks one of the listed panes: (pane id, what to do with it).
     var onPane: ((String, SidebarViewController.PaneChoice) -> Void)?
-    /// Printing (filled) or news waiting (ring): accent, no other color.
+    /// News waiting (a ring, on the name's line): accent, no other color.
     private let news = CAShapeLayer()
     private let newsView = NSView()
     private let shortcut = NSTextField(labelWithString: "")
@@ -1315,6 +1333,8 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         newsView.wantsLayer = true
         news.path = CGPath(ellipseIn: CGRect(x: 1, y: 1, width: 6, height: 6), transform: nil)
         news.lineWidth = 1.2
+        news.fillColor = nil
+        newsView.toolTip = "Something happened here since you last looked"
         newsView.layer?.addSublayer(news)
         newsView.isHidden = true
         well.wantsLayer = true
@@ -1362,7 +1382,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
             paneCount.trailingAnchor.constraint(equalTo: newsView.leadingAnchor, constant: -4),
             newsView.widthAnchor.constraint(equalToConstant: 8), newsView.heightAnchor.constraint(equalToConstant: 8),
-            newsView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            newsView.centerYAnchor.constraint(equalTo: title.centerYAnchor),
             newsView.trailingAnchor.constraint(equalTo: shortcut.leadingAnchor, constant: -6),
             shortcut.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             shortcut.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1480,7 +1500,8 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         countCenter.constant = subtitle.isHidden ? 0 : -8
         // ⌘1–⌘8 select those tabs and ⌘9 the last one, whatever its number.
         shortcut.stringValue = index < 8 ? "⌘\(index + 1)" : index == count - 1 ? "⌘9" : ""
-        showNews(tab.news)
+        newsView.isHidden = !tab.showsNews
+        if tab.showsNews { news.strokeColor = Accent.color.cgColor }
         // The only tab's × would close the window: ⌘W says that better.
         closable = count > 1
         close.isHidden = !(closable && hovering)
@@ -1617,22 +1638,10 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         endEditing(keep: true, refocus: hasKeyboard, later: true)
     }
 
-    private func showNews(_ value: TabNews) {
-        let accent = Accent.color.cgColor
-        switch value {
-        case .none:
-            newsView.isHidden = true
-        case .printing:
-            newsView.isHidden = false
-            news.fillColor = accent
-            news.strokeColor = nil
-            newsView.toolTip = "Printing"
-        case .attention:
-            newsView.isHidden = false
-            news.fillColor = nil
-            news.strokeColor = accent
-            newsView.toolTip = "Something happened here since you last looked"
-        }
+    /// The ring's middle from the name's, when it shows (`--ui-probe`).
+    var newsOffCenter: CGFloat? {
+        layoutSubtreeIfNeeded()
+        return newsView.isHidden ? nil : newsView.frame.midY - title.frame.midY
     }
 
     // The layer's colors are resolved once: follow the accent and the
@@ -1642,10 +1651,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         well.layer?.backgroundColor = Surfaces.current.raised.nsColor.cgColor
         well.layer?.borderWidth = 0.5
         well.layer?.borderColor = Surfaces.current.stroke.nsColor.cgColor
-        if !newsView.isHidden {
-            if news.fillColor != nil { news.fillColor = Accent.color.cgColor }
-            if news.strokeColor != nil { news.strokeColor = Accent.color.cgColor }
-        }
+        if !newsView.isHidden { news.strokeColor = Accent.color.cgColor }
     }
 
     override func mouseEntered(with event: NSEvent) { setHovering(true) }

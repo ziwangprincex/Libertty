@@ -1347,6 +1347,17 @@ enum UIProbe {
                             for u in inSidebar { print("      \(u.role): \(u.description)") }
                             failures += 1
                         }
+                    case .expectNews(let n, let text):
+                        // Rows with a ring, each on its name's line.
+                        let news = controller.sidebar.shownNews
+                        let titles = news.map(\.title)
+                        let level = news.allSatisfy { abs($0.offCenter) < 1 }
+                        if news.count == n, level, text.isEmpty || titles.allSatisfy({ $0.contains(text) }) {
+                            print("ok    ui-probe news rings: \(n)" + (text.isEmpty ? "" : " on \(text)") + ", on their names' line")
+                        } else {
+                            print("FAIL  ui-probe news rings: \(news.map { "\($0.title) \($0.offCenter)" }), not \(n)" + (text.isEmpty ? "" : " on \(text)"))
+                            failures += 1
+                        }
                     case .expectFloatingTitle(let want):
                         // What the first shown floating pane's bar says (contains).
                         let titles = (controller.selectedTab.container?.floats ?? []).map(\.shownTitle)
@@ -1798,7 +1809,7 @@ enum UIProbe {
         /// and a row of its completion list ("none": not open).
         case expectGhost(String), expectCompletions(String)
         /// Controls in the app's windows on screen that VoiceOver reads by their role alone (the sidebar's apart).
-        case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String)
+        case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String), expectNews(Int, String)
         /// Something VoiceOver was told (AccessibilityNews) since the last of these said it ("-": nothing).
         case expectAnnounced(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
@@ -1954,6 +1965,10 @@ enum UIProbe {
             case "header-pointer": steps.append(.headerPointer(arg == "on"))
             case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
             case "expect-unlabeled-sidebar": steps.append(.expectUnlabeledSidebar(Int(arg) ?? -1))
+            case "expect-news":
+                // `expect-news:1:RINGER`: how many rows show a news ring, and whose.
+                let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
+                steps.append(.expectNews(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
             case "expect-floating-title": steps.append(.expectFloatingTitle(arg))
             case "expect-unlabeled":
                 // `expect-unlabeled:0 palette`: how many, then what's on screen (for the output).
