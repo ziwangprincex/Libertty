@@ -152,6 +152,13 @@ extension TerminalWindowController {
         updateSidebar()
     }
 
+    /// liberttyd found other ports under the session (a dev server started
+    /// or stopped): the inspector lists what the focused pane listens on.
+    func sessionPortsChanged(_ session: TerminalSession) {
+        guard session === focusedTerminal.session else { return }
+        updateSidebar()
+    }
+
     /// Another window sized the program, or this one took it back.
     func sessionProgramSizeChanged(_ session: TerminalSession) {
         pane(for: session)?.programSizeChanged()

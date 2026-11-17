@@ -47,7 +47,7 @@ enum CLISpec {
 
     static let states = ["idle", "working", "blocked", "waiting", "done", "error", "failed"]
     static let eventKinds = ["session-started", "session-ended", "command-started", "command-finished", "prompt", "title",
-                             "directory", "label", "input-mode", "bell", "status"]
+                             "directory", "label", "input-mode", "bell", "status", "ports"]
     static let browserOps = ["list", "open", "go", "back", "forward", "reload", "url", "title", "text", "html", "snapshot",
                              "eval", "click", "hover", "check", "uncheck", "type", "press", "select", "scroll", "wait",
                              "cookies", "screenshot"]
@@ -108,6 +108,8 @@ enum CLISpec {
         // Sessions
         Command(name: "+list-sessions", summary: "every session", flags: [Flag("--json")], hostable: true),
         Command(name: "+list-panes", summary: "the running Libertty's panes"),
+        Command(name: "+ports", summary: "the ports a session's programs listen on", flags: [Flag("--json")],
+                arguments: [.session], hostable: true),
         Command(name: "+new-session", summary: "a session without a window",
                 flags: [Flag("--cwd", .directory, "start there"), Flag("--worktree", .text, "in a git worktree on this new branch"),
                         Flag("--base", .text, "the worktree's branch starts here"), Flag("-e", .command, "run a command")],

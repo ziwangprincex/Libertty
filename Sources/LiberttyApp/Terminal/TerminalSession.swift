@@ -14,6 +14,8 @@ protocol TerminalSessionDelegate: AnyObject {
     func sessionProgramStatusChanged(_ session: TerminalSession)
     /// liberttyd says another program is in front (`reportedProgram`).
     func sessionForegroundChanged(_ session: TerminalSession)
+    /// liberttyd says its programs listen on other ports (`listeningPorts`).
+    func sessionPortsChanged(_ session: TerminalSession)
     /// liberttyd says the program has another size (`programSize`).
     func sessionProgramSizeChanged(_ session: TerminalSession)
     func sessionExited(_ session: TerminalSession, status: Int32)
@@ -29,6 +31,7 @@ protocol TerminalSessionDelegate: AnyObject {
 
 extension TerminalSessionDelegate {
     func sessionForegroundChanged(_ session: TerminalSession) {}
+    func sessionPortsChanged(_ session: TerminalSession) {}
     func sessionProgramSizeChanged(_ session: TerminalSession) {}
     func sessionWorkingDirectoryChanged(_ session: TerminalSession) {}
     /// An open search's count or highlights changed after output (`session.searchResult`).
@@ -368,6 +371,14 @@ final class TerminalSession {
                     self.delegate?.sessionProgramSizeChanged(self)
                 }
             }
+            listeningPorts = remote.listeningPorts
+            remote.onPorts = { [weak self] ports in
+                DispatchQueue.main.async {
+                    guard let self, self.listeningPorts != ports else { return }
+                    self.listeningPorts = ports
+                    self.delegate?.sessionPortsChanged(self)
+                }
+            }
             remote.onForeground = { [weak self] program in
                 DispatchQueue.main.async {
                     guard let self, self.reportedProgram != program else { return }
@@ -413,6 +424,12 @@ final class TerminalSession {
 
     /// The shell (or command) process, for the inspector's process list.
     var shellPID: pid_t? { host == nil ? pty?.pid : nil }
+
+    /// What its programs listen on, as liberttyd's scan found it (a host's
+    /// too, which this Mac can't look at itself); nil when no liberttyd
+    /// looks — a session on a pty of our own, or an older liberttyd — and
+    /// the inspector asks the process table itself instead.
+    private(set) var listeningPorts: [SessionPort]?
 
     // MARK: Surfaces (SurfaceStore)
 

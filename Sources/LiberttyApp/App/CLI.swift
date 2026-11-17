@@ -72,6 +72,7 @@ enum CLI {
         case "+render-markdown": status = renderMarkdown(rest)
         case "+list-sessions": status = listSessions(rest)
         case "+list-panes": status = listPanes()
+        case "+ports": status = ports(rest)
         case "+new-session": status = newSession(rest)
         case "+capture": status = capture(rest)
         case "+send": status = send(rest)
@@ -187,6 +188,8 @@ enum CLI {
         Sessions (kept by liberttyd; they outlive the app — see session-persistence):
           libertty +list-sessions [--json]  every session: id, process, size, windows showing it, directory, name
           libertty +list-panes           every pane of the running Libertty: session, text size and font, cell, scale, grid
+          libertty +ports [ID] [--json]     the TCP ports a session's programs listen on (a dev server's),
+                                         with the program's name: liberttyd looks, on a host too
           libertty +new-session [--cwd DIR] [--worktree BRANCH [--base REF]] [-e COMMAND...]
                                          start one without a window (Libertty shows it at its next launch);
                                          --worktree: in a git worktree of its own, on a new branch
@@ -268,7 +271,7 @@ enum CLI {
                                          xterm-ghostty's terminfo on a host you ssh to yourself: then ssh in
                                          Libertty keeps TERM=xterm-ghostty there (ssh-terminfo = true: by itself)
           --host HOST                    with +list-sessions, +new-session, +capture, +send, +send-key,
-                                         +kill-session, +wait, +events, +split, +move-pane, +daemon or +clients:
+                                         +kill-session, +wait, +events, +ports, +split, +move-pane, +daemon or +clients:
                                          that machine's sessions
 
         With remote-control = false (Settings ▸ Integrations), commands may read but not drive Libertty:
@@ -879,6 +882,58 @@ enum CLI {
                   + "\(shown.padding(toLength: 9, withPad: " ", startingAt: 0)) \(dir)" + (s.label.map { "  “\($0)”" } ?? ""))
         }
         return 0
+    }
+
+    /// `+ports [ID] [--json]`: the TCP ports the sessions' programs listen
+    /// on, as liberttyd sees them — a host's too, which this Mac can't look
+    /// at itself. liberttyd scans when asked, so the answer is current.
+    private static func ports(_ args: [String]) -> Int32 {
+        let json = args.contains("--json")
+        guard args.allSatisfy({ $0 == "--json" || !$0.hasPrefix("-") }) else {
+            fail("usage: libertty +ports [ID] [--json]")
+            return 2
+        }
+        let id = args.first { !$0.hasPrefix("-") }
+        switch DaemonClient.request(.listPorts, json: id.map { ["id": $0] } ?? [:], needing: "ports", address: daemon) {
+        case .unanswered:
+            fail(host.map { "can't reach liberttyd on \($0.destination)" } ?? "liberttyd isn't running (no sessions)")
+            return ExitCode.unreachable
+        case .unsupported:
+            fail("this liberttyd doesn't look for ports; restart Libertty to update it")
+            return ExitCode.failure
+        case .answered(let frame):
+            let answered = status(frame)
+            guard answered == ExitCode.ok, let answer = frame.decode(PortsAnswer.self) else {
+                return answered == ExitCode.ok ? ExitCode.failure : answered
+            }
+            if json {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                print(String(decoding: (try? encoder.encode(answer.sessions)) ?? Data(), as: UTF8.self))
+                return 0
+            }
+            let rows = answer.sessions.flatMap { session in session.ports.map { (session.id, $0) } }
+            if rows.isEmpty {
+                print(answer.sessions.contains { $0.partial } ? "nothing listening (some processes wouldn't say)"
+                                                              : "nothing listening")
+                return 0
+            }
+            // Which session, unless the asker named one.
+            let column = { (text: String) in id == nil ? text.padding(toLength: 14, withPad: " ", startingAt: 0) + "  " : "" }
+            print(column("SESSION") + "PORT   ADDRESS          PID     LABEL")
+            for (sessionID, port) in rows {
+                print(column(sessionID) + "\(port.port)".padding(toLength: 7, withPad: " ", startingAt: 0)
+                      + port.address.padding(toLength: 17, withPad: " ", startingAt: 0)
+                      + "\(port.pid)".padding(toLength: 8, withPad: " ", startingAt: 0) + port.label)
+            }
+            if answer.sessions.contains(where: { $0.partial }) { print("(some processes wouldn't say what they listen on)") }
+            return 0
+        }
+    }
+
+    /// What `listPorts` answers.
+    private struct PortsAnswer: Decodable {
+        var sessions: [SessionPorts]
     }
 
     private static func newSession(_ args: [String]) -> Int32 {

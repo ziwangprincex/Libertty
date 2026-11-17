@@ -720,6 +720,8 @@ expect pane-tags 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/tags-config
 expect layout-store 'layout-store: all passed' $LIBERTTY --layout-store-probe
 # +wait --until prompt|idle, +capture --ansi|--html, +events (Tern's wait / capture / events).
 expect cli-wait 'cli-wait: all passed' zsh $ROOT/tests/cli-wait-test.sh $LIBERTTY
+# +ports and the `ports` event: liberttyd finds a dev server's port by itself and names it by its script.
+expect ports 'ports: all passed' zsh $ROOT/tests/ports-test.sh $LIBERTTY
 # +daemon, +clients, completion, exit statuses, remote-control (a config of its own: it reads remote-control).
 expect cli-admin 'cli-admin: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config zsh $ROOT/tests/cli-admin-test.sh $LIBERTTY
 # liberttyd crashing: its guardian gives the sessions to a new one (not if it
