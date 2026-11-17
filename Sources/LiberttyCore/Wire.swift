@@ -64,6 +64,8 @@ public enum Wire {
         case restart = 27     // → result {ok, pid}: a liberttyd from its own file takes every session over
         case restore = 28     // a window's copy of its session (a snapshot), when the liberttyd it attached
                               // to lost the screen (`recovered` in `attached`): it goes on from there
+        case listPorts = 29   // {id?} → result {ok, sessions: [SessionPorts]}: the TCP ports a session's
+                              // programs listen on, scanned now (every session's without id)
         case upload = 40      // header {batch, path} | the file's bytes: kept where liberttyd runs → result {ok, path}
 
         // liberttyd → its guardian (DaemonGuardian), after hello/welcome:
@@ -88,6 +90,8 @@ public enum Wire {
         case inputMode = 110  // {echo, canonical}: how the terminal hands typing to the program now
         case foreground = 111 // {name, arguments, agent}: the program in front of the session now ("" names: the shell)
         case ptySize = 112    // {cols, rows}: the size its program has now, as the last window to resize set it
+        case ports = 113      // SessionPorts: what the session's programs listen on, as liberttyd's scan found
+                              // it (only when it changed, and when a window attaches to a session with some)
     }
 
     public static let maxFrame = 256 << 20

@@ -45,6 +45,25 @@ pid_t libertty_proc_tty_pgid(pid_t pid);
 /// TCP ports the process is listening on. Returns how many were written.
 int libertty_proc_listening_ports(pid_t pid, uint16_t *out, int cap);
 
+/// One listening socket: its port and the address it's bound to.
+struct libertty_listener {
+    uint16_t port;
+    /// "127.0.0.1", "0.0.0.0", "::1" — room for an IPv6 address and its NUL.
+    char address[46];
+};
+
+/// The same with each socket's address (macOS; on Linux they are read
+/// through libertty_proc_socket_inodes). Returns how many were written, or
+/// -1 when the process's descriptors can't be read (another user's): what
+/// it listens on then stays unknown, not empty.
+int libertty_proc_listeners(pid_t pid, struct libertty_listener *out, int cap);
+
+/// The inodes of the process's sockets (Linux; macOS answers -1), the
+/// numbers /proc/net/tcp's rows carry: those rows say which ones listen and
+/// where. Returns how many were written, or -1 when its descriptors can't
+/// be read.
+int libertty_proc_socket_inodes(pid_t pid, uint64_t *out, int cap);
+
 /// One process, for the task manager.
 struct libertty_proc {
     pid_t pid, ppid;

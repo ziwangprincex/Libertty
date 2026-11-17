@@ -5,6 +5,7 @@
 
 #ifdef __APPLE__
 #include <arpa/inet.h>
+#include <errno.h>
 #include <libproc.h>
 #include <string.h>
 #include <sys/proc_info.h>
@@ -106,6 +107,41 @@ int libertty_proc_listening_ports(pid_t pid, uint16_t *out, int cap) {
     return count;
 }
 
+int libertty_proc_listeners(pid_t pid, struct libertty_listener *out, int cap) {
+    errno = 0;
+    int bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, NULL, 0);
+    // Nothing to read from a process that has ended; anything else (another
+    // user's) is a list we don't get to see.
+    if (bytes <= 0) return (errno == 0 || errno == ESRCH) ? 0 : -1;
+    struct proc_fdinfo *fds = malloc((size_t)bytes);
+    if (!fds) return -1;
+    bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fds, bytes);
+    int n = bytes > 0 ? bytes / (int)sizeof(struct proc_fdinfo) : 0, count = 0;
+    for (int i = 0; i < n && count < cap; i++) {
+        if (fds[i].proc_fdtype != PROX_FDTYPE_SOCKET) continue;
+        struct socket_fdinfo si;
+        if (proc_pidfdinfo(pid, fds[i].proc_fd, PROC_PIDFDSOCKETINFO, &si, sizeof si) != (int)sizeof si) continue;
+        if (si.psi.soi_kind != SOCKINFO_TCP || si.psi.soi_proto.pri_tcp.tcpsi_state != TSI_S_LISTEN) continue;
+        struct in_sockinfo *in = &si.psi.soi_proto.pri_tcp.tcpsi_ini;
+        struct libertty_listener *l = &out[count];
+        memset(l, 0, sizeof *l);
+        l->port = ntohs((uint16_t)in->insi_lport);
+        const char *text = (in->insi_vflag & INI_IPV6)
+            ? inet_ntop(AF_INET6, &in->insi_laddr.ina_6, l->address, sizeof l->address)
+            : inet_ntop(AF_INET, &in->insi_laddr.ina_46.i46a_addr4, l->address, sizeof l->address);
+        if (!text) l->address[0] = 0;
+        count++;
+    }
+    free(fds);
+    return count;
+}
+
+int libertty_proc_socket_inodes(pid_t pid, uint64_t *out, int cap) {
+    // libproc answers what a socket is directly (libertty_proc_listeners).
+    (void)pid; (void)out; (void)cap;
+    return -1;
+}
+
 int libertty_proc_snapshot(struct libertty_proc *out, int cap) {
     // A count of pids (not bytes, despite the man page), plus room for new ones.
     int listed = proc_listallpids(NULL, 0);
@@ -192,6 +228,7 @@ pid_t libertty_proc_tty_pgid(pid_t pid) {
 #include <unistd.h>
 
 #include <dirent.h>
+#include <errno.h>
 #include <stdlib.h>
 
 // Every process's parent, from /proc/PID/stat (the field after the name,
@@ -288,8 +325,40 @@ void libertty_proc_cwd(pid_t pid, char *out, int cap) {
 }
 
 int libertty_proc_listening_ports(pid_t pid, uint16_t *out, int cap) {
+    // Only the inspector on a Mac asks this one; liberttyd here reads what
+    // its sessions listen on through libertty_proc_socket_inodes.
     (void)pid; (void)out; (void)cap;
     return 0;
+}
+
+int libertty_proc_listeners(pid_t pid, struct libertty_listener *out, int cap) {
+    // A descriptor says only that it's a socket; /proc/net/tcp's rows say
+    // which of them listen (PortScan reads them).
+    (void)pid; (void)out; (void)cap;
+    return -1;
+}
+
+int libertty_proc_socket_inodes(pid_t pid, uint64_t *out, int cap) {
+    char dir[64];
+    snprintf(dir, sizeof dir, "/proc/%d/fd", (int)pid);
+    DIR *fds = opendir(dir);
+    // A process that has ended has nothing to tell; one we may not look
+    // into (another user's) leaves what it listens on unknown.
+    if (!fds) return errno == ENOENT ? 0 : -1;
+    int count = 0;
+    struct dirent *e;
+    while ((e = readdir(fds)) && count < cap) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+        char path[320], target[128];
+        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        ssize_t n = readlink(path, target, sizeof target - 1);
+        if (n <= 0) continue;
+        target[n] = 0;
+        unsigned long long inode = 0;
+        if (sscanf(target, "socket:[%llu]", &inode) == 1 && inode > 0) out[count++] = (uint64_t)inode;
+    }
+    closedir(fds);
+    return count;
 }
 
 int libertty_proc_snapshot(struct libertty_proc *out, int cap) {

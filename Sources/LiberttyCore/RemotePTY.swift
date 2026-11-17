@@ -58,6 +58,16 @@ public final class RemotePTY: TerminalBackend {
         return agentsWatched
     }
     private var agentsWatched = false
+    /// What the session's programs listen on changed (liberttyd scans), on `queue`.
+    public var onPorts: (([SessionPort]) -> Void)?
+    /// Those ports as liberttyd last said; nil until it says anything (one
+    /// that doesn't look for them never does).
+    public var listeningPorts: [SessionPort]? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return currentPorts
+    }
+    private var currentPorts: [SessionPort]?
     /// The size the session's program has, as liberttyd last said (the last
     /// window to resize set it), on `queue`.
     public var onPtySize: ((UInt16, UInt16) -> Void)?
@@ -198,6 +208,10 @@ public final class RemotePTY: TerminalBackend {
                     case .foreground:
                         let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         setForeground(SessionProgram(json: json))
+                    case .ports:
+                        if let ports = try? JSONDecoder().decode(SessionPorts.self, from: Data(payload)) {
+                            setPorts(ports.ports)
+                        }
                     case .ptySize:
                         let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         if let cols = json?["cols"] as? Int, let rows = json?["rows"] as? Int { setPtySize(UInt16(cols), UInt16(rows)) }
@@ -260,6 +274,15 @@ public final class RemotePTY: TerminalBackend {
         currentForeground = program
         stateLock.unlock()
         if changed { queue.async { [weak self] in self?.onForeground?(program) } }
+    }
+
+    /// What liberttyd's scan found: kept, and told on `queue` when it's news.
+    private func setPorts(_ ports: [SessionPort]) {
+        stateLock.lock()
+        let changed = ports != currentPorts
+        currentPorts = ports
+        stateLock.unlock()
+        if changed { queue.async { [weak self] in self?.onPorts?(ports) } }
     }
 
     /// A name from liberttyd: kept, and told on `queue` when it's news.

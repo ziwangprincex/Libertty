@@ -128,7 +128,7 @@ public final class DaemonServer {
     /// an app asks before it relies on any of it (an older liberttyd drops a
     /// request it doesn't know without a word).
     static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions",
-                           "agentScreen", "foreground", "upload", "admin"]
+                           "agentScreen", "foreground", "upload", "admin", "ports"]
 
     /// When this liberttyd started (a takeover's newer one starts the clock again).
     private let started = Date().timeIntervalSince1970
@@ -336,6 +336,9 @@ public final class DaemonServer {
                 guard bound == nil, let id = frame.json["id"] as? String else { fail("bad attach"); continue }
                 guard let s = session(id) else { fail("no session \(id)"); continue }
                 s.attach(connection, sendSnapshot: true, catchUp: frame.json["catchUp"] as? Bool ?? false)
+                // Its window lists what the session listens on: look again,
+                // in case a server came or went while nobody watched.
+                s.lookForPorts()
                 bound = s
                 note { $0.session = s.id }
             case .input:
@@ -364,6 +367,19 @@ public final class DaemonServer {
                 let infos = all.map { $0.info() }
                 let data = (try? JSONEncoder().encode(["sessions": infos])) ?? Data()
                 connection.send(.result, data)
+            case .listPorts:
+                // `+ports`: scanned now, so the answer is never a stale one
+                // the watch happens to hold (the events are the watch's).
+                let all: [DaemonSession]
+                if let id = frame.json["id"] as? String {
+                    guard let s = session(id) else { fail("no session \(id)"); continue }
+                    all = [s]
+                } else {
+                    lock.lock()
+                    all = sessions.values.sorted { $0.created < $1.created }
+                    lock.unlock()
+                }
+                connection.send(.result, encoding: Ports(ok: true, sessions: all.map { $0.ports() }))
             case .capture:
                 let json = frame.json
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
@@ -686,6 +702,10 @@ final class DaemonSession {
     private var progressCode = ""
     /// Who's in front, and what an agent there is doing (AgentWatch).
     private var agentWatch: AgentWatch?
+    /// The ports its programs listen on (PortWatch), and what it last found
+    /// (under `lock`), for a window attaching.
+    private var portWatch: PortWatch?
+    private var lastPorts: SessionPorts?
     /// Who it last said is in front (under `lock`), for a window attaching.
     private var foregroundProgram: AgentWatch.Program?
 
@@ -762,6 +782,17 @@ final class DaemonSession {
                 ])
             },
             programChanged: { [weak self] program in self?.programChanged(program) })
+        // Without a shell to look under there is nothing to find (a session
+        // adopted without a pid): `ports` then says it can't tell.
+        if pty.pid > 0 {
+            portWatch = PortWatch(id: id, shell: pty.pid,
+                                  busy: { [weak self] in
+                                      guard let self else { return false }
+                                      let pgid = libertty_pty_foreground_pgid(self.pty.master)
+                                      return pgid > 0 && pgid != self.pty.pid
+                                  },
+                                  tell: { [weak self] ports in self?.portsChanged(ports) })
+        }
         pty.onOutput = { [weak self] bytes in self?.output(bytes) }
         pty.onExit = { [weak self] status in self?.exited(status) }
         pty.onInputModeChange = { [weak self] mode in self?.inputModeChanged(mode) }
@@ -890,8 +921,16 @@ final class DaemonSession {
         lock.unlock()
         // Unlocked: a waiter or a listener that doesn't read holds up only itself.
         for w in reached { w.connection.send(.result, json: ["ok": true, "reached": "prompt"]) }
-        for e in events { DaemonEvents.shared.publish(e.kind, session: id, e.fields) }
+        var ranACommand = false
+        for e in events {
+            DaemonEvents.shared.publish(e.kind, session: id, e.fields)
+            if e.kind == "command-started" || e.kind == "command-finished" { ranACommand = true }
+        }
         agentWatch?.poke()
+        // Only a flag unless the watch had gone to sleep; a command's start
+        // or end is when a server comes or goes, so it looks soon after one.
+        portWatch?.noteOutput()
+        if ranACommand { portWatch?.commandBoundary() }
     }
 
     // MARK: The program in front (AgentWatch)
@@ -922,6 +961,25 @@ final class DaemonSession {
     }
 
     fileprivate func progressReported(_ code: String) { progressCode = code }
+
+    // MARK: The ports its programs listen on (PortWatch)
+
+    /// What a scan found changed: the windows showing it hear (the
+    /// inspector lists them), and so does `+events --filter ports`.
+    private func portsChanged(_ ports: SessionPorts) {
+        let frame = (try? JSONEncoder().encode(ports)) ?? Data()
+        lock.lock()
+        lastPorts = ports
+        for c in clients { c.send(.ports, frame) }
+        lock.unlock()
+        DaemonEvents.shared.publish("ports", session: id, ["ports": ports.ports.map(\.json), "partial": ports.partial])
+    }
+
+    /// Scanned now, for `+ports`.
+    func ports() -> SessionPorts { portWatch?.look() ?? SessionPorts(id: id, ports: [], partial: true) }
+
+    /// A window attached: look again soon.
+    func lookForPorts() { portWatch?.lookSoon() }
 
     // MARK: What the shell reports (vt_write, under `lock`)
 
@@ -1062,6 +1120,7 @@ final class DaemonSession {
     private func exited(_ status: Int32) {
         compressor?.stop()
         agentWatch?.end()
+        portWatch?.stop()
         // The shell's exit code, as `$?` would show it (128 + signal if killed).
         let code = PTY.exitCode(fromWaitStatus: status)
         lock.lock()
@@ -1147,6 +1206,11 @@ final class DaemonSession {
             outbox.finish()
             outbox.start()
             return
+        }
+        // What its programs listen on, as the last scan found it: the
+        // window's inspector has it before the next scan comes.
+        if let ports = lastPorts, !ports.ports.isEmpty, let frame = try? JSONEncoder().encode(ports) {
+            outbox.send(.ports, frame)
         }
         clients.append(outbox)
         primary = connection
@@ -1451,6 +1515,7 @@ final class DaemonSession {
     /// a header and a snapshot. Nil if the program already ended.
     func release() -> (Int32, [String: Any], Data)? {
         guard let fd = pty.release() else { return nil }
+        portWatch?.stop()  // the newer liberttyd watches it from here on
         lock.lock()
         defer { lock.unlock() }
         clients.forEach { $0.hangUp() }  // they redial the new liberttyd

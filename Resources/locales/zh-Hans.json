@@ -126,6 +126,7 @@
   "Quick Terminal": "快捷终端",
   "Quit Libertty": "退出 Libertty",
   "Quit and End Sessions": "退出并结束所有会话",
+  "Reaching a port on another machine needs forwarding, which Libertty can't do yet.": "访问其他机器上的端口需要端口转发，Libertty 暂时还做不到。",
   "Redo": "重做",
   "Reload Configuration": "重新载入配置",
   "Rename": "重新命名",

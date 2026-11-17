@@ -1,5 +1,6 @@
 import AppKit
 import CPty
+import LiberttyCore
 
 /// The window's right column (Otty's inspector): the focused pane's working
 /// directory with quick actions, its git branch and changes, the processes
@@ -21,6 +22,11 @@ final class InspectorViewController: NSViewController {
     private var timer: Timer?
     private var directory: String?
     private var shellPID: pid_t?
+    /// What liberttyd says the pane's programs listen on (a host's pane
+    /// too); nil when no liberttyd looks and we ask the process table here.
+    private var reportedPorts: [SessionPort]?
+    /// The machine the pane's programs run on; nil for this Mac.
+    private var host: String?
 
     /// The window's frame color behind the column, opaque over the system
     /// sidebar material (Tern's one surface), translucent with the window.
@@ -129,11 +135,13 @@ final class InspectorViewController: NSViewController {
         timer = nil
     }
 
-    /// The focused pane changed, or its directory did.
-    func show(directory: String?, shellPID: pid_t?) {
+    /// The focused pane changed, or its directory, ports or machine did.
+    func show(directory: String?, shellPID: pid_t?, ports: [SessionPort]?, host: String?) {
         let moved = directory != self.directory
         self.directory = directory
         self.shellPID = shellPID
+        reportedPorts = ports
+        self.host = host
         guard isViewLoaded, view.window != nil else { return }
         if moved { refresh() } else { refreshProcesses() }
     }
@@ -163,9 +171,9 @@ final class InspectorViewController: NSViewController {
     private func refreshProcesses() {
         processGeneration += 1
         guard let shellPID else {
-            processSection.isHidden = true
-            portSection.isHidden = true
-            idleHint.isHidden = false
+            // A host's pane: its process table isn't ours to read, so what
+            // liberttyd found over there is all there is to show.
+            show(processes: [], ports: Self.rows(reportedPorts ?? []))
             return
         }
         // Every process under the shell, its name and its sockets: kernel
@@ -176,42 +184,58 @@ final class InspectorViewController: NSViewController {
             let found = Self.scan(shellPID)
             DispatchQueue.main.async {
                 guard let self, self.processGeneration == generation else { return }
-                self.show(processes: found.processes, ports: found.ports)
+                // liberttyd's own scan knows what a runtime runs ("vite", not
+                // "node"); ours stands in while no liberttyd holds the session.
+                self.show(processes: found.processes, ports: self.reportedPorts.map(Self.rows) ?? found.ports)
             }
         }
     }
 
-    private static func scan(_ shellPID: pid_t) -> (processes: [String], ports: [(UInt16, String)]) {
+    private static func scan(_ shellPID: pid_t) -> (processes: [String], ports: [(port: UInt16, label: String)]) {
         var pids = [pid_t](repeating: 0, count: 256)
         let n = Int(libertty_proc_descendants(shellPID, &pids, Int32(pids.count)))
         var processes: [String] = []
-        var ports: [(UInt16, String)] = []
+        var ports: [(port: UInt16, label: String)] = []
         for pid in [shellPID] + pids.prefix(n) {
             let name = Self.name(of: pid)
             if pid != shellPID, !name.isEmpty { processes.append("\(name)  \(pid)") }
             var buf = [UInt16](repeating: 0, count: 32)
             let count = Int(libertty_proc_listening_ports(pid, &buf, Int32(buf.count)))
-            for port in buf.prefix(count) where !ports.contains(where: { $0.0 == port }) { ports.append((port, name)) }
+            for port in buf.prefix(count) where !ports.contains(where: { $0.port == port }) { ports.append((port, name)) }
         }
         return (processes, ports)
     }
 
-    private func show(processes: [String], ports: [(UInt16, String)]) {
+    /// liberttyd's list as a row each: a server bound to both 0.0.0.0 and ::
+    /// listens on one port, and says so once.
+    private static func rows(_ ports: [SessionPort]) -> [(port: UInt16, label: String)] {
+        var rows: [(port: UInt16, label: String)] = []
+        for port in ports where !rows.contains(where: { $0.port == port.port }) { rows.append((port.port, port.label)) }
+        return rows
+    }
+
+    /// The port rows as they read now: rebuilt only when they change, so the
+    /// poll doesn't take a button out from under the pointer.
+    private var shownPorts: [String] = []
+
+    private func show(processes: [String], ports: [(port: UInt16, label: String)]) {
         // Only what exists: an idle shell shows one quiet line, not empty headers.
         setRows(processList, processes)
         processSection.isHidden = processes.isEmpty
         portSection.isHidden = ports.isEmpty
         idleHint.isHidden = !processes.isEmpty || !ports.isEmpty
-        let shown = portList.arrangedSubviews.map(\.tag)
-        let sorted = ports.sorted { $0.0 < $1.0 }
-        if shown != sorted.map({ Int($0.0) }) {
-            portList.arrangedSubviews.forEach { $0.removeFromSuperview() }
-            for (port, name) in sorted {
-                let b = link("localhost:\(port)  ·  \(name)", "network", #selector(openPort(_:)))
-                b.tag = Int(port)
-                b.toolTip = "Open http://localhost:\(port) beside the terminal (⌥-click: in your browser)"
-                portList.addArrangedSubview(b)
-            }
+        let sorted = ports.sorted { $0.port < $1.port }
+        let titles = sorted.map { "\(host ?? "localhost"):\($0.port)  ·  \($0.label)" }
+        guard titles != shownPorts else { return }
+        shownPorts = titles
+        portList.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for (title, port) in zip(titles, sorted) {
+            let b = link(title, "network", #selector(openPort(_:)))
+            b.tag = Int(port.port)
+            b.toolTip = host == nil
+                ? "Open http://localhost:\(port.port) beside the terminal (⌥-click: in your browser)"
+                : L10n.t("Reaching a port on another machine needs forwarding, which Libertty can't do yet.")
+            portList.addArrangedSubview(b)
         }
     }
 
@@ -248,7 +272,11 @@ final class InspectorViewController: NSViewController {
     }
 
     @objc private func openPort(_ sender: NSButton) {
-        guard let url = URL(string: "http://localhost:\(sender.tag)") else { return }
+        let port = UInt16(clamping: sender.tag)
+        // A host's port is not this Mac's: opening localhost here would show
+        // whatever happens to run on this machine.
+        guard host == nil else { return openPortOnHost(port) }
+        guard let url = URL(string: "http://localhost:\(port)") else { return }
         // The page beside the terminal that serves it; ⌥: the browser.
         if NSApp.currentEvent?.modifierFlags.contains(.option) == true || controller == nil {
             NSWorkspace.shared.open(url)
@@ -256,6 +284,11 @@ final class InspectorViewController: NSViewController {
             controller?.openDocumentInSplit(url)
         }
     }
+
+    /// A port on the machine the pane's programs run on. Reaching it takes a
+    /// forwarded port here, which Libertty doesn't set up yet: this is where
+    /// the forwarding goes, and until it does the click does nothing.
+    private func openPortOnHost(_ port: UInt16) {}
 
     /// The focused pane's repository changes (`git diff`), beside it.
     @objc private func showChanges(_ sender: Any?) {

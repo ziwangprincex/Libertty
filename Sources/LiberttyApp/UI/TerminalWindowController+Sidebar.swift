@@ -178,7 +178,8 @@ extension TerminalWindowController {
         let dir = (local ? focusedWorkingDirectory : nil) ?? NSHomeDirectory()
         sidebar.show(filesShown: config.sidebarFiles && local)
         if local { sidebar.show(directory: dir, showHidden: config.sidebarShowHiddenFiles) }
-        inspector.show(directory: local ? focusedWorkingDirectory : nil, shellPID: focusedTerminal.session.shellPID)
+        inspector.show(directory: local ? focusedWorkingDirectory : nil, shellPID: focusedTerminal.session.shellPID,
+                       ports: focusedTerminal.session.listeningPorts, host: host?.destination)
     }
 
     /// A pane picked from a tab's list: gone to, zoomed or closed.
