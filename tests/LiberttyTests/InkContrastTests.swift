@@ -46,6 +46,17 @@ import Testing
         }
     }
 
+    /// A minimized floating pane's capsule over the terminal: its name 4.5:1,
+    /// its glyph 3:1, on its see-through ground.
+    @Test func capsulesReadOverTheTerminal() {
+        for (theme, appearance) in themes {
+            let s = theme.surfaces
+            let ground = over(FloatingCapsule.ground(s), in: appearance, on: theme.background)
+            #expect(s.content.contrast(with: ground) >= 4.5, "\(theme.name) name: \(s.content.contrast(with: ground))")
+            #expect(s.contentSecondary.contrast(with: ground) >= 3, "\(theme.name) glyph: \(s.contentSecondary.contrast(with: ground))")
+        }
+    }
+
     @Test func suggestionReadsYetStaysDimmer() {
         let a = Double(TerminalRenderer.ghostAlpha) / 255
         for (theme, _) in themes {

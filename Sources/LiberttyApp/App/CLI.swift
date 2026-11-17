@@ -17,6 +17,8 @@ enum CLI {
         static let notFound: Int32 = 3
         /// liberttyd, or the running Libertty, can't be reached.
         static let unreachable: Int32 = 4
+        /// That window is asking something already (`+pick`, `+input`).
+        static let busy: Int32 = 5
         static let timeout: Int32 = 124
     }
 
@@ -100,6 +102,8 @@ enum CLI {
         case "+hosts": status = HostsCLI.run(rest)
         case "+forward": status = ForwardCLI.run(rest)
         case "+surface": status = SurfaceCLI.run(rest)
+        case "+pick": status = ScriptPromptCLI.run(rest, kind: .pick)
+        case "+input": status = ScriptPromptCLI.run(rest, kind: .input)
         case "+completions": status = completions(rest)
         case "+complete": status = complete(rest)
         case "+daemon": status = daemonCommand(rest)
@@ -263,6 +267,13 @@ enum CLI {
                                          native UI in this terminal's output (docs/surface-protocol.md); ELEMENTS
                                          is a JSON list, - for stdin; +surface read [--timeout S] waits for an
                                          event (a click, a choice) and prints it; +surface query: is it drawn here
+          libertty +pick [--title T] [--multiple | --allow-other] [--timeout S] ITEM...
+                                         ask which one, over this pane's window (the one in front outside
+                                         Libertty), and print it; items on stdin too, LABEL<TAB>DETAIL a line;
+                                         --multiple: any number (Tab marks), a line each; --allow-other: or
+                                         what's typed. Esc: exits 1, printing nothing
+          libertty +input [--title T] [--placeholder P] [--value V] [--secure] [--timeout S]
+                                         ask for a line of text the same way, and print it (--secure: dots)
 
         Other machines (over your own ssh; their sessions survive the link dropping):
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
@@ -284,7 +295,8 @@ enum CLI {
         +split, +send, +focus, +action, +new-window, +new-session, +kill-session, +daemon stop… are refused.
 
         Exit status: 0 done, 1 failed, 2 usage, 3 no such session, pane or conversation, 4 liberttyd or
-        Libertty unreachable, 124 out of time (+wait, +events); +wait exits with the program's own status.
+        Libertty unreachable, 5 busy (+pick, +input: the window is asking already), 124 out of time (+wait,
+        +events, +pick, +input); +wait exits with the program's own status.
         """)
         return 0
     }

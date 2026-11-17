@@ -25,6 +25,9 @@ enum PaneRequests {
         case "queue":
             QueueCLI.handle(info, in: controllers)
             return true
+        case "prompt":
+            ScriptPromptSession.handle(info, in: controllers)
+            return true
         default:
             return false
         }

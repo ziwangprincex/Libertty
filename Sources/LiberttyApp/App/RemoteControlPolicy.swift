@@ -10,15 +10,17 @@ enum RemoteControlPolicy {
     /// The commands it refuses: they change what's on screen or what runs.
     /// `+open`, `+diff` and `+browser` show something (the browser's reading
     /// and acting has browser-automation); `+daemon stop` and `restart`
-    /// would end or move every session.
+    /// would end or move every session; `+pick` and `+input` put a question
+    /// in front of whatever you're doing.
     static let driving: Set<String> = [
         "+action", "+focus", "+new-window", "+new-tab", "+attach", "+connect", "+split", "+move-pane", "+swap-pane",
-        "+resize-pane", "+send", "+send-key", "+prompt", "+new-session", "+kill-session", "+resume",
+        "+resize-pane", "+send", "+send-key", "+prompt", "+new-session", "+kill-session", "+resume", "+pick", "+input",
     ]
 
     /// The requests the app refuses (`RemoteControl` kinds; one without a kind is an action).
     static let drivingKinds: Set<String> = [
         "action", "focus", "new-window", "attach", "connect", "split", "move-pane", "swap-pane", "resize-pane", "resume",
+        "prompt",
     ]
 
     static var message: String {

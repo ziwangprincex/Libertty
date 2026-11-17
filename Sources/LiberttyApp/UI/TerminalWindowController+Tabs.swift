@@ -59,6 +59,8 @@ extension TerminalWindowController {
             updateSidebar(force: true)
         }
         if config.sidebarGroup != old.sidebarGroup { updateSidebar() }
+        // The minimized floating panes' capsules to their corner.
+        if config.floatingMinimizedCorner != old.floatingMinimizedCorner { syncAllFloats() }
         if config.tabBar != old.tabBar {
             arrangeColumns()
             updateTitleVisibility()

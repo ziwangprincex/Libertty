@@ -137,6 +137,7 @@ final class SplitContainerView: NSView {
         floats.append(float)
         addSubview(float, positioned: .above, relativeTo: nil)
         float.place(in: bounds.size)
+        keepTaskbarOnTop()
     }
 
     func removeFloat(_ float: FloatingTerminalView) {
@@ -150,6 +151,64 @@ final class SplitContainerView: NSView {
         floats.removeAll { $0 === float }
         floats.append(float)
         addSubview(float, positioned: .above, relativeTo: nil)
+        keepTaskbarOnTop()
+    }
+
+    // MARK: Minimized floating panes (their capsules)
+
+    /// The tab's minimized floating panes, as capsules in a corner; nil
+    /// while it has none.
+    private(set) var taskbar: FloatingTaskbar?
+
+    /// The capsules for `entries` (none: the row goes), in `corner`.
+    func showMinimized(_ entries: [FloatingTaskbar.Entry], corner: Config.MinimizedCorner, restore: @escaping (ObjectIdentifier) -> Void,
+                       close: @escaping (ObjectIdentifier) -> Void, moved: @escaping (Config.MinimizedCorner) -> Void) {
+        guard !entries.isEmpty else {
+            taskbar?.removeFromSuperview()
+            taskbar = nil
+            return
+        }
+        let bar = taskbar ?? FloatingTaskbar()
+        if taskbar == nil {
+            taskbar = bar
+            addSubview(bar, positioned: .above, relativeTo: nil)
+        }
+        bar.onRestore = restore
+        bar.onClose = close
+        bar.onMove = moved
+        bar.show(entries)
+        if !bar.dragging { bar.corner = corner }
+        placeTaskbar()
+    }
+
+    /// The split `view` is in, if it's in one.
+    static func enclosing(_ view: NSView) -> SplitContainerView? {
+        var above = view.superview
+        while let next = above, !(next is SplitContainerView) { above = next.superview }
+        return above as? SplitContainerView
+    }
+
+    /// The capsules take clicks before anything under them: the last view.
+    private func keepTaskbarOnTop() {
+        guard let taskbar, subviews.last !== taskbar else { return }
+        addSubview(taskbar, positioned: .above, relativeTo: nil)
+    }
+
+    /// In its corner, clear of what's there already: a pane's header along
+    /// the top (its buttons), the floating card, a pane's composer.
+    func placeTaskbar() {
+        guard let taskbar else { return }
+        var r = taskbar.frame(in: bounds.size, corner: taskbar.corner)
+        let composers = views.filter { !$0.isHidden }.flatMap { pane in
+            pane.subviews.filter { $0 is ComposerView }.map { pane.convert($0.frame, to: self) }
+        }
+        let obstacles = headerViews.values.filter { !$0.isHidden }.map(\.frame) + [card?.frame].compactMap { $0 } + composers
+        for _ in 0..<3 {
+            guard let hit = obstacles.first(where: { $0.intersects(r) }) else { break }
+            r.origin.y = taskbar.corner.top ? hit.maxY + FloatingTaskbar.spacing : hit.minY - FloatingTaskbar.spacing - r.height
+        }
+        r.origin.y = min(max(0, r.minY), max(0, bounds.height - r.height))
+        taskbar.move(to: r)
     }
 
     // MARK: Floating card (in-window picture in picture)
@@ -170,12 +229,15 @@ final class SplitContainerView: NSView {
         addSubview(card, positioned: .above, relativeTo: nil)
         card.place(in: bounds.size)
         self.card = card
+        keepTaskbarOnTop()
+        placeTaskbar()
     }
 
     func hideCard() {
         card?.stop()
         card?.removeFromSuperview()
         card = nil
+        placeTaskbar()
     }
 
     // MARK: Headers (pane-headers)
@@ -526,6 +588,9 @@ final class SplitContainerView: NSView {
         dividers.forEach { $0.isHidden = zoomed != nil }
         // The border follows its pane's card where it went, at once.
         placeActiveBorder(animated: false)
+        // The capsules over it all, clear of the headers as they are now.
+        keepTaskbarOnTop()
+        placeTaskbar()
         // Glass panes: the frame's holes follow the cards.
         var above = superview
         while let view = above, !(view is TerminalAreaView) { above = view.superview }

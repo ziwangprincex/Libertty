@@ -29,6 +29,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var page: Page?
         /// More words it's found by, not shown: a translated command's English.
         var keywords = ""
+        /// Its place in a script's list (`libertty +pick`).
+        var index: Int? = nil
         var run: () -> Void
     }
 
@@ -81,6 +83,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     /// `scope`: the chip it opens on (Go to Directory: Folders).
     static func toggle(in controller: TerminalWindowController?, panesOnly: Bool = false, scope: Scope = .all) {
+        // A script asking over this window has the palette's place: it comes forward instead.
+        if let window = controller?.window, let asking = prompts.first(where: { $0.parent === window }) {
+            asking.panel.makeKeyAndOrderFront(nil)
+            return
+        }
         if let open = current {
             open.close()
             // ⌘P with the commands open switches to the panes, and back
@@ -97,7 +104,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private weak var parent: NSWindow?
     private let panesOnly: Bool
     private let panel: QuickPanel
-    private let field = NSTextField()
+    /// (Dots, for a script asking for a secret: `+input --secure`.)
+    private lazy var field: NSTextField = prompt?.secure == true ? NSSecureTextField() : NSTextField()
     private let table = NSTableView()
     private let scroll = NSScrollView()
     private var all: [Item] = []
@@ -139,6 +147,161 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             : Self.panes(around: controller) + Self.conversations(around: controller) + Self.folders(around: controller) + items()
         build()
         filter("")
+    }
+
+    // MARK: A script's question (libertty +pick, +input)
+
+    /// The question this page asks, when it's one: its items in place of
+    /// the palette's, or a line to type.
+    private var prompt: ScriptPrompt?
+    /// How it ended, said once.
+    private var onAnswer: ((ScriptPrompt.Answer) -> Void)?
+    /// `--multiple`: the items marked so far, by their place in the list.
+    private var marked: Set<Int> = []
+    private let promptTitle = NSTextField(labelWithString: "")
+    private let promptAsker = NSTextField(labelWithString: "")
+    /// The questions up now, a window each (the palette itself is `current`).
+    private static var prompts: [CommandPalette] = []
+
+    /// Ask `prompt` over `controller`'s window, as a page of the palette
+    /// (the palette open there gives way); `answered` hears how it ended:
+    /// Return, a click, Esc. Nil when the window has nowhere to show it.
+    static func ask(_ prompt: ScriptPrompt, from asker: String, in controller: TerminalWindowController,
+                    answered: @escaping (ScriptPrompt.Answer) -> Void) -> CommandPalette? {
+        guard let window = controller.window, !prompts.contains(where: { $0.parent === window }) else { return nil }
+        if let open = current, open.parent === window { open.close() }
+        let page = CommandPalette(controller: controller, parent: window, prompt: prompt, asker: asker, answered: answered)
+        prompts.append(page)
+        page.show()
+        return page
+    }
+
+    private init(controller: TerminalWindowController, parent: NSWindow, prompt: ScriptPrompt, asker: String,
+                 answered: @escaping (ScriptPrompt.Answer) -> Void) {
+        self.controller = controller
+        self.parent = parent
+        panesOnly = false
+        openedScope = .all
+        panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 60),
+                           styleMask: [.borderless], backing: .buffered, defer: false)
+        super.init()
+        self.prompt = prompt
+        onAnswer = answered
+        all = prompt.items.enumerated().map { i, item in
+            Item(title: item.label, subtitle: item.detail, symbol: "", kind: .option, index: i) {}
+        }
+        build()
+        promptTitle.stringValue = Self.promptTitle(of: prompt)
+        promptAsker.stringValue = asker.isEmpty ? "" : String(format: L10n.t("From %@"), asker)
+        switch prompt.kind {
+        case .input:
+            field.placeholderString = prompt.placeholder.isEmpty ? L10n.t("Type your answer") : prompt.placeholder
+            field.stringValue = prompt.value
+            // A line to write (a secret), not a list to search.
+            searchIcon.image = NSImage(systemSymbolName: prompt.secure ? "key" : "character.cursor.ibeam", accessibilityDescription: nil)
+        case .pick:
+            field.placeholderString = L10n.t(prompt.allowOther ? "Type to narrow the list, or your own answer" : "Type to narrow the list")
+        }
+        filter(field.stringValue)
+    }
+
+    /// What it asks: the script's words, else what kind of answer it wants.
+    private static func promptTitle(of prompt: ScriptPrompt) -> String {
+        guard prompt.title.isEmpty else { return prompt.title }
+        switch prompt.kind {
+        case .input: return L10n.t("A script asks for an answer")
+        case .pick: return L10n.t(prompt.multiple ? "A script asks you to choose any of these" : "A script asks you to choose one")
+        }
+    }
+
+    /// A click on a row: chosen (or, with `--multiple`, marked); the row
+    /// for what's typed answers with it.
+    private func pick(_ item: Item) {
+        guard let prompt else { return }
+        guard let i = item.index else { return finish(.text(field.stringValue)) }
+        if prompt.multiple { return toggleMark(i) }
+        finish(.chosen([i]))
+    }
+
+    /// Return: what's typed, the item selected — or with marks, those.
+    private func submitPrompt() {
+        guard let prompt else { return }
+        if prompt.kind == .input { return finish(.text(field.stringValue)) }
+        if prompt.multiple, !marked.isEmpty { return finish(.chosen(marked.sorted())) }
+        let row = table.selectedRow
+        guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] else { return NSSound.beep() }
+        guard let i = item.index else { return finish(.text(field.stringValue)) }
+        finish(.chosen([i]))
+    }
+
+    /// Tab (`--multiple`): the selected item marked, or not any more, and
+    /// on to the next (back, with ⇧).
+    private func mark(then delta: Int) {
+        guard prompt?.multiple == true else { return NSSound.beep() }
+        let row = table.selectedRow
+        guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row], let i = item.index else { return }
+        toggleMark(i)
+        move(delta)
+    }
+
+    private func toggleMark(_ i: Int) {
+        if marked.remove(i) == nil { marked.insert(i) }
+        // A marked one wears the check a picker's current choice does.
+        all = all.map { item in
+            var item = item
+            item.symbol = item.index.map { marked.contains($0) } == true ? "checkmark" : ""
+            return item
+        }
+        let row = table.selectedRow
+        filter(field.stringValue)
+        if rows.indices.contains(row) { table.selectRowIndexes([row], byExtendingSelection: false) }
+    }
+
+    /// Answered: told, and the page goes.
+    private func finish(_ answer: ScriptPrompt.Answer) {
+        let told = onAnswer
+        onAnswer = nil
+        closePrompt(refocus: true)
+        told?(answer)
+    }
+
+    /// Its window has the keyboard again: the question takes it.
+    func takeKeyboard() {
+        guard Self.prompts.contains(where: { $0 === self }), panel.isVisible, !panel.isKeyWindow else { return }
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(field)
+    }
+
+    /// Taken down without an answer (its time ran out, what it was for went
+    /// away): nobody to tell. The keyboard goes back to the window only if
+    /// it was here: a question that's over takes it from nobody.
+    func withdraw() {
+        onAnswer = nil
+        closePrompt(refocus: false)
+    }
+
+    /// Gone, as cancelled unless an answer was told already.
+    private func closePrompt(refocus: Bool) {
+        guard let i = Self.prompts.firstIndex(where: { $0 === self }) else { return }
+        Self.prompts.remove(at: i)
+        let hadKeyboard = panel.isKeyWindow
+        dim?.removeFromSuperview()
+        dim = nil
+        parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        if refocus || hadKeyboard, let controller { controller.window?.makeKeyAndOrderFront(nil) }
+        let told = onAnswer
+        onAnswer = nil
+        told?(.cancelled)
+    }
+
+    /// The question up over the probe's window, as it shows: its title,
+    /// who asks, what's typed, and its rows (`--ui-probe`).
+    static var shownPrompt: String? {
+        guard let page = prompts.last else { return nil }
+        let rows = page.noMatches ? [page.noMatchesText] : page.shown.map { ($0.symbol == "checkmark" ? "✓ " : "") + $0.title }
+        return ([page.promptTitle.stringValue, page.promptAsker.stringValue, "[" + page.field.stringValue + "]"] + rows)
+            .filter { !$0.isEmpty }.joined(separator: " | ")
     }
 
     // MARK: Contents
@@ -564,7 +727,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         }
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) { previewSelected() }
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        // (A script's items try nothing out: what another window's palette tries stays.)
+        if prompt == nil { previewSelected() }
+    }
 
     // MARK: Folders (Go to Directory, after Rex)
 
@@ -682,7 +848,15 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             return layout()
         }
         let q = query.trimmingCharacters(in: .whitespaces)
-        let inScope = picker != nil ? all : all.filter { scope.admits($0.kind) }
+        if prompt?.kind == .input {
+            // A line typed: nothing to list.
+            shown = []
+            rows = []
+            noMatches = false
+            table.reloadData()
+            return layout()
+        }
+        let inScope = picker != nil || prompt != nil ? all : all.filter { scope.admits($0.kind) }
         if q.isEmpty {
             // Themes, folders and settings only when asked for (their chip,
             // or a search): there are many. A picker lists its options.
@@ -699,7 +873,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             }
         } else {
             // A path being typed lists where it leads first (not in Go to Pane).
-            let typed = scope.admits(.folder) && !panesOnly ? typedFolders(q) : []
+            let typed = scope.admits(.folder) && !panesOnly && prompt == nil ? typedFolders(q) : []
             let typedTitles = Set(typed.map(\.title))
             shown = typed + inScope.filter { $0.kind != .folder || !typedTitles.contains($0.title) }
                 .compactMap { item in
@@ -712,7 +886,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // Sections (Panes, Sessions, Commands…) when browsing; a search
         // lists by how well things match, with no headings between.
         rows = []
-        let sectioned = q.isEmpty && !panesOnly && scope == .all && picker == nil
+        // `+pick --allow-other`: what's typed can be the answer too.
+        if prompt?.allowOther == true, !q.isEmpty {
+            shown.append(Item(title: String(format: L10n.t("Answer “%@”"), q), symbol: "character.cursor.ibeam", kind: .option) {})
+        }
+        let sectioned = q.isEmpty && !panesOnly && scope == .all && picker == nil && prompt == nil
         var last: Kind?
         for item in shown {
             if sectioned, item.kind != last { rows.append(.group(Self.heading(item.kind))) }
@@ -797,7 +975,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         searchIcon.contentTintColor = .secondaryLabelColor
         searchIcon.hideFromAccessibility()
         effect.addSubview(searchIcon)
-        panel.setAccessibilityTitle(L10n.t(panesOnly ? "Go to Pane" : "Command Palette"))
+        panel.setAccessibilityTitle(prompt.map(Self.promptTitle(of:)) ?? L10n.t(panesOnly ? "Go to Pane" : "Command Palette"))
 
         field.placeholderString = Self.placeholder(panesOnly: panesOnly)
         field.font = Typeface.ui(16)
@@ -816,7 +994,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             effect.addSubview(line)
         }
 
-        if !panesOnly {
+        if !panesOnly, prompt == nil {
             for s in scopes {
                 let chip = ScopeChip(s.title)
                 chip.isOn = s == scope
@@ -844,13 +1022,18 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         scroll.autohidesScrollers = true
         effect.addSubview(scroll)
 
-        let hints = NSStackView(views: [
+        var hintViews: [NSView] = [
             KeyCap("↑"), KeyCap("↓"), Self.hint("navigate"), KeyCap("↵"), Self.hint("run"),
             KeyCap("⌥↵"), Self.hint("cd here"),
-        ])
+        ]
+        // `+pick --multiple`: Tab marks one.
+        let marks = prompt?.multiple == true
+        if marks { hintViews += [KeyCap("tab", mono: true), Self.hint("mark")] }
+        let hints = NSStackView(views: hintViews)
         hints.spacing = 6
         hints.setCustomSpacing(12, after: hints.views[2])
         hints.setCustomSpacing(12, after: hints.views[4])
+        if marks { hints.setCustomSpacing(12, after: hints.views[6]) }
         let close = NSStackView(views: [KeyCap("esc", mono: true), Self.hint("close")])
         close.spacing = 6
         for bar in [hints, close] {
@@ -858,6 +1041,18 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             effect.addSubview(bar)
         }
         footer = (hints, close)
+        if prompt != nil {
+            // What's asked, where the chips would be, and who asks.
+            promptTitle.font = Typeface.ui(13, .semibold)
+            promptTitle.textColor = .labelColor
+            promptTitle.lineBreakMode = .byTruncatingTail
+            promptAsker.font = Typeface.secondary
+            promptAsker.textColor = Ink.secondary
+            promptAsker.lineBreakMode = .byTruncatingMiddle
+            promptAsker.alignment = .right
+            effect.addSubview(promptTitle)
+            effect.addSubview(promptAsker)
+        }
         updateFooter()
     }
 
@@ -889,6 +1084,15 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// The footer's words: a picker's options are tried and kept, Esc goes back.
     private func updateFooter() {
         guard let (hints, close) = footer else { return }
+        if let prompt {
+            // A line typed has no list to walk; a list's Return chooses (with marks: is done).
+            for view in hints.views[0...2] { view.isHidden = prompt.kind == .input }
+            (hints.views[4] as? NSTextField)?.stringValue = prompt.kind == .input ? "answer" : prompt.multiple ? "done" : "choose"
+            hints.views[5].isHidden = true
+            hints.views[6].isHidden = true
+            (close.views[1] as? NSTextField)?.stringValue = "cancel"
+            return layout()
+        }
         let picking = picker != nil || editing != nil
         // A page of its own still navigates and runs; only Esc means "back".
         let onPage = page != nil
@@ -919,7 +1123,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let parent else { return }
         let width = min(Self.width, parent.frame.width - 40)
         let list = listHeight
-        let chipsH = chips.isEmpty || picker != nil || editing != nil || page != nil ? 0 : Self.chipsHeight
+        let chipsH = prompt != nil ? Self.chipsHeight : chips.isEmpty || picker != nil || editing != nil || page != nil ? 0 : Self.chipsHeight
         let height = Self.topHeight + chipsH + (list > 0 ? list + 12 : 0) + Self.footerHeight
         let content = parent.contentLayoutRect
         let top = parent.frame.minY + content.maxY - 12
@@ -943,6 +1147,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             x += size.width + 2
         }
 
+        if prompt != nil {
+            let band = topY - chipsH
+            let asker = promptAsker.intrinsicContentSize, title = promptTitle.intrinsicContentSize
+            let askerWidth = min(ceil(asker.width), width * 0.4)
+            promptAsker.frame = NSRect(x: width - 18 - askerWidth, y: band + (chipsH - asker.height) / 2, width: askerWidth, height: asker.height)
+            promptTitle.frame = NSRect(x: 18, y: band + (chipsH - title.height) / 2,
+                                       width: max(0, width - 36 - askerWidth - (askerWidth > 0 ? 12 : 0)), height: title.height)
+        }
         footerLine.frame = NSRect(x: 0, y: Self.footerHeight, width: width, height: 1)
         if let (hints, close) = footer {
             let h = hints.fittingSize, c = close.fittingSize
@@ -957,7 +1169,13 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let parent else { return }
         // Libertty comes forward first: the palette must never take the keyboard
         // from another app (as it would, asked for from a script while you type elsewhere).
-        Probe.activateApp()
+        // A script's question doesn't bring it forward: what's typed elsewhere
+        // could answer it. It waits over its window, the Dock icon asking once.
+        if prompt == nil || NSApp.isActive {
+            Probe.activateApp()
+        } else if !Probe.running {
+            NSApp.requestUserAttention(.informationalRequest)
+        }
         parent.makeKeyAndOrderFront(nil)
         // Its blur and text follow the window's light or dark, not the system's.
         panel.appearance = parent.appearance
@@ -996,6 +1214,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// Return, toggling it); not when the keyboard went elsewhere on its own,
     /// to another window or app, which keeps it.
     private func close(refocus: Bool = true) {
+        if prompt != nil { return closePrompt(refocus: refocus) }
         guard Self.current === self else { return }
         Self.current = nil
         ConfigStore.shared.endPreview()
@@ -1012,6 +1231,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private func run(row: Int, alternate: Bool = false) {
         guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] else { return }
+        if prompt != nil { return alternate ? NSSound.beep() : pick(item) }
         if editing != nil { return commitEdit() }
         if alternate {
             guard let other = item.alternate else { return NSSound.beep() }
@@ -1037,10 +1257,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     @objc private func clicked(_ sender: Any?) { run(row: table.clickedRow) }
 
     /// The palette's panel, while one is open (`--ui-probe` types into it).
-    static var openPanel: NSWindow? { current?.panel }
+    static var openPanel: NSWindow? { current?.panel ?? prompts.last?.panel }
     /// The rows it shows now, as "title · subtitle" (`--ui-probe` checks them).
     static var shownRows: [String]? {
-        guard let current else { return nil }
+        guard let current = current ?? prompts.last else { return nil }
         if current.noMatches { return [current.noMatchesText] }
         return current.shown.map { $0.subtitle.isEmpty ? $0.title : "\($0.title) · \($0.subtitle)" }
     }
@@ -1051,8 +1271,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        // A probe's app is never active, so its panel never stays key.
-        guard !Probe.running else { return }
+        // A probe's app is never active, so its panel never stays key. A
+        // script's question waits for its answer, wherever the keyboard went.
+        guard !Probe.running, prompt == nil else { return }
         close(refocus: false)
     }
 
@@ -1064,14 +1285,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         switch selector {
         case #selector(NSResponder.moveDown(_:)): move(1)
         case #selector(NSResponder.moveUp(_:)): move(-1)
-        case #selector(NSResponder.insertNewline(_:)): runSelected()
+        case #selector(NSResponder.insertNewline(_:)): if prompt != nil { submitPrompt() } else { runSelected() }
         // ⌥↵: the selected item's other way (a folder: cd there).
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): runSelected(alternate: true)
         case #selector(NSResponder.cancelOperation(_:)):
             if picker != nil || editing != nil || page != nil { leavePicker() } else { close() }
         // Tab walks the chips: All, Panes, Commands…
-        case #selector(NSResponder.insertTab(_:)): cycleScope(1)
-        case #selector(NSResponder.insertBacktab(_:)): cycleScope(-1)
+        case #selector(NSResponder.insertTab(_:)): if prompt != nil { mark(then: 1) } else { cycleScope(1) }
+        case #selector(NSResponder.insertBacktab(_:)): if prompt != nil { mark(then: -1) } else { cycleScope(-1) }
         default: return false
         }
         return true

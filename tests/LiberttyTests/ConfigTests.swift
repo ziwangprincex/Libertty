@@ -31,6 +31,21 @@ struct ConfigTests {
         #expect(c.set(key, value) != nil)
     }
 
+    /// Where minimized floating panes' capsules sit, and the corner a drag lets go in.
+    @Test func minimizedFloatingPanesCorner() {
+        var c = Config()
+        #expect(c.floatingMinimizedCorner == .bottomRight)
+        #expect(c.set("floating-minimized-corner", "top-center") == nil && c.floatingMinimizedCorner == .topCenter)
+        #expect(c.values(of: "floating-minimized-corner") == ["top-center"])
+        #expect(c.set("floating-minimized-corner", "middle") != nil && c.floatingMinimizedCorner == .topCenter)
+        #expect(c.set("floating-minimized-corner", "") == nil && c.floatingMinimizedCorner == .bottomRight)
+        // Where a drag lets go: top or bottom, and which third across.
+        for corner in Config.MinimizedCorner.allCases {
+            #expect(Config.MinimizedCorner(top: corner.top, side: corner.side) == corner)
+        }
+        #expect(Config.MinimizedCorner(top: false, side: -3) == .bottomLeft)
+    }
+
     @Test func numbersAreClamped() {
         var c = Config()
         _ = c.set("font-size", "500")
