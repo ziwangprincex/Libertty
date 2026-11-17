@@ -27,6 +27,33 @@ struct Config: Equatable {
     enum AutoUpdate: String, CaseIterable { case off, check, download }
     /// Rex's pane styles: cards with room around them, or edge to edge.
     enum PaneStyle: String, CaseIterable { case comfortable, compact }
+    /// Where a tab's minimized floating panes sit, each a capsule (Rex's
+    /// taskbar): a corner of the split, or the middle of its top or bottom edge.
+    enum MinimizedCorner: String, CaseIterable {
+        case bottomRight = "bottom-right", bottomCenter = "bottom-center", bottomLeft = "bottom-left"
+        case topRight = "top-right", topCenter = "top-center", topLeft = "top-left"
+
+        var top: Bool { self == .topLeft || self == .topCenter || self == .topRight }
+        /// -1 at the left edge, 0 in the middle, 1 at the right.
+        var side: Int {
+            switch self {
+            case .topLeft, .bottomLeft: -1
+            case .topCenter, .bottomCenter: 0
+            case .topRight, .bottomRight: 1
+            }
+        }
+
+        init(top: Bool, side: Int) {
+            self = switch (top, side) {
+            case (true, ..<0): .topLeft
+            case (true, 0): .topCenter
+            case (true, _): .topRight
+            case (false, ..<0): .bottomLeft
+            case (false, 0): .bottomCenter
+            default: .bottomRight
+            }
+        }
+    }
 
     var theme = ThemeSpec(light: "Libertty Light", dark: Theme.defaultName)
     /// `font-family` lines since the last empty one, as in Ghostty: the font,
@@ -103,6 +130,7 @@ struct Config: Equatable {
     var paneHeaders = PaneHeaders.always
     /// Rex's Autobalance splits: the panes even out after every split, close and move.
     var splitAutobalance = false
+    var floatingMinimizedCorner = MinimizedCorner.bottomRight
     var paneStyle = PaneStyle.comfortable
     /// Rex's Use glass for panes: the terminals let the desktop through,
     /// blurred, while the frame around them stays solid.
@@ -405,6 +433,7 @@ struct Config: Equatable {
         ("tab-icons", "How many of a tab's programs show as icons on it, 0–5 (Rex's Show tab icons). Default 3."),
         ("pane-headers", "never, split or always: when a pane shows a header with its program, folder and size, and buttons to float, zoom and close it."),
         ("split-autobalance", "Even out the panes after every split, close and move (Rex's Autobalance splits): three side by side get a third each."),
+        ("floating-minimized-corner", "Where a tab's minimized floating panes sit, each a small capsule with its program and what it's doing (a click brings it back): bottom-right (default), bottom-center, bottom-left, top-right, top-center or top-left. Dragging the capsules elsewhere sets it."),
         ("pane-style", "comfortable (cards with room around them, default) or compact (panes edge to edge with a hairline between them, square, out to the window's edges), as Rex's pane styles."),
         ("interface-style", "classic (a solid window, default) or glass (Rex's Interface style): the desktop shows through the window and the terminals, blurred, as much as in Rex (the terminals at 70%; background-opacity is for classic)."),
         ("interface-tint", "With interface-style = glass, tint the glass with the theme's color (Rex's Tint with theme); false leaves macOS's own."),
@@ -541,6 +570,7 @@ struct Config: Equatable {
         case "unfocused-split-opacity": return [num(unfocusedSplitOpacity)]
         case "pane-headers": return [paneHeaders.rawValue]
         case "split-autobalance": return [String(splitAutobalance)]
+        case "floating-minimized-corner": return [floatingMinimizedCorner.rawValue]
         case "pane-style": return [paneStyle.rawValue]
         case "pane-glass": return [String(paneGlass)]
         case "accent-color": return [accentColor]
@@ -851,6 +881,10 @@ struct Config: Equatable {
         case "split-autobalance":
             if reset { splitAutobalance = defaults.splitAutobalance; return nil }
             guard let x = bool() else { return "true or false" }; splitAutobalance = x
+        case "floating-minimized-corner":
+            if reset { floatingMinimizedCorner = defaults.floatingMinimizedCorner; return nil }
+            guard let x = MinimizedCorner(rawValue: v) else { return "bottom-right, bottom-center, bottom-left, top-right, top-center or top-left" }
+            floatingMinimizedCorner = x
         case "pane-style":
             if reset { paneStyle = defaults.paneStyle; return nil }
             guard let x = PaneStyle(rawValue: v) else { return "comfortable or compact" }; paneStyle = x

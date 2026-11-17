@@ -127,6 +127,24 @@ final class ComposerView: NSView {
 
     override var isFlipped: Bool { true }
 
+    // The split's capsules (its minimized floating panes) keep clear of it:
+    // they move as it comes, goes and grows.
+    override func viewWillMove(toSuperview newSuperview: NSView?) {
+        super.viewWillMove(toSuperview: newSuperview)
+        let leaving = SplitContainerView.enclosing(self)
+        DispatchQueue.main.async { leaving?.placeTaskbar() }
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        SplitContainerView.enclosing(self)?.placeTaskbar()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        SplitContainerView.enclosing(self)?.placeTaskbar()
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateColors()

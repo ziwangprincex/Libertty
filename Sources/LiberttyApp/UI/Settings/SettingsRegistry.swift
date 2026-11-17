@@ -213,6 +213,11 @@ enum SettingsRegistry {
             item(.interface, "Panes", "Match program backgrounds", "window-padding-color", .toggle(on: "extend", off: "background"),
                  help: "Color a pane's edges with the background a full-screen program such as an editor paints.", id: "match-program-backgrounds"),
             bool(.interface, "Panes", "Autobalance splits", "split-autobalance", help: "The panes even out after every split, close and move."),
+            item(.interface, "Panes", "Minimized floating panes show at", "floating-minimized-corner", .popup(options([
+                ("Bottom Right", "bottom-right"), ("Bottom Center", "bottom-center"), ("Bottom Left", "bottom-left"),
+                ("Top Right", "top-right"), ("Top Center", "top-center"), ("Top Left", "top-left"),
+            ])), help: "Each shows there as a small capsule, its program still running; click one to bring it back, or drag them to another corner.",
+                 keywords: "floating minimize hidden capsule corner position"),
             bool(.interface, "Panes", "Fade inactive panes", "inactive-pane-fade"),
             item(.interface, "Panes", "Inactive pane opacity", "unfocused-split-opacity", .slider(0.3...1, step: 0.05, percent: true),
                  keywords: "unfocused dim"),

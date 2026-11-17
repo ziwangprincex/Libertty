@@ -6,7 +6,9 @@ import AppKit
 /// program the tab runs everywhere that counts them (closing, the sidebar,
 /// saving the layout), and the split's own focus, splits and zoom don't
 /// change for it. Minimized, it's out of sight and running; Toggle Floating
-/// Panes brings the tab's back (or makes one).
+/// Panes brings the tab's back (or makes one), and each waits meanwhile as
+/// a capsule in a corner of the split (`floating-minimized-corner`): a
+/// click brings that one back.
 extension TerminalWindowController {
     /// New Floating Pane: a shell in the focused pane's folder, floating
     /// over the split, with the keyboard.
@@ -67,6 +69,19 @@ extension TerminalWindowController {
         updateSidebar()
     }
 
+    /// A minimized one back where it was, in front of the others, with the
+    /// keyboard (its capsule clicked).
+    func restoreFloating(_ pane: TerminalView) {
+        guard let tab = owningTab(of: pane), let i = tab.parked.firstIndex(where: { $0.pane === pane }),
+              tab.parked[i].floating != nil else { return }
+        if tab !== selectedTab { select(tab) }
+        tab.parked[i].floatingMinimized = false
+        syncFloats(of: tab)
+        if let container = tab.container, let float = container.floats.first(where: { $0.pane === pane }) { container.raise(float) }
+        window?.makeFirstResponder(pane)
+        updateSidebar()
+    }
+
     /// Put it in the split, beside the pane that had the keyboard there.
     func dockFloating(_ pane: TerminalView) {
         guard let tab = owningTab(of: pane), let i = tab.parked.firstIndex(where: { $0.pane === pane }) else { return }
@@ -98,7 +113,8 @@ extension TerminalWindowController {
                 if tab !== self.selectedTab { self.select(tab) }
                 tab.parked.append(entry)
                 self.syncFloats(of: tab)
-                self.window?.makeFirstResponder(pane)
+                // A minimized one (closed from its capsule) back to its capsule; a shown one with the keyboard.
+                if !entry.floatingMinimized { self.window?.makeFirstResponder(pane) }
                 self.updateSidebar()
                 return { [weak self] in self?.removeFloating(pane) }
             }, expire: { pane.session.terminate() })
@@ -141,6 +157,30 @@ extension TerminalWindowController {
             container.addFloat(float)
         }
         container.floats.forEach { $0.refreshTitle() }
+        // The minimized ones, each a capsule in the corner the settings say.
+        let minimized = tab.parked.filter { $0.floating != nil && $0.floatingMinimized && !$0.pane.session.hasExited }.map(\.pane)
+        container.showMinimized(minimized.map(capsule(for:)), corner: config.floatingMinimizedCorner, restore: { [weak self, weak tab] id in
+            guard let pane = tab?.parked.first(where: { ObjectIdentifier($0.pane) == id })?.pane else { return }
+            self?.restoreFloating(pane)
+        }, close: { [weak self, weak tab] id in
+            guard let pane = tab?.parked.first(where: { ObjectIdentifier($0.pane) == id })?.pane else { return }
+            self?.closeFloating(pane)
+        }, moved: { corner in
+            // Every tab's, every window's: it's a setting (Settings ▸ Interface).
+            MainActor.assumeIsolated { _ = SettingsModel.shared.write("floating-minimized-corner", corner.rawValue) }
+        })
+    }
+
+    /// What a minimized floating pane's capsule shows: its program's glyph
+    /// (a shell's at a prompt), a short name, and what it reports doing.
+    private func capsule(for pane: TerminalView) -> FloatingTaskbar.Entry {
+        let session = pane.session
+        let tile = programs[ObjectIdentifier(session)]
+        let name = !session.label.isEmpty ? session.label : tile.map { $0.host ?? $0.name } ?? compactLabel(of: pane).name
+        let state = session.programStatus.headline(among: config.programStatusIndicator)?.state
+        return FloatingTaskbar.Entry(pane: ObjectIdentifier(pane), name: name, symbol: tile == nil ? "apple.terminal" : tile?.symbol,
+                                     badge: StatusBadge.look(status: state, progress: session.progress, programs: true),
+                                     state: state.map { L10n.t(Self.stateWord($0)) } ?? "")
     }
 
     /// A pane named in a small space (a floating pane's bar, the composer's

@@ -1,0 +1,84 @@
+# Minimized floating panes wait as capsules (Rex's taskbar) in a corner of
+# the split: each says what runs there; a click brings that one back with
+# the keyboard; the corner is a setting (floating-minimized-corner), and a
+# drag sets it; its menu's Close is undoable as ⌘W in it is; minimized, it's
+# saved with the layout. A capsule never takes the keyboard. Run with
+# --persist (the layout is saved by session).
+expect-capsules:none
+action:new_floating_pane
+wait:1.2
+expect-floating:1 keyboard
+type:echo CAPS-$((40+2))
+key:enter
+wait:0.6
+expect:CAPS-42
+# Minimized: out of sight, its capsule in the corner (bottom right by
+# default), named as its folder (it's at its prompt), the keyboard back in
+# the split.
+action:toggle_floating_panes
+wait:0.4
+expect-floating:0
+expect-capsules:bottom-right: libertty-ui-probe
+expect-focus:1
+expect-unlabeled:0 capsules
+roundtrip:go
+# A click on it: back, in front, with the keyboard; no capsule left.
+capsule:1:click
+wait:0.5
+expect-floating:1 keyboard
+expect-capsules:none
+type:echo BACK-$((40+3))
+key:enter
+wait:0.6
+expect:BACK-43
+# Its own Minimize button: the capsule again.
+click:Minimize (it keeps running)
+wait:0.4
+expect-floating:0
+expect-capsules:bottom-right: libertty-ui-probe
+# The setting moves them (below the pane's header, along the top).
+type:libertty +set floating-minimized-corner=top-left
+key:enter
+wait:1.5
+reload:config
+wait:0.4
+expect-capsules:top-left: libertty-ui-probe
+appearance:dark
+wait:0.3
+expect-capsules:top-left: libertty-ui-probe
+appearance:light
+wait:0.3
+# Dragged to the bottom's middle: they stay there, and it's the setting now.
+capsule:drag:bottom-center
+wait:0.5
+expect-capsules:bottom-center: libertty-ui-probe
+expect-shell:grep floating-minimized-corner "$XDG_CONFIG_HOME/libertty/config" ==> bottom-center
+expect-focus:1
+# Its menu's Close: gone, and Edit ▸ Undo brings it back as it was —
+# minimized, its shell still running, the keyboard where it is.
+capsule:1:close
+wait:0.8
+expect-capsules:none
+expect-undo:Close Pane
+undo:go
+wait:0.6
+expect-capsules:bottom-center: libertty-ui-probe
+expect-focus:1
+action:toggle_floating_panes
+wait:0.4
+expect-floating:1 keyboard
+type:echo UNDONE-$((40+4))
+key:enter
+wait:0.6
+expect:UNDONE-44
+# A composer open at the pane's foot: the capsules sit above it, not over
+# its buttons; closed, they're back at the foot.
+action:toggle_floating_panes
+wait:0.4
+expect-capsules:bottom-center: libertty-ui-probe
+composer:open
+wait:0.5
+expect-capsules:clear
+composer:close
+wait:0.5
+expect-capsules:clear

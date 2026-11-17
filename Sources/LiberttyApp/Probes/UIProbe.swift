@@ -127,6 +127,11 @@ import LiberttyCore
 ///   expect-status:TEXT   program states (OSC 7501) as they show include each word of TEXT: e.g.
 ///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
 ///                        mark, the Dock badge, notifications so far, sounds so far)
+///   expect-capsules:TEXT the tab in front's minimized floating panes as their capsules show, where they
+///                        are: `bottom-right: zsh, vim` (contains; `none`: no capsules), readable on their ground;
+///                        `clear`: they cover no pane's header, composer or floating card
+///   capsule:N:click|close  a click on capsule N (1 first; it restores its pane), or its menu's Close
+///   capsule:drag:CORNER  the capsules dragged to CORNER (as floating-minimized-corner names it) and let go
 enum UIProbe {
     /// Show `window` far off every screen. Being shown, a titled window is
     /// moved onto a screen if it's off them all (to the built-in display's
@@ -1402,6 +1407,24 @@ enum UIProbe {
                             print("FAIL  ui-probe floating panes: \(shown) shown, keyboard \(keyboard ? "in one" : "elsewhere"); wanted \(want)")
                             failures += 1
                         }
+                    case .expectCapsules("clear"):
+                        // Over no pane's header, no composer, no floating card.
+                        let over = capsulesCover(controller)
+                        if over.isEmpty {
+                            print("ok    ui-probe capsules cover nothing")
+                        } else {
+                            print("FAIL  ui-probe capsules cover \(over.joined(separator: ", "))")
+                            failures += 1
+                        }
+                    case .expectCapsules(let want):
+                        let (shown, contrast) = capsules(of: controller)
+                        if !tagHolds("capsules", shown: shown, contrast: contrast, want: want, whole: false) { failures += 1 }
+                    case .capsule(let what):
+                        if let problem = capsule(what, of: controller, in: window) {
+                            print("FAIL  ui-probe capsule \(what): \(problem)")
+                            failures += 1
+                        }
+                        pump(0.3)
                     case .fitHere:
                         let fitted = controller.focusedTerminal.session
                         fitted.fitProgramToPane()
@@ -1782,6 +1805,93 @@ enum UIProbe {
         return String(json.dropFirst().dropLast())
     }
 
+    /// The tab in front's capsules as `CORNER: name, name` — the corner by
+    /// where the row is in the split, not where it was asked to be — and
+    /// their names' contrast on their ground over the terminal ("none": no row).
+    private static func capsules(of controller: TerminalWindowController) -> (String, Double?) {
+        guard let container = controller.selectedTab.container, let bar = container.taskbar, !bar.capsules.isEmpty else { return ("none", nil) }
+        // Against an edge (at the margin from it), or between; a row as wide as the room is all three.
+        let b = container.bounds, f = bar.frame, m = FloatingTaskbar.margin
+        let left = abs(f.minX - (b.minX + m)) < 1.5, right = abs(f.maxX - (b.maxX - m)) < 1.5
+        let side = left && right ? bar.corner.side : left ? -1 : right ? 1 : abs(f.midX - b.midX) < 1.5 ? 0 : 99
+        let corner = Config.MinimizedCorner(top: f.midY < b.midY, side: side == 99 ? 0 : side)
+        let stray = side == 99 ? " (not at an edge nor in the middle: \(f) in \(b))" : ""
+        let inside = b.contains(f) ? "" : " (outside its split: \(f) in \(b))"
+        let s = MainActor.assumeIsolated { Surfaces.current }, under = controller.config.resolvedTheme.background
+        let g = FloatingCapsule.ground(s).usingColorSpace(.sRGB) ?? .black
+        let a = g.alphaComponent
+        func mix(_ c: CGFloat, _ u: UInt8) -> UInt8 { UInt8((c * 255 * a + CGFloat(u) * (1 - a)).rounded()) }
+        let ground = RGB(mix(g.redComponent, under.r), mix(g.greenComponent, under.g), mix(g.blueComponent, under.b))
+        return ("\(corner.rawValue): " + bar.shownNames.joined(separator: ", ") + inside + stray, s.content.contrast(with: ground))
+    }
+
+    /// What the tab in front's capsules lie over that they shouldn't: a
+    /// pane's header (its buttons), a composer, the floating card.
+    private static func capsulesCover(_ controller: TerminalWindowController) -> [String] {
+        guard let container = controller.selectedTab.container, let bar = container.taskbar else { return [] }
+        var over: [String] = []
+        for leaf in container.views where !leaf.isHidden {
+            if let header = container.shownHeader(for: leaf), header.frame.intersects(bar.frame) { over.append("a header") }
+            for composer in leaf.subviews where composer is ComposerView && leaf.convert(composer.frame, to: container).intersects(bar.frame) {
+                over.append("a composer")
+            }
+        }
+        if let card = container.card, card.frame.intersects(bar.frame) { over.append("the floating card") }
+        return over
+    }
+
+    /// `N:click`, `N:close`, `drag:CORNER` on the tab in front's capsules;
+    /// what went wrong, or nil.
+    private static func capsule(_ what: String, of controller: TerminalWindowController, in window: NSWindow) -> String? {
+        guard let container = controller.selectedTab.container, let bar = container.taskbar, let content = window.contentView else {
+            return "no capsules"
+        }
+        let parts = what.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return "capsule:N:click|close or capsule:drag:CORNER" }
+        if parts[0] == "drag" {
+            guard let corner = Config.MinimizedCorner(rawValue: parts[1]), let first = bar.capsules.first else { return "no corner \(parts[1])" }
+            let b = container.bounds, m = FloatingTaskbar.margin + 4
+            let x = corner.side < 0 ? m : corner.side > 0 ? b.maxX - m : b.midX
+            let y = corner.top ? m : b.maxY - m
+            func event(_ type: NSEvent.EventType, at point: NSPoint) -> NSEvent? {
+                NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+            }
+            let start = first.convert(NSPoint(x: first.bounds.midX, y: first.bounds.midY), to: nil)
+            let end = container.convert(NSPoint(x: x, y: y), to: nil)
+            guard let down = event(.leftMouseDown, at: start), let up = event(.leftMouseUp, at: end) else { return "no events" }
+            first.mouseDown(with: down)
+            for step in 1...8 {
+                let t = CGFloat(step) / 8
+                let at = NSPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)
+                if let drag = event(.leftMouseDragged, at: at) { first.mouseDragged(with: drag) }
+            }
+            first.mouseUp(with: up)
+            print("ok    ui-probe capsules dragged to \(corner.rawValue)")
+            return nil
+        }
+        guard let n = Int(parts[0]), bar.capsules.indices.contains(n - 1) else { return "no capsule \(parts[0]) of \(bar.capsules.count)" }
+        let capsule = bar.capsules[n - 1]
+        switch parts[1] {
+        case "click":
+            // A real click where it is: what's on top there takes it.
+            let center = capsule.convert(NSPoint(x: capsule.bounds.midX, y: capsule.bounds.midY), to: content)
+            click(x: center.x, y: content.bounds.height - center.y, in: window)
+        case "close":
+            let point = capsule.convert(NSPoint(x: capsule.bounds.midX, y: capsule.bounds.midY), to: nil)
+            guard let right = NSEvent.mouseEvent(with: .rightMouseDown, location: point, modifierFlags: [],
+                                                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                                 context: nil, eventNumber: 0, clickCount: 1, pressure: 1),
+                  let item = capsule.menu(for: right)?.items.first(where: { $0.title == L10n.t("Close") }),
+                  let action = item.action else { return "its menu has no Close" }
+            NSApp.sendAction(action, to: item.target, from: item)
+        default:
+            return "click or close, not \(parts[1])"
+        }
+        print("ok    ui-probe capsule \(n) \(parts[1])")
+        return nil
+    }
+
     /// Every pane's text. Newline-joined, so an expectation can't match
     /// across the seam between two panes.
     private static func screenText(_ controller: TerminalWindowController) -> String {
@@ -1819,6 +1929,8 @@ enum UIProbe {
         case otherWindow(String), expectSized(Bool), fitHere
         /// How many floating panes the tab in front shows, and with `keyboard` that one has it.
         case expectFloating(String)
+        /// The minimized ones' capsules: what they say and where; acting on one.
+        case expectCapsules(String), capsule(String)
         /// The focused pane's composer and prompt queue: `composer:open|queue|close|pop-out|pop-in`,
         /// `expect-composer:open|closed|popped|text=TEXT`, `queue-prompt:TEXT`,
         /// `expect-queue:N|tag=TEXT|paused|running`, `conversation:AGENT:ID` (a record for the focused pane).
@@ -1970,6 +2082,8 @@ enum UIProbe {
             case "expect-sized": steps.append(.expectSized(arg == "yes"))
             case "fit-here": steps.append(.fitHere)
             case "expect-floating": steps.append(.expectFloating(arg))
+            case "expect-capsules": steps.append(.expectCapsules(arg))
+            case "capsule": steps.append(.capsule(arg))
             case "expect-surface": steps.append(.expectSurface(arg, true))
             case "expect-surface-count": steps.append(.expectSurface("#" + arg, true))
             case "expect-no-surface": steps.append(.expectSurface(arg, false))
