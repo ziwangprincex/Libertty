@@ -1514,8 +1514,10 @@ final class DaemonSession {
     /// Stop, and give out what a new liberttyd needs to continue: the pty master,
     /// a header and a snapshot. Nil if the program already ended.
     func release() -> (Int32, [String: Any], Data)? {
+        // The newer liberttyd watches it from here on; a scan under way is
+        // done before the pty goes (it asks the pty what's in front).
+        portWatch?.stop()
         guard let fd = pty.release() else { return nil }
-        portWatch?.stop()  // the newer liberttyd watches it from here on
         lock.lock()
         defer { lock.unlock() }
         clients.forEach { $0.hangUp() }  // they redial the new liberttyd

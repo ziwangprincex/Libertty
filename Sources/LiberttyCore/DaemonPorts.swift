@@ -104,6 +104,7 @@ enum PortScan {
             if !readable { partial = true }
             guard !sockets.isEmpty else { continue }
             let label = label(of: pid)
+            if sockets.count > maxPorts - ports.count { partial = true }
             for socket in sockets.prefix(maxPorts - ports.count) {
                 let port = SessionPort(port: socket.port, address: socket.address, pid: pid, label: label, since: now)
                 if !ports.contains(where: { $0.isSame(as: port) }) { ports.append(port) }
@@ -125,15 +126,44 @@ enum PortScan {
         return scripted.isEmpty ? name : scripted
     }
 
+    /// Options whose value comes as the next argument: that value is not
+    /// the program (`node -r ts-node/register app.ts` runs app.ts).
+    static let optionsWithValues: Set<String> = [
+        "-r", "--require", "--import", "--loader", "--experimental-loader", "-C", "--conditions",
+        "--env-file", "--inspect-port", "--title", "-W", "-X",
+    ]
+    /// A runtime's own commands before the program it runs (`deno run
+    /// server.ts`, `bun run dev`): not the program either.
+    static let runtimeCommands: Set<String> = ["run", "exec", "x"]
+
     /// The program in a runtime's arguments (argv[0] left out): the first
-    /// one that isn't an option, by its own name or the package it's in
+    /// one that isn't an option, an option's value or the runtime's own
+    /// command, by its own name or the package it's in
     /// (`…/node_modules/vite/bin/vite.js` and `…/node_modules/.bin/vite`
     /// are both vite). "" when they say nothing.
     static func script(in arguments: String) -> String {
-        // An option's value is not the program: a bare number is one of
-        // those (`node --max-old-space-size 4096 server.js`).
-        guard let path = arguments.split(separator: " ")
-            .first(where: { !$0.hasPrefix("-") && !$0.allSatisfy(\.isNumber) }) else { return "" }
+        var skipNext = false, commandSeen = false
+        var found: Substring?
+        for word in arguments.split(separator: " ") {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if word.hasPrefix("-") {
+                skipNext = optionsWithValues.contains(String(word))
+                continue
+            }
+            // A bare number is an option's value too (`--max-old-space-size 4096`).
+            if word.allSatisfy(\.isNumber) { continue }
+            // The first word that isn't an option may be the runtime's command.
+            if !commandSeen, runtimeCommands.contains(String(word)) {
+                commandSeen = true
+                continue
+            }
+            found = word
+            break
+        }
+        guard let path = found else { return "" }
         let parts = path.split(separator: "/").map(String.init)
         guard var name = parts.last, !name.isEmpty else { return "" }
         // cli.js, index.mjs: the extension is noise. A script in another
@@ -361,11 +391,15 @@ final class PortWatch {
         if wake { Clock.shared.add(self) } else { Clock.shared.reschedule() }
     }
 
-    /// The session ended, or liberttyd is handing it over.
+    /// The session ended, or liberttyd is handing it over. Returns once no
+    /// scan is under way: a scan asks the session's pty what's in front, so
+    /// the pty may be let go of only after this.
     func stop() {
         lock.lock()
         ended = true
         lock.unlock()
+        scanning.lock()
+        scanning.unlock()
         Clock.shared.remove(self)
     }
 
@@ -378,21 +412,23 @@ final class PortWatch {
 
     /// Scan now and tell everyone if it's news: the clock's pass, and a
     /// `ports` request (`+ports` always answers from a fresh scan).
+    /// `fromClock`: the clock's own pass, which sets its timer once after.
     @discardableResult
-    func look() -> SessionPorts {
-        let (answer, news, sleeping) = scan()
+    func look(fromClock: Bool = false) -> SessionPorts {
+        let (answer, news) = scan()
         // Told with no lock of ours held: a listener or a window that
         // doesn't read holds up only itself.
         if news { tell(answer) }
-        // Off the clock while asleep; otherwise the timer takes the scan
-        // this one asked for (a change held back by the event's second).
-        if sleeping { Clock.shared.remove(self) } else { Clock.shared.reschedule() }
+        // The timer takes the scan this one asked for (a change held back by
+        // the event's second). One asleep stays on the clock, due never:
+        // taken off here, it could miss output waking it meanwhile and stay
+        // off for good.
+        if !fromClock { Clock.shared.reschedule() }
         return answer
     }
 
-    /// The scan itself, one at a time: what it found, whether that's news
-    /// and whether the watch went to sleep over it.
-    private func scan() -> (SessionPorts, news: Bool, sleeping: Bool) {
+    /// The scan itself, one at a time: what it found and whether that's news.
+    private func scan() -> (SessionPorts, news: Bool) {
         scanning.lock()
         defer { scanning.unlock() }
         lock.lock()
@@ -400,7 +436,7 @@ final class PortWatch {
         lock.unlock()
         // Ended (or handed to a newer liberttyd): its processes are gone or
         // another's to look at; the last scan's answer stands.
-        guard !over else { return (SessionPorts(id: id, ports: before, partial: lastPartial), false, false) }
+        guard !over else { return (SessionPorts(id: id, ports: before, partial: lastPartial), false) }
         let seen = PortScan.look(shell: shell, at: Date().timeIntervalSince1970)
         let inFront = busy()
         // Each socket keeps the time the first scan that saw it gave it.
@@ -433,9 +469,8 @@ final class PortWatch {
             if ports.isEmpty, !seen.partial, !stirred, !inFront, !ended { asleep = true }
         }
         stirred = false
-        let sleeping = asleep
         lock.unlock()
-        return (SessionPorts(id: id, ports: ports, partial: seen.partial), news, sleeping)
+        return (SessionPorts(id: id, ports: ports, partial: seen.partial), news)
     }
 
     @inline(__always)
@@ -468,12 +503,15 @@ final class PortWatch {
         }
 
         /// The timer to the earliest scan due; stopped while every watch is
-        /// asleep or gone.
+        /// asleep or gone. The due times are read under the clock's lock,
+        /// and the timer set under the same hold: a reschedule that looked
+        /// before a watch came due can't cancel the one that came after it.
+        /// (A watch takes its own lock inside the clock's, never the other
+        /// way: none calls the clock holding its own.)
         func reschedule() {
-            let waiting = lock.withLock { watches.values.compactMap(\.value) }
-            let soonest = waiting.map(\.dueAt).min()
             lock.lock()
             defer { lock.unlock() }
+            let soonest = watches.values.compactMap(\.value).map(\.dueAt).min()
             guard let soonest, soonest.isFinite else {
                 timer?.cancel()
                 timer = nil
@@ -495,7 +533,7 @@ final class PortWatch {
         private func pass() {
             let now = PortWatch.seconds()
             let waiting = lock.withLock { watches.values.compactMap(\.value) }
-            for watch in waiting where watch.dueAt <= now + 0.1 { watch.look() }
+            for watch in waiting where watch.dueAt <= now + 0.1 { watch.look(fromClock: true) }
             reschedule()
         }
     }

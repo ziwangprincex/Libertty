@@ -156,7 +156,7 @@ extension TerminalWindowController {
     /// or stopped): the inspector lists what the focused pane listens on.
     func sessionPortsChanged(_ session: TerminalSession) {
         guard session === focusedTerminal.session else { return }
-        updateSidebar()
+        showInspector()
     }
 
     /// Another window sized the program, or this one took it back.

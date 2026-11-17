@@ -184,9 +184,14 @@ final class InspectorViewController: NSViewController {
             let found = Self.scan(shellPID)
             DispatchQueue.main.async {
                 guard let self, self.processGeneration == generation else { return }
-                // liberttyd's own scan knows what a runtime runs ("vite", not
-                // "node"); ours stands in while no liberttyd holds the session.
-                self.show(processes: found.processes, ports: self.reportedPorts.map(Self.rows) ?? found.ports)
+                // Ours is the fresh one (liberttyd looks less often while
+                // nothing changes); liberttyd's knows what a runtime runs
+                // ("vite", not "node"), so its name wins for a port it has.
+                let named = Self.rows(self.reportedPorts ?? [])
+                let ports = found.ports.map { port in
+                    (port: port.port, label: named.first { $0.port == port.port }?.label ?? port.label)
+                }
+                self.show(processes: found.processes, ports: ports)
             }
         }
     }
@@ -230,11 +235,17 @@ final class InspectorViewController: NSViewController {
         shownPorts = titles
         portList.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (title, port) in zip(titles, sorted) {
+            guard host == nil else {
+                // A host's port: nothing here reaches it yet, so it's a row
+                // to read, not a link that does nothing.
+                let row = Self.row(title, dim: false)
+                row.toolTip = L10n.t("Reaching a port on another machine needs forwarding, which Libertty can't do yet.")
+                portList.addArrangedSubview(row)
+                continue
+            }
             let b = link(title, "network", #selector(openPort(_:)))
             b.tag = Int(port.port)
-            b.toolTip = host == nil
-                ? "Open http://localhost:\(port.port) beside the terminal (⌥-click: in your browser)"
-                : L10n.t("Reaching a port on another machine needs forwarding, which Libertty can't do yet.")
+            b.toolTip = "Open http://localhost:\(port.port) beside the terminal (⌥-click: in your browser)"
             portList.addArrangedSubview(b)
         }
     }
@@ -275,7 +286,7 @@ final class InspectorViewController: NSViewController {
         let port = UInt16(clamping: sender.tag)
         // A host's port is not this Mac's: opening localhost here would show
         // whatever happens to run on this machine.
-        guard host == nil else { return openPortOnHost(port) }
+        guard host == nil else { return }
         guard let url = URL(string: "http://localhost:\(port)") else { return }
         // The page beside the terminal that serves it; ⌥: the browser.
         if NSApp.currentEvent?.modifierFlags.contains(.option) == true || controller == nil {
@@ -284,11 +295,6 @@ final class InspectorViewController: NSViewController {
             controller?.openDocumentInSplit(url)
         }
     }
-
-    /// A port on the machine the pane's programs run on. Reaching it takes a
-    /// forwarded port here, which Libertty doesn't set up yet: this is where
-    /// the forwarding goes, and until it does the click does nothing.
-    private func openPortOnHost(_ port: UInt16) {}
 
     /// The focused pane's repository changes (`git diff`), beside it.
     @objc private func showChanges(_ sender: Any?) {

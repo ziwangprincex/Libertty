@@ -72,6 +72,11 @@ struct PortsTests {
         #expect(PortScan.script(in: "manage.py runserver") == "manage.py")
         #expect(PortScan.script(in: "") == "")
         #expect(PortScan.script(in: "--port 3000") == "")
+        // A runtime's own command, or an option's value, is not the program.
+        #expect(PortScan.script(in: "run --allow-net server.ts") == "server")
+        #expect(PortScan.script(in: "run dev") == "dev")
+        #expect(PortScan.script(in: "-r ts-node/register app.ts") == "app")
+        #expect(PortScan.script(in: "--import tsx ./src/index.ts") == "index")
     }
 
     @Test func aProcessWithNothingToScanHasNoPorts() {

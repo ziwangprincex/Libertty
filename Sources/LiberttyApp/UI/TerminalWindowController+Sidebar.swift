@@ -178,6 +178,13 @@ extension TerminalWindowController {
         let dir = (local ? focusedWorkingDirectory : nil) ?? NSHomeDirectory()
         sidebar.show(filesShown: config.sidebarFiles && local)
         if local { sidebar.show(directory: dir, showHidden: config.sidebarShowHiddenFiles) }
+        showInspector()
+    }
+
+    /// The inspector follows the focused pane: its folder (this Mac's
+    /// only), its processes and the ports liberttyd found.
+    func showInspector() {
+        let local = host == nil
         inspector.show(directory: local ? focusedWorkingDirectory : nil, shellPID: focusedTerminal.session.shellPID,
                        ports: focusedTerminal.session.listeningPorts, host: host?.destination)
     }

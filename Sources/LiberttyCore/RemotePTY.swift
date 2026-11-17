@@ -242,6 +242,10 @@ public final class RemotePTY: TerminalBackend {
         stateLock.lock()
         agentsWatched = header["agentScreen"] as? Bool ?? false
         stateLock.unlock()
+        // Back from a dropped link or a new liberttyd: what was heard before
+        // may have closed meanwhile. The attach says the ports again when
+        // there are any; until it does, there are none to show.
+        if tell, listeningPorts?.isEmpty == false { setPorts([]) }
         // (Only a liberttyd that tells sizes later says it now: one before
         // them would leave a window thinking its size was another's.)
         if header["sizes"] as? Bool == true, let cols = header["cols"] as? Int, let rows = header["rows"] as? Int {
