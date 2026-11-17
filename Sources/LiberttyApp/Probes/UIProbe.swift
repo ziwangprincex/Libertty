@@ -24,6 +24,7 @@ import LiberttyCore
 ///   expect:TEXT     every pane's text must contain TEXT (else FAIL)
 ///   expect-not:TEXT none may
 ///   expect-palette:TEXT  the open palette's first row contains TEXT
+///   expect-palette-not:TEXT  no row of the open palette contains TEXT
 ///   expect-scope:TEXT    the open palette's chips, e.g. `[All] Panes`, contain TEXT
 ///   expect-tab:TEXT      a sidebar row (name, detail, pane count) contains TEXT
 ///   expect-tab-not:TEXT  no sidebar row contains TEXT (a row's second line reads "2: …")
@@ -336,6 +337,16 @@ enum UIProbe {
                         } else {
                             print("FAIL  ui-probe expect: no \(text) on screen; screen ends: …\(all.suffix(80))")
                             failures += 1
+                        }
+                    case .expectPaletteNot(let text):
+                        // No row of the open palette says it (a setting's
+                        // own commands are found by a search, not listed).
+                        let rows = CommandPalette.shownRows ?? []
+                        if let said = rows.first(where: { $0.contains(text) }) {
+                            print("FAIL  ui-probe palette: \(said) is listed, and \(text) shouldn't be")
+                            failures += 1
+                        } else {
+                            print("ok    ui-probe palette: no \(text) among \(rows.count) rows")
                         }
                     case .expectPalette(let text):
                         // The palette's first row, while it's open.
@@ -1069,6 +1080,30 @@ enum UIProbe {
                         let pane = controller.focusedTerminal
                         if !tagHolds("mode", shown: pane.modeShown, contrast: pane.modeShown == nil ? nil : pane.contrast(of: pane.modeTag),
                                      want: want, whole: false) { failures += 1 }
+                    case .expectAtBottom(let want):
+                        // Whether the focused pane's view is at the end of its
+                        // scrollback, or scrolled back up it.
+                        let place = { (yes: Bool) in yes ? "at the bottom" : "scrolled back" }
+                        let now = controller.focusedTerminal.session.scrollbar.atBottom
+                        if now == want { print("ok    ui-probe view \(place(want))") } else {
+                            print("FAIL  ui-probe view: \(place(now)), not \(place(want))")
+                            failures += 1
+                        }
+                    case .expectInputModes(let want):
+                        // `mouse=off,focus=off,paste=on,kitty=0`: the modes a
+                        // program turns on to read the mouse and the keyboard
+                        // its own way, as the focused pane has them now. Only
+                        // the ones named are checked.
+                        let now = controller.focusedTerminal.session.inputModeSummary
+                        let wrong = want.split(separator: ",").map { pair -> String in
+                            let p = pair.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                            guard p.count == 2, let has = now[p[0]] else { return "\(pair)?" }
+                            return has == p[1] ? "" : "\(p[0])=\(has)"
+                        }.filter { !$0.isEmpty }
+                        if wrong.isEmpty { print("ok    ui-probe input modes \(want)") } else {
+                            print("FAIL  ui-probe input modes: wanted \(want), got \(wrong.joined(separator: ","))")
+                            failures += 1
+                        }
                     case .expectCopyCursor(let want):
                         // TEXT@COL: the copy cursor's line has TEXT, the cursor at column COL; "-": no copy mode.
                         let shown = controller.focusedTerminal.copyCursorShown
@@ -1808,7 +1843,7 @@ enum UIProbe {
 
     private enum Step {
         case key(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
-        case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
+        case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectPaletteNot(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         /// Whether the focused pane would have Secure Keyboard Entry on for a
         /// password (the probe's window is never key, so not the system's state).
@@ -1838,6 +1873,8 @@ enum UIProbe {
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
+        case expectInputModes(String)
+        case expectAtBottom(Bool)
         case hint(String, copy: Bool), expectKeyHints(String), clickText(String)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
@@ -1916,6 +1953,7 @@ enum UIProbe {
             case "expect": steps.append(.expect(arg))
             case "expect-not": steps.append(.expectNot(arg))
             case "expect-palette": steps.append(.expectPalette(arg))
+            case "expect-palette-not": steps.append(.expectPaletteNot(arg))
             case "expect-scope": steps.append(.expectScope(arg))
             case "expect-tab": steps.append(.expectTab(arg))
             case "expect-tab-not": steps.append(.expectTabNot(arg))
@@ -2007,6 +2045,8 @@ enum UIProbe {
             case "expect-caret-told": steps.append(.expectCaretTold)
             case "expect-pending-keys": steps.append(.expectPendingKeys(arg))
             case "expect-mode": steps.append(.expectMode(arg))
+            case "expect-input-modes": steps.append(.expectInputModes(arg))
+            case "expect-at-bottom": steps.append(.expectAtBottom(arg == "yes"))
             case "expect-copy-cursor": steps.append(.expectCopyCursor(arg))
             case "expect-clipboard": steps.append(.expectClipboard(arg))
             case "expect-selection": steps.append(.expectSelection(arg))

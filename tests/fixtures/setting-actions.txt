@@ -1,0 +1,33 @@
+# Setting actions on a key: the setting is changed and kept, written into
+# the config file in place as the command palette's own editing writes it,
+# and every window follows the reload — the pane's text grows and shrinks.
+# (`action:` can't carry a comma, so cycle_setting's own list isn't here;
+# the unit tests have it.)
+expect-font:13
+action:increase_setting:font-size:3
+wait:0.4
+expect-font:16
+action:decrease_setting:font-size
+wait:0.4
+expect-font:15
+action:set_setting:font-size=18
+wait:0.4
+expect-font:18
+# Back to the default: its line leaves the file.
+action:reset_setting:font-size
+wait:0.4
+expect-font:13
+# A number stops where its Settings control does (font size: 6 to 72).
+action:increase_setting:font-size:200
+wait:0.4
+expect-font:72
+action:reset_setting:font-size
+wait:0.4
+expect-font:13
+# The palette offers the turn a switch can take now, found by the name
+# Settings gives it; an empty palette lists none of them.
+key:cmd+shift+p
+expect-palette-not:Turn On
+type:turn on copy on sel
+expect-palette:Turn On Copy on selection
+key:escape

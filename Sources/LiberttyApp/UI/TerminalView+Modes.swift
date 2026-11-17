@@ -260,7 +260,12 @@ extension TerminalView {
     func toggleHintMode() { hintsActive ? endHintMode() : beginHintMode() }
 
     func beginHintMode() {
-        if copyMode != nil { endCopyMode() }
+        if let mode = copyMode {
+            // From copy mode: the labels go on what's in view now, so the
+            // view stays where copy mode's cursor took it.
+            mode.keepsViewOnLeaving = true
+            endCopyMode()
+        }
         discardComposition()
         PendingKeys.shared.cancel(in: self)
         let found = session.hintTargets()
@@ -514,6 +519,7 @@ extension TerminalView {
     static func title(of action: Action) -> String {
         let name = action.configString
         if let entry = SettingsShortcuts.groups.lazy.flatMap(\.actions).first(where: { $0.action == name }) { return entry.title }
+        if let setting = SettingActions.title(action) { return setting }
         if let item = menuItem(for: action, in: NSApp.mainMenu) {
             return item.title.trimmingCharacters(in: CharacterSet(charactersIn: "….").union(.whitespaces))
         }

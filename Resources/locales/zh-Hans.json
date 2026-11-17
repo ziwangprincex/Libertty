@@ -769,5 +769,12 @@
   "Reconnecting to %@…": "正在重新连接到 %@…",
   "Connecting to %@…": "正在连接到 %@…",
   "Lost the connection to the session server — reconnecting…": "与会话服务器的连接断开了，正在重新连接…",
-  "What you type isn't sent until it's back.": "连接恢复之前，你输入的内容不会发送。"
+  "What you type isn't sent until it's back.": "连接恢复之前，你输入的内容不会发送。",
+  "Turn On": "开启",
+  "Turn Off": "关闭",
+  "Toggle": "切换",
+  "Cycle": "轮换",
+  "Bigger": "增大",
+  "Smaller": "减小",
+  "Reset": "重置"
 }

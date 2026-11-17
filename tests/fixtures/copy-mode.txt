@@ -49,6 +49,43 @@ expect-mode:Copy Mode
 key:escape
 expect-mode:-
 expect-searching:0
+# f and t find a character in the cursor's line, ; does the last one again
+# (after a t, on to the next: not stuck before the same one).
+key:cmd+shift+c
+key:g
+key:g
+key:f
+key:a
+expect-copy-cursor:alpha beta_gamma@4
+key:;
+expect-copy-cursor:alpha beta_gamma@9
+key:,
+expect-copy-cursor:alpha beta_gamma@4
+key:t
+key:m
+expect-copy-cursor:alpha beta_gamma@12
+# D copies from the cursor to the end of its line and leaves copy mode.
+key:0
+key:w
+key:D
+expect-mode:Copied
+expect-clipboard:beta_gamma
+expect-copy-cursor:-
+# Leaving puts the view back where copy mode began: a look up the scrollback
+# doesn't leave the pane there.
+type:seq 1 300
+key:enter
+wait:0.8
+expect-at-bottom:yes
+key:cmd+shift+c
+key:1
+key:0
+key:0
+key:k
+expect-at-bottom:no
+key:escape
+expect-mode:-
+expect-at-bottom:yes
 # The keys never reached the shell: its command line is as it was.
 type:echo DONE-$((40+2))
 key:enter

@@ -152,6 +152,9 @@ enum ActionDispatcher {
         case .clearAutocompleteHistory: CommandHistoryClear.ask()
         case .writeScrollbackFile(let then): controller?.writeTextFile(selection: false, then: then)
         case .writeSelectionFile(let then): controller?.writeTextFile(selection: true, then: then)
+        // A setting changed and kept, as the palette's own editing writes it.
+        case .toggleSetting, .cycleSetting, .increaseSetting, .decreaseSetting, .resetSetting, .setSetting:
+            return SettingActions.perform(action)
         case .openSettings: MainActor.assumeIsolated { SettingsWindowController.shared.show() }
         case .openConfig: AppDelegate.openConfigFile()
         case .reloadConfig: ConfigStore.shared.reloadByRequest()

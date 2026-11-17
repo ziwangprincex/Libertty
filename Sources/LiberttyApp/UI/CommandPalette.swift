@@ -386,6 +386,23 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // only the file. (Not the repeatable ones, nor what +set refuses.)
         let picked = Set(SettingPicker.all.map(\.key))
         let config = ConfigStore.shared.savedConfig
+        // A setting that's simply on or off, flipped where it stands: the
+        // rows above open an editor for a value, which a yes-or-no setting
+        // doesn't need. Only the turn it can take now, found by the name
+        // Settings gives it and the words Search knows it by. Listed with
+        // the settings, so a search finds one and an empty palette has none.
+        for item in SettingsRegistry.items {
+            // (A switch is on unless its value is the off one, as Settings reads it.)
+            guard let key = item.key, case .toggle(let onValue, let offValue) = item.kind else { continue }
+            let on = (config.values(of: key).first ?? "") != offValue
+            let action = Action.toggleSetting(key)
+            out.append(Item(title: L10n.t(on ? "Turn Off" : "Turn On") + " " + item.title, subtitle: key,
+                            symbol: on ? "checkmark.square" : "square", kind: .setting,
+                            preview: [(key, on ? offValue : onValue)],
+                            keywords: [item.keywords, key, item.section].joined(separator: " ")) {
+                SettingActions.perform(action)
+            })
+        }
         for (key, _) in Config.documentation where !picked.contains(key) && !Config.repeatable.contains(key)
             && !["config-file", "browser-automation"].contains(key) {
             let value = config.values(of: key).first ?? ""

@@ -1322,6 +1322,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     func scroll(_ body: (TerminalSession) -> Void) {
         body(session)
+        noteHandScroll()
         revealScroller = true
         setNeedsRender()
     }
@@ -2188,9 +2189,15 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             return
         }
         session.scroll(rows: -rows)
+        noteHandScroll()
         revealScroller = true
         setNeedsRender()
     }
+
+    /// The view was scrolled by hand (the wheel, the trackpad, a scrolling
+    /// keybind): in copy mode, leaving it then leaves the view where it was
+    /// put, rather than going back to where copy mode began.
+    func noteHandScroll() { copyMode?.keepsViewOnLeaving = true }
 
     /// A trackpad moves the content by points: whole rows scroll the
     /// viewport, the rest moves the picture (the renderer shows the row
@@ -2203,6 +2210,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         if rows != 0 {
             let before = session.scrollbar.offset
             session.scroll(rows: rows)
+            noteHandScroll()
             if Int64(session.scrollbar.offset) - Int64(before) != Int64(rows) { position = 0 }
             revealScroller = true
         }

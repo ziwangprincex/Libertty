@@ -106,6 +106,13 @@ final class TerminalSession {
     private(set) var progress: TerminalProgress?
     /// The command running now (from OSC 133 C) and since when; under `lock`.
     private var commandStart: (time: CFTimeInterval, command: String)?
+    /// The input modes the shell had when that command started: its end
+    /// puts them back, so a program that was killed leaves none of them on
+    /// (`InputModes`). Under `lock`.
+    private var inputModesAtCommandStart: InputModes?
+    /// Kitty keyboard flags still to put back: the sequence that sets them
+    /// can only go in between sequences, not from a parse callback. Under `lock`.
+    private var kittyFlagsPending: UInt8?
     /// OSC 52 policy (`clipboard-read`, `clipboard-write`); under `lock`.
     private var clipboardRead = false
     private var clipboardWrite = true
@@ -509,7 +516,10 @@ final class TerminalSession {
     /// into a terminal with none (Settings' typography preview).
     func show(_ text: String) {
         let bytes = Array(text.utf8)
-        lock.withLock { ghostty_terminal_vt_write(terminal, bytes, bytes.count) }
+        lock.withLock {
+            ghostty_terminal_vt_write(terminal, bytes, bytes.count)
+            writePendingKittyFlags()
+        }
         requestRender()
     }
 
@@ -532,6 +542,7 @@ final class TerminalSession {
             let n = min(slice, bytes.count - offset)
             lock.withLock {
                 ghostty_terminal_vt_write(terminal, bytes.baseAddress! + offset, n)
+                writePendingKittyFlags()
                 compressor?.wake()
                 outputCount &+= 1
                 lastOutputTime = CACurrentMediaTime()
@@ -1299,8 +1310,12 @@ final class TerminalSession {
             if event.kind == GHOSTTY_SEMANTIC_PROMPT_INPUT_START { inputMarked = true }
             else if promptState != .prompt { inputMarked = false }
             promptState = .prompt
+            // A prompt without the command's end before it (a shell that
+            // marks no D): the modes go back here instead.
+            restoreInputModes()
         case GHOSTTY_SEMANTIC_PROMPT_COMMAND_END:
             promptState = .prompt
+            restoreInputModes()
             guard let start = commandStart else { break }
             commandStart = nil
             let duration = CACurrentMediaTime() - start.time
@@ -1312,6 +1327,17 @@ final class TerminalSession {
         case GHOSTTY_SEMANTIC_PROMPT_OUTPUT_START:
             promptState = .running
             inputMarked = false
+            // What the shell had before the command: what its end restores.
+            // The first mark after a restore is the one that counts — the
+            // later ones are a nested shell's (tmux), and the modes by then
+            // are the program's own.
+            if inputModesAtCommandStart == nil {
+                var modes = InputModes.read(terminal)
+                // Kitty flags of a restore that hasn't gone in yet are the
+                // ones that count: the old ones are already spent.
+                if let pending = kittyFlagsPending { modes.kittyFlags = pending }
+                inputModesAtCommandStart = modes
+            }
             let raw = String(event.command)
             commandStart = (CACurrentMediaTime(), ProgramStatusStore.sanitize(raw))
             if !raw.isEmpty {
@@ -1323,6 +1349,38 @@ final class TerminalSession {
         default: break
         }
     }
+
+    /// The input modes back as the shell had them before the command that
+    /// has ended (`InputModes`). Called from the semantic-prompt callback,
+    /// in the stream's order: what the shell sets after its own mark comes
+    /// after this, and stands. The caller holds `lock`.
+    private func restoreInputModes() {
+        guard let saved = inputModesAtCommandStart else { return }
+        // A program still in front of the terminal marked that prompt
+        // itself: a shell inside tmux, whose own marks come through. What
+        // tmux turned on is still tmux's, so nothing is put back here.
+        // (Asked only when there is something to put back.)
+        if let shell = shellPID, Self.foregroundProcess(ofShell: shell) != nil { return }
+        inputModesAtCommandStart = nil
+        kittyFlagsPending = saved.restore(terminal)
+    }
+
+    /// Kitty keyboard flags a killed program left on, put back once the
+    /// parser is between sequences: a callback must not write to its own
+    /// terminal, and these flags are only set by the sequence that sets
+    /// them. The caller holds `lock`.
+    private func writePendingKittyFlags() {
+        guard let flags = kittyFlagsPending else { return }
+        var ground = false
+        _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_VT_GROUND, &ground)
+        guard ground else { return }
+        kittyFlagsPending = nil
+        let bytes = InputModes.kittySequence(flags)
+        ghostty_terminal_vt_write(terminal, bytes, bytes.count)
+    }
+
+    /// The input modes as they stand (the UI probe).
+    var inputModeSummary: [String: String] { lock.withLock { InputModes.read(terminal).summary } }
 
     fileprivate func desktopNotification(title: String, body: String) {
         DispatchQueue.main.async { [weak self] in
