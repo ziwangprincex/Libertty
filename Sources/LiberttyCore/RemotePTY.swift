@@ -472,6 +472,9 @@ public enum DaemonClient {
         /// What it can do beyond the protocol's beginnings (`layout`,
         /// `catchUp`); empty for a liberttyd from before features were named.
         public var features: [String]
+        /// The login it runs in; nil when it didn't say (a liberttyd from
+        /// before it did, or one on Linux, where there are no such logins).
+        public var session: SecuritySession?
     }
 
     /// Who answers on the socket, if anyone.
@@ -482,7 +485,8 @@ public enum DaemonClient {
         guard let reply = c.receive(), reply.kind == .welcome else { return nil }
         let json = reply.json
         return Welcome(version: json["version"] as? Int ?? 0, build: json["build"] as? String ?? "",
-                       pid: pid_t(json["pid"] as? Int ?? 0), features: json["features"] as? [String] ?? [])
+                       pid: pid_t(json["pid"] as? Int ?? 0), features: json["features"] as? [String] ?? [],
+                       session: SecuritySession(json: json["session"]))
     }
 
     /// One request, one result (list, capture, send, kill by id, shutdown).
@@ -557,12 +561,24 @@ public enum DaemonClient {
                              seconds: Double = 10) -> Start {
         let mine = DaemonServer.buildID(ofExecutable: executable)
         if let w = hello() {
-            if w.version == Wire.version, w.build == mine { return .running }
-            log("liberttyd[\(w.pid)] is build \(w.build) (protocol \(w.version)); replacing it with \(mine)")
+            if keeps(w, build: mine) { return .running }
+            // An ssh login into this Mac leaves the liberttyd of the login at
+            // the Mac alone: taking it over would move every local pane out of
+            // the user's own login (see SecuritySession).
+            guard mayReplace(w) else {
+                log("liberttyd[\(w.pid)] serves the login at this Mac; leaving it as it is")
+                return .running
+            }
+            if w.build == mine, w.version == Wire.version {
+                log("liberttyd[\(w.pid)] answers from \(w.session?.description ?? "another login"); "
+                    + "taking its sessions over from the login at this Mac")
+            } else {
+                log("liberttyd[\(w.pid)] is build \(w.build) (protocol \(w.version)); replacing it with \(mine)")
+            }
             guard let pid = spawn(executable, ["--takeover"], logPath: logPath, responsible: responsible) else {
                 return w.version == Wire.version ? .running : .failed
             }
-            switch waitFor({ $0.build == mine }, seconds: seconds, child: pid) {
+            switch waitFor({ keeps($0, build: mine) }, seconds: seconds, child: pid) {
             case true?: return .running
             // Still coming up (its first run): it takes over when it does.
             case nil where w.version != Wire.version: return .starting(pid)
@@ -577,6 +593,37 @@ public enum DaemonClient {
         case false?: return .failed
         case nil: return .starting(pid)
         }
+    }
+
+    /// The login this process is in, settled once: it can't change, and the
+    /// takeover decision asks for it on every look.
+    static let ourSession = SecuritySession.current
+
+    /// Whether the liberttyd that answers is the one to keep: the protocol
+    /// and build this app ships, from a login whose panes belong to the user.
+    static func keeps(_ welcome: Welcome, build mine: String) -> Bool {
+        welcome.version == Wire.version && welcome.build == mine && isInOurLogin(welcome)
+    }
+
+    /// Whether its login is one this process can live with. Only a process in
+    /// the login at the Mac minds: a liberttyd left behind by an ssh login
+    /// would start local panes outside the user's own login, without the
+    /// login keychain. A liberttyd that says nothing about its login (one
+    /// from before it did, or Linux) is left alone.
+    static func isInOurLogin(_ welcome: Welcome) -> Bool {
+        guard let mine = ourSession, mine.hasGraphicAccess, let theirs = welcome.session else { return true }
+        return theirs.hasGraphicAccess
+    }
+
+    /// Whether this process may take the liberttyd that answers over at all.
+    /// An ssh login into the Mac may not replace the one serving the login at
+    /// the Mac while it speaks the same protocol — a build difference is not
+    /// worth moving every local pane out of the user's login for.
+    static func mayReplace(_ welcome: Welcome) -> Bool {
+        guard let mine = ourSession, !mine.hasGraphicAccess,
+              let theirs = welcome.session, theirs.hasGraphicAccess, welcome.version == Wire.version
+        else { return true }
+        return false
     }
 
     /// Wait for a liberttyd started earlier (`.starting`) as long as it's

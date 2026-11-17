@@ -130,6 +130,10 @@ public final class DaemonServer {
     static let features = ["layout", "catchUp", "waitUntil", "events", "label", "inputMode", "sendKey", "report", "permissions",
                            "agentScreen", "foreground", "upload", "admin"]
 
+    /// The login this liberttyd runs in, settled once: it can't change, and
+    /// every `welcome` carries it.
+    static let session = SecuritySession.current
+
     /// When this liberttyd started (a takeover's newer one starts the clock again).
     private let started = Date().timeIntervalSince1970
     /// Who is connected, by connection (under `lock`), for `clients`.
@@ -318,8 +322,12 @@ public final class DaemonServer {
                 if let client = frame.json["client"] as? String, !client.isEmpty {
                     note { $0.client = SessionInfo.cleanLabel(client) }
                 }
-                connection.send(.welcome, json: ["version": Wire.version, "build": build, "pid": Int(getpid()),
-                                                 "features": Self.features])
+                var welcome: [String: Any] = ["version": Wire.version, "build": build, "pid": Int(getpid()),
+                                              "features": Self.features]
+                // Which login it belongs to: an app on the Mac's own screen
+                // replaces one left behind by an ssh login.
+                if let session = Self.session { welcome["session"] = session.asJSON }
+                connection.send(.welcome, json: welcome)
             case .create:
                 guard bound == nil, let request = frame.decode(CreateRequest.self) else { fail("bad create"); continue }
                 guard session(request.id) == nil else { fail("session \(request.id) exists"); continue }
@@ -512,6 +520,7 @@ public final class DaemonServer {
                     "clients": max(0, others), "features": Self.features,
                 ]
                 if let log = Self.logPath() { answer["log"] = log }
+                if let session = Self.session { answer["session"] = session.asJSON }
                 connection.send(.result, json: answer)
             case .clients:
                 lock.lock()

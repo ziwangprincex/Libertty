@@ -38,6 +38,11 @@ grep -q "sessions  1 (" $T/status && grep -q "^liberttyd [0-9]" $T/status && ok 
 log=$(field log)
 [[ ${log:A} == ${LIBERTTY_DAEMON_LOG:A} ]] && ok "status: its log is the one it writes" || bad "status log: $log (wanted $LIBERTTY_DAEMON_LOG)"
 [[ $(field socket) == $LIBERTTY_DAEMON_SOCKET ]] && ok "status: its socket" || bad "status socket: $(field socket)"
+# Which login it runs in: one left behind by an ssh login into this Mac would
+# start local panes outside the user's own login, so it says which it is
+# (SecuritySession). Whether this run is that login depends on how the suite
+# was started, so only the row itself is checked.
+grep -q "^  login     " $T/status && ok "status: the login it runs in" || bad "status login: $(cat $T/status)"
 
 # +clients: an +events listener and a +wait waiter, by what they do.
 perl -e 'alarm 8; exec @ARGV' $L +events > /dev/null 2>&1 &
