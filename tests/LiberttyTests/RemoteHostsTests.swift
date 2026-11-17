@@ -21,7 +21,7 @@ struct RemoteHostsTests {
     """
 
     @Test func changedHostKey() {
-        let problem = SSHRecovery.diagnose(Self.changedKey)
+        let problem = SSHRecovery.diagnose(Self.changedKey, agent: SSHFailureTests.agent(.noKeys), keysOnDisk: [])
         #expect(problem == .changedHostKey(host: "[devbox.example]:2222",
                                            fingerprint: "SHA256:zR3cXxV6L6Xl0Jm0Ap7Gm7lR8yA3q1x7rC9mZ2sQb4E.",
                                            file: "/Users/me/.ssh/known_hosts", line: 12))
@@ -29,11 +29,10 @@ struct RemoteHostsTests {
 
     @Test func keysNotLoaded() {
         let refused = "me@devbox: Permission denied (publickey,password)."
-        #expect(SSHRecovery.diagnose(refused, agentHasKeys: { false }, keysOnDisk: { ["/k/id_ed25519"] })
+        #expect(SSHRecovery.diagnose(refused, agent: SSHFailureTests.agent(.noKeys), keysOnDisk: ["/k/id_ed25519"])
                 == .keysNotLoaded(["/k/id_ed25519"]))
         // ssh-agent has some: nothing to offer.
-        #expect(SSHRecovery.diagnose(refused, agentHasKeys: { true }, keysOnDisk: { ["/k/id_ed25519"] }) == nil)
-        #expect(SSHRecovery.diagnose("ssh: connect to host devbox port 22: Operation timed out") == nil)
+        #expect(SSHRecovery.diagnose(refused, agent: SSHFailureTests.agent(.keys(2)), keysOnDisk: ["/k/id_ed25519"]) == nil)
     }
 
     /// The old key goes from the file that has it (ssh-keygen keeps the file as it was beside it).

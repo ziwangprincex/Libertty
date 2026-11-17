@@ -32,11 +32,15 @@ enum HostsCLI {
                     return CLI.ExitCode.ok
                 } catch {
                     var why = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-                    switch SSHRecovery.diagnose(remote.lastSSHErrors) {
+                    switch SSHRecovery.diagnose(remote.lastSSHErrors, destination: host) {
                     case .changedHostKey(let name, _, _, _)?:
                         why += "\nIts key changed. If you know why (it was set up again): ssh-keygen -R \(name), then connect."
                     case .keysNotLoaded(let keys)?:
                         why += "\nssh-agent has no keys: ssh-add --apple-use-keychain \(keys.joined(separator: " "))"
+                    // The rest ssh explains only to someone who knows SSH:
+                    // the same words the app would show, without the sheet.
+                    case let problem?:
+                        why += "\n" + SSHRecovery.explain(problem, destination: host).body
                     case nil: break
                     }
                     return fail("\(host): \(why)", CLI.ExitCode.unreachable)

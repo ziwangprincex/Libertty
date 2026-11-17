@@ -400,6 +400,16 @@ enum SettingsRegistry {
                  help: "Hosts without Libertty's terminfo still work; hosts that have it keep xterm-ghostty.", keywords: "ssh term terminfo"),
             bool(.remoteHosts, "ssh in a Pane", "Install Libertty's terminfo on a host the first time", "ssh-terminfo",
                  help: "When you ssh to a host to log in: once, in its ~/.terminfo, with its own tic.", keywords: "ssh terminfo tic xterm-ghostty"),
+            // The page draws this one itself, so that it offers only the
+            // agents really on this Mac (SSHAgentRow); the list here is every
+            // value the setting takes.
+            item(.remoteHosts, "Keys", "SSH agent", "ssh-agent", .popup(options([
+                ("Whatever ssh chooses", "system"), ("1Password", "1password"), ("Secretive", "secretive"),
+                ("Bitwarden", "bitwarden"), ("YubiKey", "yubikey"), ("GnuPG", "gpg"), ("Custom…", "custom"),
+            ])), help: "Which agent ssh asks for keys when Libertty connects to a host. An IdentityAgent in ~/.ssh/config comes first.",
+                 keywords: "ssh agent keys identityagent ssh-auth-sock 1password secretive bitwarden yubikey gpg"),
+            item(.remoteHosts, "Keys", "Agent socket", "ssh-agent-socket", .text(placeholder: "~/.ssh/agent.sock"),
+                 help: "Where the custom agent listens.", keywords: "ssh agent socket path identityagent"),
         ]
 
         // Advanced (Rex's Developer)

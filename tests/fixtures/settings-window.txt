@@ -31,6 +31,9 @@ expect-settings:page=Integrations
 settings:search:ssh-terminfo
 expect-settings:page=Remote Hosts
 shot:settings-remote-hosts.png
+# The agent ssh asks for a host's keys is there too, by name or by what it does.
+settings:search:IdentityAgent
+expect-settings:page=Remote Hosts
 # What was there before is still there.
 expect-shell:cat '@CFG@/config' ==> # Settings writes its lines in place: this stays.
 expect-shell:grep -c '^font-size = 14$' '@CFG@/config' ==> 1

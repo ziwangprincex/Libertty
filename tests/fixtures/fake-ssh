@@ -3,11 +3,15 @@
 # takes ssh's options, then runs the remote command on this Mac, with the
 # "remote" side's own home, liberttyd socket and terminfo directory (FAKE_SSH_*),
 # so nothing touches the user's own. While $FAKE_SSH_DOWN exists, the
-# "network" is down.
+# "network" is down. $FAKE_SSH_FAIL names a file of ssh's own words: a login
+# fails with them, as a real ssh would (for the recovery checks).
+# $FAKE_SSH_IDENTITY_AGENT is what `ssh -G` resolves IdentityAgent to.
 check=0
+config=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -O) [ "$2" = check ] && check=1; shift 2 ;;
+    -G) config=1; shift ;;
     -o|-F|-S|-p|-l|-i|-J|-L|-R|-D|-E|-b|-c|-e|-m|-Q|-W|-w) shift 2 ;;
     -*) shift ;;
     *) break ;;
@@ -15,6 +19,18 @@ while [ $# -gt 0 ]; do
 done
 host=$1
 shift
+# What the host resolves to, as ssh prints it: every setting, lower-cased.
+if [ $config = 1 ]; then
+  echo "user ${USER:-me}"
+  echo "hostname $host"
+  echo "port 22"
+  echo "identityagent ${FAKE_SSH_IDENTITY_AGENT:-SSH_AUTH_SOCK}"
+  exit 0
+fi
+if [ -n "${FAKE_SSH_FAIL:-}" ] && [ -f "$FAKE_SSH_FAIL" ]; then
+  cat "$FAKE_SSH_FAIL" >&2
+  exit 255
+fi
 if [ -n "$FAKE_SSH_DOWN" ] && [ -e "$FAKE_SSH_DOWN" ]; then
   echo "ssh: connect to host $host port 22: Network is unreachable" >&2
   exit 255
@@ -26,5 +42,5 @@ if [ "$host" = unreachable ]; then
 fi
 export LIBERTTY_HOME="$FAKE_SSH_HOME" LIBERTTY_DAEMON_SOCKET="$FAKE_SSH_SOCKET" LIBERTTY_DAEMON_LOG="$FAKE_SSH_LOG" \
   LIBERTTY_TERMINFO_DIR="$FAKE_SSH_TERMINFO"
-unset LIBERTTY_ASKPASS SSH_ASKPASS SSH_ASKPASS_REQUIRE LIBERTTY_STATE_FILE FAKE_SSH_DOWN
+unset LIBERTTY_ASKPASS SSH_ASKPASS SSH_ASKPASS_REQUIRE LIBERTTY_STATE_FILE FAKE_SSH_DOWN FAKE_SSH_FAIL
 exec /bin/sh -c "$*"

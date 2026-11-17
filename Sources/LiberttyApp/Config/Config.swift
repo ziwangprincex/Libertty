@@ -308,6 +308,14 @@ struct Config: Equatable {
     /// Ghostty's `ssh-terminfo` (a shell-integration feature there): install
     /// xterm-ghostty's terminfo on a host the first time you ssh to it.
     var sshTerminfo = false
+    /// Which agent ssh asks for keys when Libertty connects to a host:
+    /// `system` (ssh's own choice), an agent by name (`1password`,
+    /// `secretive`, `bitwarden`, `yubikey`, `gpg`), `custom` with
+    /// `ssh-agent-socket`, or a socket path. An `IdentityAgent` in
+    /// ~/.ssh/config for that host comes first either way.
+    var sshAgent = "system"
+    /// The socket of the agent `ssh-agent = custom` means.
+    var sshAgentSocket = ""
     /// OSC 52: programs (vim over ssh, tmux) setting / reading the clipboard.
     var clipboardWrite = true
     var clipboardRead = false
@@ -498,6 +506,8 @@ struct Config: Equatable {
         ("term", "TERM for new shells: xterm-ghostty (default; Libertty ships its terminfo, since Libertty's terminal is Ghostty's) or any other name, e.g. xterm-256color."),
         ("ssh-env", "With term = xterm-ghostty, have ssh send TERM=xterm-256color, so hosts without Ghostty's terminfo still work (needs shell integration)."),
         ("ssh-terminfo", "The first time you ssh to a host (to log in, not to run a command), install xterm-ghostty's terminfo there (~/.terminfo, by the host's own tic) and keep TERM=xterm-ghostty for it after (needs shell integration). Off by default; libertty +terminfo setup HOST does it for one host."),
+        ("ssh-agent", "Which SSH agent ssh asks for keys when Libertty connects to a host: system (default; ssh's own choice, which honours IdentityAgent in ~/.ssh/config), 1password, secretive, bitwarden, yubikey, gpg, custom (with ssh-agent-socket), or the path of an agent's socket. An IdentityAgent set for a host in ~/.ssh/config always wins."),
+        ("ssh-agent-socket", "The socket of the agent ssh-agent = custom means, e.g. ~/.ssh/agent.sock."),
         ("clipboard-write", "allow or deny programs setting the clipboard (OSC 52; vim, tmux and remote shells use it)."),
         ("clipboard-read", "allow or deny programs reading the clipboard (OSC 52). Denied by default: anything you copied would be readable."),
         ("secure-input-on-password", "Turn on Secure Keyboard Entry while the pane you type in reads a password (sudo, ssh, read -s), and off again after: other apps can't read the keys you type there. On by default."),
@@ -604,6 +614,8 @@ struct Config: Equatable {
         case "term": return [term]
         case "ssh-env": return [String(sshEnv)]
         case "ssh-terminfo": return [String(sshTerminfo)]
+        case "ssh-agent": return [sshAgent]
+        case "ssh-agent-socket": return [sshAgentSocket]
         case "cursor-style-blink": return [cursorStyleBlink.map(String.init) ?? ""]
         case "undo-timeout": return [num(undoTimeout) + "s"]
         case "wait-after-command": return [String(waitAfterCommand)]
@@ -1017,6 +1029,16 @@ struct Config: Equatable {
         case "ssh-terminfo":
             if reset { sshTerminfo = defaults.sshTerminfo; return nil }
             guard let x = bool() else { return "true or false" }; sshTerminfo = x
+        case "ssh-agent":
+            if reset { sshAgent = defaults.sshAgent; return nil }
+            // A name, `custom` (the socket is its own setting), or a path.
+            guard ["system", "custom"].contains(v.lowercased()) || SSHAgent(token: v) != nil else {
+                return "system, 1password, secretive, bitwarden, yubikey, gpg, custom or a socket path"
+            }
+            sshAgent = v.hasPrefix("/") || v.hasPrefix("~") ? v : v.lowercased()
+        case "ssh-agent-socket":
+            if reset { sshAgentSocket = defaults.sshAgentSocket; return nil }
+            sshAgentSocket = (v as NSString).expandingTildeInPath
         case "cursor-style-blink":
             if reset { cursorStyleBlink = nil; return nil }
             guard let x = bool() else { return "true, false or empty" }; cursorStyleBlink = x

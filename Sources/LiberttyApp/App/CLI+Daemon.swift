@@ -56,6 +56,7 @@ extension CLI {
             let sessions = DaemonClient.sessions(address: daemon) ?? []
             info = ["version": welcome.version, "build": welcome.build, "pid": Int(welcome.pid), "features": welcome.features,
                     "sessions": sessions.count, "shown": sessions.filter { $0.clients > 0 }.count, "old": true]
+            if let session = welcome.session { info["session"] = session.asJSON }
         case .unanswered:
             return notRunning(json: json)
         }
@@ -80,6 +81,16 @@ extension CLI {
         let sessions = info["sessions"] as? Int ?? 0, shown = info["shown"] as? Int ?? 0
         row("sessions", sessions == 0 ? "none" : "\(sessions) (\(shown) shown, \(sessions - shown) detached)")
         if let clients = info["clients"] as? Int { row("clients", "\(clients) (libertty +clients)") }
+        // Which login it runs in: one started from an ssh login into this Mac
+        // would run local panes outside the user's own login (no login
+        // keychain). Only worth saying when it isn't where it should be.
+        if host == nil, let session = SecuritySession(json: info["session"]) {
+            row("login", session.description)
+            if !session.hasGraphicAccess {
+                print("  (this liberttyd came from \(session.description): panes it starts here have no login keychain. "
+                      + "Starting Libertty hands its sessions to one in your own login; libertty +daemon restart does too)")
+            }
+        }
         if info["old"] as? Bool == true {
             print("  (an older liberttyd: restart Libertty, or libertty +daemon restart, to update it)")
         }

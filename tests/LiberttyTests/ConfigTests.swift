@@ -24,7 +24,8 @@ struct ConfigTests {
 
     @Test(arguments: [("font-size", "abc"), ("cursor-style", "triangle"), ("minimum-contrast", "x"),
                       ("adjust-cell-height", "tall"), ("accent-color", "blurple"), ("pane-style", "roomy"),
-                      ("web-access", "everywhere"), ("theme", "No Such Theme At All")])
+                      ("web-access", "everywhere"), ("theme", "No Such Theme At All"),
+                      ("ssh-agent", "keepass")])
     func badValuesAreRefused(key: String, value: String) {
         var c = Config()
         #expect(c.set(key, value) != nil)

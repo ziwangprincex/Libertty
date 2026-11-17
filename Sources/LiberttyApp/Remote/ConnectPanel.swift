@@ -159,9 +159,12 @@ final class ConnectPanel: NSObject, NSWindowDelegate {
             (NSApp.delegate as? AppDelegate)?.openWindows(on: host, held: held)
         case .failure(let error):
             setStatus((error as? LocalizedError)?.errorDescription ?? "\(error)", busy: false, error: true)
-            // A changed host key, keys ssh-agent hasn't got: what to do, then again.
-            if let problem = SSHRecovery.diagnose(host.lastSSHErrors) {
-                SSHRecovery.offer(problem, destination: destination, in: panel) { [weak self] in
+            // A changed host key, keys ssh-agent hasn't got, a host that
+            // closes the connection at once: what it is, then again.
+            let errors = host.lastSSHErrors
+            SSHRecovery.diagnose(errors, destination: destination) { [weak self] problem in
+                guard let problem else { return }
+                SSHRecovery.offer(problem, destination: destination, errors: errors, in: self?.panel) { [weak self] in
                     self?.field.stringValue = destination
                     self?.connect(nil)
                 }
