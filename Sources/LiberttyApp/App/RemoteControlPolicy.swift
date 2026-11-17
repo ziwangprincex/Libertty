@@ -37,6 +37,12 @@ enum RemoteControlPolicy {
             // Prompts typed into a pane later: driving; what's queued: reading.
             return args.contains("--list") ? nil : message
         }
+        if command == "+forward" {
+            // A forward opens a port on this Mac and may open a page:
+            // driving. Listing what's forwarded is reading.
+            let sub = args.first { !$0.hasPrefix("-") }
+            return sub == "ls" || sub == nil ? nil : message
+        }
         if command == "+rename-session" {
             // An agent naming its own task: that pane's, given or implied.
             let mine = environment["LIBERTTY_SESSION"] ?? ""
@@ -50,6 +56,7 @@ enum RemoteControlPolicy {
     static func refuses(_ info: [String: String], config: Config) -> Bool {
         guard !config.remoteControl else { return false }
         if info["kind"] == "queue" { return info["op"] != "list" }
+        if info["kind"] == "forward" { return info["op"] != "ls" }
         return drivingKinds.contains(info["kind"] ?? "action")
     }
 }

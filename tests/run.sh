@@ -228,6 +228,14 @@ expect remote-host 'remote-probe: all passed' env LIBERTTY_SSH=$ROOT/tests/fixtu
   FAKE_SSH_HOME=$PRIVATE/remote-home FAKE_SSH_SOCKET=$PRIVATE/remote/liberttyd.sock FAKE_SSH_LOG=$PRIVATE/remote.log \
   FAKE_SSH_TERMINFO=$PRIVATE/remote-home/terminfo FAKE_SSH_DOWN=$PRIVATE/remote-down $LIBERTTY --remote-probe liberttytest
 
+# A port forwarded to and from that host: a local web server stands in for
+# its dev server, and fake-ssh really carries the port (its own "remote"
+# home and liberttyd, so it runs beside the check above).
+expect forward-ports 'forward-probe: all passed' env LIBERTTY_SSH=$ROOT/tests/fixtures/fake-ssh \
+  FAKE_SSH_HOME=$PRIVATE/forward-home FAKE_SSH_SOCKET=$PRIVATE/forward/liberttyd.sock \
+  FAKE_SSH_LOG=$PRIVATE/forward.log FAKE_SSH_TERMINFO=$PRIVATE/forward-home/terminfo \
+  $LIBERTTY --forward-probe liberttytest
+
 # Web Access: the page, its secret, a pane's screen and typing, over a
 # real WebSocket on a private port (this Mac only).
 expect web-access 'web-probe: all passed' env LIBERTTY_WEB_PORT=$(( 17000 + RANDOM % 900 )) \
@@ -755,6 +763,8 @@ expect daemon-crash 'daemon-crash: all passed' zsh $ROOT/tests/daemon-crash-test
 expect crash-window 'crash-probe: all passed' $LIBERTTY --crash-probe
 # libertty +hosts: the hosts you keep, and check connecting to one (fake-ssh).
 expect hosts 'hosts: all passed' zsh $ROOT/tests/hosts-test.sh $LIBERTTY
+# libertty +forward: what it takes and refuses, its statuses and completion.
+expect forward 'forward: all passed' zsh $ROOT/tests/forward-test.sh $LIBERTTY
 # libertty +terminfo: xterm-ghostty's terminfo on a host you ssh to (a stand-in ssh), and the ssh that keeps it.
 expect terminfo 'terminfo: all passed' zsh $ROOT/tests/terminfo-test.sh $LIBERTTY
 expect send-key 'send-key: all passed' zsh $ROOT/tests/send-key-test.sh $LIBERTTY

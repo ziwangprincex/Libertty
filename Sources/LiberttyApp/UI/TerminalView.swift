@@ -2058,6 +2058,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
                 return
             }
         }
+        // In a pane running on a host, a link to that machine's own
+        // localhost is a port there, not one here: carry it over the host's
+        // ssh connection and open what answers on this Mac.
+        if let host = session.host, PortForward.isLoopback(url) {
+            return forward(url, on: host, beside: NSApp.currentEvent?.modifierFlags.contains(.option) == true)
+        }
         if ["http", "https"].contains(scheme), NSApp.currentEvent?.modifierFlags.contains(.option) == true, let onOpenDocument {
             // ⌥⌘-click: the page beside the terminal (a dev server next to its log).
             return onOpenDocument(url, nil, true)
@@ -2076,6 +2082,35 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         alert.beginSheetModal(for: window) { response in
             if response == .alertFirstButtonReturn { NSWorkspace.shared.open(url) }
         }
+    }
+
+    /// A dev server's link in a host's pane (`http://localhost:5173/`): ask
+    /// that host's ssh connection to carry the port, then open the page at
+    /// the address this Mac can reach — beside the terminal for ⌥⌘-click,
+    /// as a local link would. The forward stays until the host's last
+    /// window closes; Settings ▸ Remote Hosts lists it and closes it.
+    private func forward(_ url: URL, on host: RemoteHost, beside: Bool) {
+        let openDocument = onOpenDocument
+        // ssh is asked off the main thread; the page opens back on it.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let here = try PortForwarder.shared.rewrite(url, on: host)
+                DispatchQueue.main.async {
+                    if beside, let openDocument { openDocument(here, nil, true) } else { NSWorkspace.shared.open(here) }
+                }
+            } catch {
+                let why = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                DispatchQueue.main.async { self?.forwardFailed(url, on: host, why: why) }
+            }
+        }
+    }
+
+    private func forwardFailed(_ url: URL, on host: RemoteHost, why: String) {
+        let alert = NSAlert()
+        alert.messageText = L10n.t("Couldn't open this link from %@").replacingOccurrences(of: "%@", with: host.destination)
+        alert.informativeText = url.absoluteString + "\n\n" + why
+        // Its own OK button, which AppKit words in the system's language.
+        if let window, window.isVisible { alert.beginSheetModal(for: window) } else { alert.runModal() }
     }
 
     /// Opens a text file from a link in a tab (or beside the pane), at a line if given (set by the window).

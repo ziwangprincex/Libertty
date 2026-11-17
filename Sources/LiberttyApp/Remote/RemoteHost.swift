@@ -197,6 +197,22 @@ final class RemoteHost: @unchecked Sendable {
     /// set up, and its shared ssh connection up. Never prompts.
     var isConnected: Bool { info != nil && masterIsUp }
 
+    /// Ask the shared ssh connection to carry a port, or to stop carrying
+    /// it (`ssh -O forward` / `-O cancel`, for `PortForwarder`). It talks to
+    /// the master that is already up, so there is no login and no process
+    /// of our own to keep alive. Blocking, like everything else here.
+    func control(_ forward: PortForward, cancel: Bool) -> (ok: Bool, why: String) {
+        let result = run("", arguments: PortForward.controlArguments(for: forward, cancel: cancel, options: options))
+        // A listen the host refuses (`-R` onto a port something there
+        // already holds) is a warning on stderr, and ssh still exits 0.
+        let said = result.errors.lowercased()
+        let refused = said.contains("forwarding failed") || said.contains("cannot listen to port")
+        guard result.status == 0, !refused else {
+            return (false, Self.sshError(result.errors.isEmpty ? result.output : result.errors, status: result.status))
+        }
+        return (true, "")
+    }
+
     /// Bring the shared connection up if it's down: one login (one password
     /// prompt) for every pane that wants to reconnect.
     private func ensureMaster() -> Bool {

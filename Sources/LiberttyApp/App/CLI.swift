@@ -98,6 +98,7 @@ enum CLI {
         case "+agents": status = AgentRulesCLI.run(rest)
         case "+terminfo": status = TerminfoCLI.run(rest)
         case "+hosts": status = HostsCLI.run(rest)
+        case "+forward": status = ForwardCLI.run(rest)
         case "+surface": status = SurfaceCLI.run(rest)
         case "+completions": status = completions(rest)
         case "+complete": status = complete(rest)
@@ -267,12 +268,17 @@ enum CLI {
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
           libertty +hosts [list] | add HOST | remove HOST | check HOST
                                          the hosts you keep (Settings ▸ Remote Hosts); check connects and says how
+          libertty +forward open TARGET [--browser] | share PORT | ls | close ID | --all
+                                         carry a port between this Mac and a host: open makes one of the host's
+                                         reachable here (a port, a host:port it can reach, or a URL from one of
+                                         its panes) and prints the address, share makes one of this Mac's
+                                         reachable there; a localhost link in a host's pane forwards itself
           libertty +terminfo setup [SSH ARGS…] | status | show | forget HOST | --all
                                          xterm-ghostty's terminfo on a host you ssh to yourself: then ssh in
                                          Libertty keeps TERM=xterm-ghostty there (ssh-terminfo = true: by itself)
           --host HOST                    with +list-sessions, +new-session, +capture, +send, +send-key,
-                                         +kill-session, +wait, +events, +ports, +split, +move-pane, +daemon or +clients:
-                                         that machine's sessions
+                                         +kill-session, +wait, +events, +ports, +split, +move-pane, +forward,
+                                         +daemon or +clients: that machine's sessions
 
         With remote-control = false (Settings ▸ Integrations), commands may read but not drive Libertty:
         +split, +send, +focus, +action, +new-window, +new-session, +kill-session, +daemon stop… are refused.

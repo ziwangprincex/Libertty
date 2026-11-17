@@ -5,14 +5,19 @@
 # so nothing touches the user's own. While $FAKE_SSH_DOWN exists, the
 # "network" is down. $FAKE_SSH_FAIL names a file of ssh's own words: a login
 # fails with them, as a real ssh would (for the recovery checks).
-# $FAKE_SSH_IDENTITY_AGENT is what `ssh -G` resolves IdentityAgent to.
+# $FAKE_SSH_IDENTITY_AGENT is the IdentityAgent `ssh -G` says the config sets
+# (none said when it's unset, as ssh does).
 check=0
 config=0
+control=
+flag=
+spec=
 while [ $# -gt 0 ]; do
   case "$1" in
-    -O) [ "$2" = check ] && check=1; shift 2 ;;
+    -O) control=$2; [ "$2" = check ] && check=1; shift 2 ;;
     -G) config=1; shift ;;
-    -o|-F|-S|-p|-l|-i|-J|-L|-R|-D|-E|-b|-c|-e|-m|-Q|-W|-w) shift 2 ;;
+    -L|-R) flag=$1; spec=$2; shift 2 ;;
+    -o|-F|-S|-p|-l|-i|-J|-D|-E|-b|-c|-e|-m|-Q|-W|-w) shift 2 ;;
     -*) shift ;;
     *) break ;;
   esac
@@ -24,7 +29,8 @@ if [ $config = 1 ]; then
   echo "user ${USER:-me}"
   echo "hostname $host"
   echo "port 22"
-  echo "identityagent ${FAKE_SSH_IDENTITY_AGENT:-SSH_AUTH_SOCK}"
+  # As ssh: only when the config sets one.
+  [ -n "${FAKE_SSH_IDENTITY_AGENT:-}" ] && echo "identityagent $FAKE_SSH_IDENTITY_AGENT"
   exit 0
 fi
 if [ -n "${FAKE_SSH_FAIL:-}" ] && [ -f "$FAKE_SSH_FAIL" ]; then
@@ -40,6 +46,52 @@ if [ "$host" = unreachable ]; then
   echo "ssh: Could not resolve hostname unreachable: nodename nor servname provided, or not known" >&2
   exit 255
 fi
+
+# `ssh -O forward|cancel -L|-R 127.0.0.1:LOCAL:HOST:REMOTE`: the port forwards
+# the shared connection carries. $FAKE_SSH_FORWARDS keeps the ones that are up,
+# one "FLAG SPEC PID" a line, and fake-ssh-relay.py stands in for the listener
+# the master would open, so a forwarded port really answers. $FAKE_SSH_FORWARD_FAIL
+# is a port the "host" refuses, as one already taken there would be.
+if [ "$control" = forward ] || [ "$control" = cancel ]; then
+  [ -z "$FAKE_SSH_FORWARDS" ] && exit 0
+  local_port=$(echo "$spec" | cut -d: -f2)
+  remote_port=$(echo "$spec" | cut -d: -f4)
+  touch "$FAKE_SSH_FORWARDS"
+  if [ "$control" = cancel ]; then
+    while read -r line; do
+      case "$line" in
+        "$flag $spec "*) kill "${line##* }" 2> /dev/null ;;
+        *) [ -n "$line" ] && echo "$line" ;;
+      esac
+    done < "$FAKE_SSH_FORWARDS" > "$FAKE_SSH_FORWARDS.new"
+    mv "$FAKE_SSH_FORWARDS.new" "$FAKE_SSH_FORWARDS"
+    echo "Canceled forwarding."
+    exit 0
+  fi
+  if [ -n "$FAKE_SSH_FORWARD_FAIL" ] && [ "$remote_port" = "$FAKE_SSH_FORWARD_FAIL" ]; then
+    echo "Warning: remote port forwarding failed for listen port $remote_port" >&2
+    exit 255
+  fi
+  ready="$FAKE_SSH_FORWARDS.ready.$$"
+  rm -f "$ready"
+  python3 -I "$(dirname "$0")/fake-ssh-relay.py" "$local_port" "$remote_port" "$ready" \
+    < /dev/null > /dev/null 2>&1 &
+  pid=$!
+  i=0
+  while [ ! -e "$ready" ] && [ $i -lt 100 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  rm -f "$ready"
+  if ! kill -0 "$pid" 2> /dev/null; then
+    echo "Port forwarding failed: bind: Address already in use" >&2
+    exit 255
+  fi
+  echo "$flag $spec $pid" >> "$FAKE_SSH_FORWARDS"
+  echo "Forwarding port."
+  exit 0
+fi
+
 export LIBERTTY_HOME="$FAKE_SSH_HOME" LIBERTTY_DAEMON_SOCKET="$FAKE_SSH_SOCKET" LIBERTTY_DAEMON_LOG="$FAKE_SSH_LOG" \
   LIBERTTY_TERMINFO_DIR="$FAKE_SSH_TERMINFO"
 unset LIBERTTY_ASKPASS SSH_ASKPASS SSH_ASKPASS_REQUIRE LIBERTTY_STATE_FILE FAKE_SSH_DOWN FAKE_SSH_FAIL

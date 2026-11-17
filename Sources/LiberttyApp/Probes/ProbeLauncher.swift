@@ -15,7 +15,8 @@ enum ProbeLauncher {
         // A probe missing its arguments must stop here: run on, it would be
         // an ordinary launch, a real window that takes the focus.
         let arguments = ["--session-bench": 1, "--link-probe": 1, "--command-probe": 1, "--responsible-probe": 1,
-                         "--ui-probe": 2, "--document-probe": 2, "--remote-probe": 1, "--output-probe": 1,
+                         "--ui-probe": 2, "--document-probe": 2, "--remote-probe": 1, "--forward-probe": 1,
+                         "--output-probe": 1,
                          "--shell-probe": 2, "--parse-bench": 1, "--screen-probe": 1, "--screen-cover-probe": 1]
         // Not what follows -e: that's a command to run, its words its own.
         let own = args.firstIndex(of: "-e").map { Array(args[..<$0]) } ?? args
@@ -83,6 +84,7 @@ enum ProbeLauncher {
             MainActor.assumeIsolated { updateNotesProbe(feed: args[i + 1], to: args[i + 2]) }
         }
         if let i = args.firstIndex(of: "--remote-probe"), i + 1 < args.count { remoteProbe(host: args[i + 1]) }
+        if let i = args.firstIndex(of: "--forward-probe"), i + 1 < args.count { forwardProbe(host: args[i + 1]) }
         if let i = args.firstIndex(of: "--output-probe"), i + 1 < args.count { outputProbe(shell: args[i + 1]) }
         if let i = args.firstIndex(of: "--shell-probe"), i + 2 < args.count { shellProbe(shell: args[i + 1], input: args[i + 2]) }
         // `--parse-bench FILE [--cols N] [--rows N] [--seconds S]`: FILE fed

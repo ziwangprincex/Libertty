@@ -1362,6 +1362,8 @@ struct RemoteHostsPage: View {
     /// Bumped as hosts connect and fail, so their rows say so.
     @ViewState private var tick = 0
     @ViewState private var adding = ""
+    /// The ports the hosts carry right now (PortForwarder).
+    @ViewState private var forwards: [PortForward] = []
 
     var body: some View {
         Form {
@@ -1411,6 +1413,19 @@ struct RemoteHostsPage: View {
                     Button("Connect to Host…") { ConnectPanel.shared.show() }
                 }
             }
+            if !forwards.isEmpty {
+                Section {
+                    ForEach(forwards, id: \.id) { forward in
+                        ForwardRow(forward: forward)
+                    }
+                } header: {
+                    Text(L10n.t("Forwarded Ports"))
+                } footer: {
+                    Text(L10n.t("A localhost link in a host's pane carries its port over by itself and opens here. Forward Port in the command palette adds one by hand; a host's forwards close with its last window."))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
             Section(L10n.t("Keys")) {
                 ForEach(SettingsRegistry.items(on: .remoteHosts).filter { Self.agentItems.contains($0.id) }) { item in
                     SSHAgentRow(model: model, item: item)
@@ -1437,9 +1452,13 @@ struct RemoteHostsPage: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { hosts = SavedHosts.all }
+        .onAppear {
+            hosts = SavedHosts.all
+            forwards = PortForwarder.shared.all
+        }
         .onReceive(NotificationCenter.default.publisher(for: SavedHosts.changed)) { _ in hosts = SavedHosts.all }
         .onReceive(NotificationCenter.default.publisher(for: RemoteHost.statusChanged)) { _ in tick += 1 }
+        .onReceive(NotificationCenter.default.publisher(for: PortForwarder.changed)) { _ in forwards = PortForwarder.shared.all }
     }
 
     /// Drawn by SSHAgentRow rather than the generic row, under Keys.
@@ -1560,6 +1579,34 @@ private struct SSHAgentRow: View {
                     standing = answer
                 }
             }
+        }
+    }
+}
+
+/// One forwarded port: which way it goes, between what, and Close to take
+/// it back from the host's ssh connection.
+private struct ForwardRow: View {
+    let forward: PortForward
+
+    var body: some View {
+        LabeledContent {
+            Button(L10n.t("Close")) {
+                // ssh is asked off the main thread; the list follows the
+                // notification the forwarder posts when it's gone.
+                let id = forward.id
+                DispatchQueue.global(qos: .userInitiated).async { _ = PortForwarder.shared.close(id: id) }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: forward.direction == .open ? "arrow.left.arrow.right" : "arrow.up.arrow.down")
+                    .foregroundStyle(.secondary).frame(width: 16).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(forward.id)
+                    Text(forward.summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 }
