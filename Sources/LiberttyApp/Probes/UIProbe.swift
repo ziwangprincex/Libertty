@@ -1347,6 +1347,29 @@ enum UIProbe {
                             for u in inSidebar { print("      \(u.role): \(u.description)") }
                             failures += 1
                         }
+                    case .glideResize(let n, let width):
+                        guard n >= 1, n <= controller.tabs.count else {
+                            print("FAIL  ui-probe glide-resize: no tab \(n)")
+                            failures += 1
+                            break
+                        }
+                        controller.select(controller.tabs[n - 1])
+                        pump(0.05)
+                        controller.splitController.splitView.setPosition(CGFloat(width), ofDividerAt: 0)
+                        controller.window?.layoutIfNeeded()
+                        pump(0.8)
+                        print("ok    ui-probe glide-resize: tab \(n), sidebar \(Int(controller.sidebar.view.frame.width)) wide")
+                    case .expectSelectionCard:
+                        // The sidebar's card covers the selected row, edge to edge.
+                        let fit = controller.sidebar.selectionCardFit
+                        let style = (fit.legacy ? "legacy" : "overlay") + " scrollers" + (fit.scrollerShown ? ", one shown" : "") + "; " + fit.list
+                            + "; window \(Int(window.frame.height)) high"
+                        if fit.card == fit.row, !fit.row.isEmpty {
+                            print("ok    ui-probe selection card covers its row (\(style))")
+                        } else {
+                            print("FAIL  ui-probe selection card \(fit.card), its row \(fit.row) (\(style))")
+                            failures += 1
+                        }
                     case .expectNews(let n, let text):
                         // Rows with a ring, each on its name's line.
                         let news = controller.sidebar.shownNews
@@ -1809,7 +1832,7 @@ enum UIProbe {
         /// and a row of its completion list ("none": not open).
         case expectGhost(String), expectCompletions(String)
         /// Controls in the app's windows on screen that VoiceOver reads by their role alone (the sidebar's apart).
-        case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String), expectNews(Int, String)
+        case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String), expectNews(Int, String), expectSelectionCard, glideResize(Int, Double)
         /// Something VoiceOver was told (AccessibilityNews) since the last of these said it ("-": nothing).
         case expectAnnounced(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
@@ -1965,6 +1988,12 @@ enum UIProbe {
             case "header-pointer": steps.append(.headerPointer(arg == "on"))
             case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
             case "expect-unlabeled-sidebar": steps.append(.expectUnlabeledSidebar(Int(arg) ?? -1))
+            case "expect-selection-card": steps.append(.expectSelectionCard)
+            case "glide-resize":
+                // `glide-resize:N:WIDTH`: select tab N, and while the sidebar's
+                // card is still gliding there (motion:on), make the sidebar WIDTH wide.
+                let p = arg.split(separator: ":").compactMap { Double($0) }
+                if p.count == 2 { steps.append(.glideResize(Int(p[0]), p[1])) }
             case "expect-news":
                 // `expect-news:1:RINGER`: how many rows show a news ring, and whose.
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)

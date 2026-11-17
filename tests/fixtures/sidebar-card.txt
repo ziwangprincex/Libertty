@@ -1,0 +1,58 @@
+# The sidebar's selection card covers the selected row edge to edge, with
+# scrollers that take room (run with -AppleShowScrollBars Always, as with a
+# mouse attached): the list overflowing (a scroller) and fitting again (none),
+# the sidebar's edge dragged, its width changing while the card glides, and
+# the sidebar hidden and shown. (The card used to keep the width it was
+# given: a scroller shown for a moment left it narrower than its row.)
+wait:0.5
+tab:new
+expect-selection-card:two
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+tab:new
+wait:0.5
+expect-selection-card:overflowing
+tab:3
+expect-selection-card:third
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+key:cmd+w
+wait:0.5
+expect-selection-card:fits-again
+sidebar-width:300
+expect-selection-card:wider
+sidebar-width:226
+expect-selection-card:narrower
+motion:on
+glide-resize:1:300
+expect-selection-card:wider-while-gliding
+glide-resize:3:226
+expect-selection-card:narrower-while-gliding
+action:toggle_sidebar
+wait:0.6
+action:toggle_sidebar
+wait:0.6
+expect-selection-card:shown-again

@@ -382,7 +382,10 @@ final class SidebarViewController: NSViewController {
             foot.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
             foot.heightAnchor.constraint(equalToConstant: 28),
         ])
-        tabsHeight.priority = .defaultHigh
+        // Its rows' height when the column has room; when it hasn't, the list
+        // scrolls. (Above the window's own size, the rows made the window
+        // taller with every tab, past the screen, and never scrolled.)
+        tabsHeight.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 1)
         // With the files folded away the tabs may use nearly the whole column.
         tabsCapWithFiles = tabsScroll.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor, multiplier: 0.45)
         tabsCapAlone = filesRow.bottomAnchor.constraint(lessThanOrEqualTo: foot.topAnchor, constant: -10)
@@ -538,6 +541,16 @@ final class SidebarViewController: NSViewController {
                   let off = cell.newsOffCenter else { return nil }
             return (tabs[i].title, off)
         }
+    }
+
+    /// The selection card's frame and the selected row's, in the table,
+    /// and the list's scroller style (`--ui-probe`).
+    var selectionCardFit: (card: NSRect, row: NSRect, legacy: Bool, scrollerShown: Bool, list: String) {
+        view.window?.contentView?.layoutSubtreeIfNeeded()
+        let row = tabsTable.selectedRow >= 0 ? tabsTable.rect(ofRow: tabsTable.selectedRow) : .zero
+        let list = "list \(tabsTable.frame.size) in \(tabsScroll.contentView.bounds.size)"
+        return (selectionCard.isHidden ? .zero : selectionCard.frame, row, tabsScroll.scrollerStyle == .legacy,
+                tabsScroll.verticalScroller.map { !$0.isHidden } ?? false, list)
     }
 
     /// Where the row showing `text` is, in the window (`--ui-probe` clicks
@@ -807,8 +820,8 @@ final class SidebarViewController: NSViewController {
     /// The selection card sits behind the rows, over the selected one.
     private lazy var selectionCard: SelectionCard = {
         let card = SelectionCard()
-        // As wide as the rows when the sidebar's edge is dragged.
-        card.autoresizingMask = [.width]
+        // As wide as the rows, whatever changes their width.
+        card.spansRows = true
         tabsTable.addSubview(card, positioned: .below, relativeTo: nil)
         return card
     }()
@@ -1878,6 +1891,12 @@ private final class ElsewhereCell: NSTableCellView {
 final class SelectionCard: NSView {
     private var target: NSRect?
 
+    /// Over a list's rows (the sidebar's): always as wide as the rows are
+    /// now, only its height and place up and down kept. (A width kept fell
+    /// behind the rows': narrower by a scroller's width when one showed for
+    /// a moment.) The top tabs' card goes across and keeps each tab's width.
+    var spansRows = false
+
     /// A raised card (the sidebar's rows) or a flat tint (the top tabs, Tern's).
     var flat = false { didSet { updateColors() } }
 
@@ -1903,38 +1922,77 @@ final class SelectionCard: NSView {
         layer?.shadowColor = NSColor.clear.cgColor
     }
 
+    /// `rect`, over rows: up and down as given, the rows' width across.
+    private func across(_ rect: NSRect) -> NSRect {
+        guard spansRows, !rect.isEmpty, let rows = superview?.bounds else { return rect }
+        return NSRect(x: rows.minX, y: rect.minY, width: rows.width, height: rect.height)
+    }
+
+    /// Where it is already (over rows, only up and down count).
+    private func samePlace(_ a: NSRect?, _ b: NSRect) -> Bool {
+        guard let a else { return false }
+        guard spansRows else { return a == b }
+        return a.minY == b.minY && a.height == b.height && a.isEmpty == b.isEmpty
+    }
+
     /// Be at `rect` at once (a drag, a scroll), whatever was under way.
     func place(_ rect: NSRect) {
         target = rect
+        moves += 1
         isHidden = rect.isEmpty
-        frame = rect
+        frame = across(rect)
     }
+
+    /// Each move, so a glide's second half knows when another took over.
+    private var moves = 0
 
     /// Glide to `rect`; jump there when it's the first placement or motion is reduced.
     func move(to rect: NSRect) {
-        guard rect != target else { return }
+        guard !samePlace(target, rect) else {
+            // The same row: only the rows' width may have changed.
+            let wide = across(rect)
+            if spansRows, !rect.isEmpty, frame.minX != wide.minX || frame.width != wide.width {
+                var f = frame
+                f.origin.x = wide.minX
+                f.size.width = wide.width
+                frame = f
+            }
+            return
+        }
         let from = target
         target = rect
+        moves += 1
+        let move = moves
         isHidden = rect.isEmpty
         guard let from, !from.isEmpty, !rect.isEmpty, Motion.duration(Motion.card) > 0 else {
-            frame = rect
+            frame = across(rect)
             return
         }
         // Stretch to cover both rows (the leading edge arrives first), then
         // let the trailing edge catch up.
-        let union = from.union(rect)
+        let union = across(from.union(rect))
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = Motion.small * 0.55
             ctx.timingFunction = Motion.ease
             animator().frame = union
         }, completionHandler: { [weak self] in
-            guard let self, self.target == rect else { return }
+            guard let self, self.moves == move, let target = self.target else { return }
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = Motion.card * 0.7
                 ctx.timingFunction = Motion.out
-                self.animator().frame = rect
+                self.animator().frame = self.across(target)
             }
         })
+    }
+
+    // The rows got wider or narrower (the sidebar's edge dragged, a
+    // scroller shown or gone): as wide as they are, whatever it was.
+    override func resize(withOldSuperviewSize oldSize: NSSize) {
+        guard spansRows, let rows = superview?.bounds, !isHidden else { return super.resize(withOldSuperviewSize: oldSize) }
+        var f = frame
+        f.origin.x = rows.minX
+        f.size.width = rows.width
+        frame = f
     }
 }
 

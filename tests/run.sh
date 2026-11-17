@@ -429,6 +429,10 @@ expect sidebar-toggle 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-
 # The sidebar's activity filter.
 expect sidebar-activity 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-activity.txt)" $OUT
+# The sidebar's selection card covers its row, with scrollers that take room;
+# a list that doesn't fit scrolls (the window keeps its size).
+expect sidebar-card 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-card.txt)" $OUT -AppleShowScrollBars Always
 # A background tab's news ring: on its name's line, where its badge says nothing.
 expect sidebar-news 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sidebar-news.txt)" $OUT
