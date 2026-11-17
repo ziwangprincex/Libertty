@@ -15,13 +15,18 @@ import LiberttyCore
 /// it to act, and print what it answers.
 enum ForwardCLI {
     static func run(_ args: [String]) -> Int32 {
-        let sub = args.first ?? "ls"
-        var rest = Array(args.dropFirst()), all = false, browser = false
+        // The first word that isn't an option, wherever it is (as the
+        // remote-control policy reads the line): `+forward --browser open 5173`.
+        var rest = args, all = false, browser = false
+        let sub = rest.firstIndex { !$0.hasPrefix("-") }.map { rest.remove(at: $0) } ?? "ls"
         rest.removeAll {
             if $0 == "--all" { all = true; return true }
             if $0 == "--browser" { browser = true; return true }
             return false
         }
+        // Each option belongs to one command.
+        if all, sub != "close" { return fail("--all goes with close", CLI.ExitCode.usage) }
+        if browser, sub != "open" { return fail("--browser goes with open", CLI.ExitCode.usage) }
         if let unknown = rest.first(where: { $0.hasPrefix("--") }) {
             return fail("unknown option \(unknown)", CLI.ExitCode.usage)
         }

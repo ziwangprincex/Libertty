@@ -1,8 +1,15 @@
 #!/bin/zsh
 # libertty +forward: what it takes, what it refuses, its exit statuses and
 # its completion. The forwards themselves are the forward probe's (a stand-in
-# ssh and a stand-in dev server); nothing here reaches a host or the app.
+# ssh and a stand-in dev server); nothing here reaches a host. The one
+# command that asks the app (+forward ls, under remote-control = false) asks
+# for this run's private liberttyd's Libertty, which isn't running.
 #   tests/forward-test.sh LIBERTTY_BINARY
+
+# Never the user's own liberttyd or app: run alone, the requests would carry
+# the user's own socket. tests/run.sh sets a private one.
+[[ -n ${LIBERTTY_DAEMON_SOCKET:-} && -n ${LIBERTTY_DATA_DIR:-} ]] \
+  || { echo "set a private LIBERTTY_DAEMON_SOCKET and LIBERTTY_DATA_DIR (tests/run.sh does)"; exit 2; }
 set -u
 L=$1
 T=$(mktemp -d)
@@ -31,9 +38,11 @@ usage "close without an id" 2 close
 usage "ls takes nothing else" 2 ls extra
 usage "an option it doesn't know" 2 ls --nope
 
+usage "--all goes with close" 2 ls --all
+usage "--browser goes with open" 2 share 3000 --browser
+
 # (A port, a host:port and a URL are targets it takes: PortForwardTests
-# checks which, and the forward probe carries one end to end. Nothing here
-# asks the running Libertty, which may not be the one these tests built.)
+# checks which, and the forward probe carries one end to end.)
 
 # remote-control = false: listing reads, making and closing drive.
 mkdir -p $T/config/libertty

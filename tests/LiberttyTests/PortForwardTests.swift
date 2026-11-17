@@ -122,6 +122,9 @@ struct PortForwardTests {
         // Another machine, reached from the host.
         let far = PortForward(destination: "devbox", direction: .open, local: 49231, remote: 5432, remoteHost: "db")
         #expect(far.specification == "127.0.0.1:49231:db:5432")
+        // An IPv6 address in brackets: ssh splits the rest on colons.
+        let six = PortForward(destination: "devbox", direction: .open, local: 3000, remote: 3000, remoteHost: "::1")
+        #expect(six.specification == "127.0.0.1:3000:[::1]:3000")
     }
 
     @Test func sshIsAskedOverTheSharedConnection() {
@@ -175,6 +178,31 @@ struct PortForwardTests {
         // Out of range is no port at all.
         #expect(!PortForward.canBind(0) && !PortForward.canBind(70000))
         #expect(!PortForward.isListening(0))
+    }
+
+    /// A program here listening on IPv6 (a local dev server on `::` or ::1)
+    /// is what `localhost` reaches first in a browser: its port isn't free
+    /// for a forward, though 127.0.0.1 alone could still be bound.
+    @Test func aPortHeldOnIPv6IsNotFree() throws {
+        let port = try #require(PortForward.freePort(preferring: 0))
+        let held = socket(AF_INET6, SOCK_STREAM, 0)
+        try #require(held >= 0)
+        defer { close(held) }
+        var only: Int32 = 1
+        setsockopt(held, IPPROTO_IPV6, IPV6_V6ONLY, &only, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in6()
+        addr.sin6_family = sa_family_t(AF_INET6)
+        addr.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+        addr.sin6_addr = in6addr_loopback
+        addr.sin6_port = UInt16(port).bigEndian
+        let size = socklen_t(MemoryLayout<sockaddr_in6>.size)
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(held, $0, size) == 0 }
+        }
+        try #require(bound)
+        try #require(listen(held, 1) == 0)
+        #expect(!PortForward.canBind(port))
+        #expect(try #require(PortForward.freePort(preferring: port)) != port)
     }
 
     // MARK: What the running Libertty is asked

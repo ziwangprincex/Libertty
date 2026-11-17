@@ -189,13 +189,27 @@ final class RemoteHost: @unchecked Sendable {
     }
 
     /// Whether the shared ssh connection is up (`ssh -O check`, local and quick).
-    private var masterIsUp: Bool {
-        run("", arguments: options + ["-O", "check", destination]).status == 0
+    private var masterIsUp: Bool { masterProcess != nil }
+
+    /// The shared ssh connection's process, from `ssh -O check` ("Master
+    /// running (pid=4242)"): nil when it's down, 0 when it's up and didn't
+    /// say. A forward belongs to the master that took it: one with another
+    /// pid is a new connection, which holds none of the old one's.
+    private var masterProcess: Int32? {
+        let check = run("", arguments: options + ["-O", "check", destination])
+        guard check.status == 0 else { return nil }
+        let said = check.errors + check.output
+        guard let at = said.range(of: "pid=") else { return 0 }
+        return Int32(said[at.upperBound...].prefix { $0.isNumber }) ?? 0
     }
 
     /// Whether a connection there would work without logging in again:
     /// set up, and its shared ssh connection up. Never prompts.
     var isConnected: Bool { info != nil && masterIsUp }
+
+    /// The shared connection's process while the host is connected (see
+    /// `masterProcess`); nil when it isn't. Blocking, never prompts.
+    var master: Int32? { info == nil ? nil : masterProcess }
 
     /// Ask the shared ssh connection to carry a port, or to stop carrying
     /// it (`ssh -O forward` / `-O cancel`, for `PortForwarder`). It talks to
@@ -222,7 +236,12 @@ final class RemoteHost: @unchecked Sendable {
         if masterIsUp { return true }
         if stateLock.withLock({ waitingForUser }) { return false }
         let login = run("true")
-        if login.status == 0 { return true }
+        if login.status == 0 {
+            // Up again after it dropped: a new connection, with none of the
+            // old one's forwards (PortForwarder asks for them again).
+            statusChanged()
+            return true
+        }
         fail(sshFailure(login.errors, status: login.status))
         return false
     }

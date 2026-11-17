@@ -20,6 +20,10 @@ extension ProbeLauncher {
         // Where fake-ssh writes down the forwards it was asked for.
         let book = dir.appendingPathComponent("forwards.txt")
         setenv("FAKE_SSH_FORWARDS", book.path, 1)
+        // The "master" ssh says is running: another pid once it dropped.
+        let master = book.deletingLastPathComponent().appendingPathComponent("master.pid")
+        try? "1001".write(to: master, atomically: true, encoding: .utf8)
+        setenv("FAKE_SSH_MASTER", master.path, 1)
 
         func wait(_ seconds: Double, until done: () -> Bool) -> Bool {
             let deadline = Date().addingTimeInterval(seconds)
@@ -144,6 +148,8 @@ extension ProbeLauncher {
             for line in (try? String(contentsOf: book, encoding: .utf8))?.split(separator: "\n") ?? [] {
                 if let pid = line.split(separator: " ").last.flatMap({ Int32($0) }) { kill(pid, SIGTERM) }
             }
+            try? "".write(to: book, atomically: true, encoding: .utf8)
+            try? "1002".write(to: master, atomically: true, encoding: .utf8)
             check("the forward is down with its master", wait(5) { !PortForward.isListening(local) })
             NotificationCenter.default.post(name: RemoteHost.statusChanged, object: host)
             check("it comes back on reconnect", wait(10) { PortForward.isListening(local) })

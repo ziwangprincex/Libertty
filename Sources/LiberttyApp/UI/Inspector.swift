@@ -288,21 +288,7 @@ final class InspectorViewController: NSViewController {
         // runs on this machine. The host's ssh connection carries it over
         // first (off the main thread: ssh is asked), as a link in its pane does.
         guard let destination = host else { return show(url) }
-        let remote = RemoteHost.named(destination)
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                let here = try PortForwarder.shared.rewrite(url, on: remote)
-                DispatchQueue.main.async { show(here) }
-            } catch {
-                let why = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-                DispatchQueue.main.async {
-                    let alert = NSAlert()
-                    alert.messageText = L10n.t("Couldn't open this link from %@").replacingOccurrences(of: "%@", with: destination)
-                    alert.informativeText = url.absoluteString + "\n\n" + why
-                    if let window = self?.view.window { alert.beginSheetModal(for: window) } else { alert.runModal() }
-                }
-            }
-        }
+        PortForwarder.open(url, on: RemoteHost.named(destination), window: view.window) { show($0) }
     }
 
     /// The focused pane's repository changes (`git diff`), beside it.

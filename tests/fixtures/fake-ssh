@@ -41,7 +41,12 @@ if [ -n "$FAKE_SSH_DOWN" ] && [ -e "$FAKE_SSH_DOWN" ]; then
   echo "ssh: connect to host $host port 22: Network is unreachable" >&2
   exit 255
 fi
-[ $check = 1 ] && exit 0
+# The master's pid, as ssh says it; $FAKE_SSH_MASTER holds one that changes
+# when the probe's "connection" drops and comes back.
+if [ $check = 1 ]; then
+  echo "Master running (pid=$(cat "${FAKE_SSH_MASTER:-/nonexistent}" 2> /dev/null || echo 4242))" >&2
+  exit 0
+fi
 if [ "$host" = unreachable ]; then
   echo "ssh: Could not resolve hostname unreachable: nodename nor servname provided, or not known" >&2
   exit 255

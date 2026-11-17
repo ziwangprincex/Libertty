@@ -268,7 +268,7 @@ enum CLI {
           libertty +connect HOST            open a window on HOST (File ▸ Connect to Host…)
           libertty +hosts [list] | add HOST | remove HOST | check HOST
                                          the hosts you keep (Settings ▸ Remote Hosts); check connects and says how
-          libertty +forward open TARGET [--browser] | share PORT | ls | close ID | --all
+          libertty +forward open TARGET [--browser] | share PORT | ls | close ID|--all
                                          carry a port between this Mac and a host: open makes one of the host's
                                          reachable here (a port, a host:port it can reach, or a URL from one of
                                          its panes) and prints the address, share makes one of this Mac's

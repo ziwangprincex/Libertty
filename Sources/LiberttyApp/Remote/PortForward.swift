@@ -1,5 +1,5 @@
+import AppKit
 import Darwin
-import Foundation
 import LiberttyCore
 
 /// A port carried between this Mac and a host Libertty is connected to
@@ -29,6 +29,9 @@ struct PortForward: Sendable, Equatable {
     /// What the host resolves `remote` on: `localhost` for its own dev
     /// server, another name for a machine only the host can reach.
     var remoteHost: String = "localhost"
+    /// The pid of the host's ssh master that took it (0: it didn't say). A
+    /// master with another pid is a new connection, which holds none of it.
+    var master: Int32 = 0
 
     /// Short, stable and typed by hand (`libertty +forward close`): the
     /// host, which way it goes, and the port on the host's side.
@@ -54,9 +57,11 @@ struct PortForward: Sendable, Equatable {
     /// bind address is 127.0.0.1 both ways: a forward is for this machine
     /// (or that one), not for its network.
     var specification: String {
+        // An IPv6 address goes in brackets: ssh splits the rest on colons.
+        let there = remoteHost.contains(":") ? "[\(remoteHost)]" : remoteHost
         switch direction {
-        case .open: "127.0.0.1:\(local):\(remoteHost):\(remote)"
-        case .share: "127.0.0.1:\(remote):localhost:\(local)"
+        case .open: return "127.0.0.1:\(local):\(there):\(remote)"
+        case .share: return "127.0.0.1:\(remote):localhost:\(local)"
         }
     }
 
@@ -119,65 +124,85 @@ struct PortForward: Sendable, Equatable {
 
     // MARK: Ports on this Mac
 
-    /// Whether this Mac could listen on a port: whether ssh's own forward
-    /// listener could, that is, so SO_REUSEADDR is set as ssh sets it — a
-    /// port whose last connections are still in TIME_WAIT can be listened
-    /// on again, while one a program is listening on cannot.
-    static func canBind(_ port: Int) -> Bool {
-        guard (1...65535).contains(port) else { return false }
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
+    /// The four places a program on this Mac may listen on a port and be
+    /// what `localhost` reaches: IPv4's loopback and any-address, IPv6's
+    /// too. A browser tries ::1 first for `localhost`.
+    private enum Place: CaseIterable { case v4Loopback, v4Any, v6Loopback, v6Any }
+
+    /// A socket of `place`'s family and its address with `port`, handed to
+    /// `body`; the socket is closed after. False when no socket could be made.
+    private static func socket(at place: Place, port: Int, _ body: (Int32, UnsafePointer<sockaddr>, socklen_t) -> Bool) -> Bool {
+        let v6 = place == .v6Loopback || place == .v6Any
+        let fd = Darwin.socket(v6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }
-        var reuse: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        if v6 {
+            var addr = sockaddr_in6()
+            addr.sin6_family = sa_family_t(AF_INET6)
+            addr.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            addr.sin6_addr = place == .v6Loopback ? in6addr_loopback : in6addr_any
+            addr.sin6_port = UInt16(port).bigEndian
+            // Only IPv6: the IPv4 places are asked on their own.
+            var only: Int32 = 1
+            setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &only, socklen_t(MemoryLayout<Int32>.size))
+            return withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { body(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
+            }
+        }
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        addr.sin_addr.s_addr = place == .v4Loopback ? inet_addr("127.0.0.1") : INADDR_ANY
         addr.sin_port = UInt16(port).bigEndian
-        let size = socklen_t(MemoryLayout<sockaddr_in>.size)
         return withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, size) == 0 }
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { body(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }
     }
 
-    /// Whether something on this Mac answers on a port. A forward's
-    /// listener belongs to the ssh master that holds it, so one that stopped
-    /// answering is one to ask for again.
+    /// Whether a forward could take a port here and be what `localhost`
+    /// reaches on it: ssh listens on 127.0.0.1 (with SO_REUSEADDR, so a
+    /// port still in TIME_WAIT can be listened on again), but a program
+    /// listening on `::`, `::1` or `0.0.0.0` would answer `localhost`
+    /// first, or as well — the page opened would be this Mac's own.
+    static func canBind(_ port: Int) -> Bool {
+        guard (1...65535).contains(port) else { return false }
+        return Place.allCases.allSatisfy { place in
+            socket(at: place, port: port) { fd, addr, size in
+                var reuse: Int32 = 1
+                setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+                return bind(fd, addr, size) == 0
+            }
+        }
+    }
+
+    /// Whether something on this Mac answers on 127.0.0.1:`port` (a real
+    /// connection: the probe's and the tests' look at a forward, never the
+    /// forwarder's own — through a forward it would reach the host's side).
     static func isListening(_ port: Int) -> Bool {
         guard (1...65535).contains(port) else { return false }
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        addr.sin_port = UInt16(port).bigEndian
-        let size = socklen_t(MemoryLayout<sockaddr_in>.size)
         // Loopback answers or refuses at once; no timeout to wait for.
-        return withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, size) == 0 }
-        }
+        return socket(at: .v4Loopback, port: port) { fd, addr, size in connect(fd, addr, size) == 0 }
     }
 
     /// A port on this Mac to listen on: the host's own number when it's
     /// free, so `http://localhost:5173/` stays that; else one the system
-    /// picks, and the link's port is rewritten.
+    /// picks (free in every place `localhost` might reach), and the link's
+    /// port is rewritten.
     static func freePort(preferring wanted: Int) -> Int? {
         if canBind(wanted) { return wanted }
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { return nil }
-        defer { close(fd) }
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        addr.sin_port = 0
-        var size = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let bound = withUnsafeMutablePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, size) == 0 && getsockname(fd, $0, &size) == 0 }
+        for _ in 0..<8 {
+            var port = 0
+            let picked = socket(at: .v4Loopback, port: 0) { fd, addr, size in
+                var named = sockaddr_in()
+                var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+                guard bind(fd, addr, size) == 0, withUnsafeMutablePointer(to: &named, {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) == 0 }
+                }) else { return false }
+                port = Int(UInt16(bigEndian: named.sin_port))
+                return true
+            }
+            if picked, port != 0, canBind(port) { return port }
         }
-        guard bound else { return nil }
-        let port = Int(UInt16(bigEndian: addr.sin_port))
-        return port == 0 ? nil : port
+        return nil
     }
 
     // MARK: What the user typed
@@ -250,9 +275,35 @@ final class PortForwarder: @unchecked Sendable {
     private let lock = NSLock()
     /// The forwards each host holds, in the order they were made.
     private var held: [String: [PortForward]] = [:]
-    /// One change at a time, so two panes asking for the same port don't
-    /// both pick the same local one (as `prepareLock` serializes logins).
-    private let workLock = NSLock()
+    /// One change at a time per host, so two panes asking for the same port
+    /// don't both pick the same local one (as `prepareLock` serializes
+    /// logins). Per host: ssh to one that stalls holds up only its own.
+    private var workLocks: [String: NSLock] = [:]
+    /// Two hosts' forwards may both want the same free port here: the local
+    /// one is picked and taken under this, briefly.
+    private let pickLock = NSLock()
+
+    private func work<T>(on destination: String, _ body: () throws -> T) rethrows -> T {
+        let hostLock = lock.withLock { () -> NSLock in
+            if let existing = workLocks[destination] { return existing }
+            let made = NSLock()
+            workLocks[destination] = made
+            return made
+        }
+        hostLock.lock()
+        defer { hostLock.unlock() }
+        return try body()
+    }
+
+    /// Whether `forward` is still up: the master that took it is the one
+    /// running now (`RemoteHost.master`). A master that doesn't say its
+    /// pid leaves only the port to go by: held by someone, taken for ours.
+    /// Neither connects to the port (through a forward that reaches the
+    /// host's own server, once a look).
+    private static func isHeld(_ forward: PortForward, by master: Int32) -> Bool {
+        if master != 0, forward.master != 0 { return forward.master == master }
+        return forward.direction == .open ? !PortForward.canBind(forward.local) : true
+    }
     /// Where forwards are made and re-made: never the main thread.
     private let queue = DispatchQueue(label: "dev.libertty.forwards")
 
@@ -283,24 +334,28 @@ final class PortForwarder: @unchecked Sendable {
     /// for that port, or a new one. Blocking.
     @discardableResult
     func open(remote: Int, on host: RemoteHost, remoteHost: String = "localhost") throws -> PortForward {
-        workLock.lock()
-        defer { workLock.unlock() }
-        if let known = forwards(on: host.destination).first(where: {
-            $0.direction == .open && $0.remote == remote && $0.remoteHost == remoteHost
-        }) {
-            // Still answering: the same forward serves, so the link keeps
-            // the address it had. Gone with its master: ask again, keeping
-            // its local port while it's free. (Something else could have
-            // taken that port since the master went; a reconnect asks for
-            // the forwards again, and Close makes a fresh one.)
-            if PortForward.isListening(known.local) { return known }
-            remember(known, host: host.destination, keeping: false)
-            return try establish(known, on: host, retrying: true)
+        try work(on: host.destination) {
+            guard let master = host.master else { throw Failure.notConnected(host.destination) }
+            if let known = forwards(on: host.destination).first(where: {
+                $0.direction == .open && $0.remote == remote && $0.remoteHost == remoteHost
+            }) {
+                // Still held by the master running now: the same forward
+                // serves, so the link keeps the address it had. Gone with
+                // its master: asked again, on its old port while that's
+                // free here (something else may have taken it since). The
+                // entry stays until a new one is up: a failure now leaves
+                // it for the next reconnect.
+                if Self.isHeld(known, by: master) { return known }
+                var again = known
+                again.local = pickLock.withLock { PortForward.canBind(known.local) ? known.local : 0 }
+                if again.local == 0, let other = PortForward.freePort(preferring: 0) { again.local = other }
+                return try establish(again, on: host, master: master, retrying: true)
+            }
+            guard let local = PortForward.freePort(preferring: remote) else { throw Failure.noLocalPort }
+            let forward = PortForward(destination: host.destination, direction: .open, local: local,
+                                      remote: remote, remoteHost: remoteHost)
+            return try establish(forward, on: host, master: master, retrying: true)
         }
-        guard let local = PortForward.freePort(preferring: remote) else { throw Failure.noLocalPort }
-        let forward = PortForward(destination: host.destination, direction: .open, local: local,
-                                  remote: remote, remoteHost: remoteHost)
-        return try establish(forward, on: host, retrying: true)
     }
 
     /// A port on this Mac that programs on `host` can reach, on the same
@@ -308,14 +363,14 @@ final class PortForwarder: @unchecked Sendable {
     /// something there holds it, ssh says so and nothing is kept.
     @discardableResult
     func share(local: Int, on host: RemoteHost) throws -> PortForward {
-        workLock.lock()
-        defer { workLock.unlock() }
         guard (1...65535).contains(local) else { throw Failure.notATarget("\(local)") }
-        if let known = forwards(on: host.destination).first(where: { $0.direction == .share && $0.local == local }) {
-            return known
+        return try work(on: host.destination) {
+            guard let master = host.master else { throw Failure.notConnected(host.destination) }
+            let known = forwards(on: host.destination).first { $0.direction == .share && $0.local == local }
+            if let known, Self.isHeld(known, by: master) { return known }
+            let forward = known ?? PortForward(destination: host.destination, direction: .share, local: local, remote: local)
+            return try establish(forward, on: host, master: master, retrying: false)
         }
-        let forward = PortForward(destination: host.destination, direction: .share, local: local, remote: local)
-        return try establish(forward, on: host, retrying: false)
     }
 
     /// A target typed into the Forward Port page or given to `libertty
@@ -350,19 +405,20 @@ final class PortForwarder: @unchecked Sendable {
     /// `retrying`: a local port that was free a moment ago may have been
     /// taken since (or by a master that still holds an old forward of
     /// ours), so try once more on a port the system picks.
-    private func establish(_ forward: PortForward, on host: RemoteHost, retrying: Bool) throws -> PortForward {
-        guard host.isConnected else { throw Failure.notConnected(host.destination) }
-        let result = host.control(forward, cancel: false)
+    private func establish(_ forward: PortForward, on host: RemoteHost, master: Int32, retrying: Bool) throws -> PortForward {
+        var first = forward
+        first.master = master
+        let result = pickLock.withLock { host.control(first, cancel: false) }
         if result.ok {
-            remember(forward, host: host.destination, keeping: true)
-            return forward
+            remember(first, host: host.destination, keeping: true)
+            return first
         }
-        guard retrying, let other = PortForward.freePort(preferring: 0), other != forward.local else {
-            throw Failure.ssh(forward, result.why)
+        guard retrying, let other = pickLock.withLock({ PortForward.freePort(preferring: 0) }), other != forward.local else {
+            throw Failure.ssh(first, result.why)
         }
-        var again = forward
+        var again = first
         again.local = other
-        let second = host.control(again, cancel: false)
+        let second = pickLock.withLock { host.control(again, cancel: false) }
         guard second.ok else { throw Failure.ssh(again, second.why) }
         remember(again, host: host.destination, keeping: true)
         return again
@@ -373,18 +429,21 @@ final class PortForwarder: @unchecked Sendable {
     /// Close one forward by its `id`. Blocking; true when it was there.
     @discardableResult
     func close(id: String) -> Bool {
-        workLock.lock()
-        defer { workLock.unlock() }
-        guard let forward = all.first(where: { $0.id == id }) else { return false }
-        drop(forward)
-        return true
+        guard let found = all.first(where: { $0.id == id }) else { return false }
+        return work(on: found.destination) {
+            // Looked for again under the host's lock: another close may have won.
+            guard let forward = forwards(on: found.destination).first(where: { $0.id == id }) else { return false }
+            drop(forward)
+            return true
+        }
     }
 
     /// Close every forward, or every one of a host's. Blocking.
     func closeAll(on destination: String? = nil) {
-        workLock.lock()
-        defer { workLock.unlock() }
-        for forward in all where destination == nil || forward.destination == destination { drop(forward) }
+        let hosts = destination.map { [$0] } ?? lock.withLock { Array(held.keys) }
+        for host in hosts {
+            work(on: host) { for forward in forwards(on: host) { drop(forward) } }
+        }
     }
 
     /// Take a forward back from the master and forget it. The entry goes
@@ -404,18 +463,22 @@ final class PortForwarder: @unchecked Sendable {
 
     // MARK: After a reconnect
 
-    /// Ask for the forwards this host should hold again. A forward the new
-    /// master already has refuses to bind a second time, which is harmless:
-    /// the entry stays, since something is answering on its port.
+    /// Ask for the forwards this host should hold again: those the master
+    /// running now didn't take (it's a new connection). One that can't be
+    /// had now stays listed, for the next reconnect or a click to ask again.
     private func reestablish(on host: RemoteHost) {
-        workLock.lock()
-        defer { workLock.unlock() }
-        guard host.isConnected else { return }
-        for forward in forwards(on: host.destination) {
-            // An `open` forward that still answers is up; a `share` one
-            // listens on the host, where we can't look, so ask again.
-            if forward.direction == .open, PortForward.isListening(forward.local) { continue }
-            if host.control(forward, cancel: false).ok { announce() }
+        work(on: host.destination) {
+            guard let master = host.master else { return }
+            for forward in forwards(on: host.destination) where !Self.isHeld(forward, by: master) {
+                var again = forward
+                if forward.direction == .open, !pickLock.withLock({ PortForward.canBind(forward.local) }) {
+                    // Its port was taken here meanwhile: another one, and the
+                    // next click on its link opens that.
+                    guard let other = PortForward.freePort(preferring: 0) else { continue }
+                    again.local = other
+                }
+                _ = try? establish(again, on: host, master: master, retrying: forward.direction == .open)
+            }
         }
     }
 
@@ -433,5 +496,32 @@ final class PortForwarder: @unchecked Sendable {
 
     private func announce() {
         DispatchQueue.main.async { NotificationCenter.default.post(name: Self.changed, object: nil) }
+    }
+}
+
+extension PortForwarder {
+    /// A link to `host`'s own machine, opened here through a forward: ssh is
+    /// asked off the main thread, then `show` opens the page at the address
+    /// this Mac reaches; what went wrong is a sheet on `window` (a dialog
+    /// without one). A pane's link and the Inspector's ports go this way.
+    @MainActor
+    static func open(_ url: URL, on host: RemoteHost, window: NSWindow?, show: @escaping @MainActor (URL) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak window] in
+            do {
+                let here = try shared.rewrite(url, on: host)
+                DispatchQueue.main.async { MainActor.assumeIsolated { show(here) } }
+            } catch {
+                let why = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        let alert = NSAlert()
+                        alert.messageText = L10n.t("Couldn't open this link from %@").replacingOccurrences(of: "%@", with: host.destination)
+                        alert.informativeText = url.absoluteString + "\n\n" + why
+                        // Its own OK button, which AppKit words in the system's language.
+                        if let window, window.isVisible { alert.beginSheetModal(for: window) } else { alert.runModal() }
+                    }
+                }
+            }
+        }
     }
 }
