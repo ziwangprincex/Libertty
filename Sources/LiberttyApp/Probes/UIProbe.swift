@@ -331,6 +331,10 @@ enum UIProbe {
                         if let settings = MainActor.assumeIsolated({ SettingsWindowController.shared.openWindow }) {
                             capture(settings, to: output + "/" + (name as NSString).deletingPathExtension + "-settings.png")
                         }
+                        // (A sheet on the window shows in its own shot.) The Activity popover:
+                        if controller.inboxPopover.isShown, let popover = controller.inboxPopover.contentViewController?.view.window {
+                            capture(popover, to: output + "/" + (name as NSString).deletingPathExtension + "-activity.png")
+                        }
                     case .size(let width, let height):
                         var frame = window.frame
                         frame.size = NSSize(width: width, height: height)
@@ -1401,6 +1405,57 @@ enum UIProbe {
                         controller.window?.layoutIfNeeded()
                         pump(0.8)
                         print("ok    ui-probe glide-resize: tab \(n), sidebar \(Int(controller.sidebar.view.frame.width)) wide")
+                    case .pretendHost(let destination):
+                        controller.host = RemoteHost.named(destination)
+                        controller.updateSidebar()
+                        pump(0.3)
+                        print("ok    ui-probe pretend-host: \(destination)")
+                    case .fakeForward(let what):
+                        let parts = what.split(separator: ":").map(String.init)
+                        guard let host = controller.host, parts.count == 2, let port = Int(parts[1]) else {
+                            print("FAIL  ui-probe fake-forward: \(what) (pretend-host first)")
+                            failures += 1
+                            break
+                        }
+                        var done = false, why = ""
+                        DispatchQueue.global().async {
+                            do {
+                                if host.info == nil { _ = try host.prepare() }
+                                if parts[0] == "share" { _ = try PortForwarder.shared.share(local: port, on: host) } else {
+                                    _ = try PortForwarder.shared.open(remote: port, on: host)
+                                }
+                            } catch { why = (error as? LocalizedError)?.errorDescription ?? "\(error)" }
+                            DispatchQueue.main.async { done = true }
+                        }
+                        let deadline = Date().addingTimeInterval(30)
+                        while !done, Date() < deadline { pump(0.1) }
+                        if why.isEmpty, done { print("ok    ui-probe fake-forward \(what)") } else {
+                            print("FAIL  ui-probe fake-forward \(what): \(done ? why : "no answer")")
+                            failures += 1
+                        }
+                    case .sshSheet(let sample):
+                        let host = "devbox"
+                        let problem: SSHRecovery.Problem? = switch sample {
+                        case "kex": .noCommonAlgorithm(.keyExchange, offered: "diffie-hellman-group1-sha1,diffie-hellman-group14-sha1")
+                        case "closed": .closedWithoutAnswer(host: "10.0.0.5", port: 22)
+                        case "refused": .unreachable(.refused, host: host, port: 22)
+                        case "timeout": .unreachable(.timedOut, host: "devbox.example.com", port: 22)
+                        case "unresolved": .unreachable(.unknownName, host: "devbx", port: nil)
+                        case "agent": .agentWithoutKeys(agent: "1Password's agent", socket: "~/.1password/agent.sock",
+                                                        answer: .noKeys, fromConfig: true)
+                        case "keys": .keysNotLoaded([NSHomeDirectory() + "/.ssh/id_ed25519"])
+                        case "toomany": .tooManyAuthFailures
+                        case "notssh": .notSSH("HTTP/1.1 400 Bad Request")
+                        default: nil
+                        }
+                        guard let problem else {
+                            print("FAIL  ui-probe ssh-sheet: no sample \(sample)")
+                            failures += 1
+                            break
+                        }
+                        MainActor.assumeIsolated { SSHRecovery.offer(problem, destination: host, errors: "ssh: the words ssh said\nfor Details", in: window) {} }
+                        pump(0.6)
+                        print("ok    ui-probe ssh-sheet \(sample): \(window.attachedSheet == nil ? "no sheet" : "up")")
                     case .expectSelectionCard:
                         // The sidebar's card covers the selected row, edge to edge.
                         let fit = controller.sidebar.selectionCardFit
@@ -1991,7 +2046,7 @@ enum UIProbe {
         /// and a row of its completion list ("none": not open).
         case expectGhost(String), expectCompletions(String)
         /// Controls in the app's windows on screen that VoiceOver reads by their role alone (the sidebar's apart).
-        case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String), expectNews(Int, String), expectSelectionCard, glideResize(Int, Double)
+        case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String), expectNews(Int, String), expectSelectionCard, glideResize(Int, Double), pretendHost(String), sshSheet(String), fakeForward(String)
         /// Something VoiceOver was told (AccessibilityNews) since the last of these said it ("-": nothing).
         case expectAnnounced(String)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
@@ -2154,6 +2209,15 @@ enum UIProbe {
             case "expect-header-buttons": steps.append(.expectHeaderButtons(arg))
             case "expect-unlabeled-sidebar": steps.append(.expectUnlabeledSidebar(Int(arg) ?? -1))
             case "expect-selection-card": steps.append(.expectSelectionCard)
+            // For a look at what a host's window shows (UI reviews): the
+            // window takes a host's name; its panes stay this Mac's.
+            case "pretend-host": steps.append(.pretendHost(arg))
+            // An ssh failure's explanation as a login's sheet shows it:
+            // kex, closed, refused, timeout, unresolved, agent, keys, toomany, notssh.
+            case "ssh-sheet": steps.append(.sshSheet(arg))
+            // `fake-forward:open:5173` / `fake-forward:share:3000`: a forward on
+            // the window's (pretend) host, through LIBERTTY_SSH's stand-in ssh.
+            case "fake-forward": steps.append(.fakeForward(arg))
             case "glide-resize":
                 // `glide-resize:N:WIDTH`: select tab N, and while the sidebar's
                 // card is still gliding there (motion:on), make the sidebar WIDTH wide.
