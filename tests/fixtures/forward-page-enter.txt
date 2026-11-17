@@ -1,0 +1,65 @@
+# Return on arriving at Forward Port… or Share a Port… never closes a
+# forward: a page's "Close" rows are never picked for the user, however the
+# page was reached, and typing then deleting doesn't leave one picked. The
+# stand-in ssh really carries the three forwards; @FORWARDS@ lists those up.
+# Run with --persist (libertty +forward asks this window's app).
+size:1280x800
+pretend-host:liberttytest
+fake-forward:open:5173
+fake-forward:open:5174
+fake-forward:share:3000
+wait:1.0
+type:echo "BEFORE=$(wc -l < @FORWARDS@ | tr -d ' ')"
+key:enter
+wait:0.8
+expect:BEFORE=3
+# Picked from a search, the command is row 0; on its page row 0 is a Close.
+key:cmd+shift+p
+wait:0.5
+type:forw
+wait:0.4
+expect-palette:Forward Port
+key:enter
+wait:0.5
+expect-palette:Close liberttytest:
+expect-palette-selected:none
+key:enter
+wait:1.0
+# Typed (the Forward row picked), then deleted (only Close rows left).
+type:5174
+wait:0.4
+expect-palette-selected:Forward localhost:5174
+key:backspace
+key:backspace
+key:backspace
+key:backspace
+wait:0.4
+expect-palette-selected:none
+key:enter
+wait:1.0
+key:escape
+wait:0.3
+key:escape
+wait:0.3
+key:cmd+shift+p
+wait:0.5
+type:share a port
+wait:0.4
+key:enter
+wait:0.5
+expect-palette-selected:none
+key:enter
+wait:1.0
+key:escape
+wait:0.3
+key:escape
+wait:0.3
+type:echo "AFTER=$(wc -l < @FORWARDS@ | tr -d ' ')"
+key:enter
+wait:0.8
+expect:AFTER=3
+# Their stand-in listeners go with them.
+type:libertty +forward close --all; echo "CLOSED=$? LEFT=$(wc -l < @FORWARDS@ | tr -d ' ')"
+key:enter
+wait:3.0
+expect:CLOSED=0 LEFT=0

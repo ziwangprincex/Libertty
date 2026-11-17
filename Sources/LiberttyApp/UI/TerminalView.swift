@@ -362,8 +362,29 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             if hintsActive { hintsAfterFrame() }
             // What programs drew (and lenses) follow their rows.
             if surfaceOverlay.isShowing { surfaceOverlay.layout() }
+            capsulesFollowCursorRow()
         }
         return presented
+    }
+
+    /// The row the cursor is on, across the pane (in its own coordinates):
+    /// where typing happens, which the split's capsules keep clear of.
+    var cursorRowRect: NSRect {
+        let cell = cellSizePoints
+        let row = CGFloat(session.cursorPosition.y)
+        return NSRect(x: 0, y: padding.top + row * cell.height - smoothOffset, width: bounds.width, height: cell.height)
+    }
+
+    /// The row last told to the split's capsules, so a frame that moved the
+    /// cursor to another row places them again (and others cost nothing).
+    private var capsuleCursorRow = -1
+
+    private func capsulesFollowCursorRow() {
+        guard let split = SplitContainerView.enclosing(self), split.taskbar != nil else { return }
+        let row = Int(session.cursorPosition.y)
+        guard row != capsuleCursorRow else { return }
+        capsuleCursorRow = row
+        split.setNeedsTaskbarPlacement()
     }
 
     /// Blink only while the cursor wants to (its modes) and has focus.

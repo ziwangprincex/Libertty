@@ -220,15 +220,16 @@ enum UIProbe {
             others.append(other)
             return other
         }
-        // `libertty +split`, `+move-pane` and `+browser` from its panes' shells,
-        // to this probe (requests name its private liberttyd's socket).
+        // `libertty +split`, `+move-pane`, `+browser` and `+forward` from its
+        // panes' shells, to this probe (requests name its private liberttyd's socket).
         let paneRequests = DistributedNotificationCenter.default().addObserver(
             forName: RemoteControl.notification, object: nil, queue: .main) { note in
             guard let info = note.userInfo as? [String: String], RemoteControl.isForUs(info) else { return }
             if info["kind"] == "browser" {
                 return BrowserAutomation.handle(info, in: [controller] + others, front: controller, newWindow: { nil }, activate: {})
             }
-            _ = PaneRequests.handle(info, in: [controller] + others)
+            if PaneRequests.handle(info, in: [controller] + others) { return }
+            _ = ForwardRequests.handle(info, in: [controller] + others)
         }
         defer { DistributedNotificationCenter.default().removeObserver(paneRequests) }
         // AppleScript (the `applescript:` step): this probe's windows, a new one off screen too.
@@ -358,6 +359,15 @@ enum UIProbe {
                             failures += 1
                         } else {
                             print("ok    ui-probe palette: no \(text) among \(rows.count) rows")
+                        }
+                    case .expectPaletteSelected(let text):
+                        // The row Return would run ("none": no row picked).
+                        let picked = CommandPalette.selectedRow
+                        if text == "none" ? picked == nil : picked?.contains(text) == true {
+                            print("ok    ui-probe palette picks \(text)")
+                        } else {
+                            print("FAIL  ui-probe palette picks \(picked.map { $0.debugDescription } ?? "none"), not \(text)")
+                            failures += 1
                         }
                     case .expectPalette(let text):
                         // The palette's first row, while it's open.
@@ -2018,7 +2028,7 @@ enum UIProbe {
 
     private enum Step {
         case key(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
-        case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectPaletteNot(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
+        case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectPaletteNot(String), expectPaletteSelected(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         /// Whether the focused pane would have Secure Keyboard Entry on for a
         /// password (the probe's window is never key, so not the system's state).
@@ -2133,6 +2143,7 @@ enum UIProbe {
             case "expect-not": steps.append(.expectNot(arg))
             case "expect-palette": steps.append(.expectPalette(arg))
             case "expect-palette-not": steps.append(.expectPaletteNot(arg))
+            case "expect-palette-selected": steps.append(.expectPaletteSelected(arg))
             case "expect-scope": steps.append(.expectScope(arg))
             case "expect-tab": steps.append(.expectTab(arg))
             case "expect-tab-not": steps.append(.expectTabNot(arg))

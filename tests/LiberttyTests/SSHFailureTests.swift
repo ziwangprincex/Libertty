@@ -121,6 +121,27 @@ struct SSHFailureTests {
         #expect(quick.status == 3 && quick.output.contains("out") && quick.output.contains("err"))
     }
 
+    /// The agent launchd starts for each login goes by its name, not by
+    /// the random path of its socket (Settings' status line said
+    /// "/var/run/com.apple.launchd.V8hSIRWzTa/Listeners holds no key").
+    @Test func theMacOSAgentIsNamed() {
+        let named = L10n.t("The macOS agent")
+        #expect(SSHAgent.name(ofSocket: "/private/tmp/com.apple.launchd.V8hSIRWzTa/Listeners") == named)
+        #expect(SSHAgent.name(ofSocket: "/var/run/com.apple.launchd.abc123/Listeners") == named)
+        #expect(SSHAgent.name(ofSocket: "/tmp/elsewhere/agent.sock") == "/tmp/elsewhere/agent.sock")
+    }
+
+    /// A Chinese name sits against the Chinese around it; a host or a path
+    /// keeps the translation's space ("macOS 的代理 里没有密钥" read badly).
+    @Test func aChineseNameTakesNoSpace() {
+        #expect(SSHRecovery.fill("%@ 里没有密钥。", "macOS 的代理") == "macOS 的代理里没有密钥。")
+        #expect(SSHRecovery.fill("%@ 里没有密钥。", "~/agent.sock") == "~/agent.sock 里没有密钥。")
+        #expect(SSHRecovery.fill("而 %@ 里没有", "1Password 的代理") == "而 1Password 的代理里没有")
+        #expect(SSHRecovery.fill("主机 %@ 拒绝", "开发机") == "主机开发机拒绝")
+        #expect(SSHRecovery.fill("%@ holds no key.", "The macOS agent") == "The macOS agent holds no key.")
+        #expect(SSHRecovery.fill("%@ and %@", "a", "b") == "a and b")
+    }
+
     @Test func negotiationNamesTheKeyword() {
         let offered = "only-this-one"
         for (problem, keyword) in [(SSHRecovery.Problem.noCommonAlgorithm(.keyExchange, offered: offered), "KexAlgorithms"),

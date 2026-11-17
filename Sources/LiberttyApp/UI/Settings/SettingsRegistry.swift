@@ -385,7 +385,7 @@ enum SettingsRegistry {
                  help: "Programs can send notifications with OSC 9 or OSC 777, and say when they need you.", keywords: "osc alerts"),
         ]
         for state in programStates {
-            all.append(custom(.notifications, "Program Activity", state.title, id: "program-state:\(state.name)",
+            all.append(custom(.notifications, "Program Activity", state.englishTitle, id: "program-state:\(state.name)",
                               keys: ["program-status-indicator", "program-status-notify", "program-status-dock-badge", "program-status-sound"],
                               keywords: "agent status osc 7501 dock badge sound"))
         }
@@ -485,7 +485,9 @@ enum SettingsRegistry {
 
 extension ProgramStatusStore.State {
     /// As the Settings window says it.
-    var title: String {
+    var title: String { L10n.t(englishTitle) }
+
+    var englishTitle: String {
         switch self {
         case .idle: "Idle"
         case .working: "Working"

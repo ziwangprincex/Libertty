@@ -224,7 +224,9 @@ final class SplitContainerView: NSView {
         // Here, or in a pane here (a composer is the pane's).
         let near = subviews.filter { $0 !== taskbar && !$0.isHidden } + views.filter { !$0.isHidden }.flatMap(\.subviews)
         let others = near.filter { $0 is CapsuleObstacle && !$0.isHidden }.map { $0.superview === self ? $0.frame : $0.superview?.convert($0.frame, to: self) ?? .zero }
-        let obstacles = headerViews.values.filter { !$0.isHidden }.map(\.frame) + others
+        // The row each pane's cursor is on: what's typed there stays in sight.
+        let cursorRows = views.filter { !$0.isHidden }.compactMap { $0 as? TerminalView }.map { $0.convert($0.cursorRowRect, to: self) }
+        let obstacles = headerViews.values.filter { !$0.isHidden }.map(\.frame) + others + cursorRows
         for _ in 0..<3 {
             guard let hit = obstacles.first(where: { $0.intersects(r) }) else { break }
             r.origin.y = taskbar.corner.top ? hit.maxY + FloatingTaskbar.spacing : hit.minY - FloatingTaskbar.spacing - r.height

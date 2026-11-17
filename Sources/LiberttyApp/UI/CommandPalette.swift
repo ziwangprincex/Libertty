@@ -31,6 +31,16 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var keywords = ""
         /// Its place in a script's list (`libertty +pick`).
         var index: Int? = nil
+        /// It only says something (a page's "Nothing is forwarded yet"):
+        /// Return and a click do nothing, and the palette stays.
+        var inert = false
+        /// Undoes something there's no taking back (a page's Close): run only
+        /// when picked, never the row selected as the page comes up.
+        var destructive = false
+        /// Found only by words its own begin with, not letters scattered
+        /// through it (a row that flips a setting at once: "forward" mustn't
+        /// bring up Turn Off Show the sidebar in new windows).
+        var wordsOnly = false
         var run: () -> Void
     }
 
@@ -325,11 +335,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             let workspaceNames = controller.workspaceNames
             for (w, group) in groups.enumerated() {
               for (t, tab) in group.enumerated() {
-                var place = !isQuick ? "Tab \(t + 1)" : group.count > 1 ? "Quick Terminal · Tab \(t + 1)" : "Quick Terminal"
+                let tabWord = L10n.t("Tab") + " \(t + 1)"
+                var place = !isQuick ? tabWord : group.count > 1 ? L10n.t("Quick Terminal") + " · " + tabWord : L10n.t("Quick Terminal")
                 if groups.count > 1, !isQuick { place = workspaceNames[w] + " · " + place }
                 // The name you gave the tab finds its panes too.
                 if !tab.titleOverride.isEmpty { place += " · " + tab.titleOverride }
-                if (tab.container?.views.count ?? 0) > 1 { place += " · split" }
+                if (tab.container?.views.count ?? 0) > 1 { place += " · " + L10n.t("split") }
                 if named, !isQuick { place += " · " + (controller.window?.title ?? "") }
                 func open(_ leaf: NSView?) -> () -> Void {
                     return { [weak controller, weak tab, weak leaf] in
@@ -346,7 +357,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
                 for entry in tab.parked {
                     let pane = entry.pane
                     let label = controller.label(of: pane)
-                    out.append(Item(title: label.name, subtitle: [label.detail, place, "parked"].filter { !$0.isEmpty }.joined(separator: " · "),
+                    out.append(Item(title: label.name, subtitle: [label.detail, place, L10n.t("parked")].filter { !$0.isEmpty }.joined(separator: " · "),
                                     symbol: "tray.and.arrow.down", kind: .pane) { [weak controller, weak tab, weak pane] in
                         guard let controller, let tab, let pane else { return }
                         if isQuick { QuickTerminal.shared.show() }
@@ -580,12 +591,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             guard let key = item.key, case .toggle(let onValue, let offValue) = item.kind else { continue }
             let on = (config.values(of: key).first ?? "") != offValue
             let action = Action.toggleSetting(key)
-            out.append(Item(title: L10n.t(on ? "Turn Off" : "Turn On") + " " + item.title, subtitle: key,
-                            symbol: on ? "checkmark.square" : "square", kind: .setting,
-                            preview: [(key, on ? offValue : onValue)],
-                            keywords: [item.keywords, key, item.section].joined(separator: " ")) {
+            var row = Item(title: L10n.t(on ? "Turn Off" : "Turn On") + " " + item.title, subtitle: key,
+                           symbol: on ? "checkmark.square" : "square", kind: .setting,
+                           preview: [(key, on ? offValue : onValue)],
+                           keywords: [item.keywords, key, item.section].joined(separator: " ")) {
                 SettingActions.perform(action)
-            })
+            }
+            row.wordsOnly = true
+            out.append(row)
         }
         for (key, _) in Config.documentation where !picked.contains(key) && !Config.repeatable.contains(key)
             && !["config-file", "browser-automation"].contains(key) {
@@ -811,6 +824,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// word starts score higher; nil if it doesn't match. Where the query
     /// is there as typed (at a word's start, best), the match starts there:
     /// "beta" is …/sub-beta's, not letters picked from the path before it.
+    /// Whether every word of `query` begins a word of `text` ("cop sel"
+    /// for "Copy on select", "clip" for "clipboard-write"). Chinese puts no
+    /// spaces between its words, so a word of it is found anywhere ("侧栏"
+    /// in "新窗口显示侧栏").
+    static func wordsBegin(_ query: String, _ text: String) -> Bool {
+        func words(_ s: String) -> [Substring] { s.lowercased().split { !$0.isLetter && !$0.isNumber } }
+        let theirs = words(text), whole = text.lowercased()
+        return words(query).allSatisfy { mine in
+            mine.contains { $0.unicodeScalars.first?.properties.isIdeographic == true }
+                ? whole.contains(mine) : theirs.contains { $0.hasPrefix(mine) }
+        }
+    }
+
     static func score(_ query: String, _ text: String) -> Int? {
         guard !query.isEmpty else { return 0 }
         let q = Array(query.lowercased()), t = Array(text.lowercased())
@@ -838,7 +864,13 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             noMatches = shown.isEmpty
             noMatchesText = L10n.t("Nothing here")
             table.reloadData()
-            if !shown.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+            // Return on arriving (or after typing) never closes something:
+            // the first row that doesn't, else none until one is picked.
+            if let first = shown.firstIndex(where: { !$0.destructive }) {
+                table.selectRowIndexes([first], byExtendingSelection: false)
+            } else {
+                table.deselectAll(nil)
+            }
             return layout()
         }
         if editing != nil {
@@ -877,13 +909,16 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             // A path being typed lists where it leads first (not in Go to Pane).
             let typed = scope.admits(.folder) && !panesOnly && prompt == nil ? typedFolders(q) : []
             let typedTitles = Set(typed.map(\.title))
-            shown = typed + inScope.filter { $0.kind != .folder || !typedTitles.contains($0.title) }
-                .compactMap { item in
-                    // A setting's subtitle is its value: what it's called is what's searched.
-                    Self.score(q, (item.kind == .setting ? item.title : item.title + " " + item.subtitle)
-                        + (item.keywords.isEmpty ? "" : " " + item.keywords)).map { (item, $0) }
-                }
-                .sorted { $0.1 > $1.1 }.prefix(60).map(\.0)
+            let candidates = inScope.filter { $0.kind != .folder || !typedTitles.contains($0.title) }
+            let scored: [(Item, Int)] = candidates.compactMap { item -> (Item, Int)? in
+                // A setting's subtitle is its value: what it's called is what's searched.
+                let named: String = item.kind == .setting ? item.title : item.title + " " + item.subtitle
+                let text: String = item.keywords.isEmpty ? named : named + " " + item.keywords
+                if item.wordsOnly, !Self.wordsBegin(q, text) { return nil }
+                guard let score = Self.score(q, text) else { return nil }
+                return (item, score)
+            }
+            shown = typed + scored.sorted { $0.1 > $1.1 }.prefix(60).map(\.0)
         }
         // Sections (Panes, Sessions, Commands…) when browsing; a search
         // lists by how well things match, with no headings between.
@@ -1090,19 +1125,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         if let prompt {
             // A line typed has no list to walk; a list's Return chooses (with marks: is done).
             for view in hints.views[0...2] { view.isHidden = prompt.kind == .input }
-            (hints.views[4] as? NSTextField)?.stringValue = prompt.kind == .input ? "answer" : prompt.multiple ? "done" : "choose"
+            (hints.views[4] as? NSTextField)?.stringValue = L10n.t(prompt.kind == .input ? "answer" : prompt.multiple ? "finish" : "choose")
             hints.views[5].isHidden = true
             hints.views[6].isHidden = true
-            (close.views[1] as? NSTextField)?.stringValue = "cancel"
+            (close.views[1] as? NSTextField)?.stringValue = L10n.t("cancel")
             return layout()
         }
         let picking = picker != nil || editing != nil
         // A page of its own still navigates and runs; only Esc means "back".
         let onPage = page != nil
-        (hints.views[2] as? NSTextField)?.stringValue = picking ? "try" : "navigate"
+        (hints.views[2] as? NSTextField)?.stringValue = L10n.t(picking ? "try" : "navigate")
         for view in hints.views[0...2] { view.isHidden = editing != nil }
-        (hints.views[4] as? NSTextField)?.stringValue = editing != nil ? "set" : picking ? "keep" : scope == .folders ? "new tab" : "run"
-        (close.views[1] as? NSTextField)?.stringValue = picking || onPage ? "back" : "close"
+        (hints.views[4] as? NSTextField)?.stringValue = L10n.t(editing != nil ? "set" : picking ? "keep" : scope == .folders ? "new tab" : "run")
+        (close.views[1] as? NSTextField)?.stringValue = L10n.t(picking || onPage ? "back" : "close")
         // Folders: ⌥↵ goes there in the focused pane instead.
         let folders = scope == .folders && !picking && !onPage
         hints.views[5].isHidden = !folders
@@ -1110,8 +1145,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         layout()
     }
 
+    /// A footer word ("navigate", "run"), in the interface's language.
     private static func hint(_ text: String) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
+        let label = NSTextField(labelWithString: L10n.t(text))
         label.font = Typeface.secondary
         label.textColor = .secondaryLabelColor
         return label
@@ -1143,11 +1179,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         field.frame = NSRect(x: 48, y: topY + (Self.topHeight - 24) / 2, width: width - 48 - 70, height: 24)
         topLine.frame = NSRect(x: 0, y: topY, width: width, height: 1)
 
+        // Every chip in the row: when their words don't fit with the usual
+        // room around them (nine in English), the room shrinks, not the row.
+        let shown = chips.map(\.1).filter { !$0.isHidden }
+        let words = shown.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width - ScopeChip.padding }
+        let room = width - 20 - CGFloat(max(0, shown.count - 1)) * 2
+        let padding = shown.isEmpty ? ScopeChip.padding
+            : min(ScopeChip.padding, max(6, floor((room - words) / CGFloat(shown.count))))
         var x: CGFloat = 10
         for (_, chip) in chips {
             let size = chip.intrinsicContentSize
-            chip.frame = NSRect(x: x, y: topY - chipsH + (chipsH - size.height) / 2 - 1, width: size.width, height: size.height)
-            x += size.width + 2
+            let w = size.width - ScopeChip.padding + padding
+            chip.frame = NSRect(x: x, y: topY - chipsH + (chipsH - size.height) / 2 - 1, width: w, height: size.height)
+            x += w + 2
         }
 
         if prompt != nil {
@@ -1234,6 +1278,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private func run(row: Int, alternate: Bool = false) {
         guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] else { return }
+        if item.inert { return NSSound.beep() }
         if prompt != nil { return alternate ? NSSound.beep() : pick(item) }
         if editing != nil { return commitEdit() }
         if alternate {
@@ -1266,6 +1311,13 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let current = current ?? prompts.last else { return nil }
         if current.noMatches { return [current.noMatchesText] }
         return current.shown.map { $0.subtitle.isEmpty ? $0.title : "\($0.title) · \($0.subtitle)" }
+    }
+    /// The row Return would run, as `shownRows` writes it; nil when none is
+    /// picked (`--ui-probe`).
+    static var selectedRow: String? {
+        guard let current = current ?? prompts.last, current.rows.indices.contains(current.table.selectedRow),
+              case .item(let item) = current.rows[current.table.selectedRow] else { return nil }
+        return item.subtitle.isEmpty ? item.title : "\(item.title) · \(item.subtitle)"
     }
     /// The chips and which one is on (`--ui-probe`).
     static var shownScopes: [String]? {
@@ -1305,8 +1357,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private func move(_ delta: Int) {
         let selectable = rows.indices.filter { if case .item = rows[$0] { true } else { false } }
         guard !selectable.isEmpty else { return }
-        let at = selectable.firstIndex(of: table.selectedRow) ?? 0
-        let row = selectable[(at + delta + selectable.count) % selectable.count]
+        // Nothing selected yet (a page whose rows all close something): the
+        // first one down, the last one up.
+        let row: Int
+        if let at = selectable.firstIndex(of: table.selectedRow) {
+            row = selectable[(at + delta + selectable.count) % selectable.count]
+        } else {
+            row = delta > 0 ? selectable[0] : selectable[selectable.count - 1]
+        }
         table.selectRowIndexes([row], byExtendingSelection: false)
         // The heading above the first row belongs in view with it.
         table.scrollRowToVisible(row == selectable.first ? 0 : row)
@@ -1408,7 +1466,10 @@ private final class ScopeChip: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: ceil(label.intrinsicContentSize.width) + 20, height: 24) }
+    /// Room on both sides of its word, together.
+    static let padding: CGFloat = 20
+
+    override var intrinsicContentSize: NSSize { NSSize(width: ceil(label.intrinsicContentSize.width) + Self.padding, height: 24) }
 
     private func update() {
         label.textColor = isOn ? Accent.color : .secondaryLabelColor

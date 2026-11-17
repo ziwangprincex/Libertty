@@ -449,8 +449,8 @@ final class SettingsModel: ObservableObject {
     func summary(of state: ProgramStatusStore.State) -> String {
         let parts = [("Tabs", config.programStatusIndicator.contains(state)), ("Notifications", config.programStatusNotify.contains(state)),
                      ("Dock Badge", config.programStatusDockBadge.contains(state)), ("Sound", config.programStatusSound[state] != nil)]
-            .filter(\.1).map(\.0)
-        return parts.isEmpty ? "Off" : parts.joined(separator: ", ")
+            .filter(\.1).map { L10n.t($0.0) }
+        return parts.isEmpty ? L10n.t("Off") : parts.joined(separator: L10n.t(", "))
     }
 
     static let sounds: [String] = {

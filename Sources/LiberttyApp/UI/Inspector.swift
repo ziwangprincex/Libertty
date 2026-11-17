@@ -77,8 +77,8 @@ final class InspectorViewController: NSViewController {
         stack.addArrangedSubview(Self.header("Working Directory"))
         stack.addArrangedSubview(pathLabel)
         stack.setCustomSpacing(10, after: pathLabel)
-        stack.addArrangedSubview(link("Copy Path", "doc.on.doc", #selector(copyPath(_:))))
-        stack.addArrangedSubview(link("Reveal in Finder", "folder", #selector(revealInFinder(_:))))
+        stack.addArrangedSubview(copyPathButton)
+        stack.addArrangedSubview(revealButton)
         stack.addArrangedSubview(editorButton)
         stack.addArrangedSubview(spacer(14))
         stack.addArrangedSubview(gitSection)
@@ -146,8 +146,16 @@ final class InspectorViewController: NSViewController {
         if moved { refresh() } else { refreshProcesses() }
     }
 
+    /// What a folder of this Mac's offers: none for a host's pane, whose
+    /// folder isn't here to copy, show or open.
+    private lazy var copyPathButton = link("Copy Path", "doc.on.doc", #selector(copyPath(_:)))
+    private lazy var revealButton = link("Reveal in Finder", "folder", #selector(revealInFinder(_:)))
+
     private func refresh() {
         pathLabel.stringValue = directory.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "—"
+        copyPathButton.isHidden = directory == nil
+        revealButton.isHidden = directory == nil
+        editorButton.isHidden = directory == nil || Self.editor == nil
         refreshGit()
         refreshProcesses()
     }

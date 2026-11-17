@@ -100,11 +100,11 @@ struct SettingsView: View {
                         ControlGroup {
                             Button { model.goBack() } label: { Image(systemName: "chevron.left") }
                                 .disabled(!model.canGoBack)
-                                .help("Go to the previous Settings page")
+                                .help(L10n.t("Go to the previous Settings page"))
                                 .accessibilityLabel(L10n.t("Back"))
                             Button { model.goForward() } label: { Image(systemName: "chevron.right") }
                                 .disabled(!model.canGoForward)
-                                .help("Go to the next Settings page")
+                                .help(L10n.t("Go to the next Settings page"))
                                 .accessibilityLabel(L10n.t("Forward"))
                         }
                         .controlGroupStyle(.navigation)
@@ -112,7 +112,7 @@ struct SettingsView: View {
                     ToolbarItem(placement: .navigation) {
                         Text(model.title)
                             .font(.system(size: 15, weight: .semibold))
-                            .accessibilityLabel("Settings page")
+                            .accessibilityLabel(L10n.t("Settings page"))
                             .accessibilityValue(model.title)
                     }
                 }
@@ -143,7 +143,7 @@ struct SettingsSidebar: View {
             } else {
                 let results = model.results
                 if results.isEmpty {
-                    Text("No Results").foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                    Text(L10n.t("No Results")).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                 }
                 ForEach(results) { item in
                     VStack(alignment: .leading, spacing: 1) {
@@ -203,9 +203,9 @@ struct SidebarPageRow: View {
     private var daemonSummary: String {
         switch daemon {
         case .unknown: " "
-        case .notPersisting: "Off"
-        case .running: "Running"
-        case .stopped: "Not running"
+        case .notPersisting: L10n.t("Off")
+        case .running: L10n.t("Running")
+        case .stopped: L10n.t("Not running")
         }
     }
 }

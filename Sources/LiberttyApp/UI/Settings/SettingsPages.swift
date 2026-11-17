@@ -100,15 +100,16 @@ struct SectionFooter: View {
         switch (page, section) {
         case (.integrations, L10n.t("Coding Agents")):
             VStack(alignment: .leading, spacing: 4) {
-                Text("Teach Claude Code and Codex how to use Libertty: their tabs say when they work, wait for you or are done.")
+                Text(L10n.t("Teach Claude Code and Codex how to use Libertty: their tabs say when they work, wait for you or are done."))
                 if !model.agentReport.isEmpty { Text(model.agentReport).textSelection(.enabled) }
             }
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
         case (.terminal, L10n.t("Shell")):
-            Text("The startup command is an executable and its arguments, run through /bin/sh -c; empty runs your login shell.")
+            Text(L10n.t("The startup command is an executable and its arguments, run through /bin/sh -c; empty runs your login shell."))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         default:
             EmptyView()
@@ -132,7 +133,7 @@ struct RowLabel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let file = model.lockedFile(of: item) {
-                Text("Set in config file \(file)")
+                Text(L10n.t("Set in config file %@").replacingOccurrences(of: "%@", with: file))
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
             }
@@ -489,7 +490,7 @@ struct CustomRow: View {
             PermissionsCard(model: model)
         case "web-access-link":
             LabeledContent {
-                Button("Show Link…") { WebAccessPanel.shared.show(nil) }
+                Button(L10n.t("Show Link…")) { WebAccessPanel.shared.show(nil) }
             } label: {
                 RowLabel(model: model, item: item)
             }
@@ -557,12 +558,12 @@ struct DaemonCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("liberttyd").font(.system(size: 13, weight: .semibold))
                 Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
-                Text("Keeps your shells and programs running while Libertty is closed, updated or restarted.")
+                Text(L10n.t("Keeps your shells and programs running while Libertty is closed, updated or restarted."))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            Button("Show Log") { NSWorkspace.shared.open(URL(fileURLWithPath: Persistence.logPath)) }
+            Button(L10n.t("Show Log")) { NSWorkspace.shared.open(URL(fileURLWithPath: Persistence.logPath)) }
         }
         .padding(.vertical, 4)
         .onAppear { model.refreshDaemon() }
@@ -653,8 +654,8 @@ struct PermissionsCard: View {
                     Text(L10n.t(status.label))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(status.color)
-                        .accessibilityLabel(kind.title)
-                        .accessibilityValue(status.label)
+                        .accessibilityLabel(L10n.t(kind.title))
+                        .accessibilityValue(L10n.t(status.label))
                         .probeAnchor(kind.title, value: status.label)
                     Button(L10n.t("Open")) {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(kind.anchor)") {
@@ -662,7 +663,7 @@ struct PermissionsCard: View {
                         }
                     }
                     .controlSize(.small)
-                    .accessibilityLabel("Open \(kind.title) in System Settings")
+                    .accessibilityLabel(L10n.t("Open %@ in System Settings").replacingOccurrences(of: "%@", with: L10n.t(kind.title)))
                 }
             }
         }
@@ -699,7 +700,7 @@ struct FontRow: View {
                 Text(family)
                     .font(Font(SettingsFonts.font(family, 13)))
                     .lineLimit(1)
-                Button("Choose…") { choosing = true }
+                Button(L10n.t("Choose…")) { choosing = true }
                     .popover(isPresented: $choosing, arrowEdge: .bottom) {
                         FontChooser(model: model) { choosing = false }
                     }
@@ -831,7 +832,7 @@ struct FontPreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.12)))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Typography preview: regular, bold, and italic terminal text.")
+        .accessibilityLabel(L10n.t("Typography preview: regular, bold, and italic terminal text."))
     }
 }
 
@@ -860,8 +861,8 @@ struct ConfigFileRows: View {
     var body: some View {
         LabeledContent {
             HStack {
-                Button("Open Config File") { AppDelegate.openConfigFile() }
-                Button("Reload") { ConfigStore.shared.reloadByRequest() }
+                Button(L10n.t("Open Config File")) { AppDelegate.openConfigFile() }
+                Button(L10n.t("Reload")) { ConfigStore.shared.reloadByRequest() }
             }
         } label: {
             VStack(alignment: .leading, spacing: 2) {
@@ -874,9 +875,10 @@ struct ConfigFileRows: View {
         }
         if !model.warnings.isEmpty {
             LabeledContent {
-                Button("Show") { ConfigurationErrorsController.shared.update(model.warnings) }
+                Button(L10n.t("Show")) { ConfigurationErrorsController.shared.update(model.warnings) }
             } label: {
-                Text(model.warnings.count == 1 ? "1 problem in the config" : "\(model.warnings.count) problems in the config")
+                Text(model.warnings.count == 1 ? L10n.t("1 problem in the config")
+                     : L10n.t("%@ problems in the config").replacingOccurrences(of: "%@", with: "\(model.warnings.count)"))
                     .foregroundStyle(.orange)
             }
         }
@@ -889,7 +891,7 @@ struct ThemeImportRow: View {
 
     var body: some View {
         LabeledContent {
-            Button("Import…") {
+            Button(L10n.t("Import…")) {
                 let panel = NSOpenPanel()
                 panel.message = "Ghostty theme files, or iTerm2 color presets (.itermcolors)"
                 panel.allowsMultipleSelection = true
@@ -902,7 +904,8 @@ struct ThemeImportRow: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
-                Text("Themes are copied to \((ConfigStore.directory.appendingPathComponent("themes").path as NSString).abbreviatingWithTildeInPath) and listed with your own.")
+                Text(L10n.t("Themes are copied to %@ and listed with your own.").replacingOccurrences(
+                    of: "%@", with: (ConfigStore.directory.appendingPathComponent("themes").path as NSString).abbreviatingWithTildeInPath))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -928,7 +931,7 @@ struct ShortcutRecorder: View {
         Button {
             if recording { model.stopRecording() } else { model.startRecording(id) }
         } label: {
-            Text(recording ? "Type Shortcut…" : shortcut.map(Self.spaced) ?? "Record Shortcut")
+            Text(recording ? L10n.t("Type Shortcut…") : shortcut.map(Self.spaced) ?? L10n.t("Record Shortcut"))
                 .font(.system(size: 13, weight: shortcut == nil || recording ? .regular : .medium))
                 .foregroundStyle(shortcut == nil && !recording ? .secondary : .primary)
                 .frame(width: 160, height: 24)
@@ -943,7 +946,7 @@ struct ShortcutRecorder: View {
         .accessibilityLabel(shortcut == nil ? "Record a shortcut for \(title)" : "Change the shortcut for \(title)")
         .accessibilityValue(shortcut ?? "")
         .contextMenu {
-            Button("Remove Shortcut") { model.clearShortcut(id) }.disabled(shortcut == nil)
+            Button(L10n.t("Remove Shortcut")) { model.clearShortcut(id) }.disabled(shortcut == nil)
         }
     }
 
@@ -965,9 +968,9 @@ struct ShortcutsPage: View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-                TextField("Filter Shortcuts…", text: $model.shortcutFilter)
+                TextField(L10n.t("Filter Shortcuts…"), text: $model.shortcutFilter)
                     .textFieldStyle(.plain)
-                    .accessibilityLabel("Filter Shortcuts")
+                    .accessibilityLabel(L10n.t("Filter Shortcuts"))
             }
             .padding(.horizontal, 10)
             .frame(height: 30)
@@ -979,7 +982,7 @@ struct ShortcutsPage: View {
                 Form {
                     Section {
                     } header: {
-                        Text("A shortcut recorded here is written to the config file as a keybind line. Search for a key, such as cmd+k, to see what it does. Delete removes a shortcut; Esc stops recording.")
+                        Text(L10n.t("A shortcut recorded here is written to the config file as a keybind line. Search for a key, such as cmd+k, to see what it does. Delete removes a shortcut; Esc stops recording."))
                             .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(.secondary)
                             .textCase(nil)
@@ -1084,7 +1087,7 @@ struct ThemeModeSection: View {
                     + Text(model.darkIsActive == dark ? " — Active" : "").foregroundColor(.secondary).fontWeight(.regular)
                 Spacer()
                 Button { ThemeEditor.shared.show(nil) } label: {
-                    Label("New", systemImage: "plus.circle")
+                    Label(L10n.t("New"), systemImage: "plus.circle")
                 }
                 .buttonStyle(.borderless)
                 .fontWeight(.regular)
@@ -1120,10 +1123,10 @@ struct ThemeGroupView: View {
                         .textFieldStyle(.roundedBorder)
                     ThemeGrid(model: model, choices: Array(ordered.prefix(Self.shownAtMost)), selected: selected, dark: dark)
                     if found.count > Self.shownAtMost {
-                        Text("\(found.count - Self.shownAtMost) more: search to find them")
+                        Text(L10n.t("%@ more: search to find them").replacingOccurrences(of: "%@", with: "\(found.count - Self.shownAtMost)"))
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     } else if found.isEmpty {
-                        Text("No theme is called that.").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L10n.t("No theme is called that.")).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 .padding(.top, 6)
@@ -1288,7 +1291,7 @@ struct ProgramStateRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(state.title), \(summary)")
-        .help("Opens \(state.title) settings")
+        .help(L10n.t("Opens %@ settings").replacingOccurrences(of: "%@", with: state.title))
     }
 }
 
@@ -1306,13 +1309,13 @@ struct ProgramStatePage: View {
                        help: "While you're elsewhere (with Terminal notifications on); the pane's edge lights up too.")
                 toggle("Badge Dock icon", "program-status-dock-badge", help: "Counted in the badge on Libertty's Dock icon.")
                 Toggle(isOn: Binding(get: { model.sound(for: state) != nil }, set: { model.setSound(state, $0 ? "" : nil) })) {
-                    Text("Play a sound")
-                    Text("As it begins, while you're elsewhere.").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L10n.t("Play a sound"))
+                    Text(L10n.t("As it begins, while you're elsewhere.")).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 .toggleStyle(.switch)
                 if let sound = model.sound(for: state) {
-                    Picker("Sound", selection: Binding(get: { sound }, set: { model.setSound(state, $0) })) {
-                        Text("The alert sound").tag("")
+                    Picker(L10n.t("Sound"), selection: Binding(get: { sound }, set: { model.setSound(state, $0) })) {
+                        Text(L10n.t("The alert sound")).tag("")
                         ForEach(SettingsModel.sounds, id: \.self) { Text($0).tag($0) }
                     }
                     .pickerStyle(.menu)
@@ -1336,18 +1339,18 @@ struct ProgramStatePage: View {
 
     private var description: String {
         switch state {
-        case .working: "A program or agent is busy."
-        case .blocked: "It waits for you: an approval, a question, a sign-in."
-        case .error: "It failed."
-        case .done: "It finished."
-        case .idle: "It's idle."
+        case .working: L10n.t("A program or agent is busy.")
+        case .blocked: L10n.t("It waits for you: an approval, a question, a sign-in.")
+        case .error: L10n.t("It failed.")
+        case .done: L10n.t("It finished.")
+        case .idle: L10n.t("It's idle.")
         }
     }
 
     private func toggle(_ title: String, _ key: String, help: String) -> some View {
         Toggle(isOn: Binding(get: { model.states(key).contains(state) }, set: { model.setState(state, in: key, $0) })) {
-            Text(title)
-            Text(help).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(L10n.t(title))
+            Text(L10n.t(help)).font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .toggleStyle(.switch)
         .disabled(model.locked[key] != nil)
@@ -1374,8 +1377,8 @@ struct RemoteHostsPage: View {
                             .font(.system(size: 38, weight: .light))
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("No Remote Hosts").font(.system(size: 15, weight: .semibold))
-                        Text("Connect to a host over ssh: its sessions run there, and keep running when the connection drops.")
+                        Text(L10n.t("No Remote Hosts")).font(.system(size: 15, weight: .semibold))
+                        Text(L10n.t("Connect to a host over ssh: its sessions run there, and keep running when the connection drops."))
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: 320)
@@ -1400,7 +1403,7 @@ struct RemoteHostsPage: View {
                     Button(L10n.t("Add"), action: add).disabled(!SavedHosts.isValid(adding.trimmingCharacters(in: .whitespaces)))
                 }
             } header: {
-                if !hosts.isEmpty { Text("Your Hosts") }
+                if !hosts.isEmpty { Text(L10n.t("Your Hosts")) }
             } footer: {
                 HStack {
                     if !hosts.isEmpty {
@@ -1410,7 +1413,7 @@ struct RemoteHostsPage: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Spacer()
-                    Button("Connect to Host…") { ConnectPanel.shared.show() }
+                    Button(L10n.t("Connect to Host…")) { ConnectPanel.shared.show() }
                 }
             }
             if !forwards.isEmpty {
@@ -1423,6 +1426,7 @@ struct RemoteHostsPage: View {
                 } footer: {
                     Text(L10n.t("A localhost link in a host's pane carries its port over by itself and opens here. Forward Port in the command palette adds one by hand; a host's forwards close with its last window."))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }

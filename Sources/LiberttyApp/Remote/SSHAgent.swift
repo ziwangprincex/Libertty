@@ -290,7 +290,16 @@ extension SSHAgent {
     /// else the path itself.
     static func name(ofSocket socket: String) -> String {
         for agent in known where agent.socketCandidates.contains(socket) { return agent.agentName }
+        // The one launchd starts for each login (`SSH_AUTH_SOCK` on a Mac):
+        // /private/tmp/com.apple.launchd.XXXX/Listeners, or under /var/run.
+        if isLaunchdAgent(socket) { return L10n.t("The macOS agent") }
         return (socket as NSString).abbreviatingWithTildeInPath
+    }
+
+    static func isLaunchdAgent(_ socket: String) -> Bool {
+        let path = socket.hasPrefix("/private/") ? String(socket.dropFirst("/private".count)) : socket
+        return (path.hasPrefix("/tmp/com.apple.launchd.") || path.hasPrefix("/var/run/com.apple.launchd."))
+            && path.hasSuffix("/Listeners")
     }
 
     /// What `ssh-add -l` said: its keys, or why there are none. (It ends with

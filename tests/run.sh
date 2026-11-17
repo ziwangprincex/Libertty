@@ -357,6 +357,13 @@ expect floating-capsules 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/emp
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist
+# Return on arriving at Forward Port… or Share a Port… closes nothing: the stand-in ssh carries three forwards.
+mkdir -p $PRIVATE/page-forward $PRIVATE/page-forward-home
+expect forward-page 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  LIBERTTY_SSH=$ROOT/tests/fixtures/fake-ssh FAKE_SSH_HOME=$PRIVATE/page-forward-home \
+  FAKE_SSH_SOCKET=$PRIVATE/page-forward/liberttyd.sock FAKE_SSH_LOG=$PRIVATE/page-forward.log \
+  FAKE_SSH_TERMINFO=$PRIVATE/page-forward-home/terminfo FAKE_SSH_FORWARDS=$PRIVATE/page-forwards.txt \
+  $LIBERTTY --ui-probe "$(sed "s|@FORWARDS@|$PRIVATE/page-forwards.txt|g" $ROOT/tests/fixtures/forward-page-enter.txt)" $OUT --persist
 # A session in two windows: a pane of another size than its program's says so, and takes it back.
 expect sized-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sized-elsewhere.txt)" $OUT --persist
@@ -796,6 +803,9 @@ expect throughput-local 'local pty: [0-9]+ MB/s' $LIBERTTY --session-bench $ROOT
 expect throughput-liberttyd 'via liberttyd: [0-9]+ MB/s' $LIBERTTY --session-bench $ROOT/bench/payloads/dense_cells.bin --mb 100 --persist
 settle
 grep -hE 'MB/s' $OUT/throughput-*.log | sed 's/^/      /'
+
+# The forward page's stand-in listeners, if it failed before closing them.
+for line in ${(f)"$(cat $PRIVATE/page-forwards.txt 2>/dev/null)"}; do kill ${line##* } 2> /dev/null; done
 
 # Every check's result, in the suite's order.
 for name in $ORDER; do

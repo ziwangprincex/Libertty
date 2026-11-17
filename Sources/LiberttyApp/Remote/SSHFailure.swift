@@ -281,13 +281,30 @@ extension SSHRecovery {
 
     /// `%@` by `%@`, in order (L10n keeps the English text as the key, and a
     /// translation may move them, so one pass per value, leftmost first).
+    /// A name in Chinese ("macOS 的代理") goes in with no space beside
+    /// Chinese text: the translation's space is there for a host or a path.
     static func fill(_ format: String, _ values: String...) -> String {
         var text = format
         for value in values {
             guard let at = text.range(of: "%@") else { break }
-            text.replaceSubrange(at, with: value)
+            var lower = at.lowerBound, upper = at.upperBound
+            if let first = value.first, isCJK(first), lower > text.startIndex {
+                let space = text.index(before: lower)
+                if text[space] == " ", space > text.startIndex, isCJK(text[text.index(before: space)]) { lower = space }
+            }
+            if let last = value.last, isCJK(last), upper < text.endIndex, text[upper] == " " {
+                let next = text.index(after: upper)
+                if next < text.endIndex, isCJK(text[next]) { upper = next }
+            }
+            text.replaceSubrange(lower..<upper, with: value)
         }
         return text
+    }
+
+    private static func isCJK(_ c: Character) -> Bool {
+        guard let v = c.unicodeScalars.first?.value else { return false }
+        return (0x4E00...0x9FFF).contains(v) || (0x3400...0x4DBF).contains(v)
+            || (0x3000...0x303F).contains(v) || (0xFF00...0xFFEF).contains(v)
     }
 
     /// ssh's own last words, for the details under an explanation.

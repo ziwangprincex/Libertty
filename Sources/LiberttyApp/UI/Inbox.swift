@@ -334,7 +334,15 @@ private final class InboxCell: NSTableCellView {
 
     func show(_ entry: Notifier.Entry) {
         title.stringValue = entry.title
-        body.stringValue = entry.body
+        // A folder as the sidebar and the pane headers show it ("…/src/app"):
+        // its own name stays in sight, the start of its path doesn't.
+        // (Only a folder: a program's own message may start with a path.)
+        var isFolder: ObjCBool = false
+        body.stringValue = entry.body.hasPrefix("/") && !entry.body.contains("\n")
+            && FileManager.default.fileExists(atPath: entry.body, isDirectory: &isFolder) && isFolder.boolValue
+            ? TerminalWindowController.shortDirectory(entry.body) : entry.body
+        // In the interface's language ("6 sec. ago"), not the system's.
+        Self.relative.locale = Locale(identifier: L10n.language == "zh-Hans" ? "zh-Hans" : "en")
         time.stringValue = Self.relative.localizedString(for: entry.date, relativeTo: Date())
     }
 }

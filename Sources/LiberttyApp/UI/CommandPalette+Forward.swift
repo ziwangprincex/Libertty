@@ -25,13 +25,13 @@ extension CommandPalette {
             } else if !text.isEmpty {
                 items.append(Item(title: L10n.t("Not a port, a host:port or a URL"),
                                   subtitle: L10n.t("Try 5173, db:5432, or a link one of its panes printed"),
-                                  symbol: "exclamationmark.triangle", kind: .option) {})
+                                  symbol: "exclamationmark.triangle", kind: .option, inert: true) {})
             }
             items += closingRows(on: host)
             if items.isEmpty {
                 items.append(Item(title: L10n.t("Nothing is forwarded yet."),
                                   subtitle: L10n.t("A port on the host, open on this Mac while this window is."),
-                                  symbol: "", kind: .option) {})
+                                  symbol: "", kind: .option, inert: true) {})
             }
             return items
         }
@@ -52,13 +52,13 @@ extension CommandPalette {
                 })
             } else if !text.isEmpty {
                 items.append(Item(title: L10n.t("Not a port"), subtitle: L10n.t("A number from 1 to 65535"),
-                                  symbol: "exclamationmark.triangle", kind: .option) {})
+                                  symbol: "exclamationmark.triangle", kind: .option, inert: true) {})
             }
             items += closingRows(on: host)
             if items.isEmpty {
                 items.append(Item(title: L10n.t("Nothing is shared yet."),
                                   subtitle: L10n.t("A port on this Mac, open on the host while this window is."),
-                                  symbol: "", kind: .option) {})
+                                  symbol: "", kind: .option, inert: true) {})
             }
             return items
         }
@@ -67,9 +67,11 @@ extension CommandPalette {
     /// The host's forwards, each a row that closes it.
     private static func closingRows(on host: RemoteHost) -> [Item] {
         PortForwarder.shared.forwards(on: host.destination).map { forward in
-            Item(title: L10n.t("Close") + " " + forward.id, subtitle: forward.summary, symbol: "xmark.circle") {
+            var item = Item(title: L10n.t("Close") + " " + forward.id, subtitle: forward.summary, symbol: "xmark.circle") {
                 DispatchQueue.global(qos: .userInitiated).async { _ = PortForwarder.shared.close(id: forward.id) }
             }
+            item.destructive = true
+            return item
         }
     }
 
