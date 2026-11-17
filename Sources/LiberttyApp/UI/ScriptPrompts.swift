@@ -31,20 +31,29 @@ final class ScriptPromptSession {
             return RemoteControl.answer(info, ["result": "error", "message": "this Libertty doesn't know that kind of prompt"])
         }
         let id = info["session"] ?? ""
+        // Two copies of Libertty may both hear it (an installed one and a
+        // build, on one liberttyd): the one showing the command's pane asks.
+        // Another says `no-pane` and stays out of it; only if no copy has
+        // the pane does the command ask again with `fallback`, for the
+        // window in front. (Outside a pane: the copy in front asks first.)
+        let fallback = info["fallback"] == "1"
         var found: (controller: TerminalWindowController, pane: TerminalView)?
         if !id.isEmpty {
             for controller in controllers {
                 if let pane = controller.pane(showing: id) { found = (controller, pane); break }
             }
         }
-        // A window kept for Undo Close isn't one to ask in, nor the Quick
-        // Terminal put away (it would come down over whatever you're doing):
-        // the window in front, then.
-        if let shown = found, let window = shown.controller.window, !window.isVisible, !window.isMiniaturized {
+        // The Quick Terminal put away isn't one to ask in (it would come
+        // down over whatever you're doing): the window in front, then.
+        // (A window kept for Undo Close isn't among `controllers`.)
+        if let shown = found, let window = shown.controller.window, !window.isVisible, !window.isMiniaturized, !NSApp.isHidden {
             found = nil
         }
+        if found == nil, !fallback, !id.isEmpty || !NSApp.isActive {
+            return RemoteControl.answer(info, ["result": "no-pane"])
+        }
         guard let controller = found?.controller ?? front(of: controllers) else {
-            return RemoteControl.answer(info, ["result": "error", "message": "no Libertty window to ask in"])
+            return RemoteControl.answer(info, ["result": "no-pane"])
         }
         guard !open.contains(where: { $0.controller === controller }) else {
             return RemoteControl.answer(info, ["result": "busy"])
@@ -58,9 +67,10 @@ final class ScriptPromptSession {
         RemoteControl.answer(info, ["result": "shown", "pid": String(getpid())])
     }
 
-    /// The window in front (of `controllers`), else any shown one.
+    /// The window in front (of `controllers`), else any shown one — or,
+    /// with Libertty hidden (⌘H), any of its windows: they come back with it.
     private static func front(of controllers: [TerminalWindowController]) -> TerminalWindowController? {
-        let shown = controllers.filter { !$0.isQuick && $0.window?.isVisible == true }
+        let shown = controllers.filter { !$0.isQuick && ($0.window?.isVisible == true || NSApp.isHidden && $0.window != nil) }
         let ordered = NSApp.orderedWindows.compactMap { $0.windowController as? TerminalWindowController }
         return ordered.first { c in shown.contains { $0 === c } } ?? shown.first
     }
@@ -80,7 +90,8 @@ final class ScriptPromptSession {
         guard let controller else { return false }
         let asker = pane.map { controller.askerLabel(of: $0) } ?? ""
         palette = CommandPalette.ask(prompt, from: asker, in: controller) { [weak self] answer in
-            self?.end(ScriptPrompt.reply(answer), withdraw: false)
+            guard let self else { return }
+            self.end(self.reply(to: answer), withdraw: false)
         }
         guard palette != nil else { return false }
         if pid > 0 {
@@ -125,6 +136,18 @@ final class ScriptPromptSession {
                 return end(["result": "closed", "message": "its pane closed with the question unanswered"])
             }
         }
+    }
+
+    /// The answer as the command is told it. What's typed into a `--secure`
+    /// field never goes out in the reply, which any process of yours can
+    /// hear: it's written to the command's own file (`answerFile`, in a
+    /// directory only you can enter), and the reply only says it's there.
+    private func reply(to answer: ScriptPrompt.Answer) -> [String: String] {
+        guard prompt.secure, case .text(let text) = answer else { return ScriptPrompt.reply(answer) }
+        guard let path = request["answerFile"], ScriptPrompt.writeAnswer(text, to: path) else {
+            return ["result": "error", "message": "the answer couldn't be handed over privately, so it wasn't sent"]
+        }
+        return ["result": "answered", "file": "1"]
     }
 
     /// Over: the command told `reply` (nil: there's nobody to tell), the

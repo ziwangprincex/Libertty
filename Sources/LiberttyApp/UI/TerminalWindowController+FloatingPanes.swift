@@ -167,7 +167,7 @@ extension TerminalWindowController {
             self?.closeFloating(pane)
         }, moved: { corner in
             // Every tab's, every window's: it's a setting (Settings ▸ Interface).
-            MainActor.assumeIsolated { _ = SettingsModel.shared.write("floating-minimized-corner", corner.rawValue) }
+            MainActor.assumeIsolated { SettingsModel.shared.write("floating-minimized-corner", corner.rawValue) }
         })
     }
 

@@ -6,7 +6,7 @@ import AppKit
 /// prompt), or queued to go when the pane is ready (PromptQueue). It sits
 /// at the bottom of its pane, or pops out into a window of its own. Esc
 /// puts it away; what was written waits for the next time, pane by pane.
-final class ComposerView: NSView {
+final class ComposerView: NSView, CapsuleObstacle {
     weak var pane: TerminalView?
     /// The keys ⌘Return does: Send, or Queue (opened as the prompt queue, ⌘⇧M).
     var queueByDefault = false { didSet { updateButtons() } }
@@ -131,18 +131,17 @@ final class ComposerView: NSView {
     // they move as it comes, goes and grows.
     override func viewWillMove(toSuperview newSuperview: NSView?) {
         super.viewWillMove(toSuperview: newSuperview)
-        let leaving = SplitContainerView.enclosing(self)
-        DispatchQueue.main.async { leaving?.placeTaskbar() }
+        capsulesMayMove()
     }
 
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
-        SplitContainerView.enclosing(self)?.placeTaskbar()
+        capsulesMayMove()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        SplitContainerView.enclosing(self)?.placeTaskbar()
+        capsulesMayMove()
     }
 
     override func viewDidChangeEffectiveAppearance() {

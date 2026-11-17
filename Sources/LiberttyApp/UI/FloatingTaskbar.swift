@@ -23,7 +23,8 @@ final class FloatingTaskbar: NSView {
     var onRestore: ((ObjectIdentifier) -> Void)?
     var onClose: ((ObjectIdentifier) -> Void)?
     /// Dragged to another corner (written to the config by the window).
-    var onMove: ((Config.MinimizedCorner) -> Void)?
+    /// Dragged to `corner`: false when that can't be kept, and the row goes back.
+    var onMove: ((Config.MinimizedCorner) -> Bool)?
 
     private(set) var capsules: [FloatingCapsule] = []
     private var dragStart: NSPoint?
@@ -55,6 +56,9 @@ final class FloatingTaskbar: NSView {
         let hit = super.hitTest(point)
         return hit === self ? nil : hit
     }
+
+    /// What the capsules show now, in order.
+    var entries: [Entry] { capsules.map(\.entry) }
 
     /// What it shows: a capsule per entry, in order; those already there kept.
     func show(_ entries: [Entry]) {
@@ -153,9 +157,12 @@ final class FloatingTaskbar: NSView {
         let bounds = superview.bounds
         let third = bounds.width / 3
         let side = frame.midX < bounds.minX + third ? -1 : frame.midX > bounds.maxX - third ? 1 : 0
+        let before = corner
         corner = Config.MinimizedCorner(top: frame.midY < bounds.midY, side: side)
+        // Not kept (the setting is set in an included file): back where it was.
+        if onMove?(corner) == false { corner = before }
         move(to: self.frame(in: bounds.size, corner: corner), animated: true)
-        onMove?(corner)
+        (superview as? SplitContainerView)?.setNeedsTaskbarPlacement()
     }
 
     // MARK: Accessibility
@@ -344,4 +351,17 @@ final class FloatingCapsule: NSView {
 
     /// One button: its glyph, name and badge are what its label says.
     override func accessibilityChildren() -> [Any]? { [] }
+}
+
+/// A view over a split that its capsules (FloatingTaskbar) keep clear of —
+/// a pane's composer, the floating card, a floating pane — and tells the
+/// split when it moves, comes or goes, so the capsules move out of its way.
+protocol CapsuleObstacle: NSView {}
+
+extension CapsuleObstacle {
+    /// The split it's in places its capsules again, once, soon. (Called as
+    /// it's about to leave, it's still in the split it leaves.)
+    func capsulesMayMove() {
+        SplitContainerView.enclosing(self)?.setNeedsTaskbarPlacement()
+    }
 }

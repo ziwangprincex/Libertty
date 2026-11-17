@@ -218,7 +218,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// for what's typed answers with it.
     private func pick(_ item: Item) {
         guard let prompt else { return }
-        guard let i = item.index else { return finish(.text(field.stringValue)) }
+        // `--allow-other`'s own answer: what its row says, without the spaces around it.
+        guard let i = item.index else { return finish(.text(field.stringValue.trimmingCharacters(in: .whitespaces))) }
         if prompt.multiple { return toggleMark(i) }
         finish(.chosen([i]))
     }
@@ -230,7 +231,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         if prompt.multiple, !marked.isEmpty { return finish(.chosen(marked.sorted())) }
         let row = table.selectedRow
         guard !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] else { return NSSound.beep() }
-        guard let i = item.index else { return finish(.text(field.stringValue)) }
+        // `--allow-other`'s own answer: what its row says, without the spaces around it.
+        guard let i = item.index else { return finish(.text(field.stringValue.trimmingCharacters(in: .whitespaces))) }
         finish(.chosen([i]))
     }
 
@@ -1033,7 +1035,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         hints.spacing = 6
         hints.setCustomSpacing(12, after: hints.views[2])
         hints.setCustomSpacing(12, after: hints.views[4])
-        if marks { hints.setCustomSpacing(12, after: hints.views[6]) }
+        // ("tab mark" shows only for a prompt, which hides "cd here": the
+        // gap after "run" is the one before it.)
         let close = NSStackView(views: [KeyCap("esc", mono: true), Self.hint("close")])
         close.spacing = 6
         for bar in [hints, close] {

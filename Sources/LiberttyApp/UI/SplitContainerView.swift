@@ -156,30 +156,51 @@ final class SplitContainerView: NSView {
 
     // MARK: Minimized floating panes (their capsules)
 
+    // (A view the capsules keep clear of says when it moves: CapsuleObstacle.)
+
     /// The tab's minimized floating panes, as capsules in a corner; nil
     /// while it has none.
     private(set) var taskbar: FloatingTaskbar?
 
     /// The capsules for `entries` (none: the row goes), in `corner`.
+    /// `moved`: dragged to another corner; false when that can't be kept
+    /// (the setting is another file's), and the row goes back.
     func showMinimized(_ entries: [FloatingTaskbar.Entry], corner: Config.MinimizedCorner, restore: @escaping (ObjectIdentifier) -> Void,
-                       close: @escaping (ObjectIdentifier) -> Void, moved: @escaping (Config.MinimizedCorner) -> Void) {
+                       close: @escaping (ObjectIdentifier) -> Void, moved: @escaping (Config.MinimizedCorner) -> Bool) {
         guard !entries.isEmpty else {
             taskbar?.removeFromSuperview()
             taskbar = nil
             return
         }
         let bar = taskbar ?? FloatingTaskbar()
-        if taskbar == nil {
+        let fresh = taskbar == nil
+        if fresh {
             taskbar = bar
             addSubview(bar, positioned: .above, relativeTo: nil)
         }
         bar.onRestore = restore
         bar.onClose = close
         bar.onMove = moved
+        // The same capsules where they were (most sidebar updates): nothing
+        // to draw or place again.
+        guard fresh || bar.entries != entries || (!bar.dragging && bar.corner != corner) else { return }
         bar.show(entries)
         if !bar.dragging { bar.corner = corner }
         placeTaskbar()
     }
+
+    /// Something the capsules keep clear of moved, came or went: placed
+    /// again once, after this turn of the run loop (a resize moves several).
+    func setNeedsTaskbarPlacement() {
+        guard taskbar != nil, !taskbarPlacementPending else { return }
+        taskbarPlacementPending = true
+        DispatchQueue.main.async { [weak self] in
+            self?.taskbarPlacementPending = false
+            self?.placeTaskbar()
+        }
+    }
+
+    private var taskbarPlacementPending = false
 
     /// The split `view` is in, if it's in one.
     static func enclosing(_ view: NSView) -> SplitContainerView? {
@@ -195,14 +216,15 @@ final class SplitContainerView: NSView {
     }
 
     /// In its corner, clear of what's there already: a pane's header along
-    /// the top (its buttons), the floating card, a pane's composer.
+    /// the top (its buttons), and what tells it it's in the way
+    /// (`CapsuleObstacle`: the floating card, a floating pane, a pane's composer).
     func placeTaskbar() {
         guard let taskbar else { return }
         var r = taskbar.frame(in: bounds.size, corner: taskbar.corner)
-        let composers = views.filter { !$0.isHidden }.flatMap { pane in
-            pane.subviews.filter { $0 is ComposerView }.map { pane.convert($0.frame, to: self) }
-        }
-        let obstacles = headerViews.values.filter { !$0.isHidden }.map(\.frame) + [card?.frame].compactMap { $0 } + composers
+        // Here, or in a pane here (a composer is the pane's).
+        let near = subviews.filter { $0 !== taskbar && !$0.isHidden } + views.filter { !$0.isHidden }.flatMap(\.subviews)
+        let others = near.filter { $0 is CapsuleObstacle && !$0.isHidden }.map { $0.superview === self ? $0.frame : $0.superview?.convert($0.frame, to: self) ?? .zero }
+        let obstacles = headerViews.values.filter { !$0.isHidden }.map(\.frame) + others
         for _ in 0..<3 {
             guard let hit = obstacles.first(where: { $0.intersects(r) }) else { break }
             r.origin.y = taskbar.corner.top ? hit.maxY + FloatingTaskbar.spacing : hit.minY - FloatingTaskbar.spacing - r.height

@@ -48,6 +48,15 @@ expect-prompt:[hello]
 type-then:enter:world
 wait:1.0
 expect:INPUT=[world] EXIT=0
+# A secret: its answer comes back in a private file of the command's, not
+# in the reply, and the file is gone after.
+type:R=$(libertty +input --title Token --secure); echo "SECRET=[$R] EXIT=$? LEFT=$(ls -d ${TMPDIR:-/tmp}/libertty-answer.* 2>/dev/null | wc -l | tr -d ' ')"
+key:enter
+wait:1.5
+expect-prompt:Token
+type-then:enter:s3cr3t
+wait:1.0
+expect:SECRET=[s3cr3t] EXIT=0 LEFT=0
 # Esc: 1, nothing printed.
 type:R=$(libertty +input --title Never); echo "CANCEL=[$R] $?"
 key:enter

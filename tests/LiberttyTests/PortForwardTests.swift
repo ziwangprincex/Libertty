@@ -5,7 +5,9 @@ import Testing
 /// Forwarded ports: which links mean the machine they were printed on, what
 /// the rewritten link looks like, what the user may type, and the ssh
 /// command line that asks a host's shared connection for the forward.
-struct PortForwardTests {
+// One at a time: two tests asking for a free port at once may both be
+// handed the same one, and each holds it against the other.
+@Suite(.serialized) struct PortForwardTests {
     // MARK: Links to the machine they came from
 
     @Test func loopbackNames() {

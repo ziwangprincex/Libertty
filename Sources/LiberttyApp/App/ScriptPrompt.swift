@@ -54,8 +54,9 @@ struct ScriptPrompt: Equatable {
     static let inputUsage = "usage: libertty +input [--title T] [--placeholder P] [--value V] [--secure] [--timeout S]"
 
     /// `args` as `kind`'s command reads them; with `+pick` and no ITEM,
-    /// the items are `stdin`'s lines (nil: none to read).
-    static func parse(_ args: [String], kind: Kind, stdin: () -> String?) -> Result<ScriptPrompt, Problem> {
+    /// the items are `stdin`'s lines (nil: none to read; it's handed the
+    /// prompt's timeout, as long as it may wait).
+    static func parse(_ args: [String], kind: Kind, stdin: (Double?) -> String?) -> Result<ScriptPrompt, Problem> {
         let usage = kind == .pick ? pickUsage : inputUsage
         var prompt = ScriptPrompt(kind: kind)
         var words: [String] = []
@@ -98,11 +99,16 @@ struct ScriptPrompt: Equatable {
         switch kind {
         case .input:
             guard words.isEmpty else { return .failure(Problem(message: usage)) }
+            // A starting value travels in the request, which any process of
+            // yours can hear: not for a secret.
+            guard !(prompt.secure && !prompt.value.isEmpty) else {
+                return .failure(Problem(message: "--value doesn't go with --secure: it would be sent in the open"))
+            }
         case .pick:
             guard !(prompt.multiple && prompt.allowOther) else {
                 return .failure(Problem(message: "--multiple and --allow-other don't go together: several items, or one answer of your own"))
             }
-            prompt.items = words.isEmpty ? items(fromLines: stdin() ?? "") : words.map { Item(label: $0) }
+            prompt.items = words.isEmpty ? items(fromLines: stdin(prompt.timeout) ?? "") : words.map { Item(label: $0) }
             guard !prompt.items.isEmpty else {
                 return .failure(Problem(message: "nothing to pick from: give the items as arguments, or one a line on stdin"))
             }
@@ -170,6 +176,25 @@ struct ScriptPrompt: Equatable {
     }
 
     init(kind: Kind) { self.kind = kind }
+
+    /// A `--secure` answer into the command's own file: one that's there
+    /// already, a plain file of this user's (never a link), emptied first.
+    static func writeAnswer(_ text: String, to path: String) -> Bool {
+        let fd = open(path, O_WRONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_uid == getuid(), info.st_mode & S_IFMT == S_IFREG, ftruncate(fd, 0) == 0 else { return false }
+        let bytes = Array(text.utf8)
+        var written = 0
+        while written < bytes.count {
+            let n = bytes[written...].withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+            if n < 0, errno == EINTR { continue }
+            guard n > 0 else { return false }
+            written += n
+        }
+        return true
+    }
 
     /// An answer as the app sends it.
     static func reply(_ answer: Answer) -> [String: String] {

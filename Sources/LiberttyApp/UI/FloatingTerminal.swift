@@ -6,7 +6,28 @@ import AppKit
 /// program running on (Toggle Floating Panes brings it back). Its pane is
 /// one of the tab's parked ones, so everything that counts a tab's
 /// programs counts it; it keeps its grid in step with its frame.
-final class FloatingTerminalView: NSView {
+final class FloatingTerminalView: NSView, CapsuleObstacle {
+    // The split's capsules keep clear of it: they move as it does.
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        capsulesMayMove()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        capsulesMayMove()
+    }
+
+    override func viewWillMove(toSuperview newSuperview: NSView?) {
+        super.viewWillMove(toSuperview: newSuperview)
+        capsulesMayMove()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        capsulesMayMove()
+    }
+
     let pane: TerminalView
     /// Where it is in its split, as fractions of the split's size (so a
     /// window resize keeps it where it was, relatively).

@@ -6,11 +6,11 @@ import Testing
 /// items read from stdin, and the request and the answer as they travel.
 struct ScriptPromptTests {
     private func pick(_ args: String..., stdin: String? = nil) -> Result<ScriptPrompt, ScriptPrompt.Problem> {
-        ScriptPrompt.parse(args, kind: .pick, stdin: { stdin })
+        ScriptPrompt.parse(args, kind: .pick, stdin: { _ in stdin })
     }
 
     private func input(_ args: String...) -> Result<ScriptPrompt, ScriptPrompt.Problem> {
-        ScriptPrompt.parse(args, kind: .input, stdin: { nil })
+        ScriptPrompt.parse(args, kind: .input, stdin: { _ in nil })
     }
 
     @Test func pickReadsItsFlagsAndItems() throws {
@@ -34,7 +34,7 @@ struct ScriptPromptTests {
         #expect(throws: ScriptPrompt.Problem.self) { try pick("--secure", "a").get() }
         #expect(throws: ScriptPrompt.Problem.self) { try pick("--nope", "a").get() }
         let many = (0...ScriptPrompt.maxItems).map(String.init)
-        #expect(throws: ScriptPrompt.Problem.self) { try ScriptPrompt.parse(many, kind: .pick, stdin: { nil }).get() }
+        #expect(throws: ScriptPrompt.Problem.self) { try ScriptPrompt.parse(many, kind: .pick, stdin: { _ in nil }).get() }
     }
 
     @Test func itemsComeFromStdinWithoutArguments() throws {
@@ -47,8 +47,11 @@ struct ScriptPromptTests {
     }
 
     @Test func inputReadsItsFlags() throws {
-        let p = try input("--title", "Name", "--placeholder", "Who?", "--value", "me", "--secure", "--timeout", "1.5").get()
-        #expect(p.kind == .input && p.title == "Name" && p.placeholder == "Who?" && p.value == "me" && p.secure && p.timeout == 1.5)
+        let p = try input("--title", "Name", "--placeholder", "Who?", "--value", "me", "--timeout", "1.5").get()
+        #expect(p.kind == .input && p.title == "Name" && p.placeholder == "Who?" && p.value == "me" && !p.secure && p.timeout == 1.5)
+        #expect(try input("--secure").get().secure)
+        // A starting value would travel in the open: not for a secret.
+        #expect(throws: ScriptPrompt.Problem.self) { try input("--value", "me", "--secure").get() }
         #expect(throws: ScriptPrompt.Problem.self) { try input("stray").get() }
         #expect(throws: ScriptPrompt.Problem.self) { try input("--multiple").get() }
         #expect(throws: ScriptPrompt.Problem.self) { try input("--value").get() }
@@ -61,7 +64,7 @@ struct ScriptPromptTests {
         #expect(ScriptPrompt(fields: ["kind": "prompt", "prompt": "pick", "items": "[]"]) == nil)
         #expect(ScriptPrompt(fields: ["kind": "split"]) == nil)
         #expect(ScriptPrompt(fields: ["kind": "prompt", "prompt": "draw"]) == nil)
-        let i = try input("--secure", "--value", "x").get()
+        let i = try input("--secure", "--title", "x").get()
         #expect(ScriptPrompt(fields: i.fields) == i)
     }
 

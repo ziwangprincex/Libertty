@@ -6,7 +6,28 @@ import QuartzCore
 /// scaled down, so nothing resizes and the program never knows. A click
 /// brings the pane back into the split; a drag moves the card to the nearest
 /// corner; on hover, a button puts it away (parked, out of sight).
-final class FloatingPaneCard: NSView {
+final class FloatingPaneCard: NSView, CapsuleObstacle {
+    // The split's capsules keep clear of it: they move as it does.
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        capsulesMayMove()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        capsulesMayMove()
+    }
+
+    override func viewWillMove(toSuperview newSuperview: NSView?) {
+        super.viewWillMove(toSuperview: newSuperview)
+        capsulesMayMove()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        capsulesMayMove()
+    }
+
     enum Corner: String { case topLeft, topRight, bottomLeft, bottomRight }
 
     weak var pane: TerminalView?
