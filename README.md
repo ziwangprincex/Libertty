@@ -44,7 +44,8 @@ fonts (`font-family` repeats, as in Ghostty), `font-thicken`, and an optional cu
 **At the prompt.** Ghost text from your history (this folder's first; → takes it) and a
 completion list (⌃⇧Space) of history, commands' subcommands and flags, branches, scripts,
 hosts and paths, read off the screen so it works on hosts too. A click on the command line
-moves the cursor there. Copy mode (⌘⇧C) moves through the scrollback with vi keys; hint
+moves the cursor there. Copy mode (⌘⇧C) moves through the scrollback with vi keys (f/t to a
+character, D to the line's end); hint
 mode (⌘⇧H) labels every link, path and hash on screen to open or copy. Programs can draw
 native cards and panels in their output ([OSC 7502](docs/surface-protocol.md),
 `libertty +surface`), and after `git status`, a build's errors or a search, a chip opens
@@ -55,8 +56,9 @@ them as a list.
 `pane-style = compact` for edge-to-edge panes; `interface-style = glass` for a translucent
 window. Splits, workspaces, parked and floating panes, moving panes and tabs between
 windows, command palette (⌘⇧P), Quick Terminal, undo for closing a pane, tab or window.
-Floating panes (⌥⇧⌘F) are shells of their own over the split, minimized with ⌥⌘F. Key
-sequences (`keybind = ctrl+b>v=new_split:right`) show which keys can follow.
+Floating panes (⌥⇧⌘F) are shells of their own over the split; minimized (⌥⌘F), each waits
+as a capsule in a corner of its tab. Key sequences (`keybind = ctrl+b>v=new_split:right`)
+show which keys can follow, and any setting can go on a key (`toggle_setting:KEY`).
 On a trackpad, spread two fingers to zoom a pane and pinch to restore it; Option-swipe
 sideways shows or hides the sidebar. `active-border` draws a border round the focused pane.
 
@@ -73,9 +75,13 @@ your programs reach (Full Disk Access, screen recording, camera, microphone).
 **Remote hosts.** File ▸ Connect to Host… (`libertty +connect HOST`) runs a window's panes
 on another machine over your `ssh`. The host gets its own liberttyd in `~/.libertty` (no
 root), so programs survive disconnects. Screenshots and files pasted or dropped on a host's
-pane are sent there first, so a program there gets a path it can open. Settings ▸ Remote
-Hosts lists your hosts and how each is, and helps when ssh can't connect (a changed host
-key, keys not in ssh-agent). Hosts: macOS (Apple silicon), Linux (x86_64, aarch64).
+pane are sent there first, so a program there gets a path it can open. A
+`http://localhost:PORT` link in a host's pane opens here through a forward over the host's
+ssh connection (Forward Port… in the palette, `libertty +forward`), and the Inspector lists
+the ports each pane's programs listen on (`libertty +ports`). Settings ▸ Remote Hosts lists
+your hosts and how each is, picks the SSH agent (1Password, Secretive…), and says in plain
+words why ssh couldn't connect and what to change. Hosts: macOS (Apple silicon), Linux
+(x86_64, aarch64).
 
 **Web access.** `web-access = local | network | tailscale` shows the Mac's panes in a
 browser, behind a secret link. `web-access-input = false` makes it read-only.

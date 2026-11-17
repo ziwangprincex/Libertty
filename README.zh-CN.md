@@ -36,7 +36,7 @@ Quick Look 预览屏幕上的文件和网页。支持 fallback 字体（`font-fa
 
 **命令行输入。** 提示符后面显示来自历史的灰色建议（当前文件夹的优先，→ 采纳）；⌃⇧Space 弹出补全列表：
 历史、各命令的子命令和参数、分支、脚本、主机、路径。内容是从屏幕上读的，所以在远程主机上也能用。点一下命令行，
-光标就移到那里。复制模式（⌘⇧C）用 vi 键位在回滚历史里移动；提示模式（⌘⇧H）给屏幕上每个链接、路径和
+光标就移到那里。复制模式（⌘⇧C）用 vi 键位在回滚历史里移动（f/t 跳到字符，D 复制到行尾）；提示模式（⌘⇧H）给屏幕上每个链接、路径和
 commit hash 标上字母，按下就打开或复制。程序可以在输出里画原生的卡片和面板（[OSC 7502](docs/surface-protocol.md)、
 `libertty +surface`）；`git status`、编译报错或搜索结果之后，命令行旁会出现一个按钮，点开是列表。
 
@@ -44,7 +44,7 @@ commit hash 标上字母，按下就打开或复制。程序可以在输出里�
 （分屏、浮动、放大、关闭）；`pane-style = compact` 让 pane 铺满；`interface-style = glass` 让窗口
 半透明。另有分屏、工作区、收起和浮动 pane、在窗口之间移动 pane 和标签、命令面板（⌘⇧P）、Quick
 Terminal，关闭 pane、标签或窗口后可以撤销。浮动 pane（⌥⇧⌘F）是一个浮在分屏上面、有自己 shell 的
-pane，⌥⌘F 收起或放回。按键序列（`keybind = ctrl+b>v=new_split:right`）按下第一个键后会提示接下来能按什么。触控板上双指张开放大 pane、捏合恢复；按住 Option 横向轻扫
+pane，⌥⌘F 收起或放回，收起后在标签的一角显示成小胶囊。按键序列（`keybind = ctrl+b>v=new_split:right`）按下第一个键后会提示接下来能按什么；任何设置都能绑到快捷键上（`toggle_setting:KEY`）。触控板上双指张开放大 pane、捏合恢复；按住 Option 横向轻扫
 显示或隐藏侧边栏。`active-border` 给当前 pane 画一圈边框。
 
 **程序状态。** 标签上显示程序是在运行、在等你、已完成还是失败了（来自 OSC 7501，或者检测到在等密码）。
@@ -56,8 +56,10 @@ pane，⌥⌘F 收起或放回。按键序列（`keybind = ctrl+b>v=new_split:ri
 
 **远程主机。** 文件 ▸ Connect to Host…（`libertty +connect HOST`）让一个窗口的 pane 通过你的 `ssh`
 运行在另一台机器上。主机上会装一份自己的 liberttyd（在 `~/.libertty`，不需要 root），断线后程序继续
-运行。往远程 pane 里粘贴截图或拖文件时，会先传到主机上，主机上的程序拿到的是能打开的路径。设置 ▸ Remote
-Hosts 列出你的主机和各自的连接状态；ssh 连不上时（主机密钥变了、ssh-agent 里没有密钥）会告诉你怎么处理。
+运行。往远程 pane 里粘贴截图或拖文件时，会先传到主机上，主机上的程序拿到的是能打开的路径。远程 pane 里的
+`http://localhost:端口` 链接会经主机的 ssh 连接转发过来、在本机打开（命令面板的 Forward Port…、`libertty +forward`），
+检查器列出每个 pane 里的程序在监听哪些端口（`libertty +ports`）。设置 ▸ Remote Hosts 列出你的主机和各自的连接状态，
+可以选 SSH agent（1Password、Secretive 等）；ssh 连不上时用大白话说明原因和该改什么。
 支持 macOS（Apple silicon）和 Linux（x86_64、aarch64）。
 
 **网页访问。** `web-access = local | network | tailscale` 在浏览器里显示本机的 pane，需要带密钥的

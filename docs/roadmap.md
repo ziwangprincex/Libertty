@@ -281,3 +281,20 @@ Kero（github.com/egoist/kero，MIT）是给编程 agent 用的终端。下面�
 | 冷启动 | Tern 公开写 151 ms | ✅ `--startup-bench`（`bench/startup.sh`，`--sample` 看主线程每段花在哪）：菜单图标改成打开时才加载、Web Access 面板用到才建、字体在后台线程预热；release 构建窗口不上屏时，到画出提示符的第一帧从约 305 ms 降到约 260 ms（同一台机器上交替各跑 12 次的中位数；机器状态不同，同一个构建也测到过 155 ms，所以只比同一时段的数字）。⬜ 上屏的数字、和其他终端对比要在空闲的屏幕上跑（会抢焦点，留给你） |
 | 空闲开销 / 共享 poller | Tern | ✅ 评估后不做共享 poller（见第 6 节）；改成压缩完成后定时器停下：100 个空闲会话的 liberttyd 每 10 秒唤醒从约 92 次降到约 2 次；`IdleCompressorTests` |
 
+
+## 16. 对齐 Rex Beta 2003（2026-11-17）
+
+Rex 在 11 月 16 日一天发了 1990–2003 八个版本，更新说明是空的；差距是对照 2003 和 1957 的界面文字逐条核实的（Kero、Otty、Tern 这几天没发新版）。功能照着学，界面文字都是 Libertty 自己写的。
+
+| 功能 | 对方 | Libertty |
+|---|---|---|
+| 端口转发：主机终端里的 localhost 链接、Forward Port、反向共享 | Rex 2003 | ✅ 走主机已有的 ssh ControlMaster（`ssh -O forward/cancel`），转发属于拿到它的那个 master（按 `-O check` 的 pid 判断），重连后自动再要；本机 127.0.0.1/0.0.0.0/::1/:: 都空着才用同一个端口号；命令面板 Forward Port…、设置 ▸ Remote Hosts 列表、`+forward`；`PortForwardTests`、`--forward-probe`（替身 ssh 真的转发一个本地 web 服务）、`tests/forward-test.sh`。修了主机终端的 localhost 链接在本机打开的 bug |
+| 每个终端在监听的端口 | Rex 2003 `ports` | ✅ liberttyd 扫描（macOS libproc，Linux `/proc/net/tcp{,6}` + fd inode），按脚本名标注（vite 而不是 node），10 秒到 5 分钟退避、命令前后各看一次、空闲 shell 零开销；`listPorts` 请求、`ports` 帧和事件、`+ports`；检查器里显示，主机的端口点了就转发；`PortsTests`、`tests/ports-test.sh`。⚠️ Linux 部分本机编不了，靠 CI |
+| SSH agent 选择、ssh 报错讲人话 | Rex 2003 | ✅ `ssh-agent`（系统、1Password、Secretive、Bitwarden、YubiKey、GnuPG、自定义），`~/.ssh/config` 的 IdentityAgent 优先；`SSHFailure` 解释算法不匹配、连上就被关、拒绝、超时、太多密钥等；`SSHFailureTests`（真实 OpenSSH 9.x 报错样本）、`tests/hosts-test.sh`。修了用 1Password/Secretive 时给错建议的 bug |
+| ssh 启动的 liberttyd 不在登录会话里 | Kero #339 | ✅ liberttyd 报告自己所在的登录会话，本机 app 把不在图形登录里的接管回来，ssh 登录不再替换本机的；`+daemon status` 显示 login |
+| 复制模式 f/F/t/T、; ,、D、退出回到原位置 | Rex 2003 | ✅ `CopyModeTests`、`copy-mode.txt` |
+| 任意设置绑快捷键 | Rex 2003 Setting Actions | ✅ `toggle_setting`、`cycle_setting`、`increase_setting`/`decrease_setting`、`set_setting`、`reset_setting`；命令面板搜到开关时给"Turn On/Off"；`SettingsTests`、`setting-actions.txt` |
+| 被杀的全屏程序留下鼠标/键盘上报 | mygo 065300a7（Kero） | ✅ 命令开始时记下 shell 的输入模式，结束时恢复（shell 之后自己设的不动，tmux 在前台时不动）；`InputModeTests`、`killed-program.txt`（zsh、bash；fish 没装就跳过） |
+| 最小化浮动 pane 变成胶囊 | Rex 2003 | ✅ `floating-minimized-corner`、拖到别的角；`floating-capsules.txt` |
+| 脚本弹框 | Rex 2003 `rex.ui.input/pick` | ✅ `+pick`、`+input`（命令面板里问，Esc 退出 1、超时 124、已有一个在问时 5）；`ScriptPromptTests`、`script-prompts.txt`。只在本机 |
+| 侧栏选中卡片比行窄、标签多时窗口变高 | — | ✅ 卡片宽度每次按行算；列表放不下时滚动；`sidebar-card.txt`（用常驻滚动条跑） |
