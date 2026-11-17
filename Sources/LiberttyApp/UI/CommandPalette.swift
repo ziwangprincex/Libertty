@@ -25,9 +25,19 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var alternate: (() -> Void)?
         /// A config key typed in place (any key without a picker).
         var editKey: String?
+        /// A page of its own instead of running (Forward Port…).
+        var page: Page?
         /// More words it's found by, not shown: a translated command's English.
         var keywords = ""
         var run: () -> Void
+    }
+
+    /// A command that opens a page of its own: the palette lists what
+    /// `rows` makes of the text typed there, and Return runs the selected
+    /// row (Forward Port…: a port, host:port or URL on the pane's host).
+    struct Page {
+        var placeholder: String
+        var rows: (String) -> [Item]
     }
 
     /// The chips under the field (Tern's All / Commands / Files / Sessions…).
@@ -331,6 +341,15 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Show Markdown Source", .toggleMarkdownSource, "doc.plaintext")
         command("Quick Terminal", .toggleQuickTerminal, "rectangle.topthird.inset.filled")
         command("Connect to Host…", .connectToHost, "network")
+        // The ports this window's host carries, either way (CommandPalette+Forward).
+        if let host = controller?.host {
+            out.append(Item(title: L10n.t("Forward Port…"), subtitle: host.destination, symbol: "arrow.left.arrow.right",
+                            page: Self.forwardPage(on: host, controller: controller),
+                            keywords: "port forward tunnel localhost ssh") {})
+            out.append(Item(title: L10n.t("Share a Port with %@…").replacingOccurrences(of: "%@", with: host.destination),
+                            symbol: "arrow.up.arrow.down", page: Self.sharePage(on: host, controller: controller),
+                            keywords: "port share reverse tunnel ssh") {})
+        }
         command("Picture in Picture", .togglePictureInPicture, "pip")
         command("Toggle Full Screen", .toggleFullscreen, "arrow.up.left.and.arrow.down.right.rectangle")
         command("Float on Top", .toggleWindowFloatOnTop, "pin")
@@ -451,6 +470,22 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         return c.values(of: picker.key) == ConfigStore.shared.savedConfig.values(of: picker.key)
     }
 
+    // MARK: A page of its own
+
+    /// The page whose rows follow what's typed, while one is open.
+    private var page: Page?
+
+    private func enterPage(_ page: Page) {
+        beforePicker = (all, scope, field.stringValue)
+        self.page = page
+        all = []
+        field.stringValue = ""
+        field.placeholderString = page.placeholder
+        for (_, chip) in chips { chip.isHidden = true }
+        updateFooter()
+        filter("")
+    }
+
     // MARK: Pickers
 
     /// The setting whose choices are listed now, and what was listed before.
@@ -486,6 +521,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         ConfigStore.shared.endPreview()
         picker = nil
         editing = nil
+        page = nil
         beforePicker = nil
         all = before.all
         field.stringValue = before.query
@@ -611,6 +647,15 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     }
 
     private func filter(_ query: String) {
+        if let page {
+            shown = page.rows(query)
+            rows = shown.map { .item($0) }
+            noMatches = shown.isEmpty
+            noMatchesText = L10n.t("Nothing here")
+            table.reloadData()
+            if !shown.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+            return layout()
+        }
         if editing != nil {
             shown = editRows(query)
             rows = shown.map { .item($0) }
@@ -705,7 +750,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     }
 
     private func cycleScope(_ delta: Int) {
-        guard !panesOnly, picker == nil, editing == nil else { return }
+        guard !panesOnly, picker == nil, editing == nil, page == nil else { return }
         let all = scopes
         let i = all.firstIndex(of: scope) ?? 0
         setScope(all[(i + delta + all.count) % all.count])
@@ -828,12 +873,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private func updateFooter() {
         guard let (hints, close) = footer else { return }
         let picking = picker != nil || editing != nil
+        // A page of its own still navigates and runs; only Esc means "back".
+        let onPage = page != nil
         (hints.views[2] as? NSTextField)?.stringValue = picking ? "try" : "navigate"
         for view in hints.views[0...2] { view.isHidden = editing != nil }
         (hints.views[4] as? NSTextField)?.stringValue = editing != nil ? "set" : picking ? "keep" : scope == .folders ? "new tab" : "run"
-        (close.views[1] as? NSTextField)?.stringValue = picking ? "back" : "close"
+        (close.views[1] as? NSTextField)?.stringValue = picking || onPage ? "back" : "close"
         // Folders: ⌥↵ goes there in the focused pane instead.
-        let folders = scope == .folders && !picking
+        let folders = scope == .folders && !picking && !onPage
         hints.views[5].isHidden = !folders
         hints.views[6].isHidden = !folders
         layout()
@@ -855,7 +902,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         guard let parent else { return }
         let width = min(Self.width, parent.frame.width - 40)
         let list = listHeight
-        let chipsH = chips.isEmpty || picker != nil || editing != nil ? 0 : Self.chipsHeight
+        let chipsH = chips.isEmpty || picker != nil || editing != nil || page != nil ? 0 : Self.chipsHeight
         let height = Self.topHeight + chipsH + (list > 0 ? list + 12 : 0) + Self.footerHeight
         let content = parent.contentLayoutRect
         let top = parent.frame.minY + content.maxY - 12
@@ -957,6 +1004,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         }
         if let picker = item.picker { return enterPicker(picker) }
         if let key = item.editKey { return enterEditor(key) }
+        if let page = item.page { return enterPage(page) }
         if !item.preview.isEmpty {
             // Written while it's still shown: no flash of the old setting between.
             item.run()
@@ -1002,7 +1050,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         case #selector(NSResponder.insertNewline(_:)): runSelected()
         // ⌥↵: the selected item's other way (a folder: cd there).
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): runSelected(alternate: true)
-        case #selector(NSResponder.cancelOperation(_:)): if picker != nil || editing != nil { leavePicker() } else { close() }
+        case #selector(NSResponder.cancelOperation(_:)):
+            if picker != nil || editing != nil || page != nil { leavePicker() } else { close() }
         // Tab walks the chips: All, Panes, Commands…
         case #selector(NSResponder.insertTab(_:)): cycleScope(1)
         case #selector(NSResponder.insertBacktab(_:)): cycleScope(-1)

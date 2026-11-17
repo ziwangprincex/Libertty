@@ -148,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         MainActor.assumeIsolated { CloseUndo.shared.expireAll() }
         RecentFolders.shared.flush()
         CommandHistory.shared.flush()
+        closeForwards()
         // A one-off run (`-e`, a measurement) brings nothing back: end its sessions.
         if oneShot {
             for c in controllers { c.endAllSessions() }
@@ -155,6 +156,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         // Quitting keeps liberttyd's sessions running; the layout says where they go.
         saveWindows()
+    }
+
+    /// A window closed: the ports it asked its host to carry were for its
+    /// panes, so the host's last window going takes them back.
+    private func forgetForwards(of controller: TerminalWindowController) {
+        guard let destination = controller.host?.destination,
+              !controllers.contains(where: { $0.host?.destination == destination }) else { return }
+        PortForwarder.shared.closeSoon(on: destination)
+    }
+
+    /// Quitting: take the ports back from the hosts' ssh connections, so no
+    /// listener on this Mac outlives Libertty (their masters would hold the
+    /// forwards for ControlPersist seconds yet). Bounded — a host that
+    /// doesn't answer isn't worth holding up the quit for, and its master
+    /// takes the forward with it when it goes.
+    private func closeForwards() {
+        guard !PortForwarder.shared.all.isEmpty else { return }
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            PortForwarder.shared.closeAll()
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + 2)
     }
 
     private func saveWindows() {
@@ -202,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         controller.onClose = { [weak self] c in
             self?.controllers.removeAll { $0 === c }
             self?.updateDockBadge()
+            self?.forgetForwards(of: c)
         }
         // Hidden for undo: not a window to save or count; back on undo.
         controller.onHide = { [weak self] c in self?.controllers.removeAll { $0 === c } }
@@ -871,6 +896,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         // The Quick Terminal's pane can be split too (it's no window of the list).
         if PaneRequests.handle(info, in: controllers + [QuickTerminal.shared.windowController].compactMap { $0 }) { return }
+        if ForwardRequests.handle(info, in: controllers) { return }
         if info["kind"] == "focus", let id = info["id"] {
             RemoteControl.answer(info, ["result": reveal(paneID: id) ? "focused" : "no-pane"])
             return
