@@ -1,69 +1,82 @@
 import AppKit
 
-/// What to do when ssh can't connect for a reason the user can fix, as
-/// Rex walks them through it: a host whose key changed (reinstalled, or
-/// someone in between — Libertty can't tell which, so it says so and lets
-/// them decide), or keys on disk that ssh-agent hasn't got.
+/// What to do when ssh can't connect, as Rex walks the user through it: a
+/// host whose key changed (reinstalled, or someone in between — Libertty
+/// can't tell which, so it says so and lets them decide), keys on disk that
+/// ssh-agent hasn't got, an agent that holds nothing for this host, and the
+/// failures ssh explains only to someone who already knows SSH — no common
+/// key exchange method, a host that closes the connection at once.
+///
+/// Reading ssh's words and putting them plainly is in SSHFailure, as pure
+/// functions of the text. This file asks the user and does what they say.
 enum SSHRecovery {
-    enum Problem: Equatable {
+    enum Problem: Equatable, Sendable {
         /// "REMOTE HOST IDENTIFICATION HAS CHANGED": the host as known_hosts
         /// names it (`[host]:2222` for another port), the new key's
         /// fingerprint, and the known_hosts file and line with the old one.
         case changedHostKey(host: String, fingerprint: String?, file: String?, line: Int?)
-        /// "Permission denied (publickey…)" while ssh-agent has no keys and
-        /// these are on disk.
+        /// "Permission denied (publickey…)" while the agent ssh would use by
+        /// itself has no keys and these are on disk: `ssh-add` can fix it.
         case keysNotLoaded([String])
+        /// The same, but the keys live in another agent (1Password, a
+        /// YubiKey, one ~/.ssh/config names for this host): only the user can
+        /// put a key in it, so Libertty says which agent it is.
+        case agentWithoutKeys(agent: String, socket: String?, answer: SSHAgentStanding.Answer, fromConfig: Bool)
+        /// ssh and the host found no key exchange method, host key type,
+        /// cipher or message check in common.
+        case noCommonAlgorithm(Negotiation, offered: String)
+        /// The host took the connection and closed it without a greeting.
+        case closedWithoutAnswer(host: String?, port: Int?)
+        /// ssh never reached the host at all.
+        case unreachable(Unreachable, host: String?, port: Int?)
+        /// The host counted too many keys as failed logins and gave up.
+        case tooManyAuthFailures
+        /// Whatever answered doesn't speak SSH (the greeting, if ssh quoted it).
+        case notSSH(String?)
     }
 
-    /// What `errors` (all ssh said) is, if it's one of those.
-    static func diagnose(_ errors: String, agentHasKeys: () -> Bool = agentHasKeys,
-                         keysOnDisk: () -> [String] = keysOnDisk) -> Problem? {
-        if errors.contains("REMOTE HOST IDENTIFICATION HAS CHANGED") {
-            var host: String?, fingerprint: String?, file: String?, line: Int?
-            for raw in errors.split(separator: "\n") {
-                let l = raw.trimmingCharacters(in: .whitespaces)
-                if l.hasPrefix("SHA256:") || l.hasPrefix("MD5:") { fingerprint = l }
-                // "Host key for [example.com]:2222 has changed and you have requested strict checking."
-                if l.hasPrefix("Host key for "), let end = l.range(of: " has changed") {
-                    host = String(l[l.index(l.startIndex, offsetBy: 13)..<end.lowerBound])
-                }
-                // "Offending ED25519 key in /Users/me/.ssh/known_hosts:12"
-                if l.hasPrefix("Offending "), let at = l.range(of: " key in ") {
-                    let place = l[at.upperBound...]
-                    if let colon = place.lastIndex(of: ":"), let n = Int(place[place.index(after: colon)...]) {
-                        file = String(place[..<colon])
-                        line = n
-                    } else {
-                        file = String(place)
-                    }
-                }
-            }
-            guard let host else { return nil }
-            return .changedHostKey(host: host, fingerprint: fingerprint, file: file, line: line)
-        }
-        if errors.contains("Permission denied (publickey"), !agentHasKeys() {
-            let keys = keysOnDisk()
-            if !keys.isEmpty { return .keysNotLoaded(keys) }
-        }
-        return nil
+    // MARK: Asking the Mac first
+
+    /// What ssh uses for `destination` and what it holds, with the keys in
+    /// ~/.ssh. Runs ssh and ssh-add: not on the main thread.
+    static func facts(for destination: String) -> (agent: SSHAgentStanding, keys: [String]) {
+        let setting = SSHAgent.chosen(ConfigStore.shared.config)
+        return (SSHAgent.standing(for: destination, setting: setting), keysOnDisk())
     }
 
-    // MARK: Asking
+    /// The same as `diagnose`, for the command line: blocking.
+    static func diagnose(_ errors: String, destination: String) -> Problem? {
+        let facts = facts(for: destination)
+        return diagnose(errors, agent: facts.agent, keysOnDisk: facts.keys)
+    }
+
+    /// What `errors` is, with the facts gathered in the background: which
+    /// agent a host uses can only be had by asking ssh, and no window waits
+    /// on a subprocess.
+    @MainActor
+    static func diagnose(_ errors: String, destination: String, then: @escaping (Problem?) -> Void) {
+        guard !errors.isEmpty else { return then(nil) }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let problem = diagnose(errors, destination: destination)
+            DispatchQueue.main.async { then(problem) }
+        }
+    }
+
+    // MARK: Asking the user
 
     /// Ask what to do about `problem` in a sheet on `window` (or a dialog),
     /// do it, and call `retry` if the connection should be tried again.
+    /// `errors` is all ssh said, for the details button.
     @MainActor
-    static func offer(_ problem: Problem, destination: String, in window: NSWindow?, retry: @escaping () -> Void) {
+    static func offer(_ problem: Problem, destination: String, errors: String = "",
+                      in window: NSWindow?, retry: @escaping () -> Void) {
+        let (title, body) = explain(problem, destination: destination)
         let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
         switch problem {
-        case .changedHostKey(let host, let fingerprint, let file, let line):
+        case .changedHostKey(let host, let fingerprint, let file, _):
             alert.alertStyle = .critical
-            alert.messageText = L10n.t("The host's identification has changed")
-            var text = L10n.t("%@ answered with another key than the one you've connected to before. If it was set up again, remove the old key and connect: you'll be asked to trust the new one. If you don't know why it changed, don't: someone may be between you and the host.")
-                .replacingOccurrences(of: "%@", with: host)
-            if let fingerprint { text += "\n\n" + L10n.t("New key:") + " " + fingerprint }
-            if let file { text += "\n" + L10n.t("Old key:") + " " + (file as NSString).abbreviatingWithTildeInPath + (line.map { ":\($0)" } ?? "") }
-            alert.informativeText = text
             alert.addButton(withTitle: L10n.t("Remove the Old Key"))
             if fingerprint != nil { alert.addButton(withTitle: L10n.t("Copy Fingerprint")) }
             alert.addButton(withTitle: L10n.t("Cancel"))
@@ -79,17 +92,12 @@ enum SSHRecovery {
                         retry()
                     }
                 case .alertSecondButtonReturn where fingerprint != nil:
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(fingerprint ?? "", forType: .string)
+                    copy(fingerprint ?? "")
                 default: break
                 }
             }
+
         case .keysNotLoaded(let keys):
-            alert.messageText = L10n.t("Add your keys to ssh-agent?")
-            alert.informativeText = L10n.t("%@ refused the keys ssh offered, and ssh-agent has none. These are in ~/.ssh:")
-                .replacingOccurrences(of: "%@", with: destination)
-                + "\n" + keys.map { "  " + ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n")
-                + "\n\n" + L10n.t("A key's passphrase is asked once and kept in your keychain.")
             alert.addButton(withTitle: L10n.t("Add Keys to ssh-agent"))
             alert.addButton(withTitle: L10n.t("Cancel"))
             present(alert, in: window) { response in
@@ -105,7 +113,28 @@ enum SSHRecovery {
                     }
                 }
             }
+
+        // Nothing Libertty can do for the user: what it is, what fixes it,
+        // and ssh's own words for whoever wants them.
+        default:
+            let details = details(errors)
+            if !details.isEmpty { alert.informativeText += "\n\n" + L10n.t("ssh said:") + "\n" + details }
+            alert.addButton(withTitle: L10n.t("Try Again"))
+            if !details.isEmpty { alert.addButton(withTitle: L10n.t("Copy Details")) }
+            alert.addButton(withTitle: L10n.t("Cancel"))
+            present(alert, in: window) { response in
+                switch response {
+                case .alertFirstButtonReturn: retry()
+                case .alertSecondButtonReturn where !details.isEmpty: copy(details)
+                default: break
+                }
+            }
         }
+    }
+
+    private static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     @MainActor
@@ -127,9 +156,6 @@ enum SSHRecovery {
         let (status, output) = run("/usr/bin/ssh-keygen", args)
         return status == 0 ? nil : (output.isEmpty ? "ssh-keygen ended with status \(status)" : output)
     }
-
-    /// Whether ssh-agent holds any key (`ssh-add -l`: 1 means none).
-    static func agentHasKeys() -> Bool { run("/usr/bin/ssh-add", ["-l"]).status == 0 }
 
     /// Private keys in ~/.ssh: id_* files with their .pub beside them.
     static func keysOnDisk() -> [String] {

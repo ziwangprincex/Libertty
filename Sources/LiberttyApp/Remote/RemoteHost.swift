@@ -116,9 +116,28 @@ final class RemoteHost: @unchecked Sendable {
     private var options: [String] {
         var o = ["-T", "-o", "ControlMaster=auto", "-o", "ControlPath=\(controlPath)", "-o", "ControlPersist=60",
                  "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-o", "ConnectTimeout=20"]
+        o += hostOptions
         // Tests point ssh at their own configuration.
         if let config = ProcessInfo.processInfo.environment["LIBERTTY_SSH_CONFIG"], !config.isEmpty { o = ["-F", config] + o }
         return o
+    }
+
+    /// What this host alone adds (`ssh-agent`): worked out once, since it asks
+    /// ssh what the host resolves to. Empty until `resolveHostOptions` has run,
+    /// so reading `options` never waits on a subprocess — and `-o IdentityAgent`
+    /// only ever matters to a login, which `resolveHostOptions` comes before.
+    private var hostOptions: [String] { stateLock.withLock { resolvedOptions?.options ?? [] } }
+    private var resolvedOptions: (setting: String, options: [String])?
+
+    /// Work the host's own ssh options out, if the setting changed since last
+    /// time. Blocking (it runs `ssh -G`): under `prepareLock`, never on the
+    /// main thread.
+    private func resolveHostOptions() {
+        let config = ConfigStore.shared.config
+        let setting = config.sshAgent + "\u{0}" + config.sshAgentSocket
+        if stateLock.withLock({ resolvedOptions?.setting }) == setting { return }
+        let options = SSHAgent.options(for: destination, setting: SSHAgent.chosen(config))
+        stateLock.withLock { resolvedOptions = (setting, options) }
     }
 
     /// Passwords and new host keys are asked in a Libertty dialog
@@ -183,6 +202,7 @@ final class RemoteHost: @unchecked Sendable {
     private func ensureMaster() -> Bool {
         prepareLock.lock()
         defer { prepareLock.unlock() }
+        resolveHostOptions()
         if masterIsUp { return true }
         if stateLock.withLock({ waitingForUser }) { return false }
         let login = run("true")
@@ -251,6 +271,9 @@ final class RemoteHost: @unchecked Sendable {
         stateLock.withLock {
             waitingForUser = false
             lastFailure = nil
+            // Whatever they fixed may be the agent (opening 1Password, say):
+            // its socket is looked for again.
+            resolvedOptions = nil
         }
         statusChanged()
     }
@@ -270,6 +293,7 @@ final class RemoteHost: @unchecked Sendable {
     /// make sure its liberttyd runs (blocking; not on the main thread).
     @discardableResult
     func prepare(progress: (String) -> Void = { _ in }) throws -> Info {
+        resolveHostOptions()
         stateLock.withLock { connecting = true }
         statusChanged()
         defer {

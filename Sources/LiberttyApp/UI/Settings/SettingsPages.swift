@@ -1411,8 +1411,14 @@ struct RemoteHostsPage: View {
                     Button("Connect to Host…") { ConnectPanel.shared.show() }
                 }
             }
+            Section(L10n.t("Keys")) {
+                ForEach(SettingsRegistry.items(on: .remoteHosts).filter { Self.agentItems.contains($0.id) }) { item in
+                    SSHAgentRow(model: model, item: item)
+                }
+            }
             Section(L10n.t("ssh in a Pane")) {
-                ForEach(SettingsRegistry.items(on: .remoteHosts).filter { $0.key != nil }) { item in
+                ForEach(SettingsRegistry.items(on: .remoteHosts)
+                    .filter { $0.key != nil && !Self.agentItems.contains($0.id) }) { item in
                     SettingsRow(model: model, item: item)
                 }
                 let known = TerminfoCLI.known()
@@ -1436,11 +1442,111 @@ struct RemoteHostsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: RemoteHost.statusChanged)) { _ in tick += 1 }
     }
 
+    /// Drawn by SSHAgentRow rather than the generic row, under Keys.
+    static let agentItems: Set<String> = ["ssh-agent", "ssh-agent-socket"]
+
     private func add() {
         let host = adding.trimmingCharacters(in: .whitespaces)
         guard SavedHosts.add(host) else { return }
         adding = ""
         hosts = SavedHosts.all
+    }
+}
+
+/// The agent ssh asks for keys, and what it answers. The picker offers only
+/// the agents really on this Mac (their socket is there) plus Custom…, since
+/// picking one that isn't installed only makes a login fail; whatever the
+/// config holds is always offered, so a choice never disappears silently.
+/// The socket field shows up for Custom… alone.
+private struct SSHAgentRow: View {
+    @ObservedObject var model: SettingsModel
+    let item: SettingsItem
+    @ViewState private var standing: SSHAgentStanding?
+    @ViewState private var looked = ""
+    @ViewState private var checking = false
+
+    var body: some View {
+        if item.id == "ssh-agent" {
+            VStack(alignment: .leading, spacing: 4) {
+                picker
+                status
+            }
+            .onAppear(perform: look)
+            // Asked again when the choice itself changes, not on every edit
+            // elsewhere in Settings.
+            .onChange(of: setting) { look() }
+        } else if model.current("ssh-agent") == "custom" {
+            SettingsRow(model: model, item: item)
+        }
+    }
+
+    private var picker: some View {
+        let chosen = model.current("ssh-agent")
+        let offered = item.options.filter { option in
+            option.value == chosen || option.value == "system" || option.value == "custom"
+                || SSHAgent(token: option.value)?.isAvailable == true
+        }
+        return Picker(selection: Binding(get: { chosen }, set: { model.write("ssh-agent", $0, item: item.id) })) {
+            ForEach(offered, id: \.value) { option in Text(option.label).tag(option.value) }
+        } label: {
+            RowLabel(model: model, item: item)
+        }
+        .pickerStyle(.menu)
+    }
+
+    /// Whether the agent answers, and how many keys it holds. Asking runs
+    /// ssh-add, so it happens off the main thread.
+    @ViewBuilder private var status: some View {
+        Text(checking && standing == nil ? L10n.t("Checking…") : Self.words(standing))
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(Self.words(standing))
+    }
+
+    static func words(_ standing: SSHAgentStanding?) -> String {
+        guard let standing else { return "" }
+        switch standing.answer {
+        case .keys(let n):
+            return n == 1 ? SSHRecovery.fill(L10n.t("%@ holds one key."), standing.name)
+                : SSHRecovery.fill(L10n.t("%@ holds %@ keys."), standing.name, String(n))
+        case .noKeys:
+            return SSHRecovery.fill(L10n.t("%@ holds no key. ssh still offers the key files in your ssh configuration."),
+                                    standing.name)
+        case .notRunning:
+            return SSHRecovery.fill(L10n.t("%@ isn't answering. Open the app that keeps your keys, then check again."),
+                                    standing.name)
+        case .notASocket:
+            return L10n.t("That path isn't an agent's socket.")
+        case .noAgent:
+            return L10n.t("Your ssh configuration asks for no agent.")
+        }
+    }
+
+    /// The choice as the config holds it: what a look is about.
+    private var setting: String {
+        model.current("ssh-agent") + "\u{0}" + model.current("ssh-agent-socket")
+    }
+
+    private func look() {
+        guard !checking, setting != looked else { return }
+        looked = setting
+        checking = true
+        let agent = SSHAgent.chosen(setting: model.current("ssh-agent"), socket: model.current("ssh-agent-socket"))
+        DispatchQueue.global(qos: .userInitiated).async {
+            // No host to resolve here: this is the agent the setting names,
+            // which is what the picker is about. A host whose ~/.ssh/config
+            // names another one is said so when its login fails.
+            let answer = SSHAgent.standing(setting: agent, configured: nil,
+                                           defaultSocket: ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"],
+                                           ask: SSHAgent.ask)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    standing = answer
+                    checking = false
+                }
+            }
+        }
     }
 }
 
@@ -1500,10 +1606,10 @@ private struct HostRow: View {
     }
 
     private func fix(_ host: RemoteHost) {
-        if let problem = SSHRecovery.diagnose(host.lastSSHErrors) {
-            SSHRecovery.offer(problem, destination: destination, in: NSApp.keyWindow) { check(host) }
-        } else {
-            check(host)
+        let errors = host.lastSSHErrors
+        SSHRecovery.diagnose(errors, destination: destination) { problem in
+            guard let problem else { return check(host) }
+            SSHRecovery.offer(problem, destination: destination, errors: errors, in: NSApp.keyWindow) { check(host) }
         }
     }
 }
