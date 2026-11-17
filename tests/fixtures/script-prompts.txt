@@ -81,8 +81,9 @@ expect-prompt:First
 key:escape
 wait:1.0
 expect-prompt:none
-# Its command killed: the question goes with it.
-type:libertty +pick --title Killed a b & sleep 3; kill $!; wait $!; echo "KILLED=$?"
+# Its command killed: the question goes with it. (In single quotes: bash,
+# as CI's shell is, reads `$!;` typed at its prompt as history.)
+type:sh -c 'libertty +pick --title Killed a b & sleep 3; kill $!; wait $!; echo "KILLED=$?"'
 key:enter
 wait:1.5
 expect-prompt:Killed
