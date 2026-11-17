@@ -235,17 +235,11 @@ final class InspectorViewController: NSViewController {
         shownPorts = titles
         portList.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (title, port) in zip(titles, sorted) {
-            guard host == nil else {
-                // A host's port: nothing here reaches it yet, so it's a row
-                // to read, not a link that does nothing.
-                let row = Self.row(title, dim: false)
-                row.toolTip = L10n.t("Reaching a port on another machine needs forwarding, which Libertty can't do yet.")
-                portList.addArrangedSubview(row)
-                continue
-            }
             let b = link(title, "network", #selector(openPort(_:)))
             b.tag = Int(port.port)
-            b.toolTip = "Open http://localhost:\(port.port) beside the terminal (⌥-click: in your browser)"
+            b.toolTip = host == nil
+                ? "Open http://localhost:\(port.port) beside the terminal (⌥-click: in your browser)"
+                : L10n.t("Forward this port from the host and open it here, beside the terminal (⌥-click: in your browser)")
             portList.addArrangedSubview(b)
         }
     }
@@ -284,15 +278,30 @@ final class InspectorViewController: NSViewController {
 
     @objc private func openPort(_ sender: NSButton) {
         let port = UInt16(clamping: sender.tag)
-        // A host's port is not this Mac's: opening localhost here would show
-        // whatever happens to run on this machine.
-        guard host == nil else { return }
         guard let url = URL(string: "http://localhost:\(port)") else { return }
         // The page beside the terminal that serves it; ⌥: the browser.
-        if NSApp.currentEvent?.modifierFlags.contains(.option) == true || controller == nil {
-            NSWorkspace.shared.open(url)
-        } else {
-            controller?.openDocumentInSplit(url)
+        let inBrowser = NSApp.currentEvent?.modifierFlags.contains(.option) == true || controller == nil
+        func show(_ url: URL) {
+            if inBrowser { NSWorkspace.shared.open(url) } else { controller?.openDocumentInSplit(url) }
+        }
+        // A host's port is not this Mac's: localhost here would show whatever
+        // runs on this machine. The host's ssh connection carries it over
+        // first (off the main thread: ssh is asked), as a link in its pane does.
+        guard let destination = host else { return show(url) }
+        let remote = RemoteHost.named(destination)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let here = try PortForwarder.shared.rewrite(url, on: remote)
+                DispatchQueue.main.async { show(here) }
+            } catch {
+                let why = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = L10n.t("Couldn't open this link from %@").replacingOccurrences(of: "%@", with: destination)
+                    alert.informativeText = url.absoluteString + "\n\n" + why
+                    if let window = self?.view.window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+                }
+            }
         }
     }
 

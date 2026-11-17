@@ -126,7 +126,6 @@
   "Quick Terminal": "快捷终端",
   "Quit Libertty": "退出 Libertty",
   "Quit and End Sessions": "退出并结束所有会话",
-  "Reaching a port on another machine needs forwarding, which Libertty can't do yet.": "访问其他机器上的端口需要端口转发，Libertty 暂时还做不到。",
   "Redo": "重做",
   "Reload Configuration": "重新载入配置",
   "Rename": "重新命名",
@@ -864,5 +863,6 @@
   "Try 5173, db:5432, or a link one of its panes printed": "可以填 5173、db:5432，或它某个面板里输出的链接",
   "Not a port": "这不是端口",
   "A number from 1 to 65535": "1 到 65535 之间的数字",
-  "A localhost link in a host's pane carries its port over by itself and opens here. Forward Port in the command palette adds one by hand; a host's forwards close with its last window.": "主机面板里指向 localhost 的链接会自行把端口转发过来并在本机打开。命令面板中的“转发端口”可手动添加；主机的最后一个窗口关闭时，它的转发也会关闭。"
+  "A localhost link in a host's pane carries its port over by itself and opens here. Forward Port in the command palette adds one by hand; a host's forwards close with its last window.": "主机面板里指向 localhost 的链接会自行把端口转发过来并在本机打开。命令面板中的“转发端口”可手动添加；主机的最后一个窗口关闭时，它的转发也会关闭。",
+  "Forward this port from the host and open it here, beside the terminal (⌥-click: in your browser)": "从主机转发这个端口，在终端旁边打开（⌥-点按：在浏览器中打开）"
 }
