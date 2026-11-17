@@ -43,6 +43,17 @@ enum SSHRecovery {
             default: true
             }
         }
+
+        /// Trying again as things are fails the same way: ssh's config (or
+        /// the host's) has to change first — no algorithm in common, no SSH
+        /// server there, a name nothing resolves, too many keys offered.
+        /// Its sheet's first button closes it; Try Again waits for after.
+        var retryAloneFails: Bool {
+            switch self {
+            case .noCommonAlgorithm, .notSSH, .tooManyAuthFailures, .unreachable(.unknownName, _, _): true
+            default: false
+            }
+        }
     }
 
     // MARK: Asking the Mac first
@@ -97,7 +108,7 @@ enum SSHRecovery {
             alert.alertStyle = .critical
             alert.addButton(withTitle: L10n.t("Remove the Old Key"))
             if fingerprint != nil { alert.addButton(withTitle: L10n.t("Copy Fingerprint")) }
-            alert.addButton(withTitle: L10n.t("Cancel"))
+            alert.addCancelButton()
             present(alert, in: window) { response in
                 switch response {
                 case .alertFirstButtonReturn:
@@ -117,7 +128,7 @@ enum SSHRecovery {
 
         case .keysNotLoaded(let keys):
             alert.addButton(withTitle: L10n.t("Add Keys to ssh-agent"))
-            alert.addButton(withTitle: L10n.t("Cancel"))
+            alert.addCancelButton()
             present(alert, in: window) { response in
                 guard response == .alertFirstButtonReturn else { return }
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -137,15 +148,23 @@ enum SSHRecovery {
         default:
             let details = details(errors)
             if !details.isEmpty { alert.informativeText += "\n\n" + L10n.t("ssh said:") + "\n" + details }
-            alert.addButton(withTitle: L10n.t("Try Again"))
-            if !details.isEmpty { alert.addButton(withTitle: L10n.t("Copy Details")) }
-            alert.addButton(withTitle: L10n.t("Cancel"))
-            present(alert, in: window) { response in
-                switch response {
-                case .alertFirstButtonReturn: retry()
-                case .alertSecondButtonReturn where !details.isEmpty: copy(details)
-                default: break
-                }
+            // Return tries again only where trying might help.
+            var actions: [() -> Void] = []
+            func button(_ title: String, _ action: @escaping () -> Void) {
+                alert.addButton(withTitle: L10n.t(title))
+                actions.append(action)
+            }
+            if problem.retryAloneFails { button("OK") {} }
+            button("Try Again", retry)
+            if !details.isEmpty { button("Copy Details") { copy(details) } }
+            if !problem.retryAloneFails {
+                alert.addCancelButton()
+                actions.append {}
+            }
+            // With no Cancel, Esc is OK's: it closes the sheet as Return does.
+            present(alert, in: window, escapes: problem.retryAloneFails ? 0 : nil) { response in
+                let i = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+                if actions.indices.contains(i) { actions[i]() }
             }
         }
     }
@@ -155,12 +174,27 @@ enum SSHRecovery {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// `escapes`: the button Esc presses, for an alert without Cancel
+    /// (AppKit gives Esc to Cancel alone).
     @MainActor
-    private static func present(_ alert: NSAlert, in window: NSWindow?, then: @escaping (NSApplication.ModalResponse) -> Void) {
+    private static func present(_ alert: NSAlert, in window: NSWindow?, escapes: Int? = nil,
+                                then: @escaping (NSApplication.ModalResponse) -> Void) {
+        var monitor: Any?
+        if let escapes, alert.buttons.indices.contains(escapes) {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak alert] event in
+                guard event.keyCode == 53, let alert, event.window === alert.window else { return event }
+                alert.buttons[escapes].performClick(nil)
+                return nil
+            }
+        }
+        let done: (NSApplication.ModalResponse) -> Void = { response in
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            then(response)
+        }
         if let window, window.attachedSheet == nil {
-            alert.beginSheetModal(for: window, completionHandler: then)
+            alert.beginSheetModal(for: window, completionHandler: done)
         } else {
-            then(alert.runModal())
+            done(alert.runModal())
         }
     }
 

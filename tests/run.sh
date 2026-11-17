@@ -357,6 +357,9 @@ expect floating-capsules 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/emp
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist
+# ssh's failures in plain words: Return tries again only where trying might help.
+expect ssh-sheets 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/ssh-sheets.txt)" $OUT
 # Return on arriving at Forward Port… or Share a Port… closes nothing: the stand-in ssh carries three forwards.
 mkdir -p $PRIVATE/page-forward $PRIVATE/page-forward-home
 expect forward-page 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \

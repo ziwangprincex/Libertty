@@ -44,3 +44,17 @@ enum L10n {
     /// `english` in the interface's language.
     static func t(_ english: String) -> String { table[english] ?? english }
 }
+
+import AppKit
+
+extension NSAlert {
+    /// Cancel, in the interface's language, on Esc: AppKit gives Esc only to
+    /// a button it recognizes as Cancel by its title — in English, or in the
+    /// system's language — and so not to 取消.
+    @discardableResult
+    func addCancelButton() -> NSButton {
+        let button = addButton(withTitle: L10n.t("Cancel"))
+        button.keyEquivalent = "\u{1b}"
+        return button
+    }
+}

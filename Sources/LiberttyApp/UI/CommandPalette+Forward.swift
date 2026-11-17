@@ -19,7 +19,7 @@ extension CommandPalette {
                 items.append(Item(title: L10n.t("Forward %@").replacingOccurrences(of: "%@", with: what),
                                   subtitle: L10n.t(target.url == nil ? "Reachable on this Mac afterwards."
                                                    : "Opens here once it's forwarded."),
-                                  symbol: "arrow.left.arrow.right") {
+                                  symbol: "arrow.left.arrow.right", prose: true) {
                     open(text, on: host, controller: controller)
                 })
             } else if !text.isEmpty {

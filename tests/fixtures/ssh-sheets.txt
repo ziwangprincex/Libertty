@@ -1,0 +1,38 @@
+# ssh's failures in plain words: Return tries again only where trying might
+# help. A name that doesn't resolve, no algorithm in common, too many keys
+# offered, no SSH server there: OK first, Try Again for after the change.
+# Esc closes every one of them (Cancel has it by name in any language; OK
+# where there's no Cancel).
+size:1280x800
+ssh-sheet:kex
+expect-sheet-text:KexAlgorithms
+expect-sheet-default:OK | Try Again | Copy Details
+sheet:OK
+expect-sheet:no
+ssh-sheet:unresolved
+expect-sheet-default:OK | Try Again | Copy Details
+sheet-key:escape
+expect-sheet:no
+ssh-sheet:toomany
+expect-sheet-default:OK | Try Again | Copy Details
+sheet-key:escape
+expect-sheet:no
+ssh-sheet:notssh
+expect-sheet-default:OK | Try Again | Copy Details
+sheet:OK
+# The host may answer next time: Try Again first.
+ssh-sheet:closed
+expect-sheet-default:Try Again | Copy Details | Cancel (esc)
+sheet-key:escape
+expect-sheet:no
+ssh-sheet:timeout
+expect-sheet-default:Try Again | Copy Details | Cancel (esc)
+sheet:Cancel
+ssh-sheet:agent
+expect-sheet-default:Try Again | Copy Details | Cancel (esc)
+sheet-key:escape
+expect-sheet:no
+ssh-sheet:keys
+expect-sheet-default:Add Keys to ssh-agent | Cancel (esc)
+sheet-key:escape
+expect-sheet:no

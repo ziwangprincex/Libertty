@@ -2375,7 +2375,7 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         field.placeholderString = isFolder ? L10n.t("untitled folder") : "untitled.txt"
         alert.accessoryView = field
         alert.addButton(withTitle: L10n.t("Create"))
-        alert.addButton(withTitle: L10n.t("Cancel"))
+        alert.addCancelButton()
         alert.window.initialFirstResponder = field
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }

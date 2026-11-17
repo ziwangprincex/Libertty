@@ -468,7 +468,9 @@ extension TerminalWindowController {
         let cards = tabs.map { tab -> TabOverviewView.Card in
             TabOverviewView.Card(title: title(of: tab), image: thumbnail(of: tab),
                                  symbol: tab.document?.symbol ?? "apple.terminal",
-                                 status: status(of: tab)?.state)
+                                 status: status(of: tab)?.state,
+                                 background: config.resolvedTheme.background.nsColor,
+                                 foreground: config.resolvedTheme.foreground.nsColor)
         }
         let view = TabOverviewView(cards: cards, selected: tabs.firstIndex { $0 === selectedTab } ?? 0)
         view.onPick = { [weak self, weak view] index in

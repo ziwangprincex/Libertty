@@ -93,6 +93,8 @@ import LiberttyCore
 ///   expect-peek:NAME      the image peek shows the file NAME (none: nothing shows)
 ///   expect-sheet:yes|no   whether a sheet is up
 ///   expect-sheet-text:TEXT the sheet up says TEXT (its message or informative text)
+///   expect-sheet-default:LIST the alert's buttons in order, the first Return's, (esc) by Esc's: "OK | Try Again | Copy Details"
+///   sheet-key:KEY          KEY pressed in the sheet up, through the app as a real press goes (its monitors too)
 ///   update-background:go  the daily update check now (auto-update = download), then restart if idle
 ///   pinch:N              a two-finger pinch of N (spread +, pinch -) over the focused pane
 ///   swipe:DX             a two-finger swipe of DX points sideways (fingers right +) over it
@@ -265,7 +267,10 @@ enum UIProbe {
                         }
                         pump(0.15)
                     case .type(let text):
-                        for spec in text.map(String.init) { _ = press(spec, in: CommandPalette.openPanel ?? window) }
+                        if !typeText(text, in: CommandPalette.openPanel ?? window) {
+                            print("FAIL  ui-probe type: nothing that takes text has the keyboard for \(text.debugDescription)")
+                            failures += 1
+                        }
                         pump(0.35)
                     case .typeThen(let text, let key):
                         // The text, then the key at once, with no layout between: in
@@ -273,7 +278,10 @@ enum UIProbe {
                         // ends a field's editing as it lays the field out after
                         // typing, and the key would find no field (a real window
                         // with the keyboard keeps it).
-                        for spec in text.map(String.init) { _ = press(spec, in: CommandPalette.openPanel ?? window) }
+                        if !typeText(text, in: CommandPalette.openPanel ?? window) {
+                            print("FAIL  ui-probe type-then: nothing that takes text has the keyboard for \(text.debugDescription)")
+                            failures += 1
+                        }
                         if !press(key, in: CommandPalette.openPanel ?? window) {
                             print("FAIL  ui-probe type-then: unknown key \(key)")
                             failures += 1
@@ -653,6 +661,37 @@ enum UIProbe {
                         } ?? ""
                         if alert.contains(text) { print("ok    ui-probe sheet says \(text)") } else {
                             print("FAIL  ui-probe sheet: no \(text) in \(alert.isEmpty ? "(no sheet)" : alert)")
+                            failures += 1
+                        }
+                    case .sheetKey(let spec):
+                        guard let sheet = window.attachedSheet, let code = Self.named[spec]?.code ?? Self.codes[spec] else {
+                            print("FAIL  ui-probe sheet-key: \(window.attachedSheet == nil ? "no sheet up" : "no key \(spec)")")
+                            failures += 1
+                            break
+                        }
+                        let text = Self.named[spec]?.text ?? spec
+                        for type in [NSEvent.EventType.keyDown, .keyUp] {
+                            if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                            windowNumber: sheet.windowNumber, context: nil, characters: text,
+                                                            charactersIgnoringModifiers: text, isARepeat: false, keyCode: code) {
+                                NSApp.sendEvent(event)
+                            }
+                        }
+                        pump(0.5)
+                    case .expectSheetDefault(let want):
+                        // An alert's buttons in the order they were added (their tags,
+                        // 1000 up), the first marked if Return doesn't press it.
+                        var buttons: [NSButton] = []
+                        func walk(_ v: NSView) { if let b = v as? NSButton, !b.isHidden, b.tag >= 1000 { buttons.append(b) }; v.subviews.forEach(walk) }
+                        window.attachedSheet?.contentView.map(walk)
+                        buttons.sort { $0.tag < $1.tag }
+                        let said = buttons.enumerated().map { i, b in
+                            let isDefault = b.keyEquivalent == "\r" || (b.window?.defaultButtonCell).map { $0 === b.cell } == true
+                            let esc = b.keyEquivalent == "\u{1b}" ? " (esc)" : ""
+                            return (i == 0 && !isDefault ? b.title + " (not Return: \(b.keyEquivalent.debugDescription))" : b.title) + esc
+                        }.joined(separator: " | ")
+                        if said == want { print("ok    ui-probe sheet's buttons: \(said)") } else {
+                            print("FAIL  ui-probe sheet's buttons: \(said.isEmpty ? "(no sheet)" : said), not \(want)")
                             failures += 1
                         }
                     case .expectSheet(let want):
@@ -2028,7 +2067,7 @@ enum UIProbe {
 
     private enum Step {
         case key(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
-        case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectPaletteNot(String), expectPaletteSelected(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
+        case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectPaletteNot(String), expectPaletteSelected(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), expectSheetDefault(String), sheetKey(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         /// Whether the focused pane would have Secure Keyboard Entry on for a
         /// password (the probe's window is never key, so not the system's state).
@@ -2333,6 +2372,8 @@ enum UIProbe {
             case "expect-peek": steps.append(.expectPeek(arg))
             case "expect-sheet": steps.append(.expectSheet(arg == "yes"))
             case "expect-sheet-text": steps.append(.expectSheetText(arg))
+            case "expect-sheet-default": steps.append(.expectSheetDefault(arg))
+            case "sheet-key": steps.append(.sheetKey(arg))
             case "wait-edit":
                 let parts = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 if parts.count == 2 { steps.append(.waitEdit(token: parts[0], path: parts[1])) }
@@ -2470,6 +2511,19 @@ enum UIProbe {
         }
         return table
     }()
+
+    /// Each character as its key; one no key types (中文, é) committed as
+    /// an input method commits it, to what has the keyboard — it used to be
+    /// dropped without a word.
+    /// False when one of them went nowhere (nothing that takes text has the keyboard).
+    static func typeText(_ text: String, in window: NSWindow) -> Bool {
+        for c in text {
+            if press(String(c), in: window) { continue }
+            guard let target = window.firstResponder as? NSTextInputClient else { return false }
+            target.insertText(String(c), replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+        return true
+    }
 
     static func press(_ spec: String, in window: NSWindow) -> Bool {
         var flags: NSEvent.ModifierFlags = []

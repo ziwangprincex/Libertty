@@ -260,7 +260,7 @@ final class ComposerView: NSView, CapsuleObstacle {
         alert.messageText = L10n.t("Send it line by line?")
         alert.informativeText = L10n.t("The program in this pane didn't ask for pasted text as one piece, so each line of the prompt would go on its own, as if you'd pressed Return after it.")
         alert.addButton(withTitle: L10n.t("Send"))
-        alert.addButton(withTitle: L10n.t("Cancel"))
+        alert.addCancelButton()
         guard let window = window ?? pane.window else { return }
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn, let pane = self.pane else { return }

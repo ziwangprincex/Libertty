@@ -960,5 +960,9 @@
   "Couldn't forward %@ again": "无法重新转发 %@",
   "%@ s left": "还剩 %@ 秒",
   "%@ min left": "还剩 %@ 分钟",
-  "%@ on %@": "%2$@ 上的 %1$@"
+  "%@ on %@": "%2$@ 上的 %1$@",
+  "OK": "好",
+  "a pane is here": "有面板在这里",
+  "recent": "最近去过",
+  "new tab here": "在这里开新标签"
 }

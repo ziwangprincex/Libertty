@@ -9,6 +9,10 @@ final class TabOverviewView: NSView {
         var image: CGImage?
         var symbol: String
         var status: ProgramStatusStore.State?
+        /// The terminal's own colors, for a card without a picture yet: a
+        /// tile like the tab it stands for, not a see-through gray one.
+        var background: NSColor = .textBackgroundColor
+        var foreground: NSColor = .textColor
     }
 
     var onPick: ((Int?) -> Void)?
@@ -196,6 +200,9 @@ private final class CardView: NSView {
     var isChosen = false { didSet { updateChosen() } }
     private let image = NSImageView()
     private let title = NSTextField(labelWithString: "")
+    /// What its program is doing, as the sidebar's row shows it: a shape
+    /// to go by, not only a color.
+    private let badge = StatusBadge()
     private let frameLayer = CALayer()
 
     init(card: TabOverviewView.Card, index: Int) {
@@ -211,16 +218,23 @@ private final class CardView: NSView {
         } else {
             image.image = NSImage(systemSymbolName: card.symbol, accessibilityDescription: nil)
             image.symbolConfiguration = .init(pointSize: 40, weight: .light)
-            image.contentTintColor = .secondaryLabelColor
-            image.layer?.backgroundColor = NSColor.quaternaryLabelColor.cgColor
+            image.contentTintColor = card.foreground.withAlphaComponent(0.45)
+            image.layer?.backgroundColor = card.background.withAlphaComponent(1).cgColor
+            // (In the terminal's colors too: a layer's system color would be
+            // the appearance's at this moment, not the window's.)
+            image.layer?.borderColor = card.foreground.withAlphaComponent(0.14).cgColor
+            image.layer?.borderWidth = 1
         }
         title.stringValue = (index < 9 ? "⌘\(index + 1)  " : "") + card.title
         title.alignment = .center
         title.lineBreakMode = .byTruncatingMiddle
         title.font = Typeface.ui(12, .medium)
-        if let status = card.status { title.textColor = TerminalWindowController.color(for: status) }
+        let look = StatusBadge.look(status: card.status, progress: nil, programs: true)
+        badge.show(look)
+        badge.isHidden = look == .none
         addSubview(image)
         addSubview(title)
+        addSubview(badge)
         frameLayer.cornerRadius = Radius.card + 3
         frameLayer.cornerCurve = .continuous
         frameLayer.borderWidth = 3
@@ -232,6 +246,7 @@ private final class CardView: NSView {
         // One button for VoiceOver: the tab's name and what its program is doing (its picture says no more).
         image.hideFromAccessibility()
         title.hideFromAccessibility()
+        badge.hideFromAccessibility()
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(card.title + (card.status.map { ", " + L10n.t(TerminalWindowController.label(for: $0)) } ?? ""))
@@ -248,7 +263,12 @@ private final class CardView: NSView {
     override func layout() {
         super.layout()
         image.frame = imageFrame
-        title.frame = NSRect(x: 0, y: bounds.height - 20, width: bounds.width, height: 18)
+        // The badge just before the title, the two centered together.
+        let side: CGFloat = badge.isHidden ? 0 : 13 + 5
+        let words = max(0, min(ceil(title.intrinsicContentSize.width), bounds.width - side))
+        let x = (bounds.width - words - side) / 2
+        badge.frame = NSRect(x: x, y: bounds.height - 18, width: 13, height: 13)
+        title.frame = NSRect(x: x + side, y: bounds.height - 20, width: words, height: 18)
         // The ring follows at once (no implicit layer animation trailing behind).
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -260,6 +280,7 @@ private final class CardView: NSView {
         image.symbolConfiguration = nil
         image.contentTintColor = nil
         image.layer?.backgroundColor = nil
+        image.layer?.borderWidth = 0
         image.image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 

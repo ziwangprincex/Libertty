@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.4
+
+> The rest of the review: ssh's failures that trying again can't fix no longer put Try Again first, a script's question comes before its answer, the tab overview's waiting cards look like terminals and say what's going on with a badge, and Esc closes every one of Libertty's dialogs in Chinese too.
+
+- **ssh's failures that trying again can't fix** — no key exchange method or cipher in common, a name that doesn't resolve, too many keys offered, something that isn't an SSH server — have OK first: Return closes the explanation, and Try Again waits until you've changed something. Those that may pass by themselves (a host that closed at once, a timeout) still try again on Return.
+- **A script's question first**: `libertty +pick` and `+input` show what they ask above the answer field, not under it.
+- **The tab overview**: a tab not yet laid out at the window's size shows as a tile in your terminal's colors, not a see-through gray card with the terminal behind it showing through; and what a tab's program is doing shows as the sidebar's badge before its name (needing you, failed, done), not as orange text alone.
+- **Esc closes every dialog**: in Chinese, Libertty's 取消 buttons didn't answer Esc (macOS gives Esc to a button called Cancel in English or the system's language); now each Cancel has it, and a dialog without one closes with Esc too.
+- Activity's Clear is readable: it faded to 1.9:1 against the popover whenever its window wasn't in front.
+- The command palette sets sentences in text type and keeps the monospaced type for keys, ports and paths; a folder row's "recent" / "a pane is here" / "new tab here" are translated.
+- Inside: `--ui-probe` gains `expect-sheet-default` and `sheet-key:`, and `type:` commits what no key types (中文) as an input method would, instead of dropping it without a word; the fixture `ssh-sheets` in the suite.
+
 ## 0.7.3
 
 > After Rex Beta 2003: ports carried to and from a host (a localhost link in a host's pane opens through a forward), liberttyd finding the ports each session listens on, the SSH agent a host's login asks and ssh's failures in plain words, copy mode's f t D, settings bound to keys, minimized floating panes as capsules, and `libertty +pick` / `+input` for scripts. Fixed: a killed full-screen program's mouse and keyboard reporting left on, and the sidebar's selection card narrower than its row.

@@ -298,7 +298,7 @@ enum CommandHistoryClear {
         alert.messageText = L10n.t("Forget the commands remembered for autocomplete?")
         alert.informativeText = L10n.t("Suggestions start again from what your shells run from now on.")
         alert.addButton(withTitle: L10n.t("Forget"))
-        alert.addButton(withTitle: L10n.t("Cancel"))
+        alert.addCancelButton()
         if alert.runModal() == .alertFirstButtonReturn { CommandHistory.shared.clear() }
     }
 }

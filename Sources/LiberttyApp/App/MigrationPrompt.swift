@@ -129,7 +129,7 @@ enum MigrationPrompt {
         scroll.borderType = .bezelBorder
         alert.accessoryView = scroll
         alert.addButton(withTitle: L10n.t("Copy Prompt"))
-        alert.addButton(withTitle: L10n.t("Cancel"))
+        alert.addCancelButton()
         let copy = { (response: NSApplication.ModalResponse) in
             guard response == .alertFirstButtonReturn else { return }
             NSPasteboard.general.clearContents()

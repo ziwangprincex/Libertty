@@ -41,6 +41,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         /// through it (a row that flips a setting at once: "forward" mustn't
         /// bring up Turn Off Show the sidebar in new windows).
         var wordsOnly = false
+        /// Its subtitle is words ("Reachable on this Mac afterwards.", "recent"),
+        /// set as text: monospaced type is for keys, paths and values.
+        var prose = false
         var run: () -> Void
     }
 
@@ -797,7 +800,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var seen = Set<String>(), out: [Item] = []
         let here = windows.filter { $0.host == nil }.flatMap(\.workingDirectories)
         for path in here + RecentFolders.shared.paths where seen.insert(path).inserted {
-            out.append(folderItem(path, subtitle: here.contains(path) ? "a pane is here" : "recent", in: current))
+            out.append(folderItem(path, subtitle: L10n.t(here.contains(path) ? "a pane is here" : "recent"), in: current))
         }
         return out
     }
@@ -826,7 +829,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private static func folderItem(_ path: String, subtitle: String, in controller: TerminalWindowController) -> Item {
         Item(title: (path as NSString).abbreviatingWithTildeInPath, subtitle: subtitle, symbol: "folder", kind: .folder,
-             alternate: { [weak controller] in controller?.changeDirectory(to: path) }) {
+             alternate: { [weak controller] in controller?.changeDirectory(to: path) }, prose: true) {
             [weak controller] in
             controller?.newTab(workingDirectory: path)
         }
@@ -843,7 +846,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         var isDirectory: ObjCBool = false
         let itself = expanded.count > 1 && expanded.hasSuffix("/") ? String(expanded.dropLast()) : expanded
         if FileManager.default.fileExists(atPath: itself, isDirectory: &isDirectory), isDirectory.boolValue {
-            out.append(Self.folderItem(itself, subtitle: "new tab here", in: controller))
+            out.append(Self.folderItem(itself, subtitle: L10n.t("new tab here"), in: controller))
         }
         // Then the folders in its parent that it could go on to. The listing
         // is the parent's once while typing in it: a folder may hold many.
@@ -852,7 +855,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         let names = entries.filter { $0.name.lowercased().hasPrefix(lower) && $0.name.lowercased() != lower
             && (prefix.hasPrefix(".") || !$0.name.hasPrefix(".")) && $0.isDirectory }.map(\.name)
         for name in names.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }).prefix(30) {
-            out.append(Self.folderItem((parent as NSString).appendingPathComponent(name), subtitle: "new tab here", in: controller))
+            out.append(Self.folderItem((parent as NSString).appendingPathComponent(name), subtitle: L10n.t("new tab here"), in: controller))
         }
         return out
     }
@@ -1212,7 +1215,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         let frame = NSRect(x: parent.frame.midX - width / 2, y: top - height, width: width, height: height)
         panel.setFrame(frame, display: true)
 
-        let topY = height - Self.topHeight
+        // A script's question comes first, its answer under it; else the
+        // field is on top and the chips under it.
+        let topY = height - Self.topHeight - (prompt != nil ? chipsH : 0)
         searchIcon.frame = NSRect(x: 18, y: topY + (Self.topHeight - 20) / 2, width: 20, height: 20)
         if let cap = topCap {
             let size = cap.intrinsicContentSize
@@ -1238,7 +1243,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         }
 
         if prompt != nil {
-            let band = topY - chipsH
+            let band = height - chipsH
             let asker = promptAsker.intrinsicContentSize, title = promptTitle.intrinsicContentSize
             let askerWidth = min(ceil(asker.width), width * 0.4)
             promptAsker.frame = NSRect(x: width - 18 - askerWidth, y: band + (chipsH - asker.height) / 2, width: askerWidth, height: asker.height)
@@ -1757,7 +1762,7 @@ private final class PaletteCell: NSTableCellView {
             NSLayoutConstraint.deactivate(stack ? inline : stacked)
             NSLayoutConstraint.activate(stack ? stacked : inline)
         }
-        subtitle.font = stack ? Typeface.secondary : Typeface.hint
+        subtitle.font = stack || item.prose ? Typeface.secondary : Typeface.hint
         subtitle.textColor = stack ? .secondaryLabelColor : .tertiaryLabelColor
         subtitle.lineBreakMode = stack ? .byWordWrapping : .byTruncatingMiddle
         subtitle.maximumNumberOfLines = stack ? Self.stackedLines : 1

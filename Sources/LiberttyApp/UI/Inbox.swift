@@ -63,9 +63,14 @@ final class InboxViewController: NSViewController, NSTableViewDataSource, NSTabl
         mode.action = #selector(modeChanged(_:))
         mode.setAccessibleLabel(L10n.t("Show Activity"))
         let title = mode
+        // Its words in the secondary text color, set (an inline bezel's grew
+        // faint, 1.9:1, whenever its window wasn't in front).
         let clear = NSButton(title: L10n.t("Clear"), target: self, action: #selector(clearAll(_:)))
-        clear.bezelStyle = .inline
-        clear.controlSize = .small
+        clear.isBordered = false
+        clear.attributedTitle = NSAttributedString(string: L10n.t("Clear"), attributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
         let column = NSTableColumn(identifier: .init("entry"))
         table.addTableColumn(column)
         table.headerView = nil
