@@ -158,6 +158,10 @@ extension SSHRecovery {
             let words = raw.trimmingCharacters(in: .whitespaces).split(separator: " ").map(String.init)
             guard let at = words.firstIndex(of: "port"), at > 0, at + 1 < words.count else { continue }
             let host = words[at - 1]
+            // Through a jump host or a proxy command, ssh doesn't know who it
+            // talks to ("Connection closed by UNKNOWN port 65535"): neither
+            // the name nor the port says anything then.
+            guard host != "UNKNOWN" else { return (nil, nil) }
             let port = Int(words[at + 1].trimmingCharacters(in: CharacterSet(charactersIn: ":.,")))
             guard port != nil || !host.isEmpty else { continue }
             return (host.isEmpty ? nil : host, port)

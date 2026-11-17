@@ -1481,10 +1481,20 @@ private struct SSHAgentRow: View {
     }
 
     private var picker: some View {
-        let chosen = model.current("ssh-agent")
-        let offered = item.options.filter { option in
+        let raw = model.current("ssh-agent")
+        // The config's own word for it may be another name for an agent the
+        // picker lists (onepassword, gnupg, default), or a socket's path.
+        let known = SSHAgent(token: raw).map(\.token)
+        let chosen = raw.lowercased() == "custom" ? "custom"
+            : item.options.contains(where: { $0.value == known }) ? known ?? raw : raw
+        var offered = item.options.filter { option in
             option.value == chosen || option.value == "system" || option.value == "custom"
                 || SSHAgent(token: option.value)?.isAvailable == true
+        }
+        // A path written in the config: offered as itself, so it shows and
+        // stays until something else is picked.
+        if !offered.contains(where: { $0.value == chosen }) {
+            offered.append(SettingsOption(label: chosen, value: chosen))
         }
         return Picker(selection: Binding(get: { chosen }, set: { model.write("ssh-agent", $0, item: item.id) })) {
             ForEach(offered, id: \.value) { option in Text(option.label).tag(option.value) }
@@ -1528,9 +1538,12 @@ private struct SSHAgentRow: View {
         model.current("ssh-agent") + "\u{0}" + model.current("ssh-agent-socket")
     }
 
+    /// Ask the agent the setting names. A change while one is asked is
+    /// asked again once that answer comes, and the older answer isn't shown.
     private func look() {
         guard !checking, setting != looked else { return }
-        looked = setting
+        let asked = setting
+        looked = asked
         checking = true
         let agent = SSHAgent.chosen(setting: model.current("ssh-agent"), socket: model.current("ssh-agent-socket"))
         DispatchQueue.global(qos: .userInitiated).async {
@@ -1542,8 +1555,9 @@ private struct SSHAgentRow: View {
                                            ask: SSHAgent.ask)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    standing = answer
                     checking = false
+                    guard setting == asked else { return look() }
+                    standing = answer
                 }
             }
         }

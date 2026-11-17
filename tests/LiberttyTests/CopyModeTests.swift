@@ -67,6 +67,10 @@ import Testing
         press(mode, "0", "t", "a"); #expect(mode.point?.x == 3)
         press(mode, ";"); #expect(mode.point?.x == 8)
         press(mode, ";"); #expect(mode.point?.x == 11)
+        // A t beside its character stays; ; then goes to the one after it,
+        // even when that's the next cell (gamma's mm: on the first m).
+        press(mode, "0", "f", "g", "t", "m"); #expect(mode.point?.x == 12)
+        press(mode, ";"); #expect(mode.point?.x == 13)
         // F and T look back up the line.
         press(mode, "$"); #expect(mode.point?.x == 22)
         press(mode, "F", "b"); #expect(mode.point?.x == 6)

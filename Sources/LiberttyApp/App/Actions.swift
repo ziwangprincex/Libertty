@@ -153,8 +153,11 @@ enum ActionDispatcher {
         case .writeScrollbackFile(let then): controller?.writeTextFile(selection: false, then: then)
         case .writeSelectionFile(let then): controller?.writeTextFile(selection: true, then: then)
         // A setting changed and kept, as the palette's own editing writes it.
+        // The key is the action's even when there's nothing to change (the
+        // size already at its largest): a key bound to it never reaches the
+        // program.
         case .toggleSetting, .cycleSetting, .increaseSetting, .decreaseSetting, .resetSetting, .setSetting:
-            return SettingActions.perform(action)
+            _ = SettingActions.perform(action)
         case .openSettings: MainActor.assumeIsolated { SettingsWindowController.shared.show() }
         case .openConfig: AppDelegate.openConfigFile()
         case .reloadConfig: ConfigStore.shared.reloadByRequest()

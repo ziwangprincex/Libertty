@@ -646,10 +646,12 @@ public enum DaemonClient {
     /// An ssh login into the Mac may not replace the one serving the login at
     /// the Mac while it speaks the same protocol — a build difference is not
     /// worth moving every local pane out of the user's login for.
+    /// One that doesn't say where it runs (a build from before it could)
+    /// may be the Mac's own too: an ssh login leaves it alone as well.
     static func mayReplace(_ welcome: Welcome) -> Bool {
-        guard let mine = ourSession, !mine.hasGraphicAccess,
-              let theirs = welcome.session, theirs.hasGraphicAccess, welcome.version == Wire.version
-        else { return true }
+        guard let mine = ourSession, !mine.hasGraphicAccess, welcome.version == Wire.version else { return true }
+        // Only one that says it runs outside the Mac's login too may go.
+        if let theirs = welcome.session, !theirs.hasGraphicAccess { return true }
         return false
     }
 

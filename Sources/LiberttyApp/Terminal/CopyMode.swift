@@ -541,15 +541,17 @@ final class CopyMode {
                 guard x >= 0, x < cells.cols else { return p }
                 from = ScreenPoint(x: x, y: p.y)
             }
-            let to = Self.find(cells, from, character: character, forward: forward, till: till, times: times)
-            return to == from ? p : to
+            // (After a t, the cell just before the next match may be the one
+            // the search started from: still a move, from where the cursor is.)
+            return Self.find(cells, from, character: character, forward: forward, till: till, times: times) ?? p
         }
     }
 
     /// From `p`, the `times`th `character` in its row, forward or back; with
-    /// `till` the cell before it (vim's t and T). `p` itself: there is none.
+    /// `till` the cell before it (vim's t and T, which may be `p` itself: a
+    /// match right beside it). Nil: there is none.
     static func find(_ cells: ScreenCells, _ p: ScreenPoint, character: String,
-                     forward: Bool, till: Bool, times: Int) -> ScreenPoint {
+                     forward: Bool, till: Bool, times: Int) -> ScreenPoint? {
         /// The next cell of the row that holds a character of its own.
         func beyond(_ x: Int) -> Int? {
             var next = x
@@ -562,7 +564,7 @@ final class CopyMode {
         var at = p.x
         var left = max(1, times)
         while true {
-            guard let next = beyond(at) else { return p }
+            guard let next = beyond(at) else { return nil }
             at = next
             guard cells.character(at, p.y) == character else { continue }
             left -= 1
@@ -577,7 +579,7 @@ final class CopyMode {
                 if back < 0 || back >= cells.cols { return nil }
             } while cells.isSpacer(back, p.y)
             return back
-        }(), stop != p.x else { return p }
+        }() else { return nil }
         return ScreenPoint(x: stop, y: p.y)
     }
 

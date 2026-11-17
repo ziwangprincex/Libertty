@@ -31,11 +31,17 @@ struct InputModes: Equatable {
 
     /// What the terminal has now. The caller holds the session's lock.
     static func read(_ terminal: GhosttyTerminal) -> InputModes {
-        var flags: UInt8 = 0
-        _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_KITTY_KEYBOARD_FLAGS, &flags)
+        let flags = kittyFlags(terminal)
         var modes: [UInt16: Bool] = [:]
         for number in watched { modes[number] = isOn(terminal, number) }
         return InputModes(modes: modes, kittyFlags: flags)
+    }
+
+    /// The kitty keyboard flags in force now. The caller holds the session's lock.
+    static func kittyFlags(_ terminal: GhosttyTerminal) -> UInt8 {
+        var flags: UInt8 = 0
+        _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_KITTY_KEYBOARD_FLAGS, &flags)
+        return flags
     }
 
     private static func isOn(_ terminal: GhosttyTerminal, _ number: UInt16) -> Bool {
@@ -56,9 +62,7 @@ struct InputModes: Equatable {
                 _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_MODE, &config)
             }
         }
-        var flags: UInt8 = 0
-        _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_KITTY_KEYBOARD_FLAGS, &flags)
-        return flags == kittyFlags ? nil : kittyFlags
+        return Self.kittyFlags(terminal) == kittyFlags ? nil : kittyFlags
     }
 
     /// The sequence that sets the kitty keyboard flags to `flags`: all of

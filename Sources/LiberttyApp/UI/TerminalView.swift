@@ -1726,22 +1726,29 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     @objc private func retryLink(_ sender: Any?) {
-        guard let host = session.host else { return }
+        guard let host = session.host, !diagnosingRetry else { return }
         // Something to fix first (a changed host key, an agent without a key
-        // for it): asked, then tried again. What ssh uses for the host takes
-        // a subprocess to find out, so the answer comes back here.
+        // for it): asked, then tried again. A host that was out of reach is
+        // simply tried again. What ssh uses for the host takes a subprocess
+        // to find out, so the answer comes back here; a second click
+        // meanwhile waits for it.
         let errors = host.lastSSHErrors
+        diagnosingRetry = true
         SSHRecovery.diagnose(errors, destination: host.destination) { [weak self] problem in
+            self?.diagnosingRetry = false
             func again() {
                 host.retry()
                 guard let self, let host = self.session.host else { return }
                 self.fillLinkBanner(host)
                 self.layoutLinkBanner()
             }
-            guard let problem else { return again() }
+            guard let problem, problem.needsUser else { return again() }
             SSHRecovery.offer(problem, destination: host.destination, errors: errors, in: self?.window, retry: again)
         }
     }
+
+    /// Retry's diagnosis is under way.
+    private var diagnosingRetry = false
 
     private func layoutLinkBanner() {
         guard !linkBanner.isHidden || linkBannerWork != nil else { return }

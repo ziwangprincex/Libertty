@@ -170,6 +170,9 @@ enum SSHAgent: Equatable, Sendable {
 /// Which agent ssh asks for keys when it connects to one host, and what it
 /// answered: the Settings status line, and the advice when a login is refused.
 struct SSHAgentStanding: Equatable, Sendable {
+    /// Not asked (the failure had nothing to do with keys).
+    static let unasked = SSHAgentStanding(name: "", socket: nil, isDefault: true, fromConfig: false, answer: .keys(0))
+
     /// Named for a sentence: "1Password's agent", "The macOS agent".
     var name: String
     /// Where it listens; nil when it is whatever `SSH_AUTH_SOCK` names, and
@@ -219,8 +222,14 @@ extension SSHAgent {
     static func standing(setting: SSHAgent, configured: String?, defaultSocket: String?,
                          ask: (String?) -> SSHAgentStanding.Answer) -> SSHAgentStanding {
         // The user's own ~/.ssh/config comes first: ssh would take its value
-        // over anything Libertty added, so Libertty doesn't add one.
-        if let configured, configured != "SSH_AUTH_SOCK" {
+        // over anything Libertty added, so Libertty doesn't add one. (`ssh -G`
+        // says IdentityAgent only when the config sets it: SSH_AUTH_SOCK
+        // there is the user asking for the default agent for this host.)
+        if configured == "SSH_AUTH_SOCK" {
+            let named = defaultSocket.map { name(ofSocket: $0) } ?? L10n.t("The macOS agent")
+            return SSHAgentStanding(name: named, socket: nil, isDefault: true, fromConfig: true, answer: ask(nil))
+        }
+        if let configured {
             if configured == "none" {
                 return SSHAgentStanding(name: L10n.t("No agent"), socket: nil, isDefault: false,
                                         fromConfig: true, answer: .noAgent)
@@ -324,7 +333,9 @@ extension SSHAgent {
         // What is on this Mac first: with nothing to add, ssh is left to its
         // own way and no `ssh -G` is run at all.
         guard setting != .system, let socket = setting.resolvedSocket else { return [] }
-        if let configured = configuredAgent(for: destination), configured != "SSH_AUTH_SOCK" { return [] }
+        // Any IdentityAgent the config sets for the host stands, SSH_AUTH_SOCK
+        // too (ssh -G says it only when the config does).
+        if configuredAgent(for: destination) != nil { return [] }
         return ["-o", "IdentityAgent=" + socket]
     }
 

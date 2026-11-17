@@ -58,6 +58,17 @@ import Testing
         #expect(s.inputModeSummary == ["mouse": "off", "focus": "off", "paste": "on", "kitty": "5"])
     }
 
+    /// The shell's end mark, its prompt and its own kitty flags in one read
+    /// (fish 4 pushes its flags at every prompt): the flags it set after its
+    /// mark stand, the leftovers' undoing doesn't land on top of them.
+    @Test func whatTheShellSetsInTheSameReadStands() throws {
+        let s = try session()
+        s.show(promptMark + "\u{1b}[>5u" + "htop\u{1b}]133;C\u{07}")
+        s.show("\u{1b}[>1u")
+        s.show("\u{1b}]133;D;137\u{07}" + promptMark + "\u{1b}[>7u")
+        #expect(s.inputModeSummary["kitty"] == "7")
+    }
+
     /// A prompt that marks no command end (a shell without D): the next
     /// prompt puts them back instead.
     @Test func aPromptWithoutACommandEndPutsThemBack() throws {

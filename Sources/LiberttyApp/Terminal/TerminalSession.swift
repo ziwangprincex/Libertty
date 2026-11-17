@@ -114,8 +114,12 @@ final class TerminalSession {
     /// (`InputModes`). Under `lock`.
     private var inputModesAtCommandStart: InputModes?
     /// Kitty keyboard flags still to put back: the sequence that sets them
-    /// can only go in between sequences, not from a parse callback. Under `lock`.
+    /// can only go in between sequences, not from a parse callback. With
+    /// them, the flags the killed program left: anything else by the time
+    /// they go in was set after the mark (the shell's own), and stands.
+    /// Under `lock`.
     private var kittyFlagsPending: UInt8?
+    private var kittyFlagsLeftBehind: UInt8 = 0
     /// OSC 52 policy (`clipboard-read`, `clipboard-write`); under `lock`.
     private var clipboardRead = false
     private var clipboardWrite = true
@@ -1379,6 +1383,7 @@ final class TerminalSession {
         // (Asked only when there is something to put back.)
         if let shell = shellPID, Self.foregroundProcess(ofShell: shell) != nil { return }
         inputModesAtCommandStart = nil
+        kittyFlagsLeftBehind = InputModes.kittyFlags(terminal)
         kittyFlagsPending = saved.restore(terminal)
     }
 
@@ -1392,6 +1397,9 @@ final class TerminalSession {
         _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_VT_GROUND, &ground)
         guard ground else { return }
         kittyFlagsPending = nil
+        // The shell set its own after its mark, in the same read (fish's
+        // CSI > 1 u at its prompt): those stand.
+        guard InputModes.kittyFlags(terminal) == kittyFlagsLeftBehind else { return }
         let bytes = InputModes.kittySequence(flags)
         ghostty_terminal_vt_write(terminal, bytes, bytes.count)
     }

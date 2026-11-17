@@ -33,6 +33,16 @@ enum SSHRecovery {
         case tooManyAuthFailures
         /// Whatever answered doesn't speak SSH (the greeting, if ssh quoted it).
         case notSSH(String?)
+
+        /// Trying again won't help until someone changes something. A host
+        /// out of reach, or one that closed the connection at once, may
+        /// answer the next time: Retry just tries.
+        var needsUser: Bool {
+            switch self {
+            case .unreachable, .closedWithoutAnswer: false
+            default: true
+            }
+        }
     }
 
     // MARK: Asking the Mac first
@@ -44,8 +54,15 @@ enum SSHRecovery {
         return (SSHAgent.standing(for: destination, setting: setting), keysOnDisk())
     }
 
-    /// The same as `diagnose`, for the command line: blocking.
+    /// The same as `diagnose`, for the command line: blocking. ssh and the
+    /// agent are asked only when the keys were refused: for anything else
+    /// what the agent holds says nothing, and a hung agent would hold up
+    /// the answer.
     static func diagnose(_ errors: String, destination: String) -> Problem? {
+        guard !errors.isEmpty else { return nil }
+        guard errors.contains("Permission denied (publickey") else {
+            return diagnose(errors, agent: .unasked, keysOnDisk: [])
+        }
         let facts = facts(for: destination)
         return diagnose(errors, agent: facts.agent, keysOnDisk: facts.keys)
     }

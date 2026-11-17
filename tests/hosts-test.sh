@@ -3,6 +3,11 @@
 # here, with its own home, liberttyd and terminfo): prints "hosts: all
 # passed" or what failed.
 #   tests/hosts-test.sh LIBERTTY_BINARY
+
+# Never the user's own liberttyd: run alone, a different build would take
+# their sessions over. tests/run.sh sets a private one.
+[[ -n ${LIBERTTY_DAEMON_SOCKET:-} && -n ${LIBERTTY_DATA_DIR:-} ]] \
+  || { echo "set a private LIBERTTY_DAEMON_SOCKET and LIBERTTY_DATA_DIR (tests/run.sh does)"; exit 2; }
 set -u
 L=$1
 T=$(mktemp -d)

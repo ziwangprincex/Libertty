@@ -49,6 +49,12 @@ struct SSHFailureTests {
                Connection reset by 203.0.113.7 port 2022
                """,
                problem: .closedWithoutAnswer(host: "203.0.113.7", port: 2022)),
+        Sample(what: "closed without a greeting, through a jump host (ssh doesn't know who)",
+               errors: """
+               kex_exchange_identification: Connection closed by remote host
+               Connection closed by UNKNOWN port 65535
+               """,
+               problem: .closedWithoutAnswer(host: nil, port: nil)),
         Sample(what: "nothing listens for SSH",
                errors: "ssh: connect to host devbox port 22: Connection refused",
                problem: .unreachable(.refused, host: "devbox", port: 22)),
@@ -281,9 +287,11 @@ struct SSHAgentTests {
         let none = standing(setting: .onePassword, configured: "none")
         #expect(none.answer == .noAgent && none.fromConfig)
 
-        // The config leaves it at the default: the setting decides.
-        #expect(standing(setting: .system, configured: "SSH_AUTH_SOCK").isDefault)
-        #expect(!standing(setting: .system, configured: "SSH_AUTH_SOCK").fromConfig)
+        // The config asks for the default agent by name (ssh -G says
+        // IdentityAgent only when the config sets it): that stands over a
+        // setting naming another one.
+        let asked = standing(setting: .onePassword, configured: "SSH_AUTH_SOCK")
+        #expect(asked.isDefault && asked.fromConfig && asked.socket == nil)
 
         // ssh said nothing about the host (an unknown alias): the setting again.
         #expect(standing(setting: .system, configured: nil).isDefault)
