@@ -100,6 +100,27 @@ struct SSHFailureTests {
     }
 
     /// The fix names the keyword that holds the list, so it can be acted on.
+    /// A "Host key for … has changed" line with no name in it (a host's own
+    /// rc file can print anything into ssh's stderr) names no host, and
+    /// doesn't trap (the range ran backwards).
+    @Test func aChangedKeyLineWithoutANameDoesntTrap() {
+        let errors = "@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@\nHost key for has changed\nHost key for  has changed\nHost key for "
+        #expect(SSHRecovery.diagnose(errors, agent: .unasked, keysOnDisk: []) == nil)
+    }
+
+    /// A tool's time is up whatever it started: one that leaves a child
+    /// holding its output (as ssh's `Match exec` can) is ended with its
+    /// group, and the answer comes in time rather than when the child ends.
+    @Test func aToolsTimeoutHoldsAgainstItsChildren() {
+        let start = Date()
+        let result = SSHAgent.runTool("/bin/sh", ["-c", "echo started; sleep 30 & sleep 30"], environment: nil, timeout: 0.5)
+        #expect(Date().timeIntervalSince(start) < 5)
+        #expect(result.status == -1)
+        // And a quick one says what it said, with its exit status.
+        let quick = SSHAgent.runTool("/bin/sh", ["-c", "echo out; echo err >&2; exit 3"], environment: nil, timeout: 5)
+        #expect(quick.status == 3 && quick.output.contains("out") && quick.output.contains("err"))
+    }
+
     @Test func negotiationNamesTheKeyword() {
         let offered = "only-this-one"
         for (problem, keyword) in [(SSHRecovery.Problem.noCommonAlgorithm(.keyExchange, offered: offered), "KexAlgorithms"),

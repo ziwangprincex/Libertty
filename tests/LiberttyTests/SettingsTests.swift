@@ -95,6 +95,22 @@ struct SettingActionTests {
         }
     }
 
+    /// Numbers no Int holds never reach `Int(_:)`, which traps: a step of
+    /// infinity is refused, and one that goes past any Int writes nothing
+    /// (it once crashed the app, and `libertty +action` with it).
+    @Test func hugeNumbersDontTrap() {
+        #expect(Action("increase_setting:scrollback-limit:inf") == nil)
+        #expect(problem("increase_setting:scrollback-limit:inf")?.contains("positive number") == true)
+        let huge = Action("increase_setting:scrollback-limit:1e19")
+        #expect(huge != nil)
+        #expect(huge?.configString == "increase_setting:scrollback-limit:1e+19")
+        _ = huge.flatMap { SettingActions.next($0, in: Config()) }
+        #expect(SettingsItem.number(1e19) == "1e+19")
+        #expect(SettingsItem.number(.infinity) == "inf")
+        #expect(SettingsItem.number(-.infinity) == "-inf")
+        #expect(SettingsItem.number(12) == "12")
+    }
+
     @Test func whatIsRefusedSaysWhatToDoInstead() {
         #expect(Action("toggle_setting") == nil)
         #expect(problem("toggle_setting")?.contains("needs a setting") == true)

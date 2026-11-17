@@ -120,8 +120,11 @@ struct SettingsItem: Identifiable {
         }
     }
 
+    /// A whole number without its ".0" — as long as an Int holds it
+    /// (`Int(_:)` would trap on 1e19 or infinity).
     static func number(_ d: Double) -> String {
-        d == d.rounded() ? String(Int(d)) : String(format: "%g", d)
+        if d == d.rounded(), let whole = Int(exactly: d) { return String(whole) }
+        return String(format: "%g", d)
     }
 }
 

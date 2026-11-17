@@ -1,3 +1,4 @@
+import CPty
 import Foundation
 
 /// Where ssh finds the keys for a host. By default that is ssh's own
@@ -70,6 +71,22 @@ enum SSHAgent: Equatable, Sendable {
     static func chosen(_ config: Config) -> SSHAgent {
         chosen(setting: config.sshAgent, socket: config.sshAgentSocket)
     }
+
+    /// The two settings as they stand, for any thread: the config itself is
+    /// the main thread's (copying it while a reload replaces it isn't safe),
+    /// so ConfigStore keeps this copy current as it changes.
+    static var setting: (agent: String, socket: String) { settingLock.withLock { kept } }
+
+    /// The agent the settings name, from any thread.
+    static var current: SSHAgent { let s = setting; return chosen(setting: s.agent, socket: s.socket) }
+
+    /// The config changed (ConfigStore, as it changes it).
+    static func keep(_ config: Config) {
+        settingLock.withLock { kept = (config.sshAgent, config.sshAgentSocket) }
+    }
+
+    private static let settingLock = NSLock()
+    nonisolated(unsafe) private static var kept = (agent: Config().sshAgent, socket: Config().sshAgentSocket)
 
     /// In the picker.
     var label: String {
@@ -341,22 +358,56 @@ extension SSHAgent {
 
     /// Run a tool and read all it said, with a deadline so a hung agent
     /// can't hold a connection up.
-    private static func runTool(_ tool: String, _ arguments: [String], environment: [String: String]?,
+    ///
+    /// What it says goes to a file, not a pipe: ssh hands its own stderr to
+    /// what it runs (`Match exec`), and something of that left running
+    /// would keep a pipe open — reading it would wait for that too. The
+    /// tool runs in a process group of its own, ended whole when the time
+    /// is up: SIGTERM, then SIGKILL a moment later.
+    static func runTool(_ tool: String, _ arguments: [String], environment: [String: String]?,
                                 timeout: TimeInterval) -> (status: Int32, output: String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = arguments
-        if let environment { p.environment = environment }
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = out
-        p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return (-1, "") }
-        let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        timer.cancel()
-        return (p.terminationStatus, String(decoding: data, as: UTF8.self))
+        let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("libertty-tool-\(UUID().uuidString)")
+        let fd = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { return (-1, "") }
+        defer {
+            close(fd)
+            unlink(path)
+        }
+        var argv = ([tool] + arguments).map { strdup($0) } + [nil]
+        var envp = (environment ?? ProcessInfo.processInfo.environment).map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer {
+            argv.forEach { free($0) }
+            envp.forEach { free($0) }
+        }
+        let pid = libertty_spawn_io(tool, &argv, &envp, -1, fd, fd)
+        guard pid > 0 else { return (-1, "") }
+        let deadline = Date().addingTimeInterval(timeout)
+        var status: Int32 = 0
+        var ended = false
+        while !ended, Date() < deadline {
+            let r = waitpid(pid, &status, WNOHANG)
+            if r == pid || (r < 0 && errno != EINTR) { ended = true } else { usleep(10_000) }
+        }
+        if !ended {
+            // Its whole group: what it started goes with it.
+            kill(-pid, SIGTERM)
+            for _ in 0..<50 where !ended {
+                if waitpid(pid, &status, WNOHANG) == pid { ended = true } else { usleep(10_000) }
+            }
+            if !ended {
+                kill(-pid, SIGKILL)
+                for _ in 0..<100 where !ended {
+                    if waitpid(pid, &status, WNOHANG) == pid { ended = true } else { usleep(10_000) }
+                }
+            }
+            // (Not reaped after all that: the system has it; nobody waits on it.)
+            return (-1, "")
+        }
+        let code: Int32 = status & 0x7f == 0 ? (status >> 8) & 0xff : -1
+        let size = lseek(fd, 0, SEEK_END)
+        guard size > 0 else { return (code, "") }
+        var bytes = [UInt8](repeating: 0, count: Int(min(size, 1 << 20)))
+        let n = pread(fd, &bytes, bytes.count, 0)
+        return (code, String(decoding: bytes.prefix(max(0, n)), as: UTF8.self))
     }
 }

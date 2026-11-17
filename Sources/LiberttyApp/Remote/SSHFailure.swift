@@ -83,8 +83,12 @@ extension SSHRecovery {
             let l = raw.trimmingCharacters(in: .whitespaces)
             if l.hasPrefix("SHA256:") || l.hasPrefix("MD5:") { fingerprint = l }
             // "Host key for [example.com]:2222 has changed and you have requested strict checking."
-            if l.hasPrefix("Host key for "), let end = l.range(of: " has changed") {
-                host = String(l[l.index(l.startIndex, offsetBy: 13)..<end.lowerBound])
+            // (The name looked for after the prefix: a line with none, as a
+            // broken or hostile host could print, names nothing.)
+            let prefix = "Host key for "
+            if l.hasPrefix(prefix), let end = l.range(of: " has changed", range: l.index(l.startIndex, offsetBy: prefix.count)..<l.endIndex) {
+                let name = String(l[l.index(l.startIndex, offsetBy: prefix.count)..<end.lowerBound])
+                if !name.isEmpty { host = name }
             }
             // "Offending ED25519 key in /Users/me/.ssh/known_hosts:12"
             if l.hasPrefix("Offending "), let at = l.range(of: " key in ") {

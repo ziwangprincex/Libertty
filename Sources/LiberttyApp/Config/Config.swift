@@ -1421,6 +1421,7 @@ final class ConfigStore {
         warnings = problems
         savedConfig = parsed
         config = previewed(parsed)
+        SSHAgent.keep(config)
         keybinds = parsed.keybindTable
         notify()
     }
@@ -1434,6 +1435,7 @@ final class ConfigStore {
         let next = previewed(savedConfig)
         guard next != config else { return }
         config = next
+        SSHAgent.keep(config)
         notify()
     }
 
@@ -1445,6 +1447,7 @@ final class ConfigStore {
         previews = []
         guard config != savedConfig else { return }
         config = savedConfig
+        SSHAgent.keep(config)
         notify()
     }
 

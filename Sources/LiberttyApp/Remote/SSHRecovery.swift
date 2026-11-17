@@ -50,7 +50,8 @@ enum SSHRecovery {
     /// What ssh uses for `destination` and what it holds, with the keys in
     /// ~/.ssh. Runs ssh and ssh-add: not on the main thread.
     static func facts(for destination: String) -> (agent: SSHAgentStanding, keys: [String]) {
-        let setting = SSHAgent.chosen(ConfigStore.shared.config)
+        // (Not the config itself: this runs off the main thread.)
+        let setting = SSHAgent.current
         return (SSHAgent.standing(for: destination, setting: setting), keysOnDisk())
     }
 

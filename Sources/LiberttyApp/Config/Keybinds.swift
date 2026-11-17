@@ -490,7 +490,8 @@ enum Action: Equatable {
     ]
 
     private static func format(_ n: Double) -> String {
-        n == n.rounded() ? String(Int(n)) : String(n)
+        if n == n.rounded(), let whole = Int(exactly: n) { return String(whole) }
+        return String(n)
     }
 
     /// Zig-style escapes, as Ghostty's `text:` uses: \n \r \t \\ \" \e \xHH \u{H...}.

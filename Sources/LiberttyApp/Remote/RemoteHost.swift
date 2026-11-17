@@ -133,10 +133,11 @@ final class RemoteHost: @unchecked Sendable {
     /// time. Blocking (it runs `ssh -G`): under `prepareLock`, never on the
     /// main thread.
     private func resolveHostOptions() {
-        let config = ConfigStore.shared.config
-        let setting = config.sshAgent + "\u{0}" + config.sshAgentSocket
+        // (Not the config itself: this runs off the main thread.)
+        let chosen = SSHAgent.setting
+        let setting = chosen.agent + "\u{0}" + chosen.socket
         if stateLock.withLock({ resolvedOptions?.setting }) == setting { return }
-        let options = SSHAgent.options(for: destination, setting: SSHAgent.chosen(config))
+        let options = SSHAgent.options(for: destination, setting: SSHAgent.chosen(setting: chosen.agent, socket: chosen.socket))
         stateLock.withLock { resolvedOptions = (setting, options) }
     }
 

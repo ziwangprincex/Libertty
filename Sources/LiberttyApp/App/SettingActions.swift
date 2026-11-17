@@ -106,7 +106,7 @@ enum SettingActions {
             guard shape.isNumber else { return bad(notA(key, "a number", shape)) }
             var by: Double?
             if let rest {
-                guard let n = Double(rest), n > 0 else { return bad("a step is a positive number, not “\(rest)”") }
+                guard let n = Double(rest), n > 0, n.isFinite else { return bad("a step is a positive number, not “\(rest)”") }
                 by = n
             }
             return (name == "increase_setting" ? .increaseSetting(key, by) : .decreaseSetting(key, by), nil)
@@ -173,7 +173,8 @@ enum SettingActions {
         let step = by ?? shape.step ?? 1
         var next = now + (up ? step : -step)
         if let range = shape.range { next = min(max(next, range.lowerBound), range.upperBound) }
-        guard next != now else { return nil }
+        // A number past what any setting takes says nothing: nothing to write.
+        guard next.isFinite, next != now else { return nil }
         return (key, SettingsItem.number(next))
     }
 
