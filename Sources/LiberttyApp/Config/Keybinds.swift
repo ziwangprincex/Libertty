@@ -236,6 +236,11 @@ enum Action: Equatable {
     case undo, redo
     case toggleComposer, togglePromptQueue, forkConversation(ForkPlace)
     case openSettings, openConfig, reloadConfig, openThemeEditor, quit
+    /// A setting changed and kept (`SettingActions`): a switch flipped, a
+    /// choice cycled, a number stepped (nil: by its Settings control's own
+    /// step), a value set, or the setting back to its default.
+    case toggleSetting(String), cycleSetting(String, [String]), resetSetting(String), setSetting(String, String)
+    case increaseSetting(String, Double?), decreaseSetting(String, Double?)
     case ignore, unbind
 
     /// Actions without an argument, by Ghostty name.
@@ -336,6 +341,9 @@ enum Action: Equatable {
         case "decrease_font_size": guard let n = number(1), n > 0 else { return nil }; self = .decreaseFontSize(n)
         case "scroll_page_lines": guard let n = integer(), n != 0 else { return nil }; self = .scrollPageLines(n)
         case "jump_to_prompt": guard let n = integer(), n != 0 else { return nil }; self = .jumpToPrompt(n)
+        case _ where SettingActions.names.contains(name):
+            guard let action = SettingActions.parse(name, arg).action else { return nil }
+            self = action
         case "text": guard let a = arg, let s = Self.unescape(a) else { return nil }; self = .text(s)
         case "csi": guard let a = arg, !a.isEmpty else { return nil }; self = .csi(a)
         case "esc": guard let a = arg, !a.isEmpty else { return nil }; self = .esc(a)
@@ -365,6 +373,13 @@ enum Action: Equatable {
         case .decreaseFontSize(let n): return "decrease_font_size:\(Self.format(n))"
         case .scrollPageLines(let n): return "scroll_page_lines:\(n)"
         case .jumpToPrompt(let n): return "jump_to_prompt:\(n)"
+        case .toggleSetting(let key): return "toggle_setting:\(key)"
+        case .cycleSetting(let key, let values):
+            return "cycle_setting:\(key)" + (values.isEmpty ? "" : ":" + values.joined(separator: ","))
+        case .increaseSetting(let key, let by): return "increase_setting:\(key)" + (by.map { ":\(Self.format($0))" } ?? "")
+        case .decreaseSetting(let key, let by): return "decrease_setting:\(key)" + (by.map { ":\(Self.format($0))" } ?? "")
+        case .resetSetting(let key): return "reset_setting:\(key)"
+        case .setSetting(let key, let value): return "set_setting:\(key)=\(value)"
         case .text(let s): return "text:\(Self.escape(s))"
         case .csi(let s): return "csi:\(s)"
         case .esc(let s): return "esc:\(s)"
@@ -465,6 +480,12 @@ enum Action: Equatable {
         ("open_config", "Open the config file in your text editor"), ("reload_config", "Reload the config file"),
         ("open_theme_editor", "Edit a theme's colors, every window showing each change, and save it as a theme of your own"),
         ("quit", "Quit Libertty"),
+        ("toggle_setting:KEY", "Flip a setting that's on or off, and keep it, e.g. toggle_setting:copy-on-select"),
+        ("cycle_setting:KEY[:A,B,C]", "The setting's next value, round again at the end: its own choices, or the ones you name"),
+        ("increase_setting:KEY[:STEP]", "A number setting up, by the step Settings uses or yours, no further than it allows"),
+        ("decrease_setting:KEY[:STEP]", "The same, down"),
+        ("set_setting:KEY=VALUE", "Set a setting outright, e.g. set_setting:font-size=16"),
+        ("reset_setting:KEY", "The setting back to its default (its line leaves the config file)"),
         ("ignore", "Swallow the key so nothing happens"), ("unbind", "Remove a binding, so the key reaches the program"),
     ]
 
@@ -602,7 +623,14 @@ struct Keybinds: Equatable {
         guard let (triggerText, actionText, isGlobal) = split(e) else { return "expected TRIGGER=ACTION (e.g. cmd+d=new_split:right)" }
         guard let keys = Trigger.sequence(triggerText) else { return "unknown key or modifier in “\(triggerText)”" }
         if isGlobal, keys.count > 1 { return "a global: key can't be a sequence (“\(triggerText)”)" }
-        guard Action(actionText) != nil else { return "unknown action “\(actionText)” (see libertty +list-actions)" }
+        guard Action(actionText) != nil else {
+            // A setting action says what's wrong with it ("“font-size”
+            // isn't a switch: it takes a value, or increase…").
+            let parts = actionText.split(separator: ":", maxSplits: 1).map(String.init)
+            if let name = parts.first, SettingActions.names.contains(name),
+               let problem = SettingActions.parse(name, parts.count > 1 ? parts[1] : nil).problem { return problem }
+            return "unknown action “\(actionText)” (see libertty +list-actions)"
+        }
         return nil
     }
 

@@ -47,6 +47,89 @@ import Testing
         press(mode, "g", "g", "$", "w"); #expect(mode.point == ScreenPoint(x: 0, y: 1))
     }
 
+    /// vim's f F t T in the cursor's line, with counts, and ; and , doing
+    /// the last one again.
+    @Test func findACharacterInTheLine() throws {
+        // a0 l1 p2 h3 a4 _5 b6 e7 t8 a9 _10 g11 a12 m13 m14 a15 ,16 _17 d18…
+        let s = try session("alpha beta_gamma, delta\r\nsecond")
+        let mode = CopyMode(session: s)
+        press(mode, "k", "0")
+        #expect(mode.point == ScreenPoint(x: 0, y: 0))
+        // f: onto the next one; a count takes the nth.
+        press(mode, "f", "a"); #expect(mode.point?.x == 4)
+        press(mode, "0", "3", "f", "a"); #expect(mode.point?.x == 12)
+        // t: the cell before it.
+        press(mode, "0", "t", "a"); #expect(mode.point?.x == 3)
+        // ; again, , the other way.
+        press(mode, "0", "f", "a", ";"); #expect(mode.point?.x == 9)
+        press(mode, ","); #expect(mode.point?.x == 4)
+        // ; after a t goes on to the next: not stuck before the same one.
+        press(mode, "0", "t", "a"); #expect(mode.point?.x == 3)
+        press(mode, ";"); #expect(mode.point?.x == 8)
+        press(mode, ";"); #expect(mode.point?.x == 11)
+        // F and T look back up the line.
+        press(mode, "$"); #expect(mode.point?.x == 22)
+        press(mode, "F", "b"); #expect(mode.point?.x == 6)
+        press(mode, "$", "T", "a"); #expect(mode.point?.x == 16)
+        // Nothing of that character in the line: the cursor stays.
+        press(mode, "0", "f", "z"); #expect(mode.point?.x == 0)
+        // Space is found by its key name.
+        press(mode, "0", "f", "space"); #expect(mode.point?.x == 5)
+        // It never leaves the line, and a named key cancels the wait.
+        press(mode, "0", "f", "s"); #expect(mode.point == ScreenPoint(x: 0, y: 0))
+        press(mode, "f", "escape"); #expect(mode.point == ScreenPoint(x: 0, y: 0))
+        press(mode, "l"); #expect(mode.point?.x == 1)
+    }
+
+    /// D: from the cursor to the end of its line, and out of copy mode
+    /// (tmux's copy-end-of-line).
+    @Test func copyToTheEndOfTheLine() throws {
+        let s = try session("alpha beta\r\nsecond line")
+        let mode = CopyMode(session: s)
+        press(mode, "k", "0", "w")
+        #expect(mode.point == ScreenPoint(x: 6, y: 0))
+        #expect(mode.press("D", control: false) == .leave(copied: "beta"))
+        // From the line's start: all of it. On a blank line: nothing.
+        let whole = CopyMode(session: s)
+        press(whole, "k", "0")
+        #expect(whole.press("D", control: false) == .leave(copied: "alpha beta"))
+        let blank = CopyMode(session: s)
+        press(blank, "j", "j", "0")
+        #expect(blank.press("D", control: false) == .leave(copied: nil))
+    }
+
+    /// Leaving copy mode puts the view back where it was when it began, so a
+    /// look up the scrollback doesn't leave the pane there — unless the view
+    /// was scrolled by hand meanwhile, which was meant.
+    @Test func theViewGoesBackOnLeaving() throws {
+        let text = (1...40).map { "line \($0)" }.joined(separator: "\r\n")
+        let s = try session(rows: 4, text)
+        #expect(s.scrollbar.atBottom)
+        let mode = CopyMode(session: s)
+        press(mode, "2", "0", "k")
+        #expect(!s.scrollbar.atBottom)
+        mode.end()
+        #expect(s.scrollbar.atBottom)
+
+        // Scrolled by hand while in copy mode: left where it was put.
+        let byHand = CopyMode(session: s)
+        press(byHand, "2", "0", "k")
+        byHand.keepsViewOnLeaving = true
+        let where_ = s.scrollbar.offset
+        byHand.end()
+        #expect(s.scrollbar.offset == where_)
+        #expect(!s.scrollbar.atBottom)
+
+        // Begun up the scrollback: back to that line, not to the bottom.
+        s.scrollToTop()
+        let top = s.scrollbar.offset
+        let fromTop = CopyMode(session: s)
+        press(fromTop, "G")
+        #expect(s.scrollbar.offset != top)
+        fromTop.end()
+        #expect(s.scrollbar.offset == top)
+    }
+
     @Test func selectingAndCopying() throws {
         let s = try session("alpha beta\r\nsecond line here\r\nthird")
         let mode = CopyMode(session: s)

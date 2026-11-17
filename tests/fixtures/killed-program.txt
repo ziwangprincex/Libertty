@@ -1,0 +1,32 @@
+# A full-screen program killed outright (kill -9 vim, kill -9 htop) or
+# crashing never turns off what it turned on: mouse reporting, focus
+# reporting, bracketed paste, the kitty keyboard protocol. The shell is left
+# with them on, and escape bytes land in its prompt as the mouse moves or a
+# key is pressed. The command's end (OSC 133;D) puts back the modes the
+# shell had before it, so what the shell sets for itself stands.
+# (`sh -c '…; kill -9 $$'` is a program that dies without tidying up.)
+#
+# Mouse and focus reporting are no shell's business, so they must be off
+# whichever shell this is. `@SHELL@` is what tests/run.sh asks about the
+# modes a shell does set for itself, which the restore must leave it: zsh
+# and bash bracketed paste, fish 4 that and the kitty keyboard protocol.
+type:sh -c 'printf "\033[?1002h\033[?1006h\033[?1004h\033[?2004h\033[>1u"; kill -9 $$'
+key:enter
+wait:1.2
+expect-input-modes:mouse=off,focus=off@SHELL@
+# Focus reporting off means no CSI I reaches the shell when the window takes
+# the keyboard back: what's typed next is the command, nothing else.
+focus-event:out
+focus-event:in
+type:echo DONE-$((40+2))
+key:enter
+expect:DONE-42
+expect-not:command not found
+# Nor does the mouse: a click with reporting left on would send its bytes to
+# the shell as if they had been typed, and the next command would be the
+# escape and the command run together.
+click-text:DONE-42
+type:echo TWO-$((1+1))
+key:enter
+expect:TWO-2
+expect-not:command not found

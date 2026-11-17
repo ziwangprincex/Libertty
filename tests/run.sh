@@ -398,6 +398,11 @@ printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/picker-config/libertty
 printf 'background = #112233\n' > $PRIVATE/picker-config/libertty/themes/probe-theme
 expect settings-picker 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/picker-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/picker-config/libertty|g" $ROOT/tests/fixtures/settings-picker.txt)" $OUT
+# Setting actions on a key (toggle_setting, increase_setting…): the config
+# file changed in place, the windows following, and a switch's own command
+# in the palette once a search asks for it.
+expect setting-actions 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/setting-actions.txt)" $OUT
 # Libertty ▸ Theme Editor: colors tried in every window, Cancel, Save and Use (a config of its own).
 mkdir -p $PRIVATE/theme-config/libertty/themes
 printf 'theme = probe-theme\n' > $PRIVATE/theme-config/libertty/config
@@ -707,6 +712,26 @@ expect copy-mode 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-confi
 # Hint mode: labels on the links, paths, hashes and addresses on screen; a label opens or copies one.
 expect hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/hints.txt)" $OUT
+# A program killed outright leaves the shell none of the modes it turned on
+# to read the mouse and the keyboard: the prompt gets no escape bytes from a
+# click. What the shell sets for itself after its own prompt mark stands
+# (zsh's bracketed paste), so each shell is asked about its own.
+# zsh turns bracketed paste on at each prompt and keeps the kitty keyboard
+# protocol off; macOS's bash 3.2 has neither.
+expect killed-program 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config LIBERTTY_SHELL=/bin/zsh ZDOTDIR=$PRIVATE/empty-zdotdir \
+  $LIBERTTY --ui-probe "$(sed 's|@SHELL@|,paste=on,kitty=0|' $ROOT/tests/fixtures/killed-program.txt)" $OUT
+expect killed-program-bash 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config LIBERTTY_SHELL=/bin/bash \
+  $LIBERTTY --ui-probe "$(sed 's|@SHELL@|,paste=off,kitty=0|' $ROOT/tests/fixtures/killed-program.txt)" $OUT
+# fish 4 turns on bracketed paste and the kitty keyboard protocol itself, so
+# the restore must leave it those (its flags are its own: not asked about).
+# Only where fish is installed.
+FISH=$(command -v fish || true)
+if [[ -n $FISH ]]; then
+  expect killed-program-fish 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config LIBERTTY_SHELL=$FISH \
+    $LIBERTTY --ui-probe "$(sed 's|@SHELL@|,paste=on|' $ROOT/tests/fixtures/killed-program.txt)" $OUT
+else
+  echo "skip  killed-program-fish (no fish installed)"
+fi
 # cursor-click-to-move: a click in the command being typed moves the shell's cursor there (wide characters too).
 # (zsh: macOS's bash 3.2 echoes 中文 as octal escapes unless its inputrc says otherwise.)
 expect click-to-move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config LIBERTTY_SHELL=/bin/zsh ZDOTDIR=$PRIVATE/empty-zdotdir \

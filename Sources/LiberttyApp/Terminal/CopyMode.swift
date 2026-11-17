@@ -199,19 +199,34 @@ final class CopyMode {
     private let session: TerminalSession
     private var cursor: GhosttyTrackedGridRef?
     private var anchor: GhosttyTrackedGridRef?
+    /// The viewport's first line when copy mode began, and whether it was at
+    /// the bottom: leaving goes back there, so a look up the scrollback
+    /// doesn't leave the view where the cursor wandered. Tracked, so trimmed
+    /// scrollback and a resize's reflow leave it on its line.
+    private var entryViewport: GhosttyTrackedGridRef?
+    private let entryAtBottom: Bool
+    /// Leaving leaves the view where it is, rather than going back to where
+    /// copy mode began: it was scrolled by hand (the wheel, the trackpad, a
+    /// scrolling keybind), which was meant, or hint mode is taking over and
+    /// labels what's in view now.
+    var keepsViewOnLeaving = false
     /// The column up and down aim for (vim's curswant); nil: a line's end ($).
     private var wantColumn: Int? = 0
     /// Digits typed before a motion (5j).
     private var count = ""
     /// The first g of gg.
     private var pendingG = false
+    /// An f F t T waiting for the character to find, and how many times.
+    private var pendingFind: (forward: Bool, till: Bool, times: Int)?
+    /// The last f F t T, for ; and , to do again.
+    private var lastFind: (forward: Bool, till: Bool, character: String)?
 
     /// Starts on the terminal's cursor, or, scrolled back past it, on the
     /// viewport's last line.
     init(session: TerminalSession) {
         self.session = session
         alternate = session.isAlternateScreen
-        cursor = session.withTerminal { t -> GhosttyTrackedGridRef? in
+        let start = session.withTerminal { t -> (GhosttyTrackedGridRef?, GhosttyTrackedGridRef?, Bool) in
             let cells = ScreenCells(t)
             var x: UInt16 = 0, y: UInt16 = 0
             _ = ghostty_terminal_get(t, GHOSTTY_TERMINAL_DATA_CURSOR_X, &x)
@@ -222,13 +237,17 @@ final class CopyMode {
                 at.x = cells.firstNonBlank(at.y)
             }
             if at.x > 0, cells.isSpacer(at.x, at.y) { at.x -= 1 }
-            return Self.track(t, at)
+            return (Self.track(t, at), Self.track(t, ScreenPoint(x: 0, y: cells.top)),
+                    cells.top + cells.height >= cells.rows)
         }
+        cursor = start.0
+        entryViewport = start.1
+        entryAtBottom = start.2
         wantColumn = point?.x ?? 0
     }
 
     deinit {
-        let refs = [cursor, anchor].compactMap { $0 }
+        let refs = [cursor, anchor, entryViewport].compactMap { $0 }
         guard !refs.isEmpty else { return }
         session.withTerminal { _ in refs.forEach(ghostty_tracked_grid_ref_free) }
     }
@@ -292,6 +311,7 @@ final class CopyMode {
         if control {
             count = ""
             pendingG = false
+            pendingFind = nil
             switch key {
             case "u": return scrollAndMove(halfPages: -1)
             case "d": return scrollAndMove(halfPages: 1)
@@ -303,6 +323,15 @@ final class CopyMode {
             case "c", "[": return .leave(copied: nil)
             default: return .unknown
             }
+        }
+        if let find = pendingFind {
+            // The character an f F t T was waiting for. Esc, Return, an
+            // arrow: nothing to find, the key is spent on saying so.
+            pendingFind = nil
+            count = ""
+            guard let character = Self.findable(key) else { return .unchanged }
+            lastFind = (find.forward, find.till, character)
+            return findMove(character, forward: find.forward, till: find.till, times: find.times)
         }
         if pendingG {
             pendingG = false
@@ -366,6 +395,15 @@ final class CopyMode {
             let y = max(cells.top, min(cells.rows, cells.top + cells.height) - times)
             return ScreenPoint(x: cells.firstNonBlank(y), y: y)
         }
+        case "f", "F", "t", "T":
+            // The character to find comes next; the count waits with it.
+            pendingFind = (forward: key == "f" || key == "t", till: key == "t" || key == "T", times: times)
+            return .unchanged
+        case ";", ",":
+            // The last f F t T again, `,` the other way.
+            guard let last = lastFind else { return .unchanged }
+            return findMove(last.character, forward: key == ";" ? last.forward : !last.forward,
+                            till: last.till, times: times, again: true)
         case "{": return step(times) { cells, p in Self.prompt(cells, from: p, older: true) ?? p }
         case "}": return step(times) { cells, p in Self.prompt(cells, from: p, older: false) ?? p }
         case "v": return toggle(.characters)
@@ -376,6 +414,10 @@ final class CopyMode {
             return .leave(copied: text)
         case "Y":
             let text = currentLine()
+            return .leave(copied: text.isEmpty ? nil : text)
+        case "D":
+            // tmux's copy-end-of-line: from the cursor to the end of its line.
+            let text = toLineEnd()
             return .leave(copied: text.isEmpty ? nil : text)
         case "/": searchesOlder = false; return .search(older: false)
         case "?": searchesOlder = true; return .search(older: true)
@@ -478,6 +520,81 @@ final class CopyMode {
         if let existing = ref, ghostty_tracked_grid_ref_set(existing, t, point) == GHOSTTY_SUCCESS { return }
         if let existing = ref { ghostty_tracked_grid_ref_free(existing) }
         ref = Self.track(t, p)
+    }
+
+    /// The character an f F t T waits for: a key that types one, and Space
+    /// by its name. Nil for a named key, which cancels the find.
+    private static func findable(_ key: String) -> String? {
+        if key == "space" { return " " }
+        return key.count == 1 ? key : nil
+    }
+
+    /// f F t T, and ; and , doing one again: to the `times`th `character` in
+    /// the cursor's line. Nowhere to go leaves the cursor where it is.
+    private func findMove(_ character: String, forward: Bool, till: Bool, times: Int, again: Bool = false) -> Outcome {
+        move { cells, p in
+            // ; and , after a t or T start a cell further on, or the cursor
+            // would stay just before the same character for good (vim too).
+            var from = p
+            if again, till {
+                let x = p.x + (forward ? 1 : -1)
+                guard x >= 0, x < cells.cols else { return p }
+                from = ScreenPoint(x: x, y: p.y)
+            }
+            let to = Self.find(cells, from, character: character, forward: forward, till: till, times: times)
+            return to == from ? p : to
+        }
+    }
+
+    /// From `p`, the `times`th `character` in its row, forward or back; with
+    /// `till` the cell before it (vim's t and T). `p` itself: there is none.
+    static func find(_ cells: ScreenCells, _ p: ScreenPoint, character: String,
+                     forward: Bool, till: Bool, times: Int) -> ScreenPoint {
+        /// The next cell of the row that holds a character of its own.
+        func beyond(_ x: Int) -> Int? {
+            var next = x
+            repeat {
+                next += forward ? 1 : -1
+                if next < 0 || next >= cells.cols { return nil }
+            } while cells.isSpacer(next, p.y)
+            return next
+        }
+        var at = p.x
+        var left = max(1, times)
+        while true {
+            guard let next = beyond(at) else { return p }
+            at = next
+            guard cells.character(at, p.y) == character else { continue }
+            left -= 1
+            if left == 0 { break }
+        }
+        guard till else { return ScreenPoint(x: at, y: p.y) }
+        // One cell back the way we came: on it, not past it.
+        guard let stop = { () -> Int? in
+            var back = at
+            repeat {
+                back += forward ? -1 : 1
+                if back < 0 || back >= cells.cols { return nil }
+            } while cells.isSpacer(back, p.y)
+            return back
+        }(), stop != p.x else { return p }
+        return ScreenPoint(x: stop, y: p.y)
+    }
+
+    /// D: from the cursor to the end of its line, as text.
+    private func toLineEnd() -> String {
+        session.withTerminal { t in
+            let cells = ScreenCells(t)
+            guard let p = Self.point(of: cursor) else { return "" }
+            let last = cells.lastNonBlank(p.y)
+            guard last >= p.x, !cells.isBlank(last, p.y) else { return "" }
+            var out = ""
+            for x in p.x...last where !cells.isSpacer(x, p.y) {
+                let c = cells.character(x, p.y)
+                out += c.isEmpty ? " " : c
+            }
+            return out
+        }
     }
 
     static func wordForward(_ cells: ScreenCells, _ p: ScreenPoint, big: Bool) -> ScreenPoint {
@@ -595,11 +712,23 @@ final class CopyMode {
         return line.isEmpty ? nil : line
     }
 
-    /// Leaving: the selection goes too.
+    /// Leaving: the selection goes too, and the view goes back where it was.
     func end() {
         session.withTerminal(redraw: true) { t in
             if selecting != .none { _ = ghostty_terminal_set(t, GHOSTTY_TERMINAL_OPT_SELECTION, nil) }
         }
         selecting = .none
+        restoreViewport()
+    }
+
+    /// Back to the view copy mode began on: the bottom, if it began there
+    /// (what arrived since is what the pane was following), else the line it
+    /// started on. A view that's to stay put is left alone, and so is a
+    /// screen the program has switched since: the line was on the other one.
+    private func restoreViewport() {
+        guard !keepsViewOnLeaving, alternate == session.isAlternateScreen else { return }
+        if entryAtBottom { return session.scrollToBottom() }
+        guard let row = session.withTerminal({ _ in Self.point(of: entryViewport)?.y }) else { return }
+        session.scroll(toRow: UInt64(max(0, row)))
     }
 }
