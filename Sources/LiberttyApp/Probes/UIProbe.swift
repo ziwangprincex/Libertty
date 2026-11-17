@@ -132,6 +132,8 @@ import LiberttyCore
 ///                        `clear`: they cover no pane's header, composer or floating card
 ///   capsule:N:click|close  a click on capsule N (1 first; it restores its pane), or its menu's Close
 ///   capsule:drag:CORNER  the capsules dragged to CORNER (as floating-minimized-corner names it) and let go
+///   expect-prompt:TEXT   the script's question up (+pick, +input) shows TEXT: its title, who asks,
+///                        `[what's typed]`, its rows (`✓ ` marked), ` | ` between (`none`: none is up)
 enum UIProbe {
     /// Show `window` far off every screen. Being shown, a titled window is
     /// moved onto a screen if it's off them all (to the built-in display's
@@ -1425,6 +1427,14 @@ enum UIProbe {
                             failures += 1
                         }
                         pump(0.3)
+                    case .expectPrompt(let want):
+                        let shown = CommandPalette.shownPrompt ?? "none"
+                        if want == "none" ? shown == "none" : shown.contains(want) {
+                            print("ok    ui-probe prompt: \(shown)")
+                        } else {
+                            print("FAIL  ui-probe prompt: \(shown.debugDescription), not \(want)")
+                            failures += 1
+                        }
                     case .fitHere:
                         let fitted = controller.focusedTerminal.session
                         fitted.fitProgramToPane()
@@ -1931,6 +1941,8 @@ enum UIProbe {
         case expectFloating(String)
         /// The minimized ones' capsules: what they say and where; acting on one.
         case expectCapsules(String), capsule(String)
+        /// A script's question (`+pick`, `+input`) as it shows.
+        case expectPrompt(String)
         /// The focused pane's composer and prompt queue: `composer:open|queue|close|pop-out|pop-in`,
         /// `expect-composer:open|closed|popped|text=TEXT`, `queue-prompt:TEXT`,
         /// `expect-queue:N|tag=TEXT|paused|running`, `conversation:AGENT:ID` (a record for the focused pane).
@@ -2084,6 +2096,7 @@ enum UIProbe {
             case "expect-floating": steps.append(.expectFloating(arg))
             case "expect-capsules": steps.append(.expectCapsules(arg))
             case "capsule": steps.append(.capsule(arg))
+            case "expect-prompt": steps.append(.expectPrompt(arg))
             case "expect-surface": steps.append(.expectSurface(arg, true))
             case "expect-surface-count": steps.append(.expectSurface("#" + arg, true))
             case "expect-no-surface": steps.append(.expectSurface(arg, false))

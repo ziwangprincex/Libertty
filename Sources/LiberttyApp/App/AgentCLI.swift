@@ -680,6 +680,9 @@ enum AgentCLI {
           prints its ID. `--no-focus` leaves the user where they are.
         - `libertty +focus ID` — bring the pane showing a session to the front. Don't move the user around
           unless they asked.
+        - `libertty +pick [--title T] [--multiple] ITEM...` (items on stdin too) or `libertty +input [--title T]`
+          — ask the user to choose or type something, in a prompt over this window; prints the answer. Exit
+          status 1: they cancelled; 124: `--timeout S` ran out. Ask in your own conversation when you can.
 
         ## Trying a web page (needs `browser-automation = true` in the user's config)
 

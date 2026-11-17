@@ -346,6 +346,9 @@ expect floating-pane 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-c
 # Minimized floating panes as capsules: named, clicked back with the keyboard, moved by the setting and by a drag, closed undoably.
 expect floating-capsules 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/floating-capsules.txt)" $OUT --persist
+# libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
+expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist
 # A session in two windows: a pane of another size than its program's says so, and takes it back.
 expect sized-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sized-elsewhere.txt)" $OUT --persist

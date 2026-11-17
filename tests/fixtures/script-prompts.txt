@@ -1,0 +1,114 @@
+# libertty +pick and +input: a script's question over the window of the pane
+# it runs in, as a page of the palette, and the answer printed — an item, any
+# number of them, what's typed; Esc exits 1 printing nothing, out of time
+# 124, a second question while one is up 5; the question goes when its
+# command does. Run with --persist (the pane is found by its session).
+type:R=$(libertty +pick --title Branch main dev feature); echo "PICKED=[$R] EXIT=$?"
+key:enter
+wait:1.5
+expect-prompt:Branch | From Tab 1 · libertty-ui-probe
+expect-prompt:| main | dev | feature
+type-then:enter:dev
+wait:1.0
+expect-prompt:none
+expect:PICKED=[dev] EXIT=0
+# Items on stdin, each with its detail (shown, not printed).
+type:R=$(printf 'one\tfirst\ntwo\tsecond\n' | libertty +pick --title Number); echo "STDIN=[$R]"
+key:enter
+wait:1.5
+expect-prompt:Number
+expect-prompt:| one | two
+type-then:enter:two
+wait:1.0
+expect:STDIN=[two]
+# Any number: Tab marks one and goes on; Return answers with the marked ones, in the list's order.
+type:R=$(libertty +pick --multiple apple banana cherry | tr '\n' ,); echo "MULTI=[$R]"
+key:enter
+wait:1.5
+key:tab
+key:down
+key:tab
+expect-prompt:| ✓ apple | banana | ✓ cherry
+key:enter
+wait:1.0
+expect:MULTI=[apple,cherry,]
+# Or an answer of your own.
+type:R=$(libertty +pick --allow-other red green); echo "OTHER=[$R]"
+key:enter
+wait:1.5
+type-then:enter:blue
+wait:1.0
+expect:OTHER=[blue]
+# A line typed over what it starts with.
+type:R=$(libertty +input --title Name --value hello); echo "INPUT=[$R] EXIT=$?"
+key:enter
+wait:1.5
+expect-prompt:Name | From Tab 1
+expect-prompt:[hello]
+type-then:enter:world
+wait:1.0
+expect:INPUT=[world] EXIT=0
+# Esc: 1, nothing printed.
+type:R=$(libertty +input --title Never); echo "CANCEL=[$R] $?"
+key:enter
+wait:1.5
+expect-prompt:Never
+key:escape
+wait:1.0
+expect-prompt:none
+expect:CANCEL=[] 1
+# Out of time: 124, and the question goes by itself.
+type:libertty +pick --timeout 1 x y; echo "TIMEOUT=$?"
+key:enter
+wait:3.0
+expect-prompt:none
+expect:TIMEOUT=124
+# One at a time: a second one while the first is up is turned away (5).
+type:libertty +pick --title First a b & sleep 1.5; libertty +pick c d; echo "BUSY=$?"
+key:enter
+wait:3.5
+expect:BUSY=5
+expect-prompt:First
+key:escape
+wait:1.0
+expect-prompt:none
+# Its command killed: the question goes with it.
+type:libertty +pick --title Killed a b & sleep 3; kill $!; wait $!; echo "KILLED=$?"
+key:enter
+wait:1.5
+expect-prompt:Killed
+wait:2.5
+expect:KILLED=143
+expect-prompt:none
+# Its pane closed (its program still running, kept for Undo): the question
+# goes, and the command hears why.
+type:libertty +split --no-focus -e 'libertty +pick --title Split a b 2> why; echo "CODE=$?" > code; sleep 60' > /dev/null
+key:enter
+wait:2.5
+expect-prompt:Split
+expect-panes:2
+action:goto_split:next
+action:close_surface
+wait:1.5
+expect-panes:1
+expect-prompt:none
+type:cat code why
+key:enter
+wait:0.8
+expect:CODE=1
+expect:its pane closed
+# Outside a Libertty pane: over the window in front, nobody named as asking.
+type:R=$(env -u LIBERTTY_SESSION libertty +pick --title Front q w); echo "FRONT=[$R]"
+key:enter
+wait:1.5
+expect-prompt:Front | [] | q | w
+type-then:enter:w
+wait:1.0
+expect:FRONT=[w]
+# What's wrong with a command line is said, and nothing is asked.
+type:libertty +pick --multiple --allow-other a; echo "USAGE=$?"
+key:enter
+wait:1.5
+expect:USAGE=2
+expect:don't go together
+expect-prompt:none
