@@ -1367,6 +1367,8 @@ struct RemoteHostsPage: View {
     @ViewState private var adding = ""
     /// The ports the hosts carry right now (PortForwarder).
     @ViewState private var forwards: [PortForward] = []
+    /// Those closed a moment ago, each with its Undo (ForwardClosing).
+    @ViewState private var closedForwards: [PortForward] = []
 
     var body: some View {
         Form {
@@ -1416,10 +1418,13 @@ struct RemoteHostsPage: View {
                     Button(L10n.t("Connect to Host…")) { ConnectPanel.shared.show() }
                 }
             }
-            if !forwards.isEmpty {
+            if !forwards.isEmpty || !closedForwards.isEmpty {
                 Section {
                     ForEach(forwards, id: \.id) { forward in
                         ForwardRow(forward: forward)
+                    }
+                    ForEach(closedForwards, id: \.id) { forward in
+                        ClosedForwardRow(forward: forward)
                     }
                 } header: {
                     Text(L10n.t("Forwarded Ports"))
@@ -1459,10 +1464,14 @@ struct RemoteHostsPage: View {
         .onAppear {
             hosts = SavedHosts.all
             forwards = PortForwarder.shared.all
+            closedForwards = ForwardClosing.undoable
         }
         .onReceive(NotificationCenter.default.publisher(for: SavedHosts.changed)) { _ in hosts = SavedHosts.all }
         .onReceive(NotificationCenter.default.publisher(for: RemoteHost.statusChanged)) { _ in tick += 1 }
-        .onReceive(NotificationCenter.default.publisher(for: PortForwarder.changed)) { _ in forwards = PortForwarder.shared.all }
+        .onReceive(NotificationCenter.default.publisher(for: PortForwarder.changed)) { _ in
+            forwards = PortForwarder.shared.all
+            closedForwards = ForwardClosing.undoable
+        }
     }
 
     /// Drawn by SSHAgentRow rather than the generic row, under Keys.
@@ -1588,7 +1597,7 @@ private struct SSHAgentRow: View {
 }
 
 /// One forwarded port: which way it goes, between what, and Close to take
-/// it back from the host's ssh connection.
+/// it back from the host's ssh connection (Undo brings it back a moment).
 private struct ForwardRow: View {
     let forward: PortForward
 
@@ -1597,21 +1606,43 @@ private struct ForwardRow: View {
             Button(L10n.t("Close")) {
                 // ssh is asked off the main thread; the list follows the
                 // notification the forwarder posts when it's gone.
-                let id = forward.id
-                DispatchQueue.global(qos: .userInitiated).async { _ = PortForwarder.shared.close(id: id) }
+                ForwardClosing.close(forward, window: SettingsWindowController.shared.window)
             }
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: forward.direction == .open ? "arrow.left.arrow.right" : "arrow.up.arrow.down")
-                    .foregroundStyle(.secondary).frame(width: 16).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(forward.id)
-                    Text(forward.summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .accessibilityElement(children: .combine)
+            ForwardLabel(forward: forward, status: forward.localizedSummary, closed: false)
         }
+    }
+}
+
+/// A forward closed a moment ago, while Undo can still ask for it again.
+private struct ClosedForwardRow: View {
+    let forward: PortForward
+
+    var body: some View {
+        LabeledContent {
+            Button(L10n.t("Undo")) { ForwardClosing.undo(forward.id) }
+        } label: {
+            ForwardLabel(forward: forward, status: L10n.t("Closed") + " · " + forward.localizedSummary, closed: true)
+        }
+    }
+}
+
+private struct ForwardLabel: View {
+    let forward: PortForward
+    let status: String
+    let closed: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: forward.direction == .open ? "arrow.left.arrow.right" : "arrow.up.arrow.down")
+                .foregroundStyle(.secondary).frame(width: 16).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(forward.title).foregroundStyle(closed ? .secondary : .primary)
+                Text(status).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

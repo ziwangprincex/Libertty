@@ -94,6 +94,7 @@ final class ScriptPromptSession {
             self.end(self.reply(to: answer), withdraw: false)
         }
         guard palette != nil else { return false }
+        if let deadline { palette?.showTimeLeft(deadline.timeIntervalSinceNow) }
         if pid > 0 {
             let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
             source.setEventHandler { [weak self] in self?.end(nil) }
@@ -121,7 +122,10 @@ final class ScriptPromptSession {
     private func recheck() {
         // The command gone without a word (the source missed it: it was gone already).
         if pid > 0, kill(pid, 0) != 0, errno == ESRCH { return end(nil) }
-        if let deadline, Date() >= deadline { return end(["result": "timeout"]) }
+        if let deadline {
+            if Date() >= deadline { return end(["result": "timeout"]) }
+            palette?.showTimeLeft(deadline.timeIntervalSinceNow)
+        }
         guard let controller, let window = controller.window else {
             return end(["result": "closed", "message": "its window closed with the question unanswered"])
         }

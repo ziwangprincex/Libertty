@@ -169,7 +169,7 @@ struct ScriptPrompt: Equatable {
         secure = fields["secure"] == "1"
         multiple = fields["multiple"] == "1"
         allowOther = fields["allowOther"] == "1"
-        timeout = fields["timeout"].flatMap(Double.init).flatMap { $0 > 0 ? $0 : nil }
+        timeout = fields["timeout"].flatMap(Double.init).flatMap { $0 > 0 && $0.isFinite ? $0 : nil }
         let list = (fields["items"]?.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String]] } ?? []
         items = list.compactMap { pair in pair.first.map { Item(label: $0, detail: pair.count > 1 ? pair[1] : "") } }
         if kind == .pick, items.isEmpty { return nil }

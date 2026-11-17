@@ -951,5 +951,14 @@
   "It finished.": "它完成了。",
   "It's idle.": "它空闲着。",
   "Type Shortcut…": "按下快捷键…",
-  "Record Shortcut": "录制快捷键"
+  "Record Shortcut": "录制快捷键",
+  "%@ → %@ on this Mac": "%@ → 本机 %@",
+  "%@ on this Mac → %@ on the host": "本机 %@ → 主机 %@",
+  "Close Forward": "关闭转发",
+  "Closed": "已关闭",
+  "Its host's windows are closed.": "这台主机的窗口都已关闭。",
+  "Couldn't forward %@ again": "无法重新转发 %@",
+  "%@ s left": "还剩 %@ 秒",
+  "%@ min left": "还剩 %@ 分钟",
+  "%@ on %@": "%2$@ 上的 %1$@"
 }

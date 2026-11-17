@@ -153,6 +153,17 @@ import Testing
         #expect(far.id != PortForward(destination: "devbox", direction: .open, local: 2, remote: 5432).id)
     }
 
+    /// What a person reads: the port and where it opens, both ends' numbers
+    /// (the id is for typing, the summary for the exact ends).
+    @Test func titlesSayWhereItOpens() {
+        #expect(PortForward(destination: "devbox", direction: .open, local: 49231, remote: 5173).title
+                == "5173 → 49231 on this Mac")
+        #expect(PortForward(destination: "devbox", direction: .open, local: 5432, remote: 5432, remoteHost: "db").title
+                == "db:5432 → 5432 on this Mac")
+        #expect(PortForward(destination: "devbox", direction: .share, local: 3000, remote: 3000).title
+                == "3000 on this Mac → 3000 on the host")
+    }
+
     // MARK: Ports on this Mac
 
     /// The host's own number when it's free, another when something holds it.

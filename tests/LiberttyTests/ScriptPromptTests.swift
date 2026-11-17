@@ -68,6 +68,24 @@ struct ScriptPromptTests {
         #expect(ScriptPrompt(fields: i.fields) == i)
     }
 
+    /// A timeout no clock reaches is no trap: the page's "left" stays a
+    /// number, and a request that says "inf" waits without one.
+    @Test func hugeTimeoutsAreHarmless() throws {
+        #expect(CommandPalette.timeLeft(1e19) == "527040 min left")
+        #expect(CommandPalette.timeLeft(.infinity) == "527040 min left")
+        #expect(CommandPalette.timeLeft(.nan) == "0 s left")
+        #expect(CommandPalette.timeLeft(-3) == "0 s left")
+        #expect(CommandPalette.timeLeft(0.2) == "1 s left")
+        #expect(CommandPalette.timeLeft(119.5) == "2 min left")
+        #expect(CommandPalette.timeLeft(90) == "90 s left")
+        #expect(CommandPalette.timeLeft(121) == "3 min left")
+        #expect(try pick("--timeout", "1e19", "a").get().timeout == 1e19)
+        #expect(throws: ScriptPrompt.Problem.self) { try pick("--timeout", "inf", "a").get() }
+        var fields = try pick("a").get().fields
+        fields["timeout"] = "inf"
+        #expect(ScriptPrompt(fields: fields)?.timeout == nil)
+    }
+
     @Test func answersTravelAndPrint() throws {
         let p = try pick("a", "b", "c").get()
         for answer: ScriptPrompt.Answer in [.chosen([0, 2]), .chosen([]), .text(""), .text("my own"), .cancelled] {

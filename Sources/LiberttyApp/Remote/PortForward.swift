@@ -41,12 +41,39 @@ struct PortForward: Sendable, Equatable {
         return "\(destination):\(letter)\(there)\(remote)"
     }
 
+    /// What it is, for a person: the port it carries and where it opens
+    /// ("5173 → 5173 on this Mac"). `id` is for typing; `summary` says
+    /// both ends exactly.
+    var title: String {
+        switch direction {
+        case .open:
+            let there = remoteHost == "localhost" ? "\(remote)" : "\(remoteHost):\(remote)"
+            return String(format: L10n.t("%@ → %@ on this Mac"), there, "\(local)")
+        case .share:
+            return String(format: L10n.t("%@ on this Mac → %@ on the host"), "\(local)", "\(remote)")
+        }
+    }
+
     /// What it does, for a list: the two ends, the arrow the way it carries.
     var summary: String {
         switch direction {
         case .open: "127.0.0.1:\(local) → \(remoteHost):\(remote) on \(destination)"
         case .share: "\(remote) on \(destination) → 127.0.0.1:\(local)"
         }
+    }
+
+    /// `summary` in the interface's language, for Settings and the palette
+    /// (`libertty +forward ls` says it in English, as the command line does).
+    var localizedSummary: String {
+        switch direction {
+        case .open: "127.0.0.1:\(local) → " + Self.on("\(remoteHost):\(remote)", destination)
+        case .share: Self.on("\(remote)", destination) + " → 127.0.0.1:\(local)"
+        }
+    }
+
+    /// "5173 on devbox", in the interface's language.
+    static func on(_ what: String, _ host: String) -> String {
+        String(format: L10n.t("%@ on %@"), what, host)
     }
 
     // MARK: ssh's words
@@ -424,6 +451,27 @@ final class PortForwarder: @unchecked Sendable {
         return again
     }
 
+    /// A forward closed a moment ago, asked for again as it was — on its
+    /// old port here while that's free (Undo after Close). Blocking.
+    @discardableResult
+    func reopen(_ forward: PortForward) throws -> PortForward {
+        let host = RemoteHost.named(forward.destination)
+        guard forward.direction == .open else { return try share(local: forward.local, on: host) }
+        return try work(on: host.destination) {
+            guard let master = host.master else { throw Failure.notConnected(host.destination) }
+            // Made again meanwhile (a link clicked): that one serves.
+            if let known = forwards(on: host.destination).first(where: { $0.id == forward.id }),
+               Self.isHeld(known, by: master) { return known }
+            var again = forward
+            again.local = pickLock.withLock { PortForward.canBind(forward.local) ? forward.local : 0 }
+            if again.local == 0 {
+                guard let other = PortForward.freePort(preferring: 0) else { throw Failure.noLocalPort }
+                again.local = other
+            }
+            return try establish(again, on: host, master: master, retrying: true)
+        }
+    }
+
     // MARK: Closing
 
     /// Close one forward by its `id`. Blocking; true when it was there.
@@ -457,7 +505,8 @@ final class PortForwarder: @unchecked Sendable {
     /// The host's last window closed: its forwards were for those panes.
     /// Called on the main thread; the ssh calls go to the background.
     func closeSoon(on destination: String) {
-        guard !forwards(on: destination).isEmpty else { return }
+        // Even with none held now: one being asked for again (Undo) is made
+        // under the host's lock, and this waits for it.
         queue.async { [weak self] in self?.closeAll(on: destination) }
     }
 

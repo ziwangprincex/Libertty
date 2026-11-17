@@ -57,6 +57,10 @@ enum ScriptPromptCLI {
         case .cancelled:
             return CLI.ExitCode.failure
         case .timedOut:
+            // (Not on stdout: what a script reads as the answer stays empty.)
+            let seconds = prompt.timeout ?? 0
+            let shown = seconds == seconds.rounded() && seconds < 1e15 ? "\(Int(seconds))" : "\(seconds)"
+            CLI.fail("no answer in \(shown) second\(seconds == 1 ? "" : "s")")
             return CLI.ExitCode.timeout
         case .busy:
             CLI.fail("that window is already asking something (another +pick or +input); answer it first")

@@ -21,7 +21,7 @@ wait:0.4
 expect-palette:Forward Port
 key:enter
 wait:0.5
-expect-palette:Close liberttytest:
+expect-palette:Close 5173 → 
 expect-palette-selected:none
 key:enter
 wait:1.0
@@ -58,6 +58,54 @@ type:echo "AFTER=$(wc -l < @FORWARDS@ | tr -d ' ')"
 key:enter
 wait:0.8
 expect:AFTER=3
+# Closed by hand (the row picked first), and Edit ▸ Undo asks for it again.
+key:cmd+shift+p
+wait:0.5
+type:forw
+wait:0.4
+key:enter
+wait:0.5
+key:down
+expect-palette-selected:Close 5173 → 
+key:enter
+wait:1.5
+expect-undo:Close Forward
+type:echo "CLOSED=$(wc -l < @FORWARDS@ | tr -d ' ')"
+key:enter
+wait:0.8
+expect:CLOSED=2
+undo:go
+wait:1.5
+type:echo "UNDONE=$(wc -l < @FORWARDS@ | tr -d ' ')"
+key:enter
+wait:0.8
+expect:UNDONE=3
+expect-undo:none
+# Or its page's Undo Close, which isn't picked for you either.
+key:cmd+shift+p
+wait:0.5
+type:forw
+wait:0.4
+key:enter
+wait:0.5
+key:down
+key:enter
+wait:1.5
+key:cmd+shift+p
+wait:0.5
+type:forw
+wait:0.4
+key:enter
+wait:0.5
+expect-palette-selected:none
+key:up
+expect-palette-selected:Undo Close 
+key:enter
+wait:1.5
+type:echo "AGAIN=$(wc -l < @FORWARDS@ | tr -d ' ')"
+key:enter
+wait:0.8
+expect:AGAIN=3
 # Their stand-in listeners go with them.
 type:libertty +forward close --all; echo "CLOSED=$? LEFT=$(wc -l < @FORWARDS@ | tr -d ' ')"
 key:enter

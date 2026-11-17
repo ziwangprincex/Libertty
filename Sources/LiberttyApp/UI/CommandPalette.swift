@@ -34,9 +34,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         /// It only says something (a page's "Nothing is forwarded yet"):
         /// Return and a click do nothing, and the palette stays.
         var inert = false
-        /// Undoes something there's no taking back (a page's Close): run only
+        /// Changes what's there (a page's Close, its Undo Close): run only
         /// when picked, never the row selected as the page comes up.
-        var destructive = false
+        var manualOnly = false
         /// Found only by words its own begin with, not letters scattered
         /// through it (a row that flips a setting at once: "forward" mustn't
         /// bring up Turn Off Show the sidebar in new windows).
@@ -170,6 +170,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private var marked: Set<Int> = []
     private let promptTitle = NSTextField(labelWithString: "")
     private let promptAsker = NSTextField(labelWithString: "")
+    /// Who asks, as `promptAsker` says it before any time left.
+    private var asker = ""
     /// The questions up now, a window each (the palette itself is `current`).
     private static var prompts: [CommandPalette] = []
 
@@ -197,12 +199,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         super.init()
         self.prompt = prompt
         onAnswer = answered
+        // `--multiple`: each row its box, empty until Tab (or a click) marks it.
         all = prompt.items.enumerated().map { i, item in
-            Item(title: item.label, subtitle: item.detail, symbol: "", kind: .option, index: i) {}
+            Item(title: item.label, subtitle: item.detail, symbol: prompt.multiple ? Self.unmarked : "", kind: .option, index: i) {}
         }
         build()
         promptTitle.stringValue = Self.promptTitle(of: prompt)
-        promptAsker.stringValue = asker.isEmpty ? "" : String(format: L10n.t("From %@"), asker)
+        self.asker = asker.isEmpty ? "" : String(format: L10n.t("From %@"), asker)
+        promptAsker.stringValue = self.asker
         switch prompt.kind {
         case .input:
             field.placeholderString = prompt.placeholder.isEmpty ? L10n.t("Type your answer") : prompt.placeholder
@@ -258,15 +262,33 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     private func toggleMark(_ i: Int) {
         if marked.remove(i) == nil { marked.insert(i) }
-        // A marked one wears the check a picker's current choice does.
         all = all.map { item in
             var item = item
-            item.symbol = item.index.map { marked.contains($0) } == true ? "checkmark" : ""
+            item.symbol = item.index.map { marked.contains($0) } == true ? Self.marked : Self.unmarked
             return item
         }
         let row = table.selectedRow
         filter(field.stringValue)
         if rows.indices.contains(row) { table.selectRowIndexes([row], byExtendingSelection: false) }
+    }
+
+    /// A `--multiple` row's box, as a setting's switch rows draw theirs.
+    private static let marked = "checkmark.square", unmarked = "square"
+
+    /// What's left of its time, after who asks ("From Tab 1 · 9 s left"):
+    /// a question with a timeout doesn't go without warning.
+    func showTimeLeft(_ seconds: TimeInterval) {
+        let before = promptAsker.intrinsicContentSize.width
+        promptAsker.stringValue = [asker, Self.timeLeft(seconds)].filter { !$0.isEmpty }.joined(separator: " · ")
+        if promptAsker.intrinsicContentSize.width != before { layout() }
+    }
+
+    /// "28 s left", "3 min left": whole seconds or minutes, up. (A time as
+    /// long as `--timeout 1e19` is no Int; nobody waits past a year.)
+    static func timeLeft(_ seconds: TimeInterval) -> String {
+        let s = seconds.isNaN ? 0 : Int(min(max(0, seconds.rounded(.up)), 366 * 86400))
+        return s < 120 ? String(format: L10n.t("%@ s left"), "\(s)")
+            : String(format: L10n.t("%@ min left"), "\((s + 59) / 60)")
     }
 
     /// Answered: told, and the page goes.
@@ -311,7 +333,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// who asks, what's typed, and its rows (`--ui-probe`).
     static var shownPrompt: String? {
         guard let page = prompts.last else { return nil }
-        let rows = page.noMatches ? [page.noMatchesText] : page.shown.map { ($0.symbol == "checkmark" ? "✓ " : "") + $0.title }
+        let rows = page.noMatches ? [page.noMatchesText] : page.shown.map { ($0.symbol == marked ? "✓ " : "") + $0.title }
         return ([page.promptTitle.stringValue, page.promptAsker.stringValue, "[" + page.field.stringValue + "]"] + rows)
             .filter { !$0.isEmpty }.joined(separator: " | ")
     }
@@ -745,6 +767,23 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     func tableViewSelectionDidChange(_ notification: Notification) {
         // (A script's items try nothing out: what another window's palette tries stays.)
         if prompt == nil { previewSelected() }
+        // The footer is framed to what it shows.
+        if updateRunHint() { layout() }
+    }
+
+    /// On a page, "↵ run" only while Return runs something: not on a row
+    /// that only explains, nor with none picked.
+    /// True when that changed what the footer shows.
+    @discardableResult
+    private func updateRunHint() -> Bool {
+        guard let (hints, _) = footer, page != nil, prompt == nil else { return false }
+        let row = table.selectedRow
+        var runs = false
+        if !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] { runs = !item.inert }
+        guard hints.views[3].isHidden == runs else { return false }
+        hints.views[3].isHidden = !runs
+        hints.views[4].isHidden = !runs
+        return true
     }
 
     // MARK: Folders (Go to Directory, after Rex)
@@ -866,11 +905,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             table.reloadData()
             // Return on arriving (or after typing) never closes something:
             // the first row that doesn't, else none until one is picked.
-            if let first = shown.firstIndex(where: { !$0.destructive }) {
+            if let first = shown.firstIndex(where: { !$0.manualOnly }) {
                 table.selectRowIndexes([first], byExtendingSelection: false)
             } else {
                 table.deselectAll(nil)
             }
+            updateRunHint()
             return layout()
         }
         if editing != nil {
@@ -1137,11 +1177,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         (hints.views[2] as? NSTextField)?.stringValue = L10n.t(picking ? "try" : "navigate")
         for view in hints.views[0...2] { view.isHidden = editing != nil }
         (hints.views[4] as? NSTextField)?.stringValue = L10n.t(editing != nil ? "set" : picking ? "keep" : scope == .folders ? "new tab" : "run")
+        hints.views[3].isHidden = false
+        hints.views[4].isHidden = false
         (close.views[1] as? NSTextField)?.stringValue = L10n.t(picking || onPage ? "back" : "close")
         // Folders: ⌥↵ goes there in the focused pane instead.
         let folders = scope == .folders && !picking && !onPage
         hints.views[5].isHidden = !folders
         hints.views[6].isHidden = !folders
+        updateRunHint()
         layout()
     }
 
@@ -1381,6 +1424,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private func height(of row: Int) -> CGFloat {
         guard !noMatches, rows.indices.contains(row) else { return Self.itemHeight }
         if case .group = rows[row] { return Self.groupHeight }
+        if case .item(let item) = rows[row], PaletteCell.isStacked(item) {
+            return max(Self.itemHeight, PaletteCell.stackedHeight(item, width: table.bounds.width > 0 ? table.bounds.width : Self.width))
+        }
         return editing != nil && row > 0 ? Self.helpHeight : Self.itemHeight
     }
 
@@ -1599,6 +1645,11 @@ private final class PaletteCell: NSTableCellView {
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
     private let keys = NSStackView()
+    /// The subtitle beside the title (a key, a path), or under it: a row
+    /// that only explains says its sentence whole, on lines of its own.
+    private var inline: [NSLayoutConstraint] = []
+    private var stacked: [NSLayoutConstraint] = []
+    private var isStacked = false
 
     init() {
         super.init(frame: .zero)
@@ -1629,13 +1680,22 @@ private final class PaletteCell: NSTableCellView {
             icon.centerXAnchor.constraint(equalTo: tile.centerXAnchor),
             icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
             title.leadingAnchor.constraint(equalTo: tile.trailingAnchor, constant: 12),
-            title.centerYAnchor.constraint(equalTo: centerYAnchor),
-            subtitle.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 8),
-            subtitle.firstBaselineAnchor.constraint(equalTo: title.firstBaselineAnchor),
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: keys.leadingAnchor, constant: -10),
             keys.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             keys.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        inline = [
+            title.centerYAnchor.constraint(equalTo: centerYAnchor),
+            subtitle.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 8),
+            subtitle.firstBaselineAnchor.constraint(equalTo: title.firstBaselineAnchor),
+        ]
+        stacked = [
+            title.topAnchor.constraint(equalTo: topAnchor, constant: Self.stackedPadding),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: keys.leadingAnchor, constant: -10),
+            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: Self.stackedGap),
+        ]
+        NSLayoutConstraint.activate(inline)
         updateColors()
     }
 
@@ -1649,6 +1709,32 @@ private final class PaletteCell: NSTableCellView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateColors()
+    }
+
+    static let stackedPadding: CGFloat = 9, stackedGap: CGFloat = 2, stackedLines = 2
+    /// From the row's leading edge to the title, and after the subtitle.
+    static let textInset: CGFloat = 18 + 26 + 12, trailingInset: CGFloat = 18 + 10
+
+    /// A row that only explains: its sentence under the title, whole.
+    static func isStacked(_ item: CommandPalette.Item) -> Bool { item.inert && !item.subtitle.isEmpty }
+
+    /// How tall that row is at `width`: the title, then its sentence on as
+    /// many lines as it takes (two at most).
+    static func stackedHeight(_ item: CommandPalette.Item, width: CGFloat) -> CGFloat {
+        let font = Typeface.secondary
+        let room = max(100, width - textInset - trailingInset)
+        let line = ceil(font.ascender - font.descender + font.leading)
+        let text = (item.subtitle as NSString).boundingRect(with: NSSize(width: room, height: .greatestFiniteMagnitude),
+                                                             options: [.usesLineFragmentOrigin], attributes: [.font: font])
+        let lines = min(CGFloat(stackedLines), max(1, ceil(text.height / line)))
+        let title = ceil(Typeface.row.ascender - Typeface.row.descender + Typeface.row.leading)
+        return stackedPadding * 2 + title + stackedGap + lines * line
+    }
+
+    override func layout() {
+        // A sentence wraps at the row's width.
+        subtitle.preferredMaxLayoutWidth = isStacked ? max(100, bounds.width - Self.textInset - Self.trailingInset) : 0
+        super.layout()
     }
 
     func show(_ item: CommandPalette.Item, dim: Bool = false) {
@@ -1665,6 +1751,18 @@ private final class PaletteCell: NSTableCellView {
         title.stringValue = item.title
         title.textColor = dim ? .secondaryLabelColor : .labelColor
         subtitle.stringValue = item.subtitle
+        let stack = Self.isStacked(item)
+        if stack != isStacked {
+            isStacked = stack
+            NSLayoutConstraint.deactivate(stack ? inline : stacked)
+            NSLayoutConstraint.activate(stack ? stacked : inline)
+        }
+        subtitle.font = stack ? Typeface.secondary : Typeface.hint
+        subtitle.textColor = stack ? .secondaryLabelColor : .tertiaryLabelColor
+        subtitle.lineBreakMode = stack ? .byWordWrapping : .byTruncatingMiddle
+        subtitle.maximumNumberOfLines = stack ? Self.stackedLines : 1
+        subtitle.cell?.truncatesLastVisibleLine = true
+        needsLayout = true
         keys.arrangedSubviews.forEach { keys.removeArrangedSubview($0); $0.removeFromSuperview() }
         KeyCap.caps(for: item.shortcut).forEach { keys.addArrangedSubview($0) }
     }

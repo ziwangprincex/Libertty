@@ -29,6 +29,24 @@ struct L10nTests {
         for (en, zh) in table {
             #expect(en.hasSuffix("…") == zh.hasSuffix("…") || en.hasSuffix("...") , "\(en) → \(zh)")
             #expect(!zh.isEmpty)
+            // As many values, each one once (a translation may number them to move them: %2$@).
+            #expect(Self.placeholders(en).count == Self.placeholders(zh).count, "\(en) → \(zh)")
+            let numbered = Self.placeholders(zh).compactMap { $0 }
+            #expect(numbered.isEmpty || numbered.sorted() == Array(1...Self.placeholders(en).count), "\(en) → \(zh)")
         }
+        // A moved value lands where its translation puts it.
+        #expect(String(format: "%2$@ 上的 %1$@", "5173", "devbox") == "devbox 上的 5173")
+    }
+
+    /// The `%@` in `text`, each with its number when it has one (`%2$@`).
+    private static func placeholders(_ text: String) -> [Int?] {
+        var out: [Int?] = [], rest = Substring(text)
+        while let at = rest.firstIndex(of: "%") {
+            rest = rest[rest.index(after: at)...]
+            let digits = rest.prefix { $0.isNumber }
+            let after = rest.dropFirst(digits.count)
+            if after.hasPrefix("$@"), !digits.isEmpty { out.append(Int(digits)) } else if rest.hasPrefix("@") { out.append(nil) }
+        }
+        return out
     }
 }

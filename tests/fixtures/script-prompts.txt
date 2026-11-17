@@ -72,6 +72,15 @@ key:enter
 wait:3.0
 expect-prompt:none
 expect:TIMEOUT=124
+expect:no answer in 1 second
+# A timeout no clock reaches: asked all the same, its time left said.
+type:libertty +pick --title Long --timeout 1e19 a b; echo "LONG=$?"
+key:enter
+wait:1.5
+expect-prompt:Long | From Tab 1
+key:escape
+wait:1.0
+expect:LONG=1
 # One at a time: a second one while the first is up is turned away (5).
 type:libertty +pick --title First a b & sleep 1.5; libertty +pick c d; echo "BUSY=$?"
 key:enter
