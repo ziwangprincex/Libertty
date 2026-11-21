@@ -1,0 +1,91 @@
+# Tabs under the panes (`tab-bar = bottom`; tests/run.sh gives this run a
+# config of its own): the strip the top has, under the panes and as wide as
+# they are. The panes' grids fill their cards above it (no row hides under
+# it), a minimized floating pane's capsule sits above it in a bottom corner,
+# and Settings moves it live: to the top, to the left side, back down.
+expect-strip-at:bottom
+type:echo BOTTOM-$((40+2))
+key:enter
+wait:0.6
+expect:BOTTOM-42
+# Renamed in place in its tab, down there: Return keeps it.
+key:cmd+shift+r
+wait:0.4
+type:first
+key:enter
+wait:0.5
+expect-strip:first
+tab:new
+wait:0.5
+key:cmd+shift+r
+wait:0.4
+type:second
+key:enter
+wait:0.5
+expect-strip:first
+expect-strip:second
+action:new_split:right
+wait:1.0
+expect-panes:2
+expect-strip-at:bottom
+shot:tab-bar-bottom.png
+# Minimized, a floating pane's capsule is in the split's corner: over the
+# panes, clear of the strip.
+action:new_floating_pane
+wait:1.2
+action:toggle_floating_panes
+wait:0.5
+expect-capsules:bottom-right:
+expect-capsules:clear
+expect-strip-at:bottom
+capsule:drag:bottom-left
+wait:0.5
+expect-capsules:bottom-left:
+expect-strip-at:bottom
+shot:tab-bar-bottom-capsules.png
+# Live, from Settings ▸ Interface ▸ Tab style: Above…
+key:cmd+,
+wait:0.8
+settings:press:Above
+wait:0.5
+expect-strip-at:top
+expect-strip:second
+shot:tab-bar-bottom-to-top.png
+# …Left Side: no strip, the tabs in the sidebar…
+settings:press:Left Side
+wait:0.5
+expect-strip-at:none
+expect-tab:first
+expect-tab:second
+expect-sidebar-shown:yes
+# …and Below again, the sidebar folded away with the tabs gone from it.
+settings:mark
+settings:press:Below
+wait:0.5
+expect-settings:Below=1
+expect-config-change:tab-bar = bottom
+settings:close
+wait:0.4
+expect-strip-at:bottom
+expect-sidebar-shown:no
+expect-strip:first
+expect-capsules:bottom-left:
+# A tab's menu down here: tab 1's pane joins this tab, and its tab goes.
+tab-menu-not:2:Merge into Current Tab
+tab-menu:1:Merge into Current Tab
+expect-tab-count:1
+expect-panes:3
+expect-strip-at:bottom
+# Wide, narrow, and dark.
+size:1280x720
+wait:0.5
+expect-strip-at:bottom
+shot:tab-bar-bottom-1280.png
+size:640x480
+wait:0.5
+expect-strip-at:bottom
+shot:tab-bar-bottom-640.png
+appearance:dark
+wait:0.4
+expect-strip-at:bottom
+shot:tab-bar-bottom-640-dark.png

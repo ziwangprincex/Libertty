@@ -128,4 +128,7 @@ final class WindowChrome {
     static let trafficLightRoom: CGFloat = 78
     /// Rex's top row: the traffic lights' band.
     static let bandHeight: CGFloat = 46
+    /// The tabs' band under the panes (`tab-bar = bottom`): the strip, and
+    /// room above and below it.
+    static let bottomBandHeight: CGFloat = 44
 }

@@ -157,7 +157,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     lazy var chrome = WindowChrome(target: self, toggleSidebar: #selector(chromeToggleSidebar(_:)),
                                    activity: #selector(chromeActivity(_:)), palette: #selector(chromePalette(_:)),
                                    newTab: #selector(chromeNewTab(_:)))
-    /// The sidebar was folded because the tabs moved to the top and it had no files to show.
+    /// The sidebar was folded because the tabs moved to their strip and it had no files to show.
     var foldedForTabBar = false
 
     let splitController = ColumnsController()
@@ -260,8 +260,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 460
         sidebarItem.canCollapse = true
-        // With the tabs along the top, a sidebar without its files has nothing to show.
-        sidebarItem.isCollapsed = !showSidebar || (config.tabBar == .top && !config.sidebarFiles)
+        // With the tabs in their strip, a sidebar without its files has nothing to show.
+        sidebarItem.isCollapsed = !showSidebar || (config.tabBar.inStrip && !config.sidebarFiles)
         let contentItem = NSSplitViewItem(viewController: areaController)
         contentItem.minimumThickness = 240
         // The terminals take what the window gains or loses (its edge dragged).
@@ -712,7 +712,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// One toolbar per `tab-bar` mode, so each keeps its own customization.
     static let sidebarToolbar = "libertty.window.2", topToolbar = "libertty.window.top"
     lazy var hostChip = HostChip()
-    /// The tabs along the top (`tab-bar = top`), in the band over the panes.
+    /// The tabs in a strip (`tab-bar = top` or `bottom`), in the band over the panes or under them.
     lazy var tabStrip: TabStrip = {
         let strip = TabStrip()
         strip.controller = self

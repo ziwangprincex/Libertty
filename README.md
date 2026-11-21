@@ -51,8 +51,8 @@ native cards and panels in their output ([OSC 7502](docs/surface-protocol.md),
 `libertty +surface`), and after `git status`, a build's errors or a search, a chip opens
 them as a list.
 
-**Window.** Laid out after Rex: tabs in a sidebar on the left or right, or along the top
-(`tab-bar`); panes as cards, each with a header (split, float, zoom, close);
+**Window.** Laid out after Rex: tabs in a sidebar on the left or right, or along the top or
+bottom (`tab-bar`); panes as cards, each with a header (split, float, zoom, close);
 `pane-style = compact` for edge-to-edge panes; `interface-style = glass` for a translucent
 window. Splits, workspaces, parked and floating panes, moving panes and tabs between
 windows, command palette (⌘⇧P), Quick Terminal, undo for closing a pane, tab or window.

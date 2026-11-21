@@ -985,5 +985,9 @@
   "Go Back a Pane": "退回之前的面板",
   "Go Back a Tab": "退回之前的标签",
   "Toggle Recent Pane": "与刚才的面板来回切换",
-  "Toggle Recent Tab": "与刚才的标签来回切换"
+  "Toggle Recent Tab": "与刚才的标签来回切换",
+  "Below": "下方",
+  "Tabs above or below the panes share their strip's whole width.": "面板上方或下方的标签平分整条标签栏的宽度。",
+  "Merge into Current Tab": "合并到当前标签",
+  "tabs in a strip under the panes": "标签横排在面板下方"
 }

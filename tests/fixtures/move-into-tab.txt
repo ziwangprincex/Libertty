@@ -1,0 +1,85 @@
+# Merge into Current Tab (a tab's menu, where the tabs are listed): another
+# tab's panes join the tab in front, beside its focused pane, arranged as
+# they were — one block, to its right; its parked panes come along, parked;
+# its tab goes. It's a move: nothing restarts (the sleep keeps going, and
+# what a program prints afterwards shows here), and the keyboard stays in
+# the pane that had it. Read back as the tabs' rows, the split's layout and
+# the shells' text. tests/run.sh runs it with --persist (the roundtrip
+# saves the layout by session).
+type:echo HOME-PANE
+key:enter
+wait:0.6
+expect-layout:a
+# Tab 2: two panes side by side, and a third parked out of the split.
+tab:new
+wait:0.5
+type:echo SOURCE-LEFT; sleep 4.@N@; echo AFTER-MOVE; sleep 299.@N@
+key:enter
+wait:0.6
+key:cmd+d
+wait:1.5
+type:echo SOURCE-RIGHT
+key:enter
+wait:0.6
+expect:SOURCE-RIGHT
+key:cmd+d
+wait:1.5
+type:echo PARKED-ONE
+key:enter
+wait:0.6
+expect:PARKED-ONE
+action:park_surface
+wait:0.8
+expect-panes:2
+expect-tab:2 panes · 1 parked
+# Zoomed, it unzooms as it goes.
+action:toggle_split_zoom
+wait:0.3
+expect-zoomed:yes
+# Not offered on the tab in front.
+tab-menu-not:2:Merge into Current Tab
+tab:1
+wait:0.5
+tab-menu-not:1:Merge into Current Tab
+tab-menu:2:Merge into Current Tab
+wait:0.5
+expect-tab-count:1
+expect-panes:3
+expect-zoomed:no
+expect-layout:h50(a,h50(b,c))
+expect-tab:3 panes · 1 parked
+expect-tab-not:zoomed
+# The keyboard is where it was: what's typed shows in the first pane.
+expect-focus:1
+type:echo TYPED-$((40+2))
+key:enter
+wait:0.6
+expect:TYPED-42
+expect:SOURCE-LEFT
+# Its programs ran on through the move. (Not what a prompt drew before it:
+# a shell may redraw its prompt over that, narrower now.)
+wait:3.5
+expect:AFTER-MOVE
+expect-shell:echo n=$(pgrep -f 'sleep 299[.]@N@' | wc -l | tr -d ' ') ==> n=1
+shot:move-into-tab.png
+# The parked pane is this tab's now: it comes back here, running as it was.
+action:unpark_surface
+wait:0.8
+expect-panes:4
+expect-tab-not:parked
+expect:PARKED-ONE
+type:echo UNPARKED-$((40+3))
+key:enter
+wait:0.6
+expect:UNPARKED-43
+# Saved and built again: one tab, its panes as they are.
+roundtrip:go
+# Not offered for a document's tab, nor while a document is in front.
+open:/etc/hosts
+wait:0.6
+expect-tab-count:2
+tab-menu-not:2:Merge into Current Tab
+tab-menu-not:1:Merge into Current Tab
+tab:1
+wait:0.4
+tab-menu-not:2:Merge into Current Tab

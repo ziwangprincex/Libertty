@@ -203,10 +203,11 @@ enum SettingsRegistry {
                  keywords: "branch changes diff"),
             item(.interface, "Tabs", "Tab style", "tab-bar", .segmented([
                 SettingsOption(label: "Above", value: "top", symbol: "rectangle.topthird.inset.filled"),
+                SettingsOption(label: "Below", value: "bottom", symbol: "rectangle.bottomthird.inset.filled"),
                 SettingsOption(label: "Left Side", value: "left", symbol: "sidebar.left", also: ["sidebar"]),
                 SettingsOption(label: "Right Side", value: "right", symbol: "sidebar.right"),
-            ]), keywords: "tab bar sidebar vertical"),
-            bool(.interface, "Tabs", "Fill available space", "tab-fill", help: "Tabs above share the bar's whole width."),
+            ]), keywords: "tab bar sidebar vertical horizontal strip"),
+            bool(.interface, "Tabs", "Fill available space", "tab-fill", help: "Tabs above or below the panes share their strip's whole width."),
             item(.interface, "Tabs", "Show tab icons", "tab-icons", .slider(0...5, step: 1, percent: false),
                  help: "How many of a tab's programs show as icons on it."),
             bool(.interface, "Tabs", "Use color for tab icons", "tab-icon-color"),

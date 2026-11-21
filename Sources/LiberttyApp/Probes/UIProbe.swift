@@ -121,7 +121,12 @@ import LiberttyCore
 ///   bar:TEXT              type TEXT in the browser's address bar and press Return
 ///   roundtrip:            save this window's layout and build a window from it: same workspaces, same parked panes
 ///   expect-float:yes|no  whether the tab in front shows a floating pane card (Float Pane)
-///   expect-strip:TEXT    a tab along the top (`tab-bar = top`) is named TEXT
+///   expect-strip:TEXT    a tab in the strip (`tab-bar = top` or `bottom`) is named TEXT
+///   expect-strip-at:top|bottom|none  where the strip is: over the tab in front's panes or under them,
+///                        as wide as they are, clear of their cards and capsules, each pane's grid
+///                        filling its card; `none`: not in the window
+///   tab-menu:N:TITLE     choose TITLE in tab N's menu, as a right-click where the tabs are listed opens it
+///   tab-menu-not:N:TITLE that menu doesn't offer TITLE (it's not there, hidden or greyed out)
 ///   action:ACTION        perform a keybind action (`libertty +list-actions`), e.g. move_surface_to_new_tab;
 ///                        ACTION,ACTION… performs them one right after the other (a key pressed twice)
 ///   expect-windows:N     the probe has N windows (Move … to New Window opens them, off screen)
@@ -1943,13 +1948,38 @@ enum UIProbe {
                             print("FAIL  ui-probe palette chips: \(chips), not \(text)")
                             failures += 1
                         }
+                    case .expectStripAt(let want):
+                        pump(0.3)  // a layout under way settles
+                        if let problem = stripPlace(controller, want: want) {
+                            print("FAIL  ui-probe strip: \(problem)")
+                            failures += 1
+                        }
+                    case .tabMenu(let n, let title, let choose):
+                        // Where the tabs are listed now: the strip's tab, or the sidebar's row.
+                        let menu = controller.config.tabBar.inStrip ? controller.tabStrip.menu(forTab: n - 1)
+                            : controller.sidebar.menu(forTab: n - 1)
+                        let item = menu?.items.first { $0.title == title || $0.title == L10n.t(title) }
+                        let offered = item.map { !$0.isHidden && $0.isEnabled } ?? false
+                        let items = menu?.items.filter { !$0.isSeparatorItem && !$0.isHidden }.map(\.title).joined(separator: ", ") ?? "no menu"
+                        if !choose {
+                            if offered { print("FAIL  ui-probe tab menu \(n) offers \(title)"); failures += 1 } else {
+                                print("ok    ui-probe tab menu \(n) doesn't offer \(title)")
+                            }
+                        } else if let item, offered, let action = item.action {
+                            print("ok    ui-probe tab menu \(n): \(title)")
+                            NSApp.sendAction(action, to: item.target, from: item)
+                            pump(0.6)
+                        } else {
+                            print("FAIL  ui-probe tab menu \(n): no \(title) to choose; it has \(items)")
+                            failures += 1
+                        }
                     case .expectStrip(let text):
-                        // The top tabs' names as drawn, and that they're in the bar.
+                        // The strip's tabs' names as drawn, and that it's in the window.
                         let names = controller.tabStripTitles
                         if names?.contains(text) == true {
-                            print("ok    ui-probe top tab \(text)")
+                            print("ok    ui-probe strip's tab \(text)")
                         } else {
-                            print("FAIL  ui-probe top tabs: none is \(text.debugDescription); they are \(names.map { "\($0)" } ?? "not in the bar")")
+                            print("FAIL  ui-probe strip's tabs: none is \(text.debugDescription); they are \(names.map { "\($0)" } ?? "not in the window")")
                             failures += 1
                         }
                     case .expectNot(let text):
@@ -2018,6 +2048,55 @@ enum UIProbe {
 
     /// What the tab in front's capsules lie over that they shouldn't: a
     /// pane's header (its buttons), a composer, the floating card.
+    /// Whether the strip of tabs is `want` (top, bottom, none): over the
+    /// panes of the tab in front or under them, as wide as they are, none of
+    /// their cards (headers too) nor its capsules reaching into it, and each
+    /// pane's grid as many rows and columns as its card holds. What's
+    /// wrong, or nil (having said where it is).
+    private static func stripPlace(_ controller: TerminalWindowController, want: String) -> String? {
+        let strip = controller.tabStrip
+        guard let content = controller.window?.contentView, strip.window != nil, !strip.isHidden, strip.superview != nil else {
+            if want == "none" { print("ok    ui-probe no strip of tabs"); return nil }
+            return "it isn't in the window"
+        }
+        guard want != "none" else { return "it's in the window" }
+        guard let container = controller.selectedTab.container else { return "no panes in front" }
+        // In the content view's coordinates, y up.
+        let s = strip.convert(strip.bounds, to: content), c = container.convert(container.bounds, to: content)
+        let below = s.maxY <= c.minY + 0.5, above = s.minY >= c.maxY - 0.5
+        guard want == "bottom" ? below : above else {
+            return "at \(s.integral), the panes at \(c.integral): not \(want == "bottom" ? "under" : "over") them"
+        }
+        guard content.bounds.contains(s.insetBy(dx: 0.5, dy: 0.5)) else { return "at \(s.integral), out of the window \(content.bounds.size)" }
+        // Under the panes, as wide as they are (a little in from an edge they touch).
+        let slack = TerminalAreaView.stripMargin + 0.5
+        if want == "bottom", abs(s.minX - c.minX) > slack || abs(s.maxX - c.maxX) > slack {
+            return "\(Int(s.minX))–\(Int(s.maxX)) wide, the panes \(Int(c.minX))–\(Int(c.maxX))"
+        }
+        var cards = container.terminalCards.map { ("a card", $0) }
+        if let bar = container.taskbar { cards.append(("the capsules", bar.frame)) }
+        for (what, card) in cards {
+            let r = container.convert(card, to: content)
+            if r.intersects(s.insetBy(dx: 0, dy: 0.5)) { return "\(what) at \(r.integral) reaches into it at \(s.integral)" }
+        }
+        var grids: [String] = []
+        for pane in controller.selectedTab.panes where !pane.isHidden {
+            let size = pane.session.size, b = pane.bounds.size
+            let cols = Int(size.cols), rows = Int(size.rows)
+            let fits = pane.contentSize(cols: cols, rows: rows), more = pane.contentSize(cols: cols + 1, rows: rows + 1)
+            guard fits.width <= b.width + 0.5, fits.height <= b.height + 0.5 else {
+                return "a pane's \(cols)×\(rows) grid needs \(fits), its card has \(b)"
+            }
+            guard more.width > b.width - 0.5, more.height > b.height - 0.5 else {
+                return "a pane's \(cols)×\(rows) grid leaves room in its card \(b)"
+            }
+            grids.append("\(cols)×\(rows)")
+        }
+        print("ok    ui-probe strip at \(want): y \(Int(s.minY))–\(Int(s.maxY)), panes \(Int(c.minY))–\(Int(c.maxY)), "
+              + "grids \(grids.joined(separator: " "))")
+        return nil
+    }
+
     private static func capsulesCover(_ controller: TerminalWindowController) -> [String] {
         guard let container = controller.selectedTab.container, let bar = container.taskbar else { return [] }
         var over: [String] = []
@@ -2151,6 +2230,7 @@ enum UIProbe {
         case expectInputModes(String)
         case expectAtBottom(Bool)
         case hint(String, copy: Bool), expectKeyHints(String), clickText(String)
+        case expectStripAt(String), tabMenu(Int, String, choose: Bool)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
@@ -2234,6 +2314,11 @@ enum UIProbe {
             case "expect-tab": steps.append(.expectTab(arg))
             case "expect-tab-not": steps.append(.expectTabNot(arg))
             case "expect-strip": steps.append(.expectStrip(arg))
+            case "expect-strip-at": steps.append(.expectStripAt(arg))
+            case "tab-menu", "tab-menu-not":
+                let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
+                guard p.count == 2, let n = Int(p[0]) else { print("ui-probe: \(verb):N:TITLE"); exit(2) }
+                steps.append(.tabMenu(n, p[1], choose: verb == "tab-menu"))
             case "expect-status": steps.append(.expectStatus(arg))
             case "expect-float": steps.append(.expectFloat(arg == "yes"))
             case "workspace": steps.append(.workspace(arg))

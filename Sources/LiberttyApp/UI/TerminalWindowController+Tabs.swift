@@ -67,9 +67,9 @@ extension TerminalWindowController {
             updateSidebar()
             updateStage()
         }
-        // Tabs along the top and the files folded away: the sidebar has nothing
+        // Tabs in their strip and the files folded away: the sidebar has nothing
         // left, and comes back with the tabs (unless the user folded it).
-        if config.tabBar == .top, !config.sidebarFiles, config.tabBar != old.tabBar || old.sidebarFiles, isSidebarShown {
+        if config.tabBar.inStrip, !config.sidebarFiles, old.tabBar.inSidebar || old.sidebarFiles, isSidebarShown {
             foldedForTabBar = true
             setCollapsed(sidebarItem, true)
         } else if config.tabBar.inSidebar, foldedForTabBar {

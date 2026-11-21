@@ -52,6 +52,37 @@ struct SplitTests {
         #expect(s.drop(at: NSPoint(x: 200, y: 580), dragging: b) == .side(a, .down))
         #expect(s.drop(at: NSPoint(x: 200, y: 300), dragging: a) == nil)
     }
+
+    /// Another split's panes join beside a pane as one block, arranged as
+    /// they were (Merge into Current Tab); each view is in the tree once.
+    @Test func joinKeepsTheOtherSplitsArrangement() {
+        let s = split()
+        let d = NSView(), e = NSView(), f = NSView()
+        let other = SplitContainerView(root: PaneNode(axis: .vertical, ratio: 0.25, first: PaneNode(pane: d),
+                                                      second: PaneNode(axis: .horizontal, ratio: 0.5, first: PaneNode(pane: e),
+                                                                       second: PaneNode(pane: f))))
+        func named(_ v: NSView) -> String { v === d ? "d" : v === e ? "e" : v === f ? "f" : names(v) }
+        #expect(s.join(other, beside: b, toward: .right))
+        #expect(s.layoutDescription(named) == "h50(a,v50(h50(b,v25(d,h50(e,f))),c))")
+        #expect([d, e, f].allSatisfy { $0.superview === s })
+        // Not twice, and not beside a pane that isn't there.
+        #expect(!s.join(other, beside: b, toward: .right))
+        #expect(!s.join(SplitContainerView(root: PaneNode(pane: NSView())), beside: NSView(), toward: .left))
+        #expect(s.views.count == 6)
+    }
+
+    /// Below, as wide as the column: the tabs' band takes the bottom inset's place.
+    @Test func bottomTabsTakeTheBottomInset() {
+        var config = Config()
+        let left = TerminalWindowController.stageExtra(config, sidebar: false, inspector: false)
+        config.tabBar = .bottom
+        let bottom = TerminalWindowController.stageExtra(config, sidebar: false, inspector: false)
+        #expect(bottom.width == left.width)
+        #expect(bottom.height - left.height == WindowChrome.bottomBandHeight - (config.paneStyle == .compact ? 0 : 8))
+        config.tabBar = .top
+        let top = TerminalWindowController.stageExtra(config, sidebar: false, inspector: false)
+        #expect(top.height > left.height && bottom.height > left.height)
+    }
 }
 
 /// An animation that ended keeps nothing it was given: a container keeps
