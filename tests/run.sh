@@ -367,6 +367,14 @@ expect forward-page 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-co
   FAKE_SSH_SOCKET=$PRIVATE/page-forward/liberttyd.sock FAKE_SSH_LOG=$PRIVATE/page-forward.log \
   FAKE_SSH_TERMINFO=$PRIVATE/page-forward-home/terminfo FAKE_SSH_FORWARDS=$PRIVATE/page-forwards.txt \
   $LIBERTTY --ui-probe "$(sed "s|@FORWARDS@|$PRIVATE/page-forwards.txt|g" $ROOT/tests/fixtures/forward-page-enter.txt)" $OUT --persist
+# Attach Files… and Attach from Photos…: what's picked is typed as a drop types it (quoted; none
+# into a read-only pane), Photos' items kept as files first, and a host's pane (the stand-in ssh) gets it uploaded.
+mkdir -p $PRIVATE/insert-file $PRIVATE/insert-file-home
+expect insert-file 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  LIBERTTY_SSH=$ROOT/tests/fixtures/fake-ssh FAKE_SSH_HOME=$PRIVATE/insert-file-home \
+  FAKE_SSH_SOCKET=$PRIVATE/insert-file/liberttyd.sock FAKE_SSH_LOG=$PRIVATE/insert-file.log \
+  FAKE_SSH_TERMINFO=$PRIVATE/insert-file-home/terminfo \
+  $LIBERTTY --ui-probe "$(sed -e "s|@DIR@|$PRIVATE/insert-file-files|g" -e "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/insert-file.txt)" $OUT
 # A session in two windows: a pane of another size than its program's says so, and takes it back.
 expect sized-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/sized-elsewhere.txt)" $OUT --persist

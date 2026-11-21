@@ -137,10 +137,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         let pasteboard = sender.draggingPasteboard
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
            !urls.isEmpty {
-            // On another machine they go there first (RemoteUpload).
-            if session.host != nil { uploadAndType(urls: urls) } else {
-                sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
-            }
+            insertFiles(urls)
         } else if let text = pasteboard.string(forType: .string) {
             // As a paste: text that may run commands asks first (it used to go nowhere).
             if session.paste(text, allowUnsafe: false) == .needsConfirmation { confirmUnsafePaste(text) }
@@ -149,6 +146,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         }
         window?.makeFirstResponder(self)
         return true
+    }
+
+    /// Files dropped, or picked with Attach Files… or from Photos: their
+    /// quoted paths typed, one word each and a space. On another machine
+    /// they go there first, and their paths there are typed (RemoteUpload).
+    func insertFiles(_ urls: [URL]) {
+        guard !isReadOnly, !urls.isEmpty else { return }
+        if session.host != nil { uploadAndType(urls: urls) } else {
+            sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
+        }
     }
 
     /// Take on new settings. The font size follows the config only when the
@@ -816,6 +823,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         add("Copy", .copyToClipboard, symbol: "doc.on.doc")
         add("Copy Output of Last Command", .copyCommandOutput, symbol: "text.append")
         add("Paste", .pasteFromClipboard, symbol: "doc.on.clipboard")
+        add(L10n.t("Attach Files…"), .insertFile, symbol: "doc.badge.plus")
+        add(L10n.t("Attach from Photos…"), .insertPhoto, symbol: "photo.badge.plus")
         add("Compose Prompt…", .toggleComposer, symbol: "square.and.pencil")
         if let controller = window?.windowController as? TerminalWindowController,
            controller.programs[ObjectIdentifier(session)]?.agent != nil {
@@ -2188,6 +2197,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             case .forkConversation:
                 return (window?.windowController as? TerminalWindowController)?.whyNotFork(self) == nil
             case .pasteFromClipboard: return !isReadOnly && PasteContent.canPaste(.general)
+            case .insertFile, .insertPhoto: return !isReadOnly
             default: return true
             }
         }

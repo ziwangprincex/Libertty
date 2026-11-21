@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+import UniformTypeIdentifiers
 @testable import LiberttyApp
 
 /// What a paste types: files as their paths, else the text, else an image
@@ -92,5 +93,67 @@ struct ImagePeekTests {
         #expect(ImagePeek.imageFile(link("https://example.com/a.png")) == nil)
         #expect(ImagePeek.imageFile(link("file://elsewhere" + png.path)) == nil)
         #expect(ImagePeek.imageFile(link(dir.appendingPathComponent("gone.png").absoluteString)) == nil)
+    }
+}
+
+/// Attach from Photos…: which form of an item to ask for, the name its
+/// file is kept under, and keeping it where pasted images are.
+struct PhotoExportTests {
+    @Test func picturesAndVideosKeepTheirFormat() {
+        func name(_ suggested: String?, _ type: UTType, _ ext: String) -> String {
+            let (base, ext) = PhotoExport.name(suggested: suggested, type: type, fileExtension: ext, stamp: "20261121-101500")
+            return ext.isEmpty ? base : base + "." + ext
+        }
+        #expect(name("IMG_1234", .heic, "heic") == "photo-20261121-101500-IMG_1234.heic")
+        #expect(name("IMG_1234.HEIC", .heic, "") == "photo-20261121-101500-IMG_1234.heic")
+        #expect(name(nil, .quickTimeMovie, "") == "photo-20261121-101500.mov")
+        #expect(name("IMG_0042", .mpeg4Movie, "MP4") == "photo-20261121-101500-IMG_0042.mp4")
+        // The file's own extension when it's the format's; else the format's.
+        #expect(name("a/b: c", .jpeg, "JPG") == "photo-20261121-101500-a-b-c.jpg")
+        #expect(name(" ..hidden", .png, "tmp") == "photo-20261121-101500-hidden.png")
+        #expect(name("照片 1", .png, "png") == "photo-20261121-101500-照片-1.png")
+        #expect(name("---", .png, "") == "photo-20261121-101500.png")
+    }
+
+    @Test func asksForThePictureOrTheVideo() {
+        #expect(PhotoExport.fileType(among: ["public.plain-text", "public.heic", "public.jpeg"]) == .heic)
+        #expect(PhotoExport.fileType(among: ["com.apple.quicktime-movie"]) == .quickTimeMovie)
+        #expect(PhotoExport.fileType(among: ["public.plain-text"]) == nil)
+        #expect(PhotoExport.fileType(among: []) == nil)
+    }
+
+    @Test func keptBesidePastedImages() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("photo-test-\(UUID().uuidString)")
+        let dir = root.appendingPathComponent("libertty-paste"), from = root.appendingPathComponent("picker")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: from, withIntermediateDirectories: true)
+        let long = Date().addingTimeInterval(-30 * 24 * 3600)
+        // What the picker hands over may carry the day the photo was taken.
+        func picked(_ name: String) throws -> URL {
+            let url = from.appendingPathComponent(name)
+            try Data([1, 2, 3]).write(to: url)
+            try fm.setAttributes([.modificationDate: long], ofItemAtPath: url.path)
+            return url
+        }
+        let first = try PhotoExport.keep(try picked("x.heic"), suggested: "IMG_1", type: .heic, stamp: "S", in: dir)
+        #expect(first.lastPathComponent == "photo-S-IMG_1.heic")
+        #expect(try Data(contentsOf: first) == Data([1, 2, 3]))
+        #expect(try fm.attributesOfItem(atPath: dir.path)[.posixPermissions] as? Int == 0o700)
+        #expect(try fm.attributesOfItem(atPath: first.path)[.posixPermissions] as? Int == 0o600)
+        // Never over another; and dated now, so the next one doesn't prune it.
+        let second = try PhotoExport.keep(try picked("y.heic"), suggested: "IMG_1", type: .heic, stamp: "S", in: dir)
+        #expect(second.lastPathComponent == "photo-S-IMG_1-2.heic")
+        #expect(fm.fileExists(atPath: first.path))
+        // An old one goes as the next comes; what isn't Libertty's stays.
+        let old = dir.appendingPathComponent("photo-old.mov"), other = dir.appendingPathComponent("notes.mov")
+        for url in [old, other] {
+            try Data([1]).write(to: url)
+            try fm.setAttributes([.modificationDate: long], ofItemAtPath: url.path)
+        }
+        _ = try PhotoExport.keep(try picked("z.png"), suggested: nil, type: .png, stamp: "T", in: dir)
+        #expect(!fm.fileExists(atPath: old.path))
+        #expect(fm.fileExists(atPath: other.path))
+        #expect(fm.fileExists(atPath: dir.appendingPathComponent("photo-T.png").path))
     }
 }

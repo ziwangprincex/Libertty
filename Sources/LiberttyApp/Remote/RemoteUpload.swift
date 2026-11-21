@@ -198,14 +198,15 @@ extension TerminalView {
     private static var uploadTagKey: UInt8 = 0
     private static var uploadCountKey: UInt8 = 0
 
-    /// Pastes and drops on their way to the host: the tag stays till the last is there.
-    private var uploadsUnderWay: Int {
+    /// Pastes and drops on their way to the host (and photos on their way
+    /// out of Photos, InsertFiles): the tag stays till the last is there.
+    var uploadsUnderWay: Int {
         get { objc_getAssociatedObject(self, &Self.uploadCountKey) as? Int ?? 0 }
         set { objc_setAssociatedObject(self, &Self.uploadCountKey, newValue, .OBJC_ASSOCIATION_RETAIN) }
     }
 
     /// The tag at the pane's bottom right while files go (nil: gone).
-    private func showUploadTag(_ text: String?) {
+    func showUploadTag(_ text: String?) {
         var tag = objc_getAssociatedObject(self, &Self.uploadTagKey) as? NSTextField
         guard let text else {
             tag?.removeFromSuperview()

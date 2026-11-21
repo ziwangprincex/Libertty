@@ -113,6 +113,9 @@ import LiberttyCore
 ///                         (else the first that contains it)
 ///   page-type:SELECTOR=TEXT  type TEXT into the field SELECTOR finds (`textarea`, `.dialog .field`)
 ///   expect-shell:COMMAND ==> TEXT  COMMAND's output (sh -c) contains TEXT
+///   insert-files:PATH|PATH  Attach Files… (insert_file) with these picked, the open panel apart;
+///                         insert-photos: Attach from Photos… with them as Photos would give them;
+///                         -refused (insert-files-refused:…) when the action shouldn't run (read-only)
 ///   browser:ARGS ==> TEXT  what `libertty +browser ARGS` does here (ARGS split as a shell does); what
 ///                         it prints contains TEXT (`!TEXT`: it failed, saying TEXT). Without ` ==> `, just do it.
 ///   bar:TEXT              type TEXT in the browser's address bar and press Return
@@ -1459,6 +1462,29 @@ enum UIProbe {
                         controller.updateSidebar()
                         pump(0.3)
                         print("ok    ui-probe pretend-host: \(destination)")
+                    case .insertFiles(let paths, let photos, let refused):
+                        // Through the action, as the menu runs it: only the
+                        // panel's part is the probe's.
+                        let urls = paths.map { URL(fileURLWithPath: $0) }
+                        if photos {
+                            ProbePick.photos = urls.map { url in
+                                let provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
+                                provider.suggestedName = url.deletingPathExtension().lastPathComponent
+                                return provider
+                            }
+                        } else {
+                            ProbePick.files = urls
+                        }
+                        let taken = ActionDispatcher.perform(photos ? .insertPhoto : .insertFile, in: controller.focusedTerminal,
+                                                             controller: controller)
+                        ProbePick.files = nil
+                        ProbePick.photos = nil
+                        let what = (photos ? "insert-photos" : "insert-files") + " (\(paths.count))"
+                        if taken != refused { print("ok    ui-probe \(what) \(taken ? "taken" : "refused")") } else {
+                            print("FAIL  ui-probe \(what): \(taken ? "taken" : "refused")")
+                            failures += 1
+                        }
+                        pump(photos ? 1.0 : 0.4)
                     case .fakeForward(let what):
                         let parts = what.split(separator: ":").map(String.init)
                         guard let host = controller.host, parts.count == 2, let port = Int(parts[1]) else {
@@ -2098,6 +2124,9 @@ enum UIProbe {
         case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String), expectNews(Int, String), expectSelectionCard, glideResize(Int, Double), pretendHost(String), sshSheet(String), fakeForward(String)
         /// Something VoiceOver was told (AccessibilityNews) since the last of these said it ("-": nothing).
         case expectAnnounced(String)
+        /// Attach Files… (or Attach from Photos…) with these picked, the
+        /// picker apart: typed into the pane with the keyboard, or refused.
+        case insertFiles([String], photos: Bool, refused: Bool)
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
@@ -2268,6 +2297,11 @@ enum UIProbe {
             // `fake-forward:open:5173` / `fake-forward:share:3000`: a forward on
             // the window's (pretend) host, through LIBERTTY_SSH's stand-in ssh.
             case "fake-forward": steps.append(.fakeForward(arg))
+            // `insert-files:PATH|PATH` (`insert-photos:` the same, as Photos
+            // would give them; `-refused`: the pane takes none).
+            case "insert-files", "insert-photos", "insert-files-refused", "insert-photos-refused":
+                steps.append(.insertFiles(arg.split(separator: "|").map(String.init), photos: verb.hasPrefix("insert-photos"),
+                                          refused: verb.hasSuffix("-refused")))
             case "glide-resize":
                 // `glide-resize:N:WIDTH`: select tab N, and while the sidebar's
                 // card is still gliding there (motion:on), make the sidebar WIDTH wide.

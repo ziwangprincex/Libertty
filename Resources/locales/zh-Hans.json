@@ -964,5 +964,16 @@
   "OK": "好",
   "a pane is here": "有面板在这里",
   "recent": "最近去过",
-  "new tab here": "在这里开新标签"
+  "new tab here": "在这里开新标签",
+  "Attach Files…": "附加文件…",
+  "Attach from Photos…": "从「照片」附加…",
+  "Attach": "附加",
+  "They're sent to %@, and their paths there typed into the terminal.": "它们会先发送到 %@，再把在那里的路径输入到终端。",
+  "Their paths are typed into the terminal.": "它们的路径会输入到终端。",
+  "Exporting from Photos…": "正在从「照片」导出…",
+  "Couldn't export from Photos": "无法从「照片」导出",
+  "The rest were attached.": "其余的已附加。",
+  "An item": "一项",
+  "it's neither a picture nor a video": "它既不是图片也不是视频",
+  "Photos gave no file for it": "「照片」没有给出它的文件"
 }

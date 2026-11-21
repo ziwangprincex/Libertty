@@ -413,12 +413,12 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // time an item runs.
         weak var controller = self.controller
         var out: [Item] = []
-        func command(_ title: String, _ action: Action, _ symbol: String) {
+        func command(_ title: String, _ action: Action, _ symbol: String, keywords: String = "") {
             var item = Item(title: L10n.t(title), symbol: symbol, shortcut: keybinds.keys(for: action) ?? "") {
                 ActionDispatcher.perform(action, in: controller?.focusedTerminal, controller: controller)
             }
             // In another language, the English finds it too.
-            if item.title != title { item.keywords = title }
+            item.keywords = [item.title != title ? title : "", keywords].filter { !$0.isEmpty }.joined(separator: " ")
             out.append(item)
         }
         command("New Window", .newWindow, "macwindow.badge.plus")
@@ -524,6 +524,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Export Text As…", .writeScrollbackFile("save"), "square.and.arrow.up")
         command("Open Scrollback in Tab", .writeScrollbackFile("open"), "doc.text")
         command("Paste", .pasteFromClipboard, "doc.on.clipboard")
+        // Only where a terminal takes the paths (not a document, not read-only).
+        if controller?.insertionPane != nil {
+            command("Attach Files…", .insertFile, "doc.badge.plus", keywords: "insert file folder path")
+            command("Attach from Photos…", .insertPhoto, "photo.badge.plus", keywords: "insert photo image picture video")
+        }
         command("Select All", .selectAll, "selection.pin.in.out")
         command("Clear Screen and Scrollback", .clearScreen, "clear")
         command("Undo Close", .undo, "arrow.uturn.backward")

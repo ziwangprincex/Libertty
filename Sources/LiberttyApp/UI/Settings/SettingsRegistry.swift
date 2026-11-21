@@ -547,6 +547,7 @@ enum SettingsShortcuts {
         ]),
         Group(title: "Text", actions: [
             e("Copy", "copy_to_clipboard"), e("Paste", "paste_from_clipboard"), e("Select All", "select_all"),
+            e("Attach Files…", "insert_file"), e("Attach from Photos…", "insert_photo"),
             e("Clear Screen", "clear_screen"), e("Copy Output of Last Command", "copy_command_output"),
             e("Copy Mode", "toggle_copy_mode"), e("Hint Mode", "toggle_hint_mode"),
             e("Show Completions", "show_completions"),
