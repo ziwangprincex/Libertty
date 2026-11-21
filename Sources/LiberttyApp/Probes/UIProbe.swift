@@ -2046,8 +2046,6 @@ enum UIProbe {
         return ("\(corner.rawValue): " + bar.shownNames.joined(separator: ", ") + inside + stray, s.content.contrast(with: ground))
     }
 
-    /// What the tab in front's capsules lie over that they shouldn't: a
-    /// pane's header (its buttons), a composer, the floating card.
     /// Whether the strip of tabs is `want` (top, bottom, none): over the
     /// panes of the tab in front or under them, as wide as they are, none of
     /// their cards (headers too) nor its capsules reaching into it, and each
@@ -2097,6 +2095,8 @@ enum UIProbe {
         return nil
     }
 
+    /// What the tab in front's capsules lie over that they shouldn't: a
+    /// pane's header (its buttons), a composer, the floating card.
     private static func capsulesCover(_ controller: TerminalWindowController) -> [String] {
         guard let container = controller.selectedTab.container, let bar = container.taskbar else { return [] }
         var over: [String] = []

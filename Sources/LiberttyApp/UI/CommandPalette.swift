@@ -1287,8 +1287,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // (not for a muted tab's script).
         if prompt == nil || NSApp.isActive {
             Probe.activateApp()
-        } else if !Probe.running, !askedQuietly {
-            NSApp.requestUserAttention(.informationalRequest)
+        } else if !askedQuietly {
+            Notifier.shared.bounceDock()
         }
         parent.makeKeyAndOrderFront(nil)
         // Its blur and text follow the window's light or dark, not the system's.

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.5
+
+> After Rex's newer builds: back to the pane or tab you were in before, tabs under the panes, Merge into Current Tab, Mute Tab, Attach Files… and Attach from Photos…, and background update downloads that wait out Low Data Mode and hotspots.
+
+- **Back to where you were** (`focus_back:pane`, `focus_back:tab`): the pane, or the tab, you were in before this one, in any tab or window. Pressed again within 3 seconds it goes one further back; later it starts again from where you are. `focus_recent:pane` / `:tab` go back and forth between the last two. On no key by default: in the command palette (Go Back a Pane, Go Back a Tab, Toggle Recent Pane, Toggle Recent Tab) and Settings ▸ Shortcuts, to bind.
+- **Tabs under the panes**: `tab-bar = bottom` (Settings ▸ Interface ▸ Tab style ▸ Below). It works as the strip on top does — rename in place, drag to reorder, `tab-fill` — and the panes keep the whole height above it; minimized floating panes stay above it, and a page or an editor in a tab starts under the window's buttons.
+- **Merge into Current Tab**, in a tab's menu (the sidebar's or the strip's): another tab's panes join the tab you're in, beside the focused pane and arranged as they were, its parked and floating panes too. Their programs keep running, and that tab goes. (Not two tabs each made in a worktree.)
+- **Mute Tab**: a muted tab keeps working and showing what it does — its badge, its ring, the pane's edge lighting up, its entries in Activity — but doesn't interrupt you: no bell or program-state sound, no notification, no Dock bounce, and it isn't counted on the Dock's badge or the menu bar's icon. A struck-through speaker beside its name says so, and VoiceOver says "muted". `toggle_tab_mute`, the palette's Mute Tab / Unmute Tab, or a tab's menu. It's remembered with the window, goes where the tab goes, and a pane moved out of it takes it along.
+- **Attach Files… and Attach from Photos…** (Edit menu, the terminal's menu, the command palette; `insert_file` / `insert_photo` to bind a key): pick files and folders, or photos and videos in the system's Photos picker, and their paths are typed as dropping them would — quoted, one word each; on a host's pane they're uploaded there first. What Photos gives is kept as a file in its own format (a HEIC stays HEIC) where pasted images are, for a week; the picker runs apart from Libertty, so it asks no access to your library.
+- **Updates wait for a network that costs nothing**: with `auto-update = download`, the background download doesn't start in Low Data Mode or over a hotspot, stops if the network turns into one, and starts again by itself on one that doesn't. Check for Updates goes ahead regardless.
+- Fixed: with the sidebar hidden, switching tabs could hide the window's buttons in the panes' top row; a floating pane or the parked card in a top corner could sit under them. A closed pane kept for Undo no longer rings the bell.
+- The menu bar icon's menu is in the interface's language.
+- Inside: `--ui-probe` gains `expect-strip-at`, `tab-menu:` / `tab-menu-not:`, `expect-muted`, `insert-files:` / `insert-photos:`, and `expect-status` reports banners, bounces and the bell; the fixtures `focus-history`, `tab-bar-bottom`, `move-into-tab`, `tab-mute`, `insert-file`. `tests/update-test.sh` wants a liberttyd of its own (docs/DEVELOPMENT.md).
+
 ## 0.7.4
 
 > The rest of the review: ssh's failures that trying again can't fix no longer put Try Again first, a script's question comes before its answer, the tab overview's waiting cards look like terminals and say what's going on with a badge, and Esc closes every one of Libertty's dialogs in Chinese too.

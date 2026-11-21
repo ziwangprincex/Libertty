@@ -17,6 +17,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// The same text from the same pane within a moment is one notification
     /// (a session shown in two windows reports it twice).
     private var recent: [String: Date] = [:]
+    /// Those of `recent` posted quietly (Mute Tab): the same news from a
+    /// window that isn't muted (a session shown in two) still gets its banner.
+    private var recentQuiet: Set<String> = []
 
     // (Not private: a unit test makes one of its own.)
     override init() {
@@ -60,10 +63,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let key = pane + "\u{1}" + title + "\u{1}" + body
         let now = Date()
         recent = recent.filter { now.timeIntervalSince($0.value) < 2 }
-        guard recent[key] == nil else { return }
+        recentQuiet.formIntersection(recent.keys)
+        // Said already: once, unless only quietly and now out loud (its banner, not a second entry).
+        let upgrade = recent[key] != nil && recentQuiet.contains(key) && !quietly
+        guard recent[key] == nil || upgrade else { return }
         recent[key] = now
-        inbox.insert(Entry(title: title.isEmpty ? "Libertty" : title, body: body, pane: pane, date: now), at: 0)
-        if inbox.count > 100 { inbox.removeLast(inbox.count - 100) }
+        if quietly { recentQuiet.insert(key) } else { recentQuiet.remove(key) }
+        if !upgrade {
+            inbox.insert(Entry(title: title.isEmpty ? "Libertty" : title, body: body, pane: pane, date: now), at: 0)
+            if inbox.count > 100 { inbox.removeLast(inbox.count - 100) }
+        }
         if !quietly { unread += 1 }
         NotificationCenter.default.post(name: Self.inboxChanged, object: nil)
         guard !quietly else { return }

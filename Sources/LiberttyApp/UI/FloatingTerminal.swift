@@ -125,15 +125,16 @@ final class FloatingTerminalView: NSView, CapsuleObstacle {
     @objc private func dock(_ sender: Any?) { onDock?() }
     @objc private func close(_ sender: Any?) { onClose?() }
 
-    /// Its frame in a split of `size`, from its fraction, kept inside it.
-    func place(in size: NSSize) {
+    /// Its frame in a split of `size`, from its fraction, kept inside it and
+    /// under `top` (the window's buttons, sharing the split's top row).
+    func place(in size: NSSize, top: CGFloat = 0) {
         guard drag == nil, size.width > 0, size.height > 0 else { return }
         var r = NSRect(x: fraction.minX * size.width, y: fraction.minY * size.height,
                        width: fraction.width * size.width, height: fraction.height * size.height)
         r.size.width = min(size.width, max(Self.minimum.width, r.width))
         r.size.height = min(size.height, max(Self.minimum.height, r.height))
         r.origin.x = min(max(0, r.minX), size.width - r.width)
-        r.origin.y = min(max(0, r.minY), size.height - r.height)
+        r.origin.y = max(0, min(max(top, r.minY), size.height - r.height))
         frame = r.integral
         layoutInside()
     }

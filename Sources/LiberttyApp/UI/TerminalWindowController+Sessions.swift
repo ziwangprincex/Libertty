@@ -54,19 +54,20 @@ extension TerminalWindowController {
 
     /// `bell-features`, as in Ghostty. A muted tab's bell only shows.
     func sessionBell(_ session: TerminalSession) {
-        let pane = pane(for: session)
-        let features = TabMute.bellFeatures(config.bellFeatures, muted: pane.map(isMuted) ?? false)
-        let looking = pane.map(isLookedAt) ?? false
+        // A pane shown nowhere (closed, kept for Undo) rings for nobody.
+        guard let pane = pane(for: session) else { return }
+        let features = TabMute.bellFeatures(config.bellFeatures, muted: isMuted(pane))
+        let looking = isLookedAt(pane)
         if features.contains("system") || features.contains("audio") { StatusSound.bell() }
         if features.contains("attention"), !(NSApp.isActive && window?.isKeyWindow == true) {
             Notifier.shared.bounceDock()
         }
-        if features.contains("border"), let pane { pane.flashHalo(.systemYellow) }
-        if features.contains("title"), !looking, let pane, let tab = owningTab(of: pane) {
+        if features.contains("border") { pane.flashHalo(.systemYellow) }
+        if features.contains("title"), !looking, let tab = owningTab(of: pane) {
             tab.rang = true
             updateTitle()
         }
-        if !looking, let pane { markAttention(pane) }
+        if !looking { markAttention(pane) }
     }
 
     // MARK: Agents' turns (Last Turn)

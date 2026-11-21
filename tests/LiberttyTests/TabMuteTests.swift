@@ -47,6 +47,26 @@ struct TabMuteTests {
         #expect(notifier.inbox.map(\.pane) == ["other-pane", "muted-pane"])
     }
 
+    /// One session in two windows, muted in one: the window that isn't
+    /// muted still gets the banner, whichever says it first — and Activity
+    /// keeps it once.
+    @Test func aSessionMutedInOneWindowOnly() {
+        let notifier = Notifier()
+        notifier.post(title: "Done: build", body: "", pane: "shared", quietly: true)
+        notifier.post(title: "Done: build", body: "", pane: "shared")
+        #expect(notifier.inbox.count == 1)
+        #expect(notifier.posted == 1)
+        #expect(notifier.unread == 1)
+        // Out loud first: the muted window's word adds nothing.
+        let other = Notifier()
+        other.post(title: "Done: build", body: "", pane: "shared")
+        other.post(title: "Done: build", body: "", pane: "shared", quietly: true)
+        #expect(other.inbox.count == 1 && other.posted == 1 && other.unread == 1)
+        // And twice out loud is once, as before.
+        other.post(title: "Done: build", body: "", pane: "shared")
+        #expect(other.posted == 1)
+    }
+
     @Test func theAction() {
         #expect(Action("toggle_tab_mute") == .toggleTabMute)
         #expect(Action.toggleTabMute.configString == "toggle_tab_mute")

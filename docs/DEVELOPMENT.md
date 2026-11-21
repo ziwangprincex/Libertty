@@ -24,7 +24,7 @@ release goes out. The README covers building and using it.
 | `tests/screen.sh` | 40 s, takes the screen | What the window server shows (ScreenCaptureKit, this process's windows only): scale changes the off-screen probe can't see. |
 | `tests/screen-check.sh` | 30 s, takes the screen | A built app on the real screen, driven from outside (its config, its menus) through Rex's layouts, the Settings window and the Theme Customizer: one contact sheet to look at, and checks (on the stage, inside the screen's visible part, no gap beside the sidebar, every pane its header). Works with Stage Manager. Needs Screen Recording and Accessibility for the terminal. `release.sh` runs it. |
 | `tests/linux.sh` | a few minutes, needs Docker | liberttyd on real Linux (aarch64, x86_64; bash and fish) through the remote probe. |
-| `tests/update-test.sh` | a few minutes | The updater, offline: a signed update installs, a forged one doesn't. |
+| `tests/update-test.sh` | a few minutes | The updater, offline: a signed update installs, a forged one doesn't, a background download waits out Low Data Mode. Its probes keep sessions, so it wants a liberttyd of its own: `P=$(mktemp -d); LIBERTTY_DAEMON_SOCKET=$P/d.sock LIBERTTY_DATA_DIR=$P zsh tests/update-test.sh`. |
 
 CI (`.github/workflows/ci.yml`) runs the unit tests and the suite on a Mac and
 builds liberttyd for Linux with Swift's static Linux SDK, starting it on

@@ -113,12 +113,13 @@ final class FloatingPaneCard: NSView, CapsuleObstacle {
         return NSSize(width: width, height: width * shape)
     }
 
-    func place(in container: NSSize) {
+    /// `top`: what the window's buttons take of the split's top (they share its row).
+    func place(in container: NSSize, top: CGFloat = 0) {
         guard !dragging else { return }
         let size = size(in: container)
         let m = Self.margin
         let x = corner == .topLeft || corner == .bottomLeft ? m : container.width - size.width - m
-        let y = corner == .topLeft || corner == .topRight ? m : container.height - size.height - m
+        let y = corner == .topLeft || corner == .topRight ? top + m : container.height - size.height - m
         frame = NSRect(x: max(0, x), y: max(0, y), width: size.width, height: size.height)
         chrome.frame = NSRect(x: 0, y: 0, width: size.width, height: 26)
     }

@@ -149,7 +149,7 @@ final class SplitContainerView: NSView {
         guard !floats.contains(where: { $0 === float }) else { return }
         floats.append(float)
         addSubview(float, positioned: .above, relativeTo: nil)
-        float.place(in: bounds.size)
+        float.place(in: bounds.size, top: floatTop)
         keepTaskbarOnTop()
     }
 
@@ -264,7 +264,7 @@ final class SplitContainerView: NSView {
         card.onPutAway = putAway
         card.onMove = moved
         addSubview(card, positioned: .above, relativeTo: nil)
-        card.place(in: bounds.size)
+        card.place(in: bounds.size, top: floatTop)
         self.card = card
         keepTaskbarOnTop()
         placeTaskbar()
@@ -292,6 +292,10 @@ final class SplitContainerView: NSView {
     /// Rex: with the sidebar hidden or on the right, the panes' top row is
     /// the window's (traffic lights, the window's buttons): every pane wears
     /// a header, and those along the top keep clear of the buttons.
+    /// The window's buttons over the top row: what floats over the split
+    /// (its card, floating panes) keeps under them, where they can be clicked.
+    private var floatTop: CGFloat { sharesTopRow ? PaneHeader.height : 0 }
+
     var sharesTopRow = false {
         didSet { if sharesTopRow != oldValue { layoutPanes() } }
     }
@@ -643,8 +647,8 @@ final class SplitContainerView: NSView {
             pane.isHidden = zoomed != nil && pane !== zoomed
         }
         if let zoomed { placeCard(zoomed, in: bounds) }
-        card?.place(in: bounds.size)
-        floats.forEach { $0.place(in: bounds.size) }
+        card?.place(in: bounds.size, top: floatTop)
+        floats.forEach { $0.place(in: bounds.size, top: floatTop) }
         for pane in views {
             // (placeCard hid the header of a card too short for one.)
             guard let header = headerViews[ObjectIdentifier(pane)] else { continue }

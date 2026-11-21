@@ -60,7 +60,7 @@ expect:SOURCE-LEFT
 # a shell may redraw its prompt over that, narrower now.)
 wait:3.5
 expect:AFTER-MOVE
-expect-shell:echo n=$(pgrep -f 'sleep 299[.]@N@' | wc -l | tr -d ' ') ==> n=1
+expect-shell:echo n=$(pgrep -f 'sleep 299[.]@N@$' | wc -l | tr -d ' ') ==> n=1
 shot:move-into-tab.png
 # The parked pane is this tab's now: it comes back here, running as it was.
 action:unpark_surface

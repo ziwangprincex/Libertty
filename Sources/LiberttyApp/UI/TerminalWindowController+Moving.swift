@@ -43,6 +43,7 @@ extension TerminalWindowController {
         takeOut(pane, from: source) { [weak self] in
             guard let self else { return }
             let tab = TerminalTab(pane: pane)
+            tab.muted = source.muted
             let index = (self.tabs.firstIndex { $0 === source } ?? self.tabs.count - 1) + 1
             self.tabs.insert(tab, at: index)
             self.select(tab)
@@ -59,6 +60,7 @@ extension TerminalWindowController {
             guard self.tabs.contains(where: { $0 === target }), let container = target.container,
                   let anchor = target.focusedLeaf ?? container.views.first else {
                 let tab = TerminalTab(pane: pane)
+                tab.muted = source.muted
                 self.tabs.append(tab)
                 return self.select(tab)
             }
@@ -84,9 +86,11 @@ extension TerminalWindowController {
 
     /// `tab` can merge into the tab in front: both terminal tabs of the
     /// workspace showing, and not the same one.
+    /// (Not two tabs each made in a worktree: a tab answers for one, and
+    /// the other would never be offered for removal.)
     func canMerge(_ tab: TerminalTab) -> Bool {
         !isQuick && tab !== selectedTab && tab.container != nil && selectedTab.container != nil
-            && tabs.contains { $0 === tab }
+            && tabs.contains { $0 === tab } && (tab.worktree == nil || selectedTab.worktree == nil)
     }
 
     /// Merge into Current Tab: `tab`'s panes join the tab in front, beside
@@ -114,6 +118,8 @@ extension TerminalWindowController {
         tab.parked = []
         // Closing it asks about the worktree its panes were made in, as closing that tab would have.
         if target.worktree == nil { target.worktree = tab.worktree }
+        // Its panes stay quiet if it was muted (Mute Tab): the whole tab is, then.
+        if tab.muted { target.muted = true }
         if let i = tabs.firstIndex(where: { $0 === tab }) { tabs.remove(at: i) }
         if tab === terminalTab { terminalTab = target }
         tab.content.removeFromSuperview()
@@ -140,9 +146,12 @@ extension TerminalWindowController {
     /// Move Pane to New Window: the focused pane in a window of its own.
     func moveFocusedPaneToNewWindow() {
         guard canMoveFocusedPaneOut, let pane = selectedTab.focusedPane else { return }
+        let muted = selectedTab.muted
         takeOut(pane, from: selectedTab) { [weak self] in
             guard let self else { return }
-            Self.openWindowForTab(TerminalTab(pane: pane), self, nil)?.takeNews(of: [pane], from: self)
+            let tab = TerminalTab(pane: pane)
+            tab.muted = muted
+            Self.openWindowForTab(tab, self, nil)?.takeNews(of: [pane], from: self)
         }
     }
 

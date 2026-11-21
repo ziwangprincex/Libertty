@@ -117,6 +117,9 @@ final class TerminalAreaView: NSView {
 
     /// The least room between the bottom band's tabs and the column's sides.
     static let stripMargin: CGFloat = 6
+    /// What the window's buttons take of a document's top, sharing its row:
+    /// a pane header's height, as a split gives them.
+    static var buttonsRow: CGFloat { PaneHeader.height }
 
     private static func split(in view: NSView) -> SplitContainerView? {
         if let split = view as? SplitContainerView { return split }
@@ -128,8 +131,13 @@ final class TerminalAreaView: NSView {
         super.layout()
         fill.frame = bounds
         defer { updateHoles() }
-        let top = bounds.height - bandHeight
         let below = bottomBandHeight
+        // No band, the window's buttons over the content's top row: a split
+        // keeps its headers clear of them; a document (a page, an editor)
+        // has its own bar there, so it starts under them.
+        let buttonsOver = bandHeight == 0 && (bandViews.left != nil || bandViews.right != nil || bandClearance > 9)
+        let document = content.map { Self.split(in: $0) == nil } ?? false
+        let top = bounds.height - (bandHeight > 0 ? bandHeight : buttonsOver && document ? Self.buttonsRow : 0)
         // Whole points: the split view can leave this column half a point
         // wide, and a card between pixels rounds a point bigger.
         self.content?.frame = NSRect(x: insets.left, y: below + insets.bottom,

@@ -69,7 +69,9 @@ enum PasteContent: Equatable {
     static func prune(_ directory: URL, before: Date) {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return }
-        for name in names where name.hasPrefix("paste-") && name.hasSuffix(".png") || name.hasPrefix("photo-") {
+        // (`.incoming-`: a photo being kept when Libertty stopped.)
+        for name in names where name.hasPrefix("paste-") && name.hasSuffix(".png") || name.hasPrefix("photo-")
+            || name.hasPrefix(".incoming-") {
             let url = directory.appendingPathComponent(name)
             if let date = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date, date < before {
                 try? fm.removeItem(at: url)

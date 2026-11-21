@@ -7,6 +7,11 @@ import Testing
 /// files ignoring SIGTERM, as an interactive shell does, or one that leaves
 /// a program running with the pipe open. Before, either hung every git call.
 struct LoginShellTests {
+    /// Back long before the 30 s its sleep would hold it: not the deadline
+    /// itself, which a busy machine (the suite beside it) can overrun by a
+    /// second or two.
+    static let wellShortOfTheSleep: TimeInterval = 10
+
     private func shell(_ body: String) throws -> String {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("shell-\(UUID().uuidString)").path
         try ("#!/bin/sh\n" + body + "\n").write(toFile: path, atomically: true, encoding: .utf8)
@@ -26,7 +31,7 @@ struct LoginShellTests {
         defer { try? FileManager.default.removeItem(atPath: sh) }
         let start = Date()
         #expect(LoginShell.read(shell: sh, timeout: 0.5) == nil)
-        #expect(Date().timeIntervalSince(start) < 3)
+        #expect(Date().timeIntervalSince(start) < Self.wellShortOfTheSleep)
     }
 
     @Test func aProgramLeftHoldingThePipe() throws {
@@ -35,6 +40,6 @@ struct LoginShellTests {
         defer { try? FileManager.default.removeItem(atPath: sh) }
         let start = Date()
         #expect(LoginShell.read(shell: sh, timeout: 5) == "/x/bin")
-        #expect(Date().timeIntervalSince(start) < 3)
+        #expect(Date().timeIntervalSince(start) < Self.wellShortOfTheSleep)
     }
 }

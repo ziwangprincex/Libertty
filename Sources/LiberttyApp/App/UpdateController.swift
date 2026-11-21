@@ -28,6 +28,8 @@ final class UpdateController: NSObject {
     /// launch if the last one was a day ago, then daily.
     func start() {
         guard Updater.feedURL != nil else { return }
+        // Watching the network from now: by the first check it has said what it costs.
+        _ = NetworkCost.shared
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.backgroundCheck() }
@@ -93,13 +95,18 @@ final class UpdateController: NSObject {
         guard costObserver == nil else { return }
         costObserver = NotificationCenter.default.addObserver(forName: NetworkCost.changed, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.waiting != nil, NetworkCost.shared.current == .free else { return }
-                self.waiting = nil
-                if let observer = self.costObserver { NotificationCenter.default.removeObserver(observer) }
-                self.costObserver = nil
+                // (Busy: the user's own check or install is under way; this waits on.)
+                guard let self, self.waiting != nil, !self.busy, NetworkCost.shared.current == .free else { return }
+                self.stopWaiting()
                 self.checkInBackground()
             }
         }
+    }
+
+    private func stopWaiting() {
+        waiting = nil
+        if let observer = costObserver { NotificationCenter.default.removeObserver(observer) }
+        costObserver = nil
     }
 
     /// When the last check was (a probe's copy of the app shares the app's
@@ -113,6 +120,10 @@ final class UpdateController: NSObject {
         // Installed, its restart cancelled: Restart to Update is just that
         // (what relaunches it waits for Libertty to quit).
         if installed != nil { return NSApp.terminate(nil) }
+        // The user's own check takes over from a background download waiting
+        // for a cheaper network (a change of network mustn't start one while
+        // its Install question is up: Install would find it busy).
+        if !busy { stopWaiting() }
         guard !busy else {
             // Already under way: say so rather than nothing.
             if let downloading {

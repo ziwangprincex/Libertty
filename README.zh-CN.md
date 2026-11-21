@@ -158,7 +158,7 @@ open build/Libertty.app
 | `zsh tests/run.sh` | 无头测试：按像素比对渲染、会话、命令行，以及在屏幕外驱动应用的 UI 脚本（约 4 分钟） |
 | `tests/screen-check.sh` | 在真实屏幕上运行构建好的应用，把各种布局和窗口拼成一张截图并做检查（半分钟，会占用屏幕） |
 | `tests/linux.sh` | 在 Docker 里测试 Linux 上的 liberttyd |
-| `tests/update-test.sh` | 离线测试更新流程 |
+| `tests/update-test.sh` | 离线测试更新流程（需要单独的 liberttyd，见 docs/DEVELOPMENT.md） |
 
 每次推送，CI 都会跑单元测试和无头测试，并编译 Linux 版 liberttyd。和其他终端的性能对比在
 `bench/RESULTS.md`。

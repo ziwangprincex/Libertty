@@ -187,7 +187,7 @@ A build run by hand reaches your own liberttyd unless told otherwise; see
 | `zsh tests/run.sh` | The headless suite: rendering by pixel, sessions, CLI, and UI scripts driving the app off screen (about 4 minutes) |
 | `tests/screen-check.sh` | The built app on the real screen: a contact sheet of its layouts and windows, with checks (half a minute, takes the screen) |
 | `tests/linux.sh` | liberttyd on Linux in Docker |
-| `tests/update-test.sh` | The updater, offline |
+| `tests/update-test.sh` | The updater, offline (with a liberttyd of its own: see docs/DEVELOPMENT.md) |
 
 CI runs the unit tests and the suite on every push and builds liberttyd for Linux.
 Benchmarks against other terminals are in `bench/RESULTS.md`.

@@ -206,8 +206,17 @@ enum PhotoExport {
         while fm.fileExists(atPath: url.path) {
             url = named("\(base)-\(n)"); n += 1
         }
-        try fm.copyItem(at: file, to: url)
-        try? fm.setAttributes([.posixPermissions: 0o600, .modificationDate: now], ofItemAtPath: url.path)
+        // Dated now before it takes its name: with the date its file came with
+        // (a photo from years ago), a prune of the folder meanwhile would take it.
+        let staging = directory.appendingPathComponent(".incoming-\(UUID().uuidString)")
+        try fm.copyItem(at: file, to: staging)
+        do {
+            try fm.setAttributes([.posixPermissions: 0o600, .modificationDate: now], ofItemAtPath: staging.path)
+            try fm.moveItem(at: staging, to: url)
+        } catch {
+            try? fm.removeItem(at: staging)
+            throw error
+        }
         return url
     }
 

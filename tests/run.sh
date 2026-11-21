@@ -341,10 +341,10 @@ check agent-setup-codex sh -c '"$0" +agent-setup --agent codex --codex-dir "$1" 
 # Moving panes and tabs: to a new tab, another tab, a new window, and a
 # window's tab to another window (the windows it opens stay off screen).
 expect move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
-  $LIBERTTY --ui-probe "$(sed "s|@N@|$RANDOM|g" $ROOT/tests/fixtures/move.txt)" $OUT
+  $LIBERTTY --ui-probe "$(sed "s|@N@|1$RANDOM$$|g" $ROOT/tests/fixtures/move.txt)" $OUT
 # Merge into Current Tab: another tab's panes (and parked ones) join the tab in front, still running.
 expect move-into-tab 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
-  $LIBERTTY --ui-probe "$(sed "s|@N@|$RANDOM|g" $ROOT/tests/fixtures/move-into-tab.txt)" $OUT --persist
+  $LIBERTTY --ui-probe "$(sed "s|@N@|2$RANDOM$$|g" $ROOT/tests/fixtures/move-into-tab.txt)" $OUT --persist
 # +split and +move-pane: panes arranged by session ID from a pane's shell.
 expect split-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/split-cli.txt)" $OUT --persist
