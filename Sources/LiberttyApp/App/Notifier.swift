@@ -18,7 +18,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// (a session shown in two windows reports it twice).
     private var recent: [String: Date] = [:]
 
-    private override init() {
+    // (Not private: a unit test makes one of its own.)
+    override init() {
         super.init()
         if available { UNUserNotificationCenter.current().delegate = self }
     }
@@ -33,6 +34,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private(set) var inbox: [Entry] = []
     /// Entries the inbox hasn't shown yet.
     private(set) var unread = 0
+    /// Banners sent to Notification Center so far (or that would have been,
+    /// run without an app bundle): what the UI probe counts.
+    private(set) var posted = 0
+    /// Times the Dock icon was asked to bounce (`bounceDock`).
+    private(set) var bounces = 0
     static let inboxChanged = Notification.Name("LiberttyInboxChanged")
 
     func markInboxRead() {
@@ -48,7 +54,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// `sound`: false when the caller plays a sound of its own for it.
-    func post(title: String, body: String, pane: String, sound: Bool = true) {
+    /// `quietly`: its pane's tab is muted (Mute Tab): the inbox keeps it,
+    /// as read already, and no banner goes out.
+    func post(title: String, body: String, pane: String, sound: Bool = true, quietly: Bool = false) {
         let key = pane + "\u{1}" + title + "\u{1}" + body
         let now = Date()
         recent = recent.filter { now.timeIntervalSince($0.value) < 2 }
@@ -56,8 +64,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         recent[key] = now
         inbox.insert(Entry(title: title.isEmpty ? "Libertty" : title, body: body, pane: pane, date: now), at: 0)
         if inbox.count > 100 { inbox.removeLast(inbox.count - 100) }
-        unread += 1
+        if !quietly { unread += 1 }
         NotificationCenter.default.post(name: Self.inboxChanged, object: nil)
+        guard !quietly else { return }
+        posted += 1
         guard available else { return }
 
         let content = UNMutableNotificationContent()
@@ -82,6 +92,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 }
             }
         }
+    }
+
+    /// The Dock icon bounces once (`bell-features = attention`). A probe's
+    /// app has no Dock icon: there it's only counted.
+    func bounceDock() {
+        bounces += 1
+        if !Probe.running { NSApp.requestUserAttention(.informationalRequest) }
     }
 
     /// Notifications about a pane go once it's been looked at.
@@ -137,5 +154,12 @@ enum StatusSound {
         recent[key] = now
         if Probe.running { return played.append(name.isEmpty ? "alert" : name) }
         if name.isEmpty { NSSound.beep() } else { NSSound(named: NSSound.Name(name))?.play() }
+    }
+
+    /// The bell's alert sound (`bell-features = system`), each time it
+    /// rings; under a probe only noted, as "bell".
+    static func bell() {
+        if Probe.running { return played.append("bell") }
+        NSSound.beep()
     }
 }

@@ -976,5 +976,10 @@
   "The rest were attached.": "其余的已附加。",
   "An item": "一项",
   "it's neither a picture nor a video": "它既不是图片也不是视频",
-  "Photos gave no file for it": "「照片」没有给出它的文件"
+  "Photos gave no file for it": "「照片」没有给出它的文件",
+  "Mute Tab": "将标签静音",
+  "Unmute Tab": "取消标签静音",
+  "Mute/Unmute Tab": "标签静音/取消静音",
+  "muted": "已静音",
+  "Muted: no sounds, notifications or badge count from this tab": "已静音：这个标签不出声、不发通知，也不计入角标"
 }

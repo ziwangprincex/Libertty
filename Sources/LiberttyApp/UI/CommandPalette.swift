@@ -175,17 +175,21 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private let promptAsker = NSTextField(labelWithString: "")
     /// Who asks, as `promptAsker` says it before any time left.
     private var asker = ""
+    /// Asked from a muted tab (Mute Tab): it waits over its window without
+    /// the Dock icon asking for you.
+    private var askedQuietly = false
     /// The questions up now, a window each (the palette itself is `current`).
     private static var prompts: [CommandPalette] = []
 
     /// Ask `prompt` over `controller`'s window, as a page of the palette
     /// (the palette open there gives way); `answered` hears how it ended:
     /// Return, a click, Esc. Nil when the window has nowhere to show it.
-    static func ask(_ prompt: ScriptPrompt, from asker: String, in controller: TerminalWindowController,
+    static func ask(_ prompt: ScriptPrompt, from asker: String, in controller: TerminalWindowController, quietly: Bool = false,
                     answered: @escaping (ScriptPrompt.Answer) -> Void) -> CommandPalette? {
         guard let window = controller.window, !prompts.contains(where: { $0.parent === window }) else { return nil }
         if let open = current, open.parent === window { open.close() }
         let page = CommandPalette(controller: controller, parent: window, prompt: prompt, asker: asker, answered: answered)
+        page.askedQuietly = quietly
         prompts.append(page)
         page.show()
         return page
@@ -521,6 +525,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Show Completions", .showCompletions, "text.line.first.and.arrowtriangle.forward")
         command("Clear Autocomplete History", .clearAutocompleteHistory, "clock.arrow.circlepath")
         command("Broadcast Input to All Panes", .toggleBroadcastInput, "dot.radiowaves.left.and.right")
+        // What it does to the tab in front now: mute it, or unmute it.
+        if let tab = controller?.selectedTab, tab.isTerminal {
+            command(tab.muted ? "Unmute Tab" : "Mute Tab", .toggleTabMute, tab.muted ? "speaker.wave.2" : TabMute.symbol)
+        }
         command("Export Text As…", .writeScrollbackFile("save"), "square.and.arrow.up")
         command("Open Scrollback in Tab", .writeScrollbackFile("open"), "doc.text")
         command("Paste", .pasteFromClipboard, "doc.on.clipboard")
@@ -1270,10 +1278,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // Libertty comes forward first: the palette must never take the keyboard
         // from another app (as it would, asked for from a script while you type elsewhere).
         // A script's question doesn't bring it forward: what's typed elsewhere
-        // could answer it. It waits over its window, the Dock icon asking once.
+        // could answer it. It waits over its window, the Dock icon asking once
+        // (not for a muted tab's script).
         if prompt == nil || NSApp.isActive {
             Probe.activateApp()
-        } else if !Probe.running {
+        } else if !Probe.running, !askedQuietly {
             NSApp.requestUserAttention(.informationalRequest)
         }
         parent.makeKeyAndOrderFront(nil)

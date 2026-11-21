@@ -526,6 +526,7 @@ enum SettingsShortcuts {
         ] + (1...8).map { e("Show Tab \($0)", "goto_tab:\($0)") } + [
             e("Show All Tabs", "toggle_tab_overview"), e("Change Tab Title…", "prompt_tab_title"),
             e("Move Tab to New Window", "move_tab_to_new_window"), e("Go to Directory…", "go_to_directory"),
+            e("Mute/Unmute Tab", "toggle_tab_mute"),
         ]),
         Group(title: "Panes", actions: [
             e("Split Right", "new_split:right"), e("Split Left", "new_split:left"), e("Split Down", "new_split:down"),

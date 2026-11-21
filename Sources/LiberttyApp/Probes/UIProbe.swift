@@ -132,7 +132,11 @@ import LiberttyCore
 ///   expect-focus:N       pane N of the tab in front has the keyboard
 ///   expect-status:TEXT   program states (OSC 7501) as they show include each word of TEXT: e.g.
 ///                        `tab=blocked dock=1 inbox=0 sounds=Ping` (the tab in front's
-///                        mark, the Dock badge, notifications so far, sounds so far)
+///                        mark, the Dock badge, notifications so far, sounds so far); also
+///                        `unread=N` (the inbox's unread), `posted=N` (banners sent out) and
+///                        `bounces=N` (the Dock icon asked to bounce); a bell's sound is `bell`
+///   expect-muted:N[:NAME] N tabs show the muted glyph (Mute Tab), where the tabs are, each
+///                        named NAME, VoiceOver saying "muted" of each
 ///   expect-capsules:TEXT the tab in front's minimized floating panes as their capsules show, where they
 ///                        are: `bottom-right: zsh, vim` (contains; `none`: no capsules), readable on their ground;
 ///                        `clear`: they cover no pane's header, composer or floating card
@@ -445,11 +449,12 @@ enum UIProbe {
                             && copy.everyTab.map { $0.parked.map { $0.floating != nil } } == controller.everyTab.map { $0.parked.map { $0.floating != nil } }
                             && copy.everyTab.map { $0.parked.map(\.floatingMinimized) } == controller.everyTab.map { $0.parked.map(\.floatingMinimized) }
                             && copy.collapsedGroups == controller.collapsedGroups
+                            && copy.everyTab.map(\.muted) == controller.everyTab.map(\.muted)
                         if same {
-                            print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy))")
+                            print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy)), muted \(copy.everyTab.map(\.muted))")
                         } else {
-                            print("FAIL  ui-probe roundtrip: \(copy.workspaceNames)/\(copy.activeWorkspace)/\(copy.workspaceTabs.map(\.count))/\(parked(copy)) "
-                                  + "vs \(controller.workspaceNames)/\(controller.activeWorkspace)/\(controller.workspaceTabs.map(\.count))/\(parked(controller))")
+                            print("FAIL  ui-probe roundtrip: \(copy.workspaceNames)/\(copy.activeWorkspace)/\(copy.workspaceTabs.map(\.count))/\(parked(copy))/\(copy.everyTab.map(\.muted)) "
+                                  + "vs \(controller.workspaceNames)/\(controller.activeWorkspace)/\(controller.workspaceTabs.map(\.count))/\(parked(controller))/\(controller.everyTab.map(\.muted))")
                             failures += 1
                         }
                     case .open(let path, let line, let edit):
@@ -1553,6 +1558,17 @@ enum UIProbe {
                             print("FAIL  ui-probe news rings: \(news.map { "\($0.title) \($0.offCenter)" }), not \(n)" + (text.isEmpty ? "" : " on \(text)"))
                             failures += 1
                         }
+                    case .expectMuted(let n, let text):
+                        // Tabs with the glyph (sidebar rows or top tabs, wherever the tabs are),
+                        // each one's VoiceOver label saying it's muted.
+                        let muted = controller.shownMutedTabs
+                        let said = muted.allSatisfy { $0.said.contains(L10n.t("muted")) }
+                        if muted.count == n, said, text.isEmpty || muted.allSatisfy({ $0.title.contains(text) }) {
+                            print("ok    ui-probe muted tabs: \(n)" + (text.isEmpty ? "" : " (\(text))") + ", said so")
+                        } else {
+                            print("FAIL  ui-probe muted tabs: \(muted.map { "\($0.title) (\($0.said))" }), not \(n)" + (text.isEmpty ? "" : " on \(text)"))
+                            failures += 1
+                        }
                     case .expectFloatingTitle(let want):
                         // What the first shown floating pane's bar says (contains).
                         let titles = (controller.selectedTab.container?.floats ?? []).map(\.shownTitle)
@@ -2122,6 +2138,8 @@ enum UIProbe {
         case expectGhost(String), expectCompletions(String)
         /// Controls in the app's windows on screen that VoiceOver reads by their role alone (the sidebar's apart).
         case expectUnlabeled(Int, String), expectUnlabeledSidebar(Int), expectFloatingTitle(String), expectNews(Int, String), expectSelectionCard, glideResize(Int, Double), pretendHost(String), sshSheet(String), fakeForward(String)
+        /// Tabs showing the muted glyph (Mute Tab): how many, and whose.
+        case expectMuted(Int, String)
         /// Something VoiceOver was told (AccessibilityNews) since the last of these said it ("-": nothing).
         case expectAnnounced(String)
         /// Attach Files… (or Attach from Photos…) with these picked, the
@@ -2311,6 +2329,10 @@ enum UIProbe {
                 // `expect-news:1:RINGER`: how many rows show a news ring, and whose.
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 steps.append(.expectNews(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
+            case "expect-muted":
+                // `expect-muted:1:QUIET`: how many tabs show the muted glyph, and whose.
+                let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
+                steps.append(.expectMuted(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
             case "expect-floating-title": steps.append(.expectFloatingTitle(arg))
             case "expect-unlabeled":
                 // `expect-unlabeled:0 palette`: how many, then what's on screen (for the output).

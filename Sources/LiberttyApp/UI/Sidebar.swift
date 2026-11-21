@@ -23,6 +23,8 @@ struct SidebarTabInfo: Equatable {
     var subtitle = ""
     /// A split tab's panes, listed from its pane count.
     var panes: [PaneSummary] = []
+    /// Muted (Mute Tab): a glyph beside its name says so.
+    var muted = false
 }
 
 /// One pane of a split tab, as its row's list shows it.
@@ -543,6 +545,18 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    /// The tabs whose row shows the muted glyph, each with what VoiceOver
+    /// hears of it (`--ui-probe`).
+    var shownMuted: [(title: String, said: String)] {
+        view.window?.contentView?.layoutSubtreeIfNeeded()
+        return tabs.indices.compactMap { i in
+            guard shows(row: i), let r = tableRow(ofTab: i),
+                  let cell = tabsTable.view(atColumn: 0, row: r, makeIfNecessary: false) as? TabCell,
+                  let said = cell.mutedSaid else { return nil }
+            return (tabs[i].title, said)
+        }
+    }
+
     /// The selection card's frame and the selected row's, in the table,
     /// and the list's scroller style (`--ui-probe`).
     var selectionCardFit: (card: NSRect, row: NSRect, legacy: Bool, scrollerShown: Bool, list: String) {
@@ -856,6 +870,7 @@ final class SidebarViewController: NSViewController {
         menu.addItem(withTitle: "Reset Name", action: #selector(resetTabName(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Duplicate Tab", action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Fork Conversation", action: #selector(forkConversation(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: TabMute.title(muted: menuTab?.muted == true), action: #selector(toggleMute(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Move Up", action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Move Down", action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
@@ -1041,6 +1056,10 @@ final class SidebarViewController: NSViewController {
         controller?.duplicateTab(at: row)
     }
 
+    @objc private func toggleMute(_ sender: Any?) {
+        if let tab = menuTab { controller?.toggleMute(tab) }
+    }
+
     @objc fileprivate func closeTab(_ sender: Any?) {
         let row = (sender as? NSButton).map { tab(atTableRow: tabsTable.row(for: $0)) ?? -1 } ?? menuRow
         if row >= 0 { controller?.closeTab(at: row) }
@@ -1175,7 +1194,8 @@ extension SidebarViewController: NSMenuDelegate {
 }
 
 extension SidebarViewController: NSMenuItemValidation {
-    /// Move Up/Down stop at the ends; Reset Name only for a renamed tab.
+    /// Move Up/Down stop at the ends; Reset Name only for a renamed tab;
+    /// Mute for a terminal's (a document has nothing to make a sound).
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         let row = menuRow
         switch item.action {
@@ -1183,6 +1203,7 @@ extension SidebarViewController: NSMenuItemValidation {
         case #selector(moveTabDown(_:)): return shownRow(from: row, by: 1) != nil
         case #selector(moveTabToNewWindow(_:)): return controller?.tab(at: row).map { controller?.canMoveTabOut($0) == true } ?? false
         case #selector(resetTabName(_:)): return row >= 0 && !(controller?.tabNameOverride(at: row) ?? "").isEmpty
+        case #selector(toggleMute(_:)): return row >= 0 && menuTab?.isTerminal == true
         case #selector(forkConversation(_:)):
             // Only where an agent runs; greyed out, with why, where its conversation isn't known.
             guard let pane = menuTab?.focusedPane, let controller,
@@ -1318,6 +1339,11 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     private var panes: [PaneSummary] = []
     private var titleCenter: NSLayoutConstraint!
     private var countCenter: NSLayoutConstraint!
+    /// Muted (Mute Tab): a speaker struck through, right after the name;
+    /// no room taken while the tab isn't.
+    private let mutedGlyph = NSImageView()
+    private var mutedWidth: NSLayoutConstraint!
+    private var mutedGap: NSLayoutConstraint!
     /// Picks one of the listed panes: (pane id, what to do with it).
     var onPane: ((String, SidebarViewController.PaneChoice) -> Void)?
     /// News waiting (a ring, on the name's line): accent, no other color.
@@ -1374,10 +1400,20 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         paneCount.isHidden = true
         paneCount.setContentHuggingPriority(.required, for: .horizontal)
         paneCount.setContentCompressionResistancePriority(.required, for: .horizontal)
-        for v in [well, dot, tiles, title, subtitle, paneCount, newsView, shortcut, close] {
+        mutedGlyph.image = NSImage(systemSymbolName: TabMute.symbol, accessibilityDescription: nil)
+        mutedGlyph.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+        mutedGlyph.contentTintColor = Ink.secondary
+        mutedGlyph.imageScaling = .scaleNone
+        // Said as the row is read: "server, muted".
+        mutedGlyph.setAccessibleLabel(L10n.t("muted"))
+        mutedGlyph.toolTip = L10n.t("Muted: no sounds, notifications or badge count from this tab")
+        mutedGlyph.isHidden = true
+        for v in [well, dot, tiles, title, subtitle, paneCount, mutedGlyph, newsView, shortcut, close] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
+        mutedGap = mutedGlyph.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 0)
+        mutedWidth = mutedGlyph.widthAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
             well.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             well.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1389,7 +1425,10 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
             tiles.centerXAnchor.constraint(equalTo: well.centerXAnchor),
             tiles.centerYAnchor.constraint(equalTo: centerYAnchor),
             title.leadingAnchor.constraint(equalTo: well.trailingAnchor, constant: 8),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: paneCount.leadingAnchor, constant: -4),
+            // The name gives way to the muted glyph after it, which keeps to its own width.
+            mutedGap, mutedWidth,
+            mutedGlyph.centerYAnchor.constraint(equalTo: title.centerYAnchor),
+            mutedGlyph.trailingAnchor.constraint(lessThanOrEqualTo: paneCount.leadingAnchor, constant: -4),
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 0),
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
@@ -1499,7 +1538,8 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         shown = (tab.title, extra.joined(separator: " · "), paragraph)
         showTitle()
         let panesText = tab.paneCount > 1 ? (tab.zoomed ? "\(tab.paneCount) panes, zoomed" : "\(tab.paneCount) panes") : ""
-        title.toolTip = ([tab.title] + extra + (panesText.isEmpty ? [] : [panesText]) + (tab.subtitle.isEmpty ? [] : [tab.subtitle]))
+        title.toolTip = ([tab.title] + extra + (panesText.isEmpty ? [] : [panesText]) + (tab.subtitle.isEmpty ? [] : [tab.subtitle])
+                         + (tab.muted ? [L10n.t("muted")] : []))
             .joined(separator: " · ")
         // The pane count, a click from the list of them.
         panes = tab.panes
@@ -1515,6 +1555,9 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         shortcut.stringValue = index < 8 ? "⌘\(index + 1)" : index == count - 1 ? "⌘9" : ""
         newsView.isHidden = !tab.showsNews
         if tab.showsNews { news.strokeColor = Accent.color.cgColor }
+        mutedGlyph.isHidden = !tab.muted
+        mutedWidth.constant = tab.muted ? 13 : 0
+        mutedGap.constant = tab.muted ? 4 : 0
         // The only tab's × would close the window: ⌘W says that better.
         closable = count > 1
         close.isHidden = !(closable && hovering)
@@ -1655,6 +1698,15 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     var newsOffCenter: CGFloat? {
         layoutSubtreeIfNeeded()
         return newsView.isHidden ? nil : newsView.frame.midY - title.frame.midY
+    }
+
+    /// What VoiceOver hears of the muted glyph, when it shows with room of
+    /// its own on the name's line (`--ui-probe`).
+    var mutedSaid: String? {
+        layoutSubtreeIfNeeded()
+        guard !mutedGlyph.isHidden, mutedGlyph.frame.width > 0, mutedGlyph.frame.minX >= title.frame.maxX,
+              abs(mutedGlyph.frame.midY - title.frame.midY) < 1 else { return nil }
+        return mutedGlyph.accessibilityLabel()
     }
 
     // The layer's colors are resolved once: follow the accent and the

@@ -89,7 +89,7 @@ final class ScriptPromptSession {
     private func start() -> Bool {
         guard let controller else { return false }
         let asker = pane.map { controller.askerLabel(of: $0) } ?? ""
-        palette = CommandPalette.ask(prompt, from: asker, in: controller) { [weak self] answer in
+        palette = CommandPalette.ask(prompt, from: asker, in: controller, quietly: pane.map(controller.isMuted) ?? false) { [weak self] answer in
             guard let self else { return }
             self.end(self.reply(to: answer), withdraw: false)
         }

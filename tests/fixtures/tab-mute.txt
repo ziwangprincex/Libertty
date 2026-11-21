@@ -1,0 +1,87 @@
+# Mute Tab (toggle_tab_mute): a muted tab goes on showing what it does —
+# its badge, its row, a speaker struck through beside its name — but its
+# bell, the notifications it asks for (OSC 9) and its program's states
+# (OSC 7501) make no sound, post no banner, don't bounce the Dock icon and
+# aren't counted on the Dock's badge; Activity keeps them, already read.
+# tests/run.sh gives it a config where the bell sounds and bounces and
+# waiting plays Ping. (A probe's app is never active: every pane counts as
+# out of sight.) `msg=aGVsZA==` is "held" in base64.
+key:cmd+shift+r
+wait:0.4
+type:quiet
+key:enter
+wait:0.5
+expect-tab:quiet
+expect-muted:0
+action:toggle_tab_mute
+wait:0.3
+expect-muted:1:quiet
+expect-tab:muted
+# (Its glyph is named for VoiceOver, not read as an image.)
+expect-unlabeled:0 muted tab
+type:printf '\a'; sleep 0.5; printf '\033]9;hello\a'; sleep 0.5; printf '\033]7501;state=blocked:app=probe:msg=aGVsZA==\a'; sleep 4
+key:enter
+wait:2.5
+expect-status:tab=blocked dock=0 inbox=2 unread=0 posted=0 sounds= bounces=0
+expect-activity:Waiting for you (1)|  sleep — held
+shot:tab-mute.png
+wait:3.0
+# The same from a tab that isn't muted: heard, posted, counted.
+tab:new
+wait:0.5
+key:cmd+shift+r
+wait:0.4
+type:loud
+key:enter
+wait:0.5
+expect-muted:1:quiet
+type:printf '\a'; sleep 0.5; printf '\033]9;hello\a'; sleep 0.5; printf '\033]7501;state=blocked:app=probe:msg=aGVsZA==\a'; sleep 4
+key:enter
+wait:2.5
+expect-status:tab=blocked dock=1 inbox=4 unread=2 posted=2 sounds=bell,Ping bounces=1
+wait:3.0
+# Muted from the palette while it waits for you: off the Dock's count at
+# once; unmuted, back on it. The palette says what it would do now.
+type:printf '\033]7501;state=blocked:app=probe:msg=aGVsZA==\a'; sleep 8
+key:enter
+wait:1.5
+expect-status:tab=blocked dock=1
+key:cmd+shift+p
+wait:0.4
+type:mute tab
+wait:0.3
+expect-palette:Mute Tab
+key:enter
+wait:0.5
+expect-muted:2
+expect-status:tab=blocked dock=0
+key:cmd+shift+p
+wait:0.4
+type:mute tab
+wait:0.3
+expect-palette:Unmute Tab
+key:enter
+wait:0.5
+expect-muted:1:quiet
+expect-status:tab=blocked dock=1
+wait:7.0
+# Muted it stays, moved to a window of its own and back, and saved with the window.
+tab:1
+action:move_tab_to_new_window
+expect-windows:2
+expect-other:muted
+take-tab:1
+wait:0.5
+expect-windows:1
+expect-muted:1:quiet
+roundtrip:go
+# The tabs along the top show it too.
+action:set_setting:tab-bar=top
+wait:2.0
+expect-strip:quiet
+expect-muted:1:quiet
+shot:tab-mute-strip.png
+# Back to the sidebar (the config as it was, for a run again).
+action:reset_setting:tab-bar
+wait:2.0
+expect-muted:1:quiet

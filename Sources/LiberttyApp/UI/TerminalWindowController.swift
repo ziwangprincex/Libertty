@@ -18,6 +18,9 @@ final class TerminalTab {
     var rang = false
     /// Broadcast Input: typing in one pane types in all of them.
     var broadcasting = false
+    /// Mute Tab: it goes on showing what it does, but nothing of it
+    /// interrupts you (`TabMute`). Saved with the window; goes where the tab goes.
+    var muted = false
     /// The git worktree it was made in (New Tab in Worktree…): closing it asks whether that goes too.
     var worktree: WorktreeInfo?
     /// Closing it is asking about its worktree now (a second ⌘W waits for that).
