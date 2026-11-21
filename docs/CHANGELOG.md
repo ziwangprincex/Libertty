@@ -11,7 +11,8 @@
 - **Attach Files… and Attach from Photos…** (Edit menu, the terminal's menu, the command palette; `insert_file` / `insert_photo` to bind a key): pick files and folders, or photos and videos in the system's Photos picker, and their paths are typed as dropping them would — quoted, one word each; on a host's pane they're uploaded there first. What Photos gives is kept as a file in its own format (a HEIC stays HEIC) where pasted images are, for a week; the picker runs apart from Libertty, so it asks no access to your library.
 - **Updates wait for a network that costs nothing**: with `auto-update = download`, the background download doesn't start in Low Data Mode or over a hotspot, stops if the network turns into one, and starts again by itself on one that doesn't. Check for Updates goes ahead regardless.
 - Fixed: with the sidebar hidden, switching tabs could hide the window's buttons in the panes' top row; a floating pane or the parked card in a top corner could sit under them. A closed pane kept for Undo no longer rings the bell.
-- The menu bar icon's menu is in the interface's language.
+- **The command palette is words only**: no picture before each row — the plain glyphs and Libertty's colored icons side by side didn't make one look. A setting's choices keep a ✓ for the one in use, and a script's any-of-these its boxes.
+- The menu bar icon's menu, and the palette's setting choices (Change Theme…, Cursor Style…, Line Height… and the rest), are in the interface's language.
 - Inside: `--ui-probe` gains `expect-strip-at`, `tab-menu:` / `tab-menu-not:`, `expect-muted`, `insert-files:` / `insert-photos:`, and `expect-status` reports banners, bounces and the bell; the fixtures `focus-history`, `tab-bar-bottom`, `move-into-tab`, `tab-mute`, `insert-file`. `tests/update-test.sh` wants a liberttyd of its own (docs/DEVELOPMENT.md).
 
 ## 0.7.4

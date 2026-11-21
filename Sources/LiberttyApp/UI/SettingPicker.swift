@@ -65,7 +65,7 @@ struct SettingPicker {
         SettingPicker(key: "adjust-cell-height", title: "Line Height", symbol: "arrow.up.and.down.text.horizontal") {
             [Option(label: "The font's own", value: "", detail: "default")]
                 + ["-10%", "-5%", "5%", "10%", "15%", "20%", "25%", "30%", "40%", "50%"].map {
-                    Option(label: $0.hasPrefix("-") ? "\($0) shorter" : "+\($0) taller", value: $0)
+                    Option(label: $0.hasPrefix("-") ? String(format: L10n.t("%@ shorter"), String($0.dropFirst())) : String(format: L10n.t("+%@ taller"), $0), value: $0)
                 }
         },
         SettingPicker(key: "minimum-contrast", title: "Minimum Text Contrast", symbol: "circle.lefthalf.filled") {
@@ -94,7 +94,7 @@ struct SettingPicker {
             }
         },
         SettingPicker(key: "unfocused-split-opacity", title: "Unfocused Pane Fade", symbol: "rectangle.split.2x1") {
-            [("1", "None"), ("0.85", "Light"), ("0.75", "Medium"), ("", "Default"), ("0.5", "Strong")].map {
+            [("1", "None"), ("0.85", "Slight"), ("0.75", "Medium"), ("", "Default"), ("0.5", "Strong")].map {
                 Option(label: $0.1, value: $0.0, detail: $0.0.isEmpty ? "65%" : "\(Int((Double($0.0) ?? 1) * 100))%")
             }
         },

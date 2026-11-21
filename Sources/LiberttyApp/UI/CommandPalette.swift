@@ -607,7 +607,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         names += ThemeLibrary.shared.entries.map(\.name).filter { !known.contains($0.lowercased()) }
         for name in names {
             let value = name.contains(",") ? "\"\(name)\"" : name
-            out.append(Item(title: "Theme: \(name)", symbol: "paintpalette", kind: .theme, preview: [("theme", value)]) {
+            out.append(Item(title: L10n.t("Theme") + L10n.t(": ") + name, symbol: "paintpalette", kind: .theme, preview: [("theme", value)],
+                            keywords: "Theme") {
                 ConfigStore.shared.set("theme", value)
             })
         }
@@ -617,8 +618,9 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             // The theme's and the font's names are their labels: not every
             // theme and font listed (and each set on a Config) to find it.
             let now = picker.labelIsValue ? picker.currentLabel
-                : picker.options().first { Self.isCurrent($0, of: picker) }?.label ?? picker.current
-            out.append(Item(title: "Change \(picker.title)…", subtitle: now, symbol: picker.symbol, kind: .setting, picker: picker) {})
+                : picker.options().first { Self.isCurrent($0, of: picker) }.map { L10n.t($0.label) } ?? picker.current
+            out.append(Item(title: String(format: L10n.t("Change %@…"), L10n.t(picker.title)), subtitle: now, symbol: picker.symbol,
+                            kind: .setting, picker: picker, keywords: "Change \(picker.title)") {})
         }
         // Every other key, typed in place: the whole config from here, not
         // only the file. (Not the repeatable ones, nor what +set refuses.)
@@ -735,13 +737,14 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         self.picker = picker
         all = picker.options().map { option in
             let current = Self.isCurrent(option, of: picker)
-            return Item(title: option.label, subtitle: option.detail, symbol: current ? "checkmark" : "",
+            // (A theme's or a font's name has no translation: it stays itself.)
+            return Item(title: L10n.t(option.label), subtitle: L10n.t(option.detail), symbol: current ? "checkmark" : "",
                         kind: .option, preview: [(picker.key, option.value)], font: option.font) {
                 ConfigStore.shared.set(picker.key, option.value.isEmpty ? nil : option.value)
             }
         }
         field.stringValue = ""
-        field.placeholderString = "\(picker.title): ↑ ↓ to try one, ↵ to keep it"
+        field.placeholderString = String(format: L10n.t("%@: ↑ ↓ to try one, ↵ to keep it"), L10n.t(picker.title))
         for (_, chip) in chips { chip.isHidden = true }
         // The window as it'll look, not dimmed behind the palette.
         dim?.isHidden = true
@@ -1457,7 +1460,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         if noMatches {
             let cell = tableView.makeView(withIdentifier: PaletteCell.identifier, owner: nil) as? PaletteCell ?? PaletteCell()
-            cell.show(Item(title: noMatchesText, symbol: "magnifyingglass") {}, dim: true)
+            cell.show(Item(title: noMatchesText, symbol: "") {}, dim: true)
             return cell
         }
         switch rows[row] {
@@ -1468,7 +1471,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         case .item(let item):
             let cell = tableView.makeView(withIdentifier: PaletteCell.identifier, owner: nil) as? PaletteCell ?? PaletteCell()
             // A key's help, under what the typed value does: quieter.
-            cell.show(item, dim: editing != nil && item.symbol.isEmpty)
+            cell.show(item, dim: editing != nil && item.symbol.isEmpty, marks: picker != nil || prompt?.multiple == true)
             return cell
         }
     }
@@ -1662,10 +1665,16 @@ private final class PaletteGroupCell: NSTableCellView {
     required init?(coder: NSCoder) { fatalError() }
 }
 
+/// A row of the palette: words only — what it is, a quieter detail, its
+/// keys. No picture: a list of glyphs and Libertty's own colored icons side
+/// by side read as noise. Only a list where a row's state matters (a
+/// setting's choices, a script's any-of-these) keeps a mark in a column of
+/// its own: the one in use, the ones ticked.
 private final class PaletteCell: NSTableCellView {
     static let identifier = NSUserInterfaceItemIdentifier("PaletteCell")
-    private let tile = NSView()
+    /// The state mark, in a list that has them.
     private let icon = NSImageView()
+    private var titleLeading: NSLayoutConstraint!
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
     private let keys = NSStackView()
@@ -1678,9 +1687,7 @@ private final class PaletteCell: NSTableCellView {
     init() {
         super.init(frame: .zero)
         identifier = Self.identifier
-        tile.wantsLayer = true
-        tile.layer?.cornerRadius = 7
-        icon.symbolConfiguration = .init(pointSize: 12.5, weight: .regular)
+        icon.symbolConfiguration = .init(pointSize: 13, weight: .regular)
         icon.contentTintColor = .secondaryLabelColor
         title.font = Typeface.row
         title.lineBreakMode = .byTruncatingTail
@@ -1688,22 +1695,20 @@ private final class PaletteCell: NSTableCellView {
         subtitle.textColor = .tertiaryLabelColor
         subtitle.lineBreakMode = .byTruncatingMiddle
         keys.spacing = 3
-        // The row reads by its words; its icon is a picture of them.
+        // The row reads by its words; its mark is a picture of its state (said with the row).
         icon.hideFromAccessibility()
-        for v in [tile, icon, title, subtitle, keys] {
+        for v in [icon, title, subtitle, keys] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
         title.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         keys.setContentHuggingPriority(.required, for: .horizontal)
+        titleLeading = title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.textInset)
         NSLayoutConstraint.activate([
-            tile.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            tile.centerYAnchor.constraint(equalTo: centerYAnchor),
-            tile.widthAnchor.constraint(equalToConstant: 26), tile.heightAnchor.constraint(equalToConstant: 26),
-            icon.centerXAnchor.constraint(equalTo: tile.centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
-            title.leadingAnchor.constraint(equalTo: tile.trailingAnchor, constant: 12),
+            icon.centerXAnchor.constraint(equalTo: leadingAnchor, constant: Self.textInset + Self.markWidth / 2),
+            icon.centerYAnchor.constraint(equalTo: title.centerYAnchor),
+            titleLeading,
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: keys.leadingAnchor, constant: -10),
             keys.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             keys.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1720,24 +1725,19 @@ private final class PaletteCell: NSTableCellView {
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: Self.stackedGap),
         ]
         NSLayoutConstraint.activate(inline)
-        updateColors()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    private func updateColors() {
-        tile.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateColors()
-    }
-
     static let stackedPadding: CGFloat = 9, stackedGap: CGFloat = 2, stackedLines = 2
-    /// From the row's leading edge to the title, and after the subtitle.
-    static let textInset: CGFloat = 18 + 26 + 12, trailingInset: CGFloat = 18 + 10
+    /// From the row's leading edge to the title (where a group's heading
+    /// starts too), and after the subtitle.
+    static let textInset: CGFloat = 20, trailingInset: CGFloat = 18 + 10
+    /// A mark's column, before the title, in a list that has marks.
+    static let markWidth: CGFloat = 16, markGap: CGFloat = 8
+    /// The marks a row can wear: a choice in use, a box ticked or not.
+    static let marks: Set<String> = ["checkmark", "checkmark.square", "square"]
 
     /// A row that only explains: its sentence under the title, whole.
     static func isStacked(_ item: CommandPalette.Item) -> Bool { item.inert && !item.subtitle.isEmpty }
@@ -1757,20 +1757,17 @@ private final class PaletteCell: NSTableCellView {
 
     override func layout() {
         // A sentence wraps at the row's width.
-        subtitle.preferredMaxLayoutWidth = isStacked ? max(100, bounds.width - Self.textInset - Self.trailingInset) : 0
+        subtitle.preferredMaxLayoutWidth = isStacked ? max(100, bounds.width - titleLeading.constant - Self.trailingInset) : 0
         super.layout()
     }
 
-    func show(_ item: CommandPalette.Item, dim: Bool = false) {
-        // A tool or a document: Libertty's own picture, near the tile's size; else its symbol.
-        if let picture = FeatureIcon.image(forSymbol: item.symbol)?.copy() as? NSImage {
-            picture.size = NSSize(width: 18 * FeatureIcon.bleed, height: 18 * FeatureIcon.bleed)
-            icon.image = picture
-        } else {
-            icon.image = item.symbol.isEmpty ? nil : NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
-        }
-        // A picker's options: a tile for the one in use (its check) only.
-        tile.isHidden = item.symbol.isEmpty
+    /// `marks`: the list keeps a column for marks (a setting's choices, a
+    /// script's any-of-these), whether this row wears one or not.
+    func show(_ item: CommandPalette.Item, dim: Bool = false, marks: Bool = false) {
+        let mark = marks && Self.marks.contains(item.symbol)
+        icon.image = mark ? NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil) : nil
+        icon.isHidden = !mark
+        titleLeading.constant = Self.textInset + (marks ? Self.markWidth + Self.markGap : 0)
         title.font = item.font ?? Typeface.row
         title.stringValue = item.title
         title.textColor = dim ? .secondaryLabelColor : .labelColor
