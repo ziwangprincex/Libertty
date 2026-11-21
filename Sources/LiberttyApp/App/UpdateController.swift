@@ -17,6 +17,10 @@ final class UpdateController: NSObject {
     private var ready: (release: Updater.Release, zip: URL)?
     /// The version the background check is downloading (`auto-update = download`).
     private var downloading: String?
+    /// Found by the background check, its download put off until the network
+    /// costs nothing (Low Data Mode, a hotspot).
+    private var waiting: Updater.Release?
+    private var costObserver: NSObjectProtocol?
     private static let skippedKey = "UpdateSkippedVersion"
     private static let lastCheckKey = "UpdateLastCheck"
 
@@ -51,9 +55,16 @@ final class UpdateController: NSObject {
                     return
                 }
                 if mode == .download {
+                    let cost = NetworkCost.shared.current
+                    guard cost == .free else { return wait(for: release, cost) }
                     downloading = release.version
                     defer { downloading = nil }
-                    let zip = try await Updater.download(release) { _ in }
+                    let zip: URL
+                    do {
+                        zip = try await Updater.download(release, frugal: true) { _ in }
+                    } catch Updater.Failure.costlyNetwork(let kind) {
+                        return wait(for: release, kind)
+                    }
                     ready = (release, zip)
                     busy = false
                     announceReady(release)
@@ -68,6 +79,25 @@ final class UpdateController: NSObject {
                 busy = false
                 // Quiet in the background: the next check tries again.
                 NSLog("Libertty: update check: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// The background download waits for a network that costs nothing; it
+    /// starts again by itself once there's one. Check for Updates… doesn't
+    /// wait: what the user asks for goes ahead.
+    private func wait(for release: Updater.Release, _ cost: NetworkCost.Kind) {
+        busy = false
+        waiting = release
+        probeLog.append("download of \(release.version) waits: \(cost.rawValue)")
+        guard costObserver == nil else { return }
+        costObserver = NotificationCenter.default.addObserver(forName: NetworkCost.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.waiting != nil, NetworkCost.shared.current == .free else { return }
+                self.waiting = nil
+                if let observer = self.costObserver { NotificationCenter.default.removeObserver(observer) }
+                self.costObserver = nil
+                self.checkInBackground()
             }
         }
     }

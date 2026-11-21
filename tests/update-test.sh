@@ -8,6 +8,11 @@
 #      (a UI probe answers the dialog).
 # Its bundles are its own: build/Libertty.app (perhaps the Libertty you're
 # using) is left alone.
+#
+# Never the user's own liberttyd: the --persist probes below would take its
+# sessions over. Give it a private LIBERTTY_DAEMON_SOCKET and LIBERTTY_DATA_DIR.
+[[ -n ${LIBERTTY_DAEMON_SOCKET:-} && -n ${LIBERTTY_DATA_DIR:-} ]] \
+  || { echo "set a private LIBERTTY_DAEMON_SOCKET and LIBERTTY_DATA_DIR (as tests/run.sh does)"; exit 2; }
 set -euo pipefail
 ROOT=${0:A:h:h}
 cd $ROOT
@@ -51,12 +56,20 @@ LIBERTTY_PROBES=1 LIBERTTY_APP=$T/gui/Libertty.app scripts/bundle.sh release > /
 out=$($T/gui/Libertty.app/Contents/MacOS/Libertty --ui-probe $'update:install\nexpect-app-version:99.0.0' $T/probe 2>&1)
 [[ $out == *"ok    ui-probe app is 99.0.0"* ]] && ok "Check for Updates, Install and Restart installs it" \
   || bad "the dialog's install: $(print -r -- $out | grep -v '^(no LIBERTTY')"
-# auto-update = download, auto-update-restart = idle: fetched in the
-# background, then installed on its own once nobody would notice (the
-# probe's app is never in front; --persist keeps its sessions through it).
+# In Low Data Mode (or over a hotspot) the background download waits, and
+# nothing is installed; what the user asks for (Check for Updates) doesn't.
 LIBERTTY_PROBES=1 LIBERTTY_APP=$T/idle/Libertty.app scripts/bundle.sh release > /dev/null 2>&1
 mkdir -p $T/idle-config/libertty
 printf 'auto-update = download\nauto-update-restart = idle\n' > $T/idle-config/libertty/config
+out=$(env XDG_CONFIG_HOME=$T/idle-config LIBERTTY_NETWORK_COST=low-data $T/idle/Libertty.app/Contents/MacOS/Libertty \
+  --ui-probe $'update-background:go' $T/probe-wait --persist 2>&1)
+[[ $out == *"update: download of 99.0.0 waits: low-data"* && $out != *"installed 99.0.0"* ]] \
+  && [[ $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' $T/idle/Libertty.app/Contents/Info.plist) != 99.0.0 ]] \
+  && ok "in Low Data Mode the background download waits" \
+  || bad "Low Data Mode: $(print -r -- $out | grep -E 'FAIL|update' | head -5)"
+# auto-update = download, auto-update-restart = idle: fetched in the
+# background, then installed on its own once nobody would notice (the
+# probe's app is never in front; --persist keeps its sessions through it).
 out=$(env XDG_CONFIG_HOME=$T/idle-config $T/idle/Libertty.app/Contents/MacOS/Libertty \
   --ui-probe $'update-background:go\nexpect-app-version:99.0.0' $T/probe-idle --persist 2>&1)
 [[ $out == *"ok    ui-probe app is 99.0.0"* ]] && ok "downloaded in the background, installed when idle" \

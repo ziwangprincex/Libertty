@@ -32,6 +32,8 @@ enum Updater {
 
     enum Failure: LocalizedError {
         case noFeed, unreachable(String), badFeed, tooOld(String), download(String), verification(String), install(String)
+        /// A frugal download stopped: the network turned into one that costs.
+        case costlyNetwork(NetworkCost.Kind)
 
         var errorDescription: String? {
             switch self {
@@ -42,6 +44,8 @@ enum Updater {
             case .download(let why): "The download failed (\(why))."
             case .verification(let why): "The download didn't verify, so it wasn't installed (\(why))."
             case .install(let why): "The update couldn't be installed (\(why))."
+            case .costlyNetwork(let kind): kind == .hotspot ? "The download waits for a network that isn't a hotspot."
+                : "The download waits for a network that isn't in Low Data Mode."
             }
         }
     }
@@ -104,14 +108,26 @@ enum Updater {
     // MARK: Downloading and verifying
 
     /// Download the release's zip and check its size, SHA-256 and signature.
-    static func download(_ release: Release, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    /// `frugal`: nobody asked for it (the background download), so it stops
+    /// rather than run on in Low Data Mode or over a hotspot.
+    static func download(_ release: Release, frugal: Bool = false,
+                         progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         guard let url = URL(string: release.url) else { throw Failure.badFeed }
         let delegate = ProgressDelegate(expected: release.size, progress: progress)
-        let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.ephemeral
+        if frugal {
+            configuration.allowsConstrainedNetworkAccess = false
+            configuration.allowsExpensiveNetworkAccess = false
+        }
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         let temporary: URL, response: URLResponse
         do {
             (temporary, response) = try await session.download(from: url)
+        } catch let error as URLError where error.networkUnavailableReason == .constrained {
+            throw Failure.costlyNetwork(.lowData)
+        } catch let error as URLError where error.networkUnavailableReason == .expensive {
+            throw Failure.costlyNetwork(.hotspot)
         } catch {
             throw Failure.download(error.localizedDescription)
         }

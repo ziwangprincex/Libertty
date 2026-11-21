@@ -44,6 +44,15 @@ import LiberttyCore
         #expect(!may(unsaved: true))      // an edited document
         #expect(!may(asking: true))       // a sheet waits for an answer
     }
+
+    /// The background download waits out Low Data Mode before a hotspot.
+    @Test func whatTheNetworkCosts() {
+        #expect(NetworkCost.kind(constrained: false, expensive: false) == .free)
+        #expect(NetworkCost.kind(constrained: true, expensive: false) == .lowData)
+        #expect(NetworkCost.kind(constrained: false, expensive: true) == .hotspot)
+        #expect(NetworkCost.kind(constrained: true, expensive: true) == .lowData)
+        #expect(Updater.Failure.costlyNetwork(.hotspot).errorDescription?.contains("hotspot") == true)
+    }
 }
 
 @Suite struct PrivacyAccessTests {

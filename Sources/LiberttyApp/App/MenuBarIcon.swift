@@ -35,24 +35,27 @@ final class MenuBarIcon: NSObject, NSMenuDelegate {
         button.image = image
         button.imagePosition = .imageLeading
         button.title = count > 0 ? " \(count)" : ""
-        button.toolTip = count > 0 ? "\(count) waiting for you" : "Libertty"
+        button.toolTip = count > 0 ? Self.waitingText(count) : "Libertty"
         // Not "Libertty, 2": what the 2 is.
-        button.setAccessibleLabel(count > 0 ? "Libertty, " + L10n.t("%d waiting for you").replacingOccurrences(of: "%d", with: String(count))
-                                            : "Libertty")
+        button.setAccessibleLabel(count > 0 ? "Libertty, " + Self.waitingText(count) : "Libertty")
     }
 
-    /// The menu, as things are when it opens.
+    private static func waitingText(_ count: Int) -> String {
+        L10n.t("%d waiting for you").replacingOccurrences(of: "%d", with: String(count))
+    }
+
+    /// The menu, as things are when it opens (in the interface's language).
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         func add(_ title: String, _ symbol: String, _ action: @escaping () -> Void) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: #selector(run(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.t(title), action: #selector(run(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = Box(action)
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
             menu.addItem(item)
             return item
         }
-        let header = NSMenuItem(title: waiting > 0 ? "\(waiting) waiting for you" : "Nothing waiting for you", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: waiting > 0 ? Self.waitingText(waiting) : L10n.t("Nothing waiting for you"), action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         if waiting > 0 {
@@ -71,13 +74,13 @@ final class MenuBarIcon: NSObject, NSMenuDelegate {
         let awake = NSMenu()
         let mode = ConfigStore.shared.config.keepAwake
         for (value, title) in [(KeepAwake.Mode.never, "Never"), (.agents, "While Agents Work"), (.always, "Always")] {
-            let item = NSMenuItem(title: title, action: #selector(run(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.t(title), action: #selector(run(_:)), keyEquivalent: "")
             item.target = self
             item.state = value == mode ? .on : .off
             item.representedObject = Box { _ = SettingsModel.shared.write("keep-awake", value.rawValue) }
             awake.addItem(item)
         }
-        let awakeItem = NSMenuItem(title: "Keep Mac Awake", action: nil, keyEquivalent: "")
+        let awakeItem = NSMenuItem(title: L10n.t("Keep Mac Awake"), action: nil, keyEquivalent: "")
         awakeItem.image = NSImage(systemSymbolName: "cup.and.saucer", accessibilityDescription: nil)
         awakeItem.submenu = awake
         menu.addItem(awakeItem)
