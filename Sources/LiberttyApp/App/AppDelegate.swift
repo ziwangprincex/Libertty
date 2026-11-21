@@ -976,6 +976,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             let view = NSApp.keyWindow?.firstResponder as? TerminalView
             item.state = view?.isReadOnly == true ? .on : .off
             return view != nil
+        case .insertFile, .insertPhoto:
+            // A terminal has the keyboard and takes input.
+            return controller?.insertionPane != nil
         case .toggleWindowFloatOnTop:
             item.state = controller?.isFloatingOnTop == true ? .on : .off
             return controller != nil
@@ -1128,6 +1131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         edit.addItem(.separator())
         item("Copy", .copyToClipboard, selector: #selector(NSText.copy(_:)), in: edit)
         item("Paste", .pasteFromClipboard, selector: #selector(NSText.paste(_:)), in: edit)
+        item("Attach Files…", .insertFile, symbol: "doc.badge.plus", in: edit)
+        item("Attach from Photos…", .insertPhoto, symbol: "photo.badge.plus", in: edit)
         item("Select All", .selectAll, selector: #selector(NSResponder.selectAll(_:)), in: edit)
         item("Copy Output of Last Command", .copyCommandOutput, symbol: "text.append", in: edit)
         item("Copy Mode", .toggleCopyMode, symbol: "character.cursor.ibeam", in: edit)

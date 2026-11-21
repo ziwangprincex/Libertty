@@ -218,6 +218,8 @@ enum Action: Equatable {
     case gotoSplit(SplitTarget), resizeSplit(Direction, Int), equalizeSplits, toggleSplitZoom
     case increaseFontSize(Double), decreaseFontSize(Double), resetFontSize
     case copyToClipboard, pasteFromClipboard, selectAll, clearScreen
+    /// Files (or photos and videos from Photos) picked in a panel, typed into the pane as a drop types them.
+    case insertFile, insertPhoto
     case scrollToTop, scrollToBottom, scrollPageUp, scrollPageDown, scrollPageLines(Int), jumpToPrompt(Int)
     case text(String), csi(String), esc(String)
     case promptSurfaceTitle, promptTabTitle, toggleReadonly
@@ -253,6 +255,7 @@ enum Action: Equatable {
         ("reset_font_size", .resetFontSize),
         ("copy_to_clipboard", .copyToClipboard), ("paste_from_clipboard", .pasteFromClipboard),
         ("select_all", .selectAll), ("clear_screen", .clearScreen),
+        ("insert_file", .insertFile), ("insert_photo", .insertPhoto),
         ("scroll_to_top", .scrollToTop), ("scroll_to_bottom", .scrollToBottom),
         ("scroll_page_up", .scrollPageUp), ("scroll_page_down", .scrollPageDown),
         ("prompt_surface_title", .promptSurfaceTitle), ("prompt_tab_title", .promptTabTitle),
@@ -406,6 +409,8 @@ enum Action: Equatable {
         ("increase_font_size:N", "Bigger text by N points"), ("decrease_font_size:N", "Smaller text by N points"),
         ("reset_font_size", "Back to the configured font size"),
         ("copy_to_clipboard", "Copy the selection"), ("paste_from_clipboard", "Paste"), ("select_all", "Select everything"),
+        ("insert_file", "Pick files or folders and type their quoted paths into the focused pane, as dropping them would (on a host's pane they're uploaded there first)"),
+        ("insert_photo", "Pick photos and videos from your Photos library: each is saved as a file, its path typed into the focused pane as insert_file does"),
         ("clear_screen", "Clear the screen and scrollback; the shell redraws its prompt"),
         ("scroll_to_top", "Scroll to the start of the scrollback"), ("scroll_to_bottom", "Scroll back to the prompt"),
         ("scroll_page_up", "Scroll up a page"), ("scroll_page_down", "Scroll down a page"),

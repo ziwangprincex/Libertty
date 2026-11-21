@@ -1,0 +1,72 @@
+# Attach Files… and Attach from Photos… (insert_file, insert_photo): what's
+# picked is typed into the pane as a drop types it, one quoted word each
+# and a space. The pickers can't be driven, so the probe picks for them
+# (insert-files:, insert-photos:) and the rest runs as the menu runs it. A
+# read-only pane takes none. What Photos gives is kept as a file where
+# pasted images are, in its own format (a HEIC stays HEIC), and that
+# file's path typed. @DIR@: this test's folder; @ROOT@: the repository.
+size:1280x800
+shell:mkdir -p "@DIR@" && : > "@DIR@/a b.txt" && : > "@DIR@/it's.txt"
+shell:cp "@ROOT@/assets/icon/png/libertty-32.png" "@DIR@/Screen Shot.png" && sips -s format heic "@ROOT@/assets/icon/png/libertty-32.png" --out "@DIR@/IMG_0001.heic" > /dev/null
+wait:1.5
+type:printf '<%s>\n'
+key:space
+insert-files:@DIR@/a b.txt|@DIR@/it's.txt
+key:enter
+wait:0.8
+expect:<@DIR@/a b.txt>
+expect:<@DIR@/it's.txt>
+# Read-only: nothing typed, and the action says it didn't run.
+action:toggle_readonly
+insert-files-refused:@DIR@/refused.txt
+insert-photos-refused:@DIR@/IMG_0001.heic
+action:toggle_readonly
+type:echo READ-ONLY-DONE
+key:enter
+wait:0.8
+expect:READ-ONLY-DONE
+expect-not:refused.txt
+expect-not:IMG_0001.heic
+# From Photos: copies, named after the photo, in the order picked.
+type:printf '[%s]\n'
+key:space
+insert-photos:@DIR@/IMG_0001.heic|@DIR@/Screen Shot.png
+key:enter
+wait:0.8
+expect:-IMG_0001.heic]
+expect:-Screen-Shot.png]
+expect:libertty-paste/photo-
+expect-shell:ls "$LIBERTTY_DATA_DIR/libertty-paste" ==> -IMG_0001.heic
+expect-shell:sips -g format "$LIBERTTY_DATA_DIR"/libertty-paste/photo-*-IMG_0001.heic ==> format: heic
+expect-shell:ls "@DIR@" ==> IMG_0001.heic
+# What can't be had from Photos says so on the window, and nothing's typed.
+type:echo NOTHING-TYPED:
+insert-photos:@DIR@/a b.txt
+expect-sheet:yes
+expect-sheet-text:neither a picture nor a video
+sheet:OK
+expect-sheet:no
+key:enter
+wait:0.8
+expect:NOTHING-TYPED:
+expect-not:NOTHING-TYPED:/
+expect-not:NOTHING-TYPED:'
+# On a host's pane (the stand-in ssh's, LIBERTTY_SSH): sent there first,
+# and where it is there typed. (The window takes the host's name; its new
+# split runs there.)
+shell:printf 'sent-to-the-host\n' > "@DIR@/up load.txt"
+pretend-host:liberttytest
+action:new_split:right
+wait:6
+type:echo HOST-UP-$((40+2))
+key:enter
+wait:1.0
+expect:HOST-UP-42
+type:cat
+key:space
+insert-files:@DIR@/up load.txt
+wait:1.5
+expect:/uploads/
+key:enter
+wait:0.8
+expect:sent-to-the-host

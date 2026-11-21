@@ -47,6 +47,12 @@ enum ActionDispatcher {
             if doc.isEditing { doc.leaveEditor() } else { doc.setEditing(true) }
         case .copyToClipboard: view?.copy(nil)
         case .pasteFromClipboard: view?.paste(nil)
+        case .insertFile, .insertPhoto:
+            // The terminal that has the keyboard, taking input: not a
+            // document, not a read-only pane.
+            guard let pane = controller != nil ? controller?.insertionPane : view.flatMap({ $0.isReadOnly ? nil : $0 })
+            else { return false }
+            if action == .insertFile { pane.chooseFilesToInsert() } else { pane.choosePhotosToInsert() }
         case .selectAll: view?.selectAll(nil)
         case .clearScreen: view?.clearScreen()
         case .scrollToTop: view?.scroll { $0.scrollToTop() }
@@ -170,10 +176,12 @@ enum ActionDispatcher {
     }
 
     /// What `libertty +action` may do. Typing into a terminal (text/csi/esc,
-    /// paste) and quitting are left out: any local process can post these.
+    /// paste, a picker's files) and quitting are left out: any local process
+    /// can post these.
     static func allowedRemotely(_ action: Action) -> Bool {
         switch action {
-        case .text, .csi, .esc, .pasteFromClipboard, .quit, .unbind, .toggleSecureInput, .toggleReadonly: false
+        case .text, .csi, .esc, .pasteFromClipboard, .insertFile, .insertPhoto, .quit, .unbind, .toggleSecureInput,
+             .toggleReadonly: false
         case .writeScrollbackFile("paste"), .writeSelectionFile("paste"): false
         default: true
         }

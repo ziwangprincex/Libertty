@@ -64,11 +64,12 @@ enum PasteContent: Equatable {
         return url.path
     }
 
-    /// Removes earlier pastes' images last written before `before`, and nothing else.
+    /// Removes earlier pastes' images, and photos and videos attached from
+    /// Photos (InsertFiles), last written before `before`, and nothing else.
     static func prune(_ directory: URL, before: Date) {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return }
-        for name in names where name.hasPrefix("paste-") && name.hasSuffix(".png") {
+        for name in names where name.hasPrefix("paste-") && name.hasSuffix(".png") || name.hasPrefix("photo-") {
             let url = directory.appendingPathComponent(name)
             if let date = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date, date < before {
                 try? fm.removeItem(at: url)
@@ -76,7 +77,7 @@ enum PasteContent: Equatable {
         }
     }
 
-    private static let stamp: DateFormatter = {
+    static let stamp: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyyMMdd-HHmmss"
