@@ -74,6 +74,11 @@ final class TabStrip: NSView {
     /// What each tab says as drawn, a name being typed included (`--ui-probe`).
     var shownNames: [String] { buttons.map(\.shownName) }
 
+    /// The tabs showing the muted glyph, each with what VoiceOver says of it (`--ui-probe`).
+    var shownMuted: [(title: String, said: String)] {
+        zip(buttons, tabs).compactMap { button, tab in button.mutedSaid.map { (tab.title, $0) } }
+    }
+
     @objc private func showWorkspaces(_ sender: NSView) { controller?.showWorkspaceMenu(from: sender) }
 
     /// The workspace's name, shown once the window has several.
@@ -247,6 +252,10 @@ final class TabStrip: NSView {
         }
         item("Reset Name", enabled: !tab.titleOverride.isEmpty) { [weak self] now in self?.controller?.renameTab(at: now, to: "") }
         item("Duplicate Tab") { [weak self] now in self?.controller?.duplicateTab(at: now) }
+        item(TabMute.title(muted: tab.muted), enabled: tab.isTerminal) { [weak self] now in
+            guard let controller = self?.controller, let tab = controller.tab(at: now) else { return }
+            controller.toggleMute(tab)
+        }
         menu.addItem(.separator())
         item("Move Left", enabled: i > 0) { [weak self] now in self?.controller?.moveTab(from: now, to: now - 1) }
         item("Move Right", enabled: i < tabs.count - 1) { [weak self] now in self?.controller?.moveTab(from: now, to: now + 1) }
@@ -332,6 +341,8 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
     private let title = NSTextField(labelWithString: "")
     private let news = CAShapeLayer()
     private let newsView = NSView()
+    /// Muted (Mute Tab): a speaker struck through, before the news ring.
+    private let mutedGlyph = NSImageView()
     private let close = NSButton()
     private var tracking: NSTrackingArea?
     private var hovering = false
@@ -360,10 +371,16 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         news.fillColor = nil
         newsView.layer?.addSublayer(news)
         newsView.isHidden = true
-        for v in [badge, tiles, title, newsView, close] { addSubview(v) }
+        mutedGlyph.image = NSImage(systemSymbolName: TabMute.symbol, accessibilityDescription: nil)
+        mutedGlyph.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+        mutedGlyph.contentTintColor = .secondaryLabelColor
+        mutedGlyph.imageScaling = .scaleNone
+        mutedGlyph.isHidden = true
+        for v in [badge, tiles, title, newsView, mutedGlyph, close] { addSubview(v) }
         // Its name, state and news are in its label; its × (shown under the
         // pointer only) and renaming are actions VoiceOver offers on it.
         title.hideFromAccessibility()
+        mutedGlyph.hideFromAccessibility()
         setAccessibilityElement(true)
         setAccessibilityRole(.radioButton)
         setAccessibilityCustomActions([
@@ -395,7 +412,8 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
     var naturalWidth: CGFloat {
         let glyph = showsBadge ? 13 : tiles.intrinsicContentSize.width
         let text = ceil(title.intrinsicContentSize.width)  // the cell's own padding included
-        return Self.inset + glyph + (glyph > 0 ? Self.gap : 0) + text + (newsView.isHidden ? 0 : 12) + 4 + Self.closeRoom + 4
+        return Self.inset + glyph + (glyph > 0 ? Self.gap : 0) + text + (newsView.isHidden ? 0 : 12)
+            + (mutedGlyph.isHidden ? 0 : 16) + 4 + Self.closeRoom + 4
     }
 
     func configure(_ tab: SidebarTabInfo, selected: Bool, closable: Bool) {
@@ -426,9 +444,11 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         if tab.paneCount > 1 { tip.append(tab.zoomed ? "\(tab.paneCount) panes, zoomed" : "\(tab.paneCount) panes") }
         if tab.parked > 0 { tip.append("\(tab.parked) parked") }
         if let status = tab.status { tip.append(TerminalWindowController.label(for: status)) }
+        if tab.muted { tip.append(L10n.t("muted")) }
         toolTip = tip.joined(separator: " · ")
         newsView.isHidden = !tab.showsNews
         if tab.showsNews { news.strokeColor = Accent.color.cgColor }
+        mutedGlyph.isHidden = !tab.muted
         close.isHidden = !(closable && hovering)
         setAccessibilityLabel(Self.spoken(tab))
         setAccessibilityValue(selected)
@@ -436,13 +456,14 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
     }
 
     /// What VoiceOver says of a tab: its name, then what its glyphs and
-    /// marks show ("server, Waiting for you, 3 panes, needs a look").
+    /// marks show ("server, Waiting for you, 3 panes, needs a look, muted").
     static func spoken(_ tab: SidebarTabInfo) -> String {
         var words = [tab.title]
         if let status = tab.status { words.append(L10n.t(TerminalWindowController.label(for: status))) }
         if let percent = tab.progress?.percent { words.append("\(percent)%") }
         if tab.paneCount > 1 { words.append(L10n.t("%d panes").replacingOccurrences(of: "%d", with: String(tab.paneCount))) }
         if tab.showsNews { words.append(L10n.t("needs a look")) }
+        if tab.muted { words.append(L10n.t("muted")) }
         return words.joined(separator: ", ")
     }
 
@@ -472,6 +493,10 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         if !newsView.isHidden {
             newsView.frame = NSRect(x: end - 8, y: (h - 8) / 2, width: 8, height: 8)
             end -= 12
+        }
+        if !mutedGlyph.isHidden {
+            mutedGlyph.frame = NSRect(x: end - 13, y: ((h - 13) / 2).rounded(), width: 13, height: 13)
+            end -= 16
         }
         let textHeight = ceil(title.intrinsicContentSize.height)
         title.frame = NSRect(x: x, y: ((h - textHeight) / 2).rounded(), width: max(0, end - x), height: textHeight)
@@ -558,6 +583,12 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
 
     var isEditing: Bool { editor != nil }
     var shownName: String { editor?.stringValue ?? title.stringValue }
+    /// Its label, when it shows the muted glyph inside its bounds.
+    var mutedSaid: String? {
+        layoutSubtreeIfNeeded()
+        guard !mutedGlyph.isHidden, bounds.contains(mutedGlyph.frame), mutedGlyph.frame.minX >= title.frame.maxX else { return nil }
+        return accessibilityLabel()
+    }
 
     func beginEditing(current: String, placeholder: String, done: @escaping (String?, Bool) -> Void) {
         let field = NSTextField(string: current)

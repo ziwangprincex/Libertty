@@ -230,7 +230,7 @@ enum Action: Equatable {
     case moveSurfaceToNewTab, moveSurfaceToNewWindow, moveSurfaceToTab(Int), moveTabToNewWindow
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
-    case toggleBroadcastInput, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
+    case toggleBroadcastInput, toggleTabMute, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
     case toggleCopyMode, toggleHintMode, quickLook
     case showCompletions, clearAutocompleteHistory
     case undo, redo
@@ -274,7 +274,7 @@ enum Action: Equatable {
         ("next_workspace", .nextWorkspace), ("previous_workspace", .previousWorkspace),
         ("open_git", .openGit), ("open_browser", .openBrowser), ("focus_address", .focusAddress), ("open_tasks", .openTasks), ("new_canvas", .newCanvas), ("open_profiler", .openProfiler), ("open_board", .openBoard), ("open_plugins", .openPlugins), ("open_screen", .openScreen),
         ("toggle_picture_in_picture", .togglePictureInPicture),
-        ("toggle_broadcast_input", .toggleBroadcastInput), ("copy_command_output", .copyCommandOutput),
+        ("toggle_broadcast_input", .toggleBroadcastInput), ("toggle_tab_mute", .toggleTabMute), ("copy_command_output", .copyCommandOutput),
         ("toggle_copy_mode", .toggleCopyMode), ("toggle_hint_mode", .toggleHintMode),
         ("quick_look", .quickLook),
         ("show_completions", .showCompletions), ("clear_autocomplete_history", .clearAutocompleteHistory),
@@ -462,6 +462,7 @@ enum Action: Equatable {
         ("connect_to_host", "A window whose sessions run on another machine over ssh, and survive the link dropping"),
         ("toggle_picture_in_picture", "Show the focused pane, live, in a small window that floats over every app, or close it"),
         ("toggle_broadcast_input", "Type into every pane of the tab at once, or stop"),
+        ("toggle_tab_mute", "Mute the tab in front, or unmute it: it goes on showing what it does, but plays no sound, sends no notification, doesn't bounce the Dock icon and isn't counted on its badge"),
         ("toggle_composer", "Write a prompt for the focused pane in the composer: several lines, undo, rich text pasted as Markdown; ⌘Return sends it as one paste, ⌘⇧Return queues it"),
         ("toggle_prompt_queue", "The focused pane's prompt queue, in its composer: prompts that go one by one as the pane's agent (or shell) is ready for them"),
         ("fork_conversation:split|tab|window", "Carry the coding agent's conversation in the focused pane on in a new pane (or tab, or window) as a conversation of its own (Claude Code, Codex)"),

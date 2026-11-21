@@ -83,6 +83,8 @@ struct SavedTab: Codable {
     var front: Bool?
     /// The git worktree it was made in (New Tab in Worktree…).
     var worktree: WorktreeInfo?
+    /// Muted (Mute Tab); nil: not.
+    var muted: Bool?
 }
 
 struct SavedParked: Codable {
@@ -365,6 +367,7 @@ extension TerminalWindowController {
                                             floatMinimized: entry.floating != nil && entry.floatingMinimized ? true : nil)
                             })
             saved.worktree = tab.worktree
+            saved.muted = tab.muted ? true : nil
             return saved
     }
 
@@ -478,6 +481,7 @@ extension TerminalWindowController {
             tab.titleOverride = t.title ?? ""
             tab.paneTitleOverride = t.paneTitle ?? ""
             tab.worktree = t.worktree
+            tab.muted = t.muted == true
             tab.restoredWorkspace = t.workspace
             tab.restoredSelected = t.front == true
             for entry in t.parked ?? [] {

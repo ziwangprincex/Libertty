@@ -120,6 +120,7 @@ enum ActionDispatcher {
         case .togglePictureInPicture: controller?.togglePictureInPicture()
         case .toggleTabOverview: controller?.toggleTabOverview()
         case .toggleBroadcastInput: controller?.toggleBroadcastInput()
+        case .toggleTabMute: controller?.toggleMute()
         case .undo:
             let undone = MainActor.assumeIsolated { () -> Bool in
                 let manager = CloseUndo.shared.manager

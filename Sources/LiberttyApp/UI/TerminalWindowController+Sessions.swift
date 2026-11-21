@@ -52,14 +52,14 @@ extension TerminalWindowController {
         }
     }
 
-    /// `bell-features`, as in Ghostty.
+    /// `bell-features`, as in Ghostty. A muted tab's bell only shows.
     func sessionBell(_ session: TerminalSession) {
-        let features = config.bellFeatures
         let pane = pane(for: session)
+        let features = TabMute.bellFeatures(config.bellFeatures, muted: pane.map(isMuted) ?? false)
         let looking = pane.map(isLookedAt) ?? false
-        if features.contains("system") || features.contains("audio") { NSSound.beep() }
+        if features.contains("system") || features.contains("audio") { StatusSound.bell() }
         if features.contains("attention"), !(NSApp.isActive && window?.isKeyWindow == true) {
-            NSApp.requestUserAttention(.informationalRequest)
+            Notifier.shared.bounceDock()
         }
         if features.contains("border"), let pane { pane.flashHalo(.systemYellow) }
         if features.contains("title"), !looking, let pane, let tab = owningTab(of: pane) {
@@ -172,7 +172,8 @@ extension TerminalWindowController {
 
     func sessionDesktopNotification(_ session: TerminalSession, title: String, body: String) {
         guard config.desktopNotifications, let pane = pane(for: session), !isLookedAt(pane) else { return }
-        Notifier.shared.post(title: title.isEmpty ? self.title(ofPane: pane) : title, body: body, pane: pane.paneID)
+        Notifier.shared.post(title: title.isEmpty ? self.title(ofPane: pane) : title, body: body, pane: pane.paneID,
+                             quietly: isMuted(pane))
     }
 
     /// A command line the shell ran: remembered for autocomplete (in the
@@ -205,19 +206,22 @@ extension TerminalWindowController {
         let what = command.isEmpty ? "Command" : command
         let outcome = failed ? "failed (exit \(exitCode!))" : "finished"
         Notifier.shared.post(title: "\(what) \(outcome)",
-                             body: "after \(Notifier.duration(duration)) · \(title(ofPane: pane))", pane: pane.paneID)
+                             body: "after \(Notifier.duration(duration)) · \(title(ofPane: pane))", pane: pane.paneID,
+                             quietly: isMuted(pane))
     }
     private func notifyIfNeeded(_ session: TerminalSession) {
         guard let pane = pane(for: session) else { return }
         let key = ObjectIdentifier(session)
         let top = session.programStatus.headline
         let looked = isLookedAt(pane)
+        // A muted tab's states show, and are listed in Activity, unheard.
+        let muted = isMuted(pane)
         // Once per state change, not per report.
         let sound = top.flatMap { config.programStatusSound[$0.state] }
         if let top, let sound {
             if soundedRecords[key] != Self.signature(top) {
                 soundedRecords[key] = Self.signature(top)
-                if !looked { StatusSound.play(sound, for: pane.paneID) }
+                if !looked, !muted { StatusSound.play(sound, for: pane.paneID) }
             }
         } else {
             soundedRecords[key] = nil
@@ -229,7 +233,7 @@ extension TerminalWindowController {
         if pane !== focusedTerminal || !(window?.isKeyWindow ?? false) {
             pane.flashHalo(Self.color(for: top.state))
             // Another pane of the window you're in: VoiceOver hears what the light says.
-            if window?.isKeyWindow == true, NSApp.isActive {
+            if window?.isKeyWindow == true, NSApp.isActive, !muted {
                 AccessibilityNews.announce(L10n.t(Self.label(for: top)) + ": " + title(ofPane: pane), from: pane)
             }
         }
@@ -238,7 +242,7 @@ extension TerminalWindowController {
         let what = [app, top.title].filter { !$0.isEmpty }.joined(separator: " · ")
         Notifier.shared.post(title: "\(Self.label(for: top))\(what.isEmpty ? "" : ": " + what)",
                              body: top.message.isEmpty ? title(ofPane: pane) : top.message, pane: pane.paneID,
-                             sound: sound == nil)
+                             sound: sound == nil, quietly: muted)
     }
 
     /// The settings changed: what programs are in now isn't news, even in a
@@ -258,6 +262,22 @@ extension TerminalWindowController {
         NSApp.isActive && window?.isKeyWindow == true
             && (selectedTab.panes.contains { $0 === pane } || selectedTab.parked.contains { $0.showsCard && $0.pane === pane }
                 || shownFloatingPanes.contains { $0 === pane })
+    }
+
+    /// The pane's tab is muted (Mute Tab): what it does shows, but nothing
+    /// of it may interrupt you — the one question every sound, notification,
+    /// Dock bounce and badge count of a pane asks (TabMute).
+    func isMuted(_ pane: TerminalView) -> Bool { owningTab(of: pane)?.muted == true }
+
+    /// Mute Tab / Unmute Tab: the tab in front, or `tab`. The Dock's badge
+    /// and the menu bar's count follow at once; what's notified meanwhile
+    /// isn't told again when it's unmuted.
+    func toggleMute(_ tab: TerminalTab? = nil) {
+        let tab = tab ?? selectedTab
+        guard tab.isTerminal, everyTab.contains(where: { $0 === tab }) else { return }
+        tab.muted.toggle()
+        updateSidebar()
+        onAttentionChange?()
     }
 
     /// Window ▸ Picture in Picture: the focused pane in a floating window.
@@ -333,9 +353,11 @@ extension TerminalWindowController {
     }
 
     /// How many panes have a program in a state the Dock badge counts
-    /// (`program-status-dock-badge`; by default, waiting for you).
+    /// (`program-status-dock-badge`; by default, waiting for you), muted
+    /// tabs' aside. The menu bar's icon shows the same count.
     var attentionCount: Int {
-        allPanes.filter { $0.session.programStatus.headline(among: config.programStatusDockBadge) != nil }.count
+        let panes = everyTab.flatMap { tab in tab.everyPane.map { (status: $0.session.programStatus, muted: tab.muted) } }
+        return TabMute.badgeCount(panes, counting: config.programStatusDockBadge)
     }
 
     func sessionExited(_ session: TerminalSession, status: Int32) {

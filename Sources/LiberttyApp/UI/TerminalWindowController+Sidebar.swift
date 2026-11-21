@@ -100,10 +100,13 @@ extension TerminalWindowController {
     var isZoomed: Bool { selectedTab.container?.zoomed != nil }
 
     /// Program states as they show (`--ui-probe`): the tab in front's mark,
-    /// the Dock badge's count, the notification inbox, the sounds played.
+    /// the Dock badge's count, the notification inbox (and how much of it
+    /// is unread), the banners posted, the sounds played (a bell's too),
+    /// the Dock's bounces.
     var statusSummary: String {
         "tab=\(status(of: selectedTab)?.state.name ?? "none") dock=\(attentionCount) "
-            + "inbox=\(Notifier.shared.inbox.count) sounds=\(StatusSound.played.joined(separator: ","))"
+            + "inbox=\(Notifier.shared.inbox.count) unread=\(Notifier.shared.unread) posted=\(Notifier.shared.posted) "
+            + "sounds=\(StatusSound.played.joined(separator: ",")) bounces=\(Notifier.shared.bounces)"
     }
 
     /// What each sidebar row says (`--ui-probe` checks it).
@@ -115,6 +118,7 @@ extension TerminalWindowController {
             let count = tab.container?.views.count ?? 0
             if count > 1 { parts.append(tab.container?.zoomed != nil ? "\(count) panes, zoomed" : "\(count) panes") }
             if !tab.parked.isEmpty { parts.append("\(tab.parked.count) parked") }
+            if tab.muted { parts.append("muted") }
             // The second line, when rows have one.
             if config.sidebarRows == "comfortable" {
                 let second = subtitle(of: tab, firstLine: label)
@@ -127,6 +131,11 @@ extension TerminalWindowController {
     var tabStripTitles: [String]? {
         guard config.tabBar == .top, tabStrip.superview != nil else { return nil }
         return tabStrip.shownNames
+    }
+    /// The tabs showing the muted glyph where the tabs are (the sidebar's
+    /// rows or the top tabs), with what VoiceOver hears of each (`--ui-probe`).
+    var shownMutedTabs: [(title: String, said: String)] {
+        tabStripTitles != nil ? tabStrip.shownMuted : sidebar.shownMuted
     }
     /// Panes (terminals and documents) in the tab in front.
     var selectedPaneCount: Int { selectedTab.container?.views.count ?? 0 }
@@ -147,6 +156,7 @@ extension TerminalWindowController {
                                       news: news(of: tab))
             info.subtitle = subtitle(of: tab, firstLine: label)
             info.panes = paneSummaries(of: tab)
+            info.muted = tab.muted
             return info
         }
         shownNews = infos.map(\.news)

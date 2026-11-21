@@ -964,5 +964,10 @@
   "OK": "好",
   "a pane is here": "有面板在这里",
   "recent": "最近去过",
-  "new tab here": "在这里开新标签"
+  "new tab here": "在这里开新标签",
+  "Mute Tab": "将标签静音",
+  "Unmute Tab": "取消标签静音",
+  "Mute/Unmute Tab": "标签静音/取消静音",
+  "muted": "已静音",
+  "Muted: no sounds, notifications or badge count from this tab": "已静音：这个标签不出声、不发通知，也不计入角标"
 }

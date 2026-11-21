@@ -300,6 +300,14 @@ expect program-status-settings 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVA
 print 'program-status-notify = blocked,bogus\nprogram-status-sound = done:NoSuchSound' > $PRIVATE/status-bad.conf
 expect program-status-config 'unknown state “bogus”' $LIBERTTY +validate-config --config-file $PRIVATE/status-bad.conf
 expect program-status-sound-config 'no sound named “NoSuchSound”' $LIBERTTY +validate-config --config-file $PRIVATE/status-bad.conf
+# Mute Tab: a muted tab's bell, notifications and program states show but
+# make no sound, post no banner, bounce nothing and aren't on the Dock's
+# badge; the same from a tab not muted do (a bell that sounds and bounces,
+# waiting that plays Ping).
+mkdir -p $PRIVATE/mute-config/libertty
+print 'bell-features = system,attention,title\nprogram-status-sound = blocked:Ping' > $PRIVATE/mute-config/libertty/config
+expect tab-mute 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/mute-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/tab-mute.txt)" $OUT
 # Coding agents: Claude Code's hook as it runs it, +status, and a session's
 # name on its tab (in liberttyd: --persist).
 expect agent 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
