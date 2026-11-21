@@ -964,5 +964,9 @@
   "OK": "好",
   "a pane is here": "有面板在这里",
   "recent": "最近去过",
-  "new tab here": "在这里开新标签"
+  "new tab here": "在这里开新标签",
+  "Go Back a Pane": "退回之前的面板",
+  "Go Back a Tab": "退回之前的标签",
+  "Toggle Recent Pane": "与刚才的面板来回切换",
+  "Toggle Recent Tab": "与刚才的标签来回切换"
 }

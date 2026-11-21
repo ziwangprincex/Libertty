@@ -468,6 +468,10 @@ expect sidebar-news 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-co
 # Jump to the pane that needs you (⌘J).
 expect attention 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/attention.txt)" $OUT
+# Focus history: back to the pane or tab focus was in before, walking
+# further each press soon after, or back and forth (focus_back, focus_recent).
+expect focus-history 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/focus-history.txt)" $OUT
 # active-border: a border round the focused pane of a split, following focus.
 mkdir -p $PRIVATE/border-config/libertty
 print 'active-border = true' > $PRIVATE/border-config/libertty/config

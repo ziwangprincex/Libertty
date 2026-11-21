@@ -1,0 +1,101 @@
+# Focus history (focus_back, focus_recent): back to the pane, or the tab,
+# focus was in before this one, in any tab. Back pressed again soon goes
+# one further each time; later, or once focus has moved on, it starts again
+# from where focus is. Recent goes back and forth. A tab lands on its own
+# focused pane. (Each pane names itself; the window's title is the focused one's.)
+type:printf '\033]2;ALPHA\a'; sleep 600
+key:enter
+key:cmd+d
+wait:1.0
+type:printf '\033]2;BETA\a'; sleep 600
+key:enter
+tab:new
+type:printf '\033]2;GAMMA\a'; sleep 600
+key:enter
+key:cmd+d
+wait:1.0
+type:printf '\033]2;DELTA\a'; sleep 600
+key:enter
+tab:new
+type:printf '\033]2;EPSILON\a'; sleep 600
+key:enter
+wait:1.0
+expect-selected:EPSILON
+# Three deep, each press soon after the last: tab 2's two panes, then tab 1's second.
+action:focus_back:pane
+expect-selected:DELTA
+expect-focus:2
+action:focus_back:pane
+expect-selected:GAMMA
+expect-focus:1
+action:focus_back:pane
+expect-selected:BETA
+expect-focus:2
+# Later: from where the walk stopped, back to where it began.
+wait:3.5
+action:focus_back:pane
+expect-selected:EPSILON
+# Back and forth.
+action:focus_recent:pane
+expect-selected:BETA
+expect-focus:2
+action:focus_recent:pane
+expect-selected:EPSILON
+# Tab by tab: tab 1 as it was, then tab 2 on its own focused pane (GAMMA,
+# where the walk left it, not DELTA, its newest in the history).
+action:focus_back:tab
+expect-selected:BETA
+expect-focus:2
+action:focus_back:tab
+expect-selected:GAMMA
+expect-focus:1
+action:focus_recent:tab
+expect-selected:EPSILON
+action:focus_recent:tab
+expect-selected:GAMMA
+expect-focus:1
+# Focus moving on ends a walk: back goes from there, not further on.
+action:goto_split:next
+expect-selected:DELTA
+action:focus_back:pane
+expect-selected:GAMMA
+action:goto_split:next
+expect-selected:DELTA
+action:focus_back:pane
+expect-selected:GAMMA
+expect-focus:1
+# From the palette too.
+key:cmd+shift+p
+wait:0.4
+type:toggle recent pane
+wait:0.3
+expect-palette:Toggle Recent Pane
+key:enter
+wait:0.8
+expect-selected:DELTA
+expect-focus:2
+# A document tab is a place of its own.
+open:/etc/hosts
+wait:0.6
+expect-selected:hosts
+action:focus_recent:pane
+expect-selected:DELTA
+expect-focus:2
+action:focus_recent:pane
+expect-selected:hosts
+action:focus_back:tab
+expect-selected:DELTA
+# A jump from the palette's list of panes counts where it lands, not the
+# tab's own focused pane (BETA) it passes on the way there.
+key:cmd+p
+wait:0.4
+type:alpha
+wait:0.3
+expect-palette:ALPHA
+key:enter
+wait:0.8
+expect-selected:ALPHA
+expect-focus:1
+action:focus_back:pane
+expect-selected:DELTA
+expect-focus:2
