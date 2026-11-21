@@ -470,6 +470,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Previous Workspace", .previousWorkspace, "chevron.left.2")
         command("Go to Pane…", .gotoPane, "rectangle.3.group")
         command("Jump to Pane Needing You", .gotoAttention, "exclamationmark.bubble")
+        // Focus history: where focus was before, in any window.
+        command("Go Back a Pane", .focusBack(.pane), "arrow.uturn.backward.square", keywords: "focus history previous last")
+        command("Go Back a Tab", .focusBack(.tab), "arrow.uturn.backward.circle", keywords: "focus history previous last")
+        command("Toggle Recent Pane", .focusRecent(.pane), "arrow.left.arrow.right.square", keywords: "focus history last switch")
+        command("Toggle Recent Tab", .focusRecent(.tab), "arrow.left.arrow.right.circle", keywords: "focus history last switch")
         command("Resume Conversation…", .resumeConversation, "bubble.left.and.text.bubble.right")
         command("Compose Prompt…", .toggleComposer, "square.and.pencil")
         command("Prompt Queue…", .togglePromptQueue, "text.line.first.and.arrowtriangle.forward")

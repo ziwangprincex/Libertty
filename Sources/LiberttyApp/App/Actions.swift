@@ -92,6 +92,9 @@ enum ActionDispatcher {
             var all = app?.allControllers ?? []
             if let controller, !all.contains(where: { $0 === controller }) { all.append(controller) }
             return AttentionJump.go(from: view, in: all)
+        // (Nowhere to go beeps; the key is taken all the same.)
+        case .focusBack(let level): TerminalWindowController.jumpInFocusHistory(level, walking: true, from: controller)
+        case .focusRecent(let level): TerminalWindowController.jumpInFocusHistory(level, walking: false, from: controller)
         case .gotoDirectory: CommandPalette.toggle(in: controller, scope: .folders)
         case .showTabs(let activity): controller?.showTabs(activity)
         case .restartSurface: controller?.restartFocusedPane()

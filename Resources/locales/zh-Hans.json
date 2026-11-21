@@ -981,5 +981,9 @@
   "Unmute Tab": "取消标签静音",
   "Mute/Unmute Tab": "标签静音/取消静音",
   "muted": "已静音",
-  "Muted: no sounds, notifications or badge count from this tab": "已静音：这个标签不出声、不发通知，也不计入角标"
+  "Muted: no sounds, notifications or badge count from this tab": "已静音：这个标签不出声、不发通知，也不计入角标",
+  "Go Back a Pane": "退回之前的面板",
+  "Go Back a Tab": "退回之前的标签",
+  "Toggle Recent Pane": "与刚才的面板来回切换",
+  "Toggle Recent Tab": "与刚才的标签来回切换"
 }

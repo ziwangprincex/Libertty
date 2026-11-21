@@ -201,11 +201,14 @@ extension TerminalWindowController {
     }
 
     /// Clicking into a document pane focuses it (a terminal reports its own
-    /// focus through paneDidFocus).
+    /// focus through paneDidFocus). A document — a pane or a tab — taking the
+    /// keyboard is where focus is now, for focus history.
     func firstResponderChanged() {
-        guard let responder = window?.firstResponder as? NSView,
-              let doc = selectedTab.documentPanes.first(where: { responder.isDescendant(of: $0) }),
-              selectedTab.focusedDocument !== doc else { return }
+        guard let responder = window?.firstResponder as? NSView else { return }
+        if let doc = selectedTab.document, responder.isDescendant(of: doc) { return noteFocusHistory() }
+        guard let doc = selectedTab.documentPanes.first(where: { responder.isDescendant(of: $0) }) else { return }
+        noteFocusHistory()
+        guard selectedTab.focusedDocument !== doc else { return }
         selectedTab.focusedDocument = doc
         updateDimming()
         updateTitle()
@@ -303,6 +306,7 @@ extension TerminalWindowController {
             find(area.findBar.field.stringValue)
         }
         if tab !== selectedTab { select(tab) }
+        noteFocusHistory()
         updateDimming()
         updateTitle()
         updateSidebar()

@@ -118,6 +118,8 @@ extension TerminalWindowController {
         // The pane with the keyboard tells its program (focus reporting).
         (window?.firstResponder as? TerminalView)?.session.reportFocus(true)
         selectedTab.panes.forEach { $0.setNeedsRender(force: true) }
+        // Another window in front (clicked, ⌘`, one closing): where focus is now.
+        noteFocusHistory()
         updateSidebar()
     }
 

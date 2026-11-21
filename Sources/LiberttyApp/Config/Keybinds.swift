@@ -227,6 +227,9 @@ enum Action: Equatable {
     case toggleSidebar, toggleInspector, toggleMarkdownSource, toggleEditor
     case toggleFullscreen, toggleVisibility, toggleWindowFloatOnTop, resetWindowSize, toggleSecureInput
     case toggleCommandPalette, toggleQuickTerminal, toggleTabOverview, connectToHost, togglePictureInPicture
+    /// Focus history: back to where focus was (`focus_back`, further each
+    /// press soon after), or back and forth with it (`focus_recent`).
+    case focusBack(FocusHistory.Level), focusRecent(FocusHistory.Level)
     case gotoPane, gotoAttention, resumeConversation, newTabInWorktree, toggleAppearance, gotoDirectory, showTabs(TabActivity), restartSurface, parkSurface, unparkSurface, floatSurface
     case newFloatingPane, toggleFloatingPanes
     case moveSurfaceToNewTab, moveSurfaceToNewWindow, moveSurfaceToTab(Int), moveTabToNewWindow
@@ -313,6 +316,11 @@ enum Action: Equatable {
             guard let a = arg?.trimmingCharacters(in: .whitespaces).lowercased(), let activity = TabActivity(rawValue: a) else { return nil }
             self = .showTabs(activity)
         case "move_surface_to_tab": guard let n = integer(), n > 0 else { return nil }; self = .moveSurfaceToTab(n)
+        case "focus_back", "focus_recent":
+            // Without an argument: from pane to pane.
+            guard let level = FocusHistory.Level(rawValue: arg?.trimmingCharacters(in: .whitespaces).lowercased() ?? "pane")
+            else { return nil }
+            self = name == "focus_back" ? .focusBack(level) : .focusRecent(level)
         case "fork_conversation":
             guard let place = arg == nil ? .split : ForkPlace(rawValue: arg!.trimmingCharacters(in: .whitespaces).lowercased())
             else { return nil }
@@ -363,6 +371,8 @@ enum Action: Equatable {
         case .gotoWorkspace(let n): return "goto_workspace:\(n)"
         case .showTabs(let activity): return "show_tabs:\(activity.rawValue)"
         case .moveSurfaceToTab(let n): return "move_surface_to_tab:\(n)"
+        case .focusBack(let level): return "focus_back:\(level.rawValue)"
+        case .focusRecent(let level): return "focus_recent:\(level.rawValue)"
         case .forkConversation(.split): return "fork_conversation"
         case .forkConversation(let place): return "fork_conversation:\(place.rawValue)"
         case .writeScrollbackFile(let then): return "write_scrollback_file:\(then)"
@@ -433,6 +443,8 @@ enum Action: Equatable {
         ("toggle_secure_input", "Secure Keyboard Entry: keep other apps from reading keystrokes"),
         ("toggle_command_palette", "Search every command, tab, session and theme by name"),
         ("goto_pane", "Go to any pane of any window, by its program, folder or tab"),
+        ("focus_back:pane|tab", "Back to the pane (or tab) you were in before this one, in any window; pressed again within 3 seconds, one further back each time"),
+        ("focus_recent:pane|tab", "Back and forth between the pane (or tab) you're in and the one you were in before it"),
         ("toggle_appearance", "Switch between the light and the dark appearance (window-theme), whatever macOS uses"),
         ("new_tab_in_worktree", "A new tab on a new branch, in a git worktree of its own (worktree-dir, worktree-base); closing it asks whether the worktree goes too"),
         ("resume_conversation", "Pick up a coding agent's conversation that ran in a pane (Claude Code, Codex): the pane running it, or a new tab resuming it"),
