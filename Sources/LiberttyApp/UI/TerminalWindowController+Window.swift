@@ -237,8 +237,9 @@ extension TerminalWindowController {
     }
 
     /// Where things sit for the tab style, the pane style and which columns
-    /// show (Rex's layouts): the panes' insets, the band over them, and the
-    /// window's buttons — in the sidebar's top row while it's on the left.
+    /// show (Rex's layouts): the panes' insets, the band over them (or the
+    /// tabs' under them), and the window's buttons — in the sidebar's top
+    /// row while it's on the left.
     func updateStage() {
         guard !isQuick else { return }
         let sidebarShown = isSidebarShown
@@ -249,17 +250,22 @@ extension TerminalWindowController {
         // A band only for the tabs along the top; otherwise the traffic
         // lights and buttons share the panes' top row (their headers).
         let band = config.tabBar == .top
+        // The tabs under the panes: a band of their own along the bottom.
+        let below = config.tabBar == .bottom
         let mid = WindowChrome.trafficLightMid(in: window)
         area.bandHeight = band ? WindowChrome.bandHeight : 0
+        area.bottomBandHeight = below ? WindowChrome.bottomBandHeight : 0
         area.bandClearance = leftColumn ? 9 : WindowChrome.trafficLightRoom
         area.bandMid = mid
-        area.insets = NSEdgeInsets(top: band ? 0 : outer, left: leftColumn ? 0 : outer, bottom: outer, right: rightColumn ? 0 : outer)
+        area.insets = NSEdgeInsets(top: band ? 0 : outer, left: leftColumn ? 0 : outer, bottom: below ? 0 : outer,
+                                   right: rightColumn ? 0 : outer)
         chrome.show(hostChip: host == nil ? nil : hostChip.view)
         chrome.show(unread: Notifier.shared.unread > 0)
         chrome.sidebarToggle.toolTip = Self.tip(sidebarShown ? "Hide Sidebar" : "Show Sidebar", .toggleSidebar)
         // (VoiceOver says what a press does now, too.)
         chrome.sidebarToggle.setAccessibleLabel(L10n.t(sidebarShown ? "Hide Sidebar" : "Show Sidebar"))
-        let trailingInSidebar = sidebarShown && config.tabBar.inSidebar
+        // (With the tabs on top, their band holds them, after the tabs.)
+        let trailingInSidebar = sidebarShown && config.tabBar != .top
         let clearance = leftColumn ? WindowChrome.trafficLightRoom + 10 : 9
         sidebar.setChrome(leading: leftColumn ? chrome.leading : nil, trailing: trailingInSidebar ? chrome.trailing : nil, mid: mid,
                           clearance: clearance)
@@ -268,8 +274,8 @@ extension TerminalWindowController {
         let minimum = Self.sidebarMinimum(clearance: clearance, leading: leftColumn ? chrome.leading.fittingSize.width : nil,
                                           trailing: trailingInSidebar ? chrome.trailing.fittingSize.width : nil)
         if sidebarItem.minimumThickness != minimum { sidebarItem.minimumThickness = minimum }
-        area.setBand(left: leftColumn ? nil : chrome.leading, middle: config.tabBar == .top ? tabStrip : nil,
-                     right: trailingInSidebar ? nil : chrome.trailing)
+        area.setBand(left: leftColumn ? nil : chrome.leading, middle: band ? tabStrip : nil,
+                     right: trailingInSidebar ? nil : chrome.trailing, bottom: below ? tabStrip : nil)
         (splitController.splitView as? FrameSplitView)?.line = Layout.compact ? Surfaces.current.stroke.nsColor : nil
         everyTab.forEach { $0.container?.glassBehind = config.glass }
     }
@@ -284,7 +290,8 @@ extension TerminalWindowController {
     }
 
     /// The room around the grid as `updateStage` lays it out: the band or
-    /// the top inset, the bottom and side insets, a pane's header.
+    /// the top inset, the tabs' band or the bottom inset, the side insets, a
+    /// pane's header.
     func stageExtra() -> NSSize {
         Self.stageExtra(config, sidebar: isSidebarShown, inspector: !inspectorItem.isCollapsed)
     }
@@ -295,9 +302,10 @@ extension TerminalWindowController {
         let leftColumn = sidebar && !onRight
         let rightColumn = (sidebar && onRight) || inspector
         let band = config.tabBar == .top
+        let below = config.tabBar == .bottom
         let header: CGFloat = config.paneHeaders == .always || (!band && !leftColumn) ? PaneHeader.height : 0
         return NSSize(width: (leftColumn ? 0 : outer) + (rightColumn ? 0 : outer),
-                      height: (band ? WindowChrome.bandHeight : outer) + outer + header)
+                      height: (band ? WindowChrome.bandHeight : outer) + (below ? WindowChrome.bottomBandHeight : outer) + header)
     }
 
     /// The sidebar goes to the side the tab style says.

@@ -40,7 +40,7 @@ Quick Look 预览屏幕上的文件和网页。支持 fallback 字体（`font-fa
 commit hash 标上字母，按下就打开或复制。程序可以在输出里画原生的卡片和面板（[OSC 7502](docs/surface-protocol.md)、
 `libertty +surface`）；`git status`、编译报错或搜索结果之后，命令行旁会出现一个按钮，点开是列表。
 
-**窗口。** 布局参照 Rex：标签放在左侧栏、右侧栏或顶部（`tab-bar`）；每个 pane 是一张卡片，带标题栏
+**窗口。** 布局参照 Rex：标签放在左侧栏、右侧栏、顶部或底部（`tab-bar`）；每个 pane 是一张卡片，带标题栏
 （分屏、浮动、放大、关闭）；`pane-style = compact` 让 pane 铺满；`interface-style = glass` 让窗口
 半透明。另有分屏、工作区、收起和浮动 pane、在窗口之间移动 pane 和标签、命令面板（⌘⇧P）、Quick
 Terminal，关闭 pane、标签或窗口后可以撤销。浮动 pane（⌥⇧⌘F）是一个浮在分屏上面、有自己 shell 的

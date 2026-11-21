@@ -46,14 +46,27 @@ final class PaneNode {
     /// Turn this leaf into a split holding its pane and `newPane`, which
     /// goes second (right/below) or, with `newFirst`, first (left/above).
     func split(with newPane: NSView, axis: Axis, ratio: CGFloat, newFirst: Bool = false) {
+        split(with: PaneNode(pane: newPane), axis: axis, ratio: ratio, newFirst: newFirst)
+    }
+
+    /// The same with a whole tree (another split's panes) beside this leaf's pane.
+    func split(with added: PaneNode, axis: Axis, ratio: CGFloat, newFirst: Bool = false) {
         guard let old = pane else { return }
-        let existing = PaneNode(pane: old), added = PaneNode(pane: newPane)
+        let existing = PaneNode(pane: old)
         existing.parent = self
         added.parent = self
         pane = nil
         self.axis = axis
         self.ratio = ratio
         children = newFirst ? [added, existing] : [existing, added]
+    }
+
+    /// The same tree in nodes of its own, the same views at its leaves.
+    func copied() -> PaneNode? {
+        if let pane { return PaneNode(pane: pane) }
+        let copies = children.compactMap { $0.copied() }
+        guard copies.count == 2 else { return copies.first }
+        return PaneNode(axis: axis, ratio: ratio, first: copies[0], second: copies[1])
     }
 
     /// Replace this node's content with `other`'s (used when a sibling closes).
@@ -374,6 +387,37 @@ final class SplitContainerView: NSView {
         }, completion: { [weak self] in
             self?.balanceIfAsked()
         })
+    }
+
+    /// Another split's panes join this one beside `pane`, toward
+    /// `direction`, as they're arranged there: one block, growing to `share`
+    /// of `pane`'s place as a new pane does. The views leave `other`, which
+    /// is done with (its tab goes). False when there's nothing to join.
+    @discardableResult
+    func join(_ other: SplitContainerView, beside pane: NSView, toward direction: Direction, share: CGFloat = 0.5) -> Bool {
+        animator?.finish()
+        // A pane closing there first: it's gone by the time the rest comes.
+        other.animator?.finish()
+        // Each view lives in the tree once.
+        guard other !== self, let node = root.find(pane), let block = other.root.copied(),
+              !block.leaves.contains(where: { root.find($0) != nil }) else { return false }
+        zoomed = nil
+        other.zoomed = nil
+        for leaf in block.leaves {
+            leaf.removeFromSuperview()
+            addSubview(leaf, positioned: .below, relativeTo: dividers.first)
+        }
+        let axis: PaneNode.Axis = direction == .left || direction == .right ? .horizontal : .vertical
+        let newFirst = direction == .left || direction == .up
+        node.split(with: block, axis: axis, ratio: newFirst ? 0 : 1, newFirst: newFirst)
+        layoutPanes()
+        animator = FrameAnimator.run(on: self, duration: Motion.card, update: { [weak self, weak node] p in
+            node?.ratio = newFirst ? share * CGFloat(p) : 1 - share * CGFloat(p)
+            self?.layoutPanes()
+        }, completion: { [weak self] in
+            self?.balanceIfAsked()
+        })
+        return true
     }
 
     /// Let `pane` fill the container, or with nil (or the zoomed pane) go back.

@@ -2,8 +2,8 @@ import AppKit
 
 /// The middle column: the selected tab's panes on the window's backdrop,
 /// inset as Rex lays them out (`insets`, set by the window), a band along
-/// the top while the traffic lights or the tabs are over this column, and
-/// the find bar.
+/// the top while the traffic lights or the tabs are over this column, one
+/// along the bottom for the tabs under the panes, and the find bar.
 final class TerminalAreaView: NSView {
     /// The selected tab's panes, or its document.
     private(set) var content: NSView?
@@ -18,6 +18,9 @@ final class TerminalAreaView: NSView {
     private(set) var bandViews: (left: NSView?, middle: NSView?, right: NSView?) = (nil, nil, nil)
     /// Where the band's controls line up (the traffic lights' middle, from the top).
     var bandMid: CGFloat = 23 { didSet { needsLayout = true } }
+    /// The band under the panes (`tab-bar = bottom`): its height, and what it holds.
+    var bottomBandHeight: CGFloat = 0 { didSet { needsLayout = true } }
+    private(set) var bottomBand: NSView?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -38,23 +41,28 @@ final class TerminalAreaView: NSView {
         guard content !== self.content else { return }
         self.content?.removeFromSuperview()
         self.content = content
-        addSubview(content, positioned: .below, relativeTo: findBar)
+        // Under the bands' views: the window's buttons sharing the panes' top
+        // row stay over them, whichever tab comes forward.
+        addSubview(content, positioned: .above, relativeTo: fill)
         layoutSubtreeIfNeeded()
         needsLayout = true
     }
 
-    /// The band's views; nil leaves that place empty.
-    func setBand(left: NSView?, middle: NSView?, right: NSView?) {
-        for old in [bandViews.left, bandViews.middle, bandViews.right] {
-            if let old, old !== left, old !== middle, old !== right, old.superview === self { old.removeFromSuperview() }
+    /// The bands' views; nil leaves that place empty. (A view going from
+    /// one place to another stays: the tabs from the top to the bottom.)
+    func setBand(left: NSView?, middle: NSView?, right: NSView?, bottom: NSView? = nil) {
+        let kept = [left, middle, right, bottom]
+        for old in [bandViews.left, bandViews.middle, bandViews.right, bottomBand] {
+            if let old, !kept.contains(where: { $0 === old }), old.superview === self { old.removeFromSuperview() }
         }
-        for new in [left, middle, right] {
+        for new in kept {
             guard let new, new.superview !== self else { continue }
             new.removeFromSuperview()
             new.translatesAutoresizingMaskIntoConstraints = true
             addSubview(new, positioned: .below, relativeTo: findBar)
         }
         bandViews = (left, middle, right)
+        bottomBand = bottom
         needsLayout = true
     }
 
@@ -107,6 +115,9 @@ final class TerminalAreaView: NSView {
         return max(0, subpaths - 1)
     }
 
+    /// The least room between the bottom band's tabs and the column's sides.
+    static let stripMargin: CGFloat = 6
+
     private static func split(in view: NSView) -> SplitContainerView? {
         if let split = view as? SplitContainerView { return split }
         for sub in view.subviews { if let found = split(in: sub) { return found } }
@@ -118,11 +129,19 @@ final class TerminalAreaView: NSView {
         fill.frame = bounds
         defer { updateHoles() }
         let top = bounds.height - bandHeight
+        let below = bottomBandHeight
         // Whole points: the split view can leave this column half a point
         // wide, and a card between pixels rounds a point bigger.
-        self.content?.frame = NSRect(x: insets.left, y: insets.bottom,
+        self.content?.frame = NSRect(x: insets.left, y: below + insets.bottom,
                                      width: max(0, (bounds.width - insets.left - insets.right).rounded(.down)),
-                                     height: max(0, (top - insets.top - insets.bottom).rounded(.down)))
+                                     height: max(0, (top - below - insets.top - insets.bottom).rounded(.down)))
+        // The band under the panes: the tabs, in its middle, as wide as the
+        // panes (a little in from an edge they touch).
+        if let v = bottomBand {
+            let height = min(below, TabStrip.height)
+            let left = max(insets.left, Self.stripMargin), right = max(insets.right, Self.stripMargin)
+            v.frame = NSRect(x: left, y: ((below - height) / 2).rounded(), width: max(0, bounds.width - left - right), height: height)
+        }
         // The band: its controls on the traffic lights' line.
         let mid = bounds.height - bandMid
         var left = bandClearance

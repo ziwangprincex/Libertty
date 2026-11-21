@@ -31,6 +31,22 @@ struct ConfigTests {
         #expect(c.set(key, value) != nil)
     }
 
+    /// Where the tabs are listed: a sidebar on either side, or a strip over
+    /// the panes or under them. `sidebar` is the left one.
+    @Test func tabBarPlaces() {
+        var c = Config()
+        #expect(c.tabBar == .left && c.tabBar.inSidebar && !c.tabBar.inStrip)
+        #expect(c.set("tab-bar", "bottom") == nil && c.tabBar == .bottom)
+        #expect(c.tabBar.inStrip && !c.tabBar.inSidebar)
+        #expect(c.values(of: "tab-bar") == ["bottom"])
+        #expect(c.set("tab-bar", "top") == nil && c.tabBar.inStrip)
+        #expect(c.set("tab-bar", "sidebar") == nil && c.tabBar == .left)
+        #expect(c.set("tab-bar", "right") == nil && c.tabBar.inSidebar)
+        // Refused, saying what it takes; the setting stays.
+        #expect(c.set("tab-bar", "under")?.contains("bottom") == true && c.tabBar == .right)
+        #expect(Config.parse("tab-bar = bottom\n").0.tabBar == .bottom)
+    }
+
     /// Where minimized floating panes' capsules sit, and the corner a drag lets go in.
     @Test func minimizedFloatingPanesCorner() {
         var c = Config()

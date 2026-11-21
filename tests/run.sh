@@ -334,6 +334,9 @@ check agent-setup-codex sh -c '"$0" +agent-setup --agent codex --codex-dir "$1" 
 # window's tab to another window (the windows it opens stay off screen).
 expect move 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@N@|$RANDOM|g" $ROOT/tests/fixtures/move.txt)" $OUT
+# Merge into Current Tab: another tab's panes (and parked ones) join the tab in front, still running.
+expect move-into-tab 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@N@|$RANDOM|g" $ROOT/tests/fixtures/move-into-tab.txt)" $OUT --persist
 # +split and +move-pane: panes arranged by session ID from a pane's shell.
 expect split-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/split-cli.txt)" $OUT --persist
@@ -526,6 +529,12 @@ mkdir -p $PRIVATE/strip/top-a $PRIVATE/strip/top-b $PRIVATE/strip-config/libertt
 print 'tab-bar = top' > $PRIVATE/strip-config/libertty/config
 expect tab-strip 'ui-probe: all passed' env LIBERTTY_SHELL=/bin/zsh XDG_CONFIG_HOME=$PRIVATE/strip-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/strip|g" $ROOT/tests/fixtures/tab-strip.txt)" $OUT
+# Tabs under the panes (tab-bar = bottom, written into a config of its own on
+# each try: the run changes it): grids that fit above them, capsules over
+# them, live switching to the top and the side and back.
+expect tab-bar-bottom 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config sh -c \
+  'mkdir -p "$XDG_CONFIG_HOME/libertty" && echo "tab-bar = bottom" > "$XDG_CONFIG_HOME/libertty/config" && exec "$@"' sh \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/tab-bar-bottom.txt)" $OUT --persist
 # The editor block: open, type, save, changes on disk, line ends, unsaved-close, --wait.
 ED=$PRIVATE/editor
 mkdir -p $ED

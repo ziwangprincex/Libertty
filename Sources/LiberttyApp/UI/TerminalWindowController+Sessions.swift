@@ -504,7 +504,7 @@ extension TerminalWindowController {
         guard let window else { return }
         // A tab is renamed in place where it's listed, when that shows.
         if isTab, let i = tabs.firstIndex(where: { $0 === selectedTab }) {
-            if config.tabBar == .top, tabStripTitles != nil { return tabStrip.beginRename(at: i) }
+            if config.tabBar.inStrip, tabStripTitles != nil { return tabStrip.beginRename(at: i) }
             // (Not a tab the sidebar's filters fold away: the alert, then.)
             if config.tabBar.inSidebar, isSidebarShown, sidebar.shows(row: i) { return sidebar.beginRename(row: i) }
         }

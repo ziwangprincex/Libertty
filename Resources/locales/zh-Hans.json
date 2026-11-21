@@ -964,5 +964,9 @@
   "OK": "好",
   "a pane is here": "有面板在这里",
   "recent": "最近去过",
-  "new tab here": "在这里开新标签"
+  "new tab here": "在这里开新标签",
+  "Below": "下方",
+  "Tabs above or below the panes share their strip's whole width.": "面板上方或下方的标签平分整条标签栏的宽度。",
+  "Merge into Current Tab": "合并到当前标签",
+  "tabs in a strip under the panes": "标签横排在面板下方"
 }

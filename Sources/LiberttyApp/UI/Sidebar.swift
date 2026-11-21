@@ -234,7 +234,7 @@ final class SidebarViewController: NSViewController {
     private var tabsCapAlone: NSLayoutConstraint!
     private var filesShown = true
     /// The tabs' section (header, rows, filter) and where the files start
-    /// and end with it and without it (`tab-bar = top`).
+    /// and end with it and without it (`tab-bar = top`, `bottom`).
     private var tabsSection: [NSView] = []
     private var filesBelowTabs: [NSLayoutConstraint] = []
     private var filesAlone: [NSLayoutConstraint] = []
@@ -400,7 +400,7 @@ final class SidebarViewController: NSViewController {
         self.view = view
     }
 
-    /// The tabs listed here, or along the window's top (`tab-bar = top`):
+    /// The tabs listed here, or in the strip (`tab-bar = top`, `bottom`):
     /// then the column is the files'.
     func show(tabsShown shown: Bool) {
         guard shown != tabsShown else { return }
@@ -860,6 +860,7 @@ final class SidebarViewController: NSViewController {
         menu.addItem(withTitle: "Move Up", action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Move Down", action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Move to New Window", action: #selector(moveTabToNewWindow(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Merge into Current Tab"), action: #selector(mergeIntoCurrentTab(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Close Other Tabs", action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
@@ -1029,6 +1030,12 @@ final class SidebarViewController: NSViewController {
         controller?.moveTabToNewWindow(tab)
     }
 
+    /// Its panes into the tab in front.
+    @objc private func mergeIntoCurrentTab(_ sender: Any?) {
+        guard let tab = menuTab else { return }
+        controller?.merge(tab)
+    }
+
     /// The tab's focused pane's agent conversation, carried on in a new pane beside it.
     @objc private func forkConversation(_ sender: Any?) {
         guard let pane = menuTab?.focusedPane else { return }
@@ -1147,8 +1154,19 @@ extension StatusBadge {
 
 extension SidebarViewController: NSMenuDelegate {
     /// The menu is the clicked row's: a tab's, a header's or a session's.
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        let row = tabsTable.clickedRow
+    func menuNeedsUpdate(_ menu: NSMenu) { fill(menu, row: tabsTable.clickedRow) }
+
+    /// Tab `i`'s menu as its row's right-click opens it, its items checked
+    /// (`--ui-probe`); nil when no row shows it.
+    func menu(forTab i: Int) -> NSMenu? {
+        guard let row = tableRow(ofTab: i) else { return nil }
+        let menu = NSMenu()
+        fill(menu, row: row)
+        menu.update()
+        return menu
+    }
+
+    private func fill(_ menu: NSMenu, row: Int) {
         menu.removeAllItems()
         menuTab = nil
         menuGroup = nil
@@ -1182,6 +1200,11 @@ extension SidebarViewController: NSMenuItemValidation {
         case #selector(moveTabUp(_:)): return shownRow(from: row, by: -1) != nil
         case #selector(moveTabDown(_:)): return shownRow(from: row, by: 1) != nil
         case #selector(moveTabToNewWindow(_:)): return controller?.tab(at: row).map { controller?.canMoveTabOut($0) == true } ?? false
+        case #selector(mergeIntoCurrentTab(_:)):
+            // Only on another terminal tab than the one in front.
+            let can = controller?.tab(at: row).map { controller?.canMerge($0) == true } ?? false
+            item.isHidden = !can
+            return can
         case #selector(resetTabName(_:)): return row >= 0 && !(controller?.tabNameOverride(at: row) ?? "").isEmpty
         case #selector(forkConversation(_:)):
             // Only where an agent runs; greyed out, with why, where its conversation isn't known.

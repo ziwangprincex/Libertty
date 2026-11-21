@@ -82,6 +82,48 @@ extension TerminalWindowController {
         }
     }
 
+    /// `tab` can merge into the tab in front: both terminal tabs of the
+    /// workspace showing, and not the same one.
+    func canMerge(_ tab: TerminalTab) -> Bool {
+        !isQuick && tab !== selectedTab && tab.container != nil && selectedTab.container != nil
+            && tabs.contains { $0 === tab }
+    }
+
+    /// Merge into Current Tab: `tab`'s panes join the tab in front, beside
+    /// its focused pane, as one block arranged as they were (zooms on either
+    /// side end); its parked and floating panes become the front tab's.
+    /// Nothing restarts and the keyboard stays where it was; `tab` goes.
+    func merge(_ tab: TerminalTab) {
+        guard canMerge(tab), let from = tab.container, let into = selectedTab.container else { return }
+        let target = selectedTab
+        // (`contains` lets a change under way finish: a pane closing is gone by then.)
+        let focused = target.focusedLeaf.flatMap { into.contains($0) ? $0 : nil }
+        guard let anchor = focused ?? into.views.first else { return }
+        // Its card and floating panes are views of its own split: the front
+        // tab's split shows them again (updateSidebar) — one card a tab.
+        from.hideCard()
+        from.floats.forEach(from.removeFloat)
+        into.autobalance = config.splitAutobalance
+        guard into.join(from, beside: anchor, toward: .right) else { return }
+        let hasCard = target.parked.contains { $0.showsCard }
+        target.parked += tab.parked.map { entry in
+            var entry = entry
+            if hasCard { entry.showsCard = false }
+            return entry
+        }
+        tab.parked = []
+        // Closing it asks about the worktree its panes were made in, as closing that tab would have.
+        if target.worktree == nil { target.worktree = tab.worktree }
+        if let i = tabs.firstIndex(where: { $0 === tab }) { tabs.remove(at: i) }
+        if tab === terminalTab { terminalTab = target }
+        tab.content.removeFromSuperview()
+        syncFloats(of: target)
+        updateBroadcastBorders()
+        updateDimming()
+        updateTitle()
+        updateSidebar()
+    }
+
     /// What this window knew of `panes`, come from `other`: news unseen
     /// (the tab's ring), and what was already notified or sounded — so
     /// the move doesn't announce it again.

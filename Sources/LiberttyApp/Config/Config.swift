@@ -13,10 +13,13 @@ struct Config: Equatable {
     /// When panes wear a header (Tern's `pane-headers`).
     enum PaneHeaders: String, CaseIterable { case never, split, always }
     /// Where the tabs are listed (Rex's Tab style): a sidebar on the left or
-    /// the right, or along the top. `sidebar` is read as `left`.
+    /// the right, or a strip along the top or under the panes. `sidebar` is
+    /// read as `left`.
     enum TabBar: String, CaseIterable {
-        case left, right, top
-        var inSidebar: Bool { self != .top }
+        case left, right, top, bottom
+        var inSidebar: Bool { !inStrip }
+        /// In the strip of tabs, above the panes or below them.
+        var inStrip: Bool { self == .top || self == .bottom }
     }
     /// Rex's Interface style: a solid window, or glass.
     enum InterfaceStyle: String, CaseIterable { case classic, glass }
@@ -436,8 +439,8 @@ struct Config: Equatable {
         ("unfocused-split-opacity", "Opacity of the panes you're not typing in, 0.3–1."),
         ("inactive-pane-fade", "Fade the panes you're not typing in, to unfocused-split-opacity (Rex's Fade inactive panes)."),
         ("animation", "natural (default), snappy (shorter) or off (Rex's Animation style): the interface's motion. macOS's Reduce Motion turns it off too."),
-        ("tab-bar", "left, right or top (Rex's Tab style): list the tabs in a sidebar on the left or the right, or along the top of the window (the sidebar then shows the files, if sidebar-files). sidebar is read as left."),
-        ("tab-fill", "With tab-bar = top, the tabs share the bar's whole width (Rex's Fill available space)."),
+        ("tab-bar", "left, right, top or bottom (Rex's Tab style): list the tabs in a sidebar on the left or the right, or in a strip along the top of the window or under its panes (the sidebar then shows the files, if sidebar-files). sidebar is read as left."),
+        ("tab-fill", "With tab-bar = top or bottom, the tabs share their strip's whole width (Rex's Fill available space)."),
         ("tab-icons", "How many of a tab's programs show as icons on it, 0–5 (Rex's Show tab icons). Default 3."),
         ("pane-headers", "never, split or always: when a pane shows a header with its program, folder and size, and buttons to float, zoom and close it."),
         ("split-autobalance", "Even out the panes after every split, close and move (Rex's Autobalance splits): three side by side get a third each."),
@@ -912,7 +915,7 @@ struct Config: Equatable {
             guard let x = bool() else { return "true or false" }; tabIconColor = x
         case "tab-bar":
             if reset { tabBar = defaults.tabBar; return nil }
-            guard let x = v == "sidebar" ? .left : TabBar(rawValue: v) else { return "left, right or top" }; tabBar = x
+            guard let x = v == "sidebar" ? .left : TabBar(rawValue: v) else { return "left, right, top or bottom" }; tabBar = x
         case "tab-fill":
             if reset { tabFill = defaults.tabFill; return nil }
             guard let x = bool() else { return "true or false" }; tabFill = x

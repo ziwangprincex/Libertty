@@ -123,9 +123,9 @@ extension TerminalWindowController {
             return parts.joined(separator: " · ")
         }
     }
-    /// The top tabs' names as drawn, if they're in the window's bar (`--ui-probe`).
+    /// The strip's tabs' names as drawn, if it's in the window (`--ui-probe`).
     var tabStripTitles: [String]? {
-        guard config.tabBar == .top, tabStrip.superview != nil else { return nil }
+        guard config.tabBar.inStrip, tabStrip.superview != nil else { return nil }
         return tabStrip.shownNames
     }
     /// Panes (terminals and documents) in the tab in front.
@@ -165,8 +165,8 @@ extension TerminalWindowController {
         // back: a folder's repository is found a moment after it shows.)
         sidebar.show(tabs: infos, selected: selected, groups: groups,
                      headers: SidebarGroups.showsHeaders(groups, mode: sidebarGrouping), collapsed: collapsedGroups)
-        if config.tabBar == .top {
-            // A top tab says it in one line (Rex's "zsh ~").
+        if config.tabBar.inStrip {
+            // A tab in the strip says it in one line (Rex's "zsh ~").
             tabStrip.show(tabs: infos.map { info in
                 var info = info
                 if !info.detail.isEmpty, info.title == Self.shellName || info.title == "shell" { info.title += " " + info.detail; info.detail = "" }

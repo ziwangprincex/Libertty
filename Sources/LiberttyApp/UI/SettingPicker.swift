@@ -106,7 +106,8 @@ struct SettingPicker {
         SettingPicker(key: "tab-bar", title: "Tab Style", symbol: "sidebar.left") {
             [Option(label: "Left Side", value: "", detail: "tabs listed down a sidebar on the left (default)"),
              Option(label: "Right Side", value: "right", detail: "tabs listed down a sidebar on the right"),
-             Option(label: "Above", value: "top", detail: "tabs along the top of the window")]
+             Option(label: "Above", value: "top", detail: "tabs along the top of the window"),
+             Option(label: L10n.t("Below"), value: "bottom", detail: L10n.t("tabs in a strip under the panes"))]
         },
         SettingPicker(key: "pane-style", title: "Pane Style", symbol: "rectangle.grid.2x2") {
             [Option(label: "Comfortable", value: "", detail: "cards with room around them (default)"),

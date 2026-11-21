@@ -1,8 +1,8 @@
 import AppKit
 
-/// The tabs along the window's top (`tab-bar = top`, Tern's horizontal
-/// tabs): each its glyphs and name, the selected one on the sidebar's
-/// gliding card, a + after the last. A click selects, a double-click
+/// The tabs along the window's top or under its panes (`tab-bar = top`,
+/// `bottom`; Tern's horizontal tabs): each its glyphs and name, the
+/// selected one on the sidebar's gliding card, a + after the last. A click selects, a double-click
 /// renames in place, a drag reorders, the middle button or the × that
 /// shows on hover closes, and the menu does the rest — as the sidebar's
 /// rows do. Tabs share the room when there are many, then scroll.
@@ -227,6 +227,9 @@ final class TabStrip: NSView {
         }
     }
 
+    /// Tab `i`'s menu, as a right-click on it opens it (`--ui-probe`).
+    func menu(forTab i: Int) -> NSMenu? { buttons.indices.contains(i) ? menu(for: buttons[i]) : nil }
+
     fileprivate func menu(for button: TabStripButton) -> NSMenu? {
         guard let i = index(of: button), let tab = controller?.tab(at: i) else { return nil }
         let menu = NSMenu()
@@ -253,6 +256,13 @@ final class TabStrip: NSView {
         item("Move to New Window", enabled: controller?.canMoveTabOut(tab) == true) { [weak self] now in
             guard let controller = self?.controller, let tab = controller.tab(at: now) else { return }
             controller.moveTabToNewWindow(tab)
+        }
+        // Its panes into the tab in front (only another tab's: none on that one).
+        if controller?.canMerge(tab) == true {
+            item(L10n.t("Merge into Current Tab")) { [weak self] now in
+                guard let controller = self?.controller, let tab = controller.tab(at: now) else { return }
+                controller.merge(tab)
+            }
         }
         menu.addItem(.separator())
         item("Close Tab") { [weak self] now in self?.controller?.closeTab(at: now) }
