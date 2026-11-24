@@ -124,8 +124,9 @@ extension TerminalWindowController {
     }
 
     /// What a tab did that you haven't seen. The tab in front shows none:
-    /// you're looking at it.
+    /// you're looking at it. One you marked unread says so, wherever it is.
     func news(of tab: TerminalTab) -> TabNews {
+        if tab.unread { return .unread }
         guard tab !== selectedTab || window?.isVisible != true else { return .none }
         // A parked build finishing counts: it's the reason to look.
         let panes = tab.everyPane
@@ -269,6 +270,16 @@ extension TerminalWindowController {
     /// of it may interrupt you — the one question every sound, notification,
     /// Dock bounce and badge count of a pane asks (TabMute).
     func isMuted(_ pane: TerminalView) -> Bool { owningTab(of: pane)?.muted == true }
+
+    /// Mark as Unread, or as Read: `tab` (the one in front without one).
+    func toggleUnread(_ tab: TerminalTab? = nil) {
+        let tab = tab ?? selectedTab
+        guard everyTab.contains(where: { $0 === tab }) else { return }
+        tab.unread.toggle()
+        // Marked read: what it did while you weren't looking is read too.
+        if !tab.unread { tab.everyPane.forEach { attention.remove(ObjectIdentifier($0)) } }
+        updateSidebar()
+    }
 
     /// Mute Tab / Unmute Tab: the tab in front, or `tab`. The Dock's badge
     /// and the menu bar's count follow at once; what's notified meanwhile

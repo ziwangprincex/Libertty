@@ -455,11 +455,12 @@ enum UIProbe {
                             && copy.everyTab.map { $0.parked.map(\.floatingMinimized) } == controller.everyTab.map { $0.parked.map(\.floatingMinimized) }
                             && copy.collapsedGroups == controller.collapsedGroups
                             && copy.everyTab.map(\.muted) == controller.everyTab.map(\.muted)
+                            && copy.everyTab.map(\.unread) == controller.everyTab.map(\.unread)
                         if same {
-                            print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy)), muted \(copy.everyTab.map(\.muted))")
+                            print("ok    ui-probe roundtrip \(copy.workspaceNames), parked \(parked(copy)), muted \(copy.everyTab.map(\.muted)), unread \(copy.everyTab.map(\.unread))")
                         } else {
-                            print("FAIL  ui-probe roundtrip: \(copy.workspaceNames)/\(copy.activeWorkspace)/\(copy.workspaceTabs.map(\.count))/\(parked(copy))/\(copy.everyTab.map(\.muted)) "
-                                  + "vs \(controller.workspaceNames)/\(controller.activeWorkspace)/\(controller.workspaceTabs.map(\.count))/\(parked(controller))/\(controller.everyTab.map(\.muted))")
+                            print("FAIL  ui-probe roundtrip: \(copy.workspaceNames)/\(copy.activeWorkspace)/\(copy.workspaceTabs.map(\.count))/\(parked(copy))/\(copy.everyTab.map(\.muted))/\(copy.everyTab.map(\.unread)) "
+                                  + "vs \(controller.workspaceNames)/\(controller.activeWorkspace)/\(controller.workspaceTabs.map(\.count))/\(parked(controller))/\(controller.everyTab.map(\.muted))/\(controller.everyTab.map(\.unread))")
                             failures += 1
                         }
                     case .open(let path, let line, let edit):

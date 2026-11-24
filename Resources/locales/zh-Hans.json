@@ -982,8 +982,8 @@
   "Mute/Unmute Tab": "标签静音/取消静音",
   "muted": "已静音",
   "Muted: no sounds, notifications or badge count from this tab": "已静音：这个标签不出声、不发通知，也不计入角标",
-  "Go Back a Pane": "退回之前的面板",
-  "Go Back a Tab": "退回之前的标签",
+  "Go Back a Pane": "后退一个面板",
+  "Go Back a Tab": "后退一个标签",
   "Toggle Recent Pane": "与刚才的面板来回切换",
   "Toggle Recent Tab": "与刚才的标签来回切换",
   "Below": "下方",
@@ -1064,5 +1064,13 @@
   "built in": "内置",
   "%@ shorter": "缩短 %@",
   "+%@ taller": "增高 %@",
-  ": ": "："
+  ": ": "：",
+  "Go Forward a Pane": "前进一个面板",
+  "Go Forward a Tab": "前进一个标签",
+  "Mark Tab as Unread": "将标签标为未读",
+  "Mark Tab as Read": "将标签标为已读",
+  "Mark Tab as Unread/Read": "标签标为未读/已读",
+  "marked unread": "已标为未读",
+  "You marked it unread, to come back to": "你标为了未读，打算回头再看",
+  "Something happened here since you last looked": "你上次看过之后，这里有了新动静"
 }

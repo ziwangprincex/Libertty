@@ -23,6 +23,7 @@ extension TerminalWindowController {
         let next = workspaces[index]
         tabs = next.tabs
         selectedTab = next.selected
+        selectedTab.unread = false
         terminalTab = next.terminal
         area.show(selectedTab.content)
         selectedTab.container?.layoutPanes()

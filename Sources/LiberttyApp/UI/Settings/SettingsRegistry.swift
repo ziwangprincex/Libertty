@@ -527,8 +527,8 @@ enum SettingsShortcuts {
         ] + (1...8).map { e("Show Tab \($0)", "goto_tab:\($0)") } + [
             e("Show All Tabs", "toggle_tab_overview"), e("Change Tab Title…", "prompt_tab_title"),
             e("Move Tab to New Window", "move_tab_to_new_window"), e("Go to Directory…", "go_to_directory"),
-            e("Mute/Unmute Tab", "toggle_tab_mute"),
-            e("Go Back a Tab", "focus_back:tab"), e("Toggle Recent Tab", "focus_recent:tab"),
+            e("Mute/Unmute Tab", "toggle_tab_mute"), e("Mark Tab as Unread/Read", "toggle_tab_unread"),
+            e("Go Back a Tab", "focus_back:tab"), e("Go Forward a Tab", "focus_forward:tab"), e("Toggle Recent Tab", "focus_recent:tab"),
         ]),
         Group(title: "Panes", actions: [
             e("Split Right", "new_split:right"), e("Split Left", "new_split:left"), e("Split Down", "new_split:down"),
@@ -540,7 +540,7 @@ enum SettingsShortcuts {
             e("Move Divider Left", "resize_split:left,10"), e("Move Divider Right", "resize_split:right,10"),
             e("Equalize Splits", "equalize_splits"), e("Zoom Split", "toggle_split_zoom"), e("Go to Pane…", "goto_pane"),
             e("Jump to Pane Needing You", "goto_attention"), e("Go Back a Pane", "focus_back:pane"),
-            e("Toggle Recent Pane", "focus_recent:pane"), e("Resume Conversation…", "resume_conversation"),
+            e("Go Forward a Pane", "focus_forward:pane"), e("Toggle Recent Pane", "focus_recent:pane"), e("Resume Conversation…", "resume_conversation"),
             e("Fork Conversation", "fork_conversation"), e("Compose Prompt…", "toggle_composer"),
             e("Prompt Queue…", "toggle_prompt_queue"),
             e("New Tab in Worktree…", "new_tab_in_worktree"), e("Toggle Dark Mode", "toggle_appearance"),

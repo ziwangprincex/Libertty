@@ -1,0 +1,102 @@
+# Mark Tab as Unread (toggle_tab_unread): a dot beside the tab's name says
+# you meant to come back to it, the tab in front's too. It stays until you
+# select the tab again from another one, or mark it read; moved to a
+# window of its own and back, closed and brought back with Undo, and
+# saved with the window, a document tab's too.
+key:cmd+shift+r
+wait:0.4
+type:later
+key:enter
+wait:0.5
+expect-tab:later
+expect-news:0
+action:toggle_tab_unread
+wait:0.3
+expect-news:1:later
+shot:tab-unread.png
+# From another tab, still marked; selected again, read.
+tab:new
+wait:0.5
+expect-news:1:later
+tab:1
+wait:0.5
+expect-news:0
+# The palette says what it would do now.
+key:cmd+shift+p
+wait:0.4
+type:mark tab
+wait:0.3
+expect-palette:Mark Tab as Unread
+key:enter
+wait:0.5
+expect-news:1:later
+key:cmd+shift+p
+wait:0.4
+type:mark tab
+wait:0.3
+expect-palette:Mark Tab as Read
+key:enter
+wait:0.5
+expect-news:0
+# Marked in front and then left, it stays marked till you come back.
+tab:2
+wait:0.3
+action:toggle_tab_unread
+tab:1
+wait:0.3
+expect-news:1
+tab:2
+wait:0.3
+expect-news:0
+# It goes where the tab goes, and is saved with the window.
+tab:1
+wait:0.3
+action:toggle_tab_unread
+wait:0.3
+expect-news:1:later
+action:move_tab_to_new_window
+expect-windows:2
+take-tab:1
+wait:0.5
+expect-windows:1
+expect-news:1:later
+roundtrip:go
+# Closed and brought back, it's still marked (tab 1, marked in front;
+# closing it brings later forward, which reads it).
+tab:1
+wait:0.3
+expect-news:1:later
+key:cmd+shift+r
+wait:0.4
+type:first
+key:enter
+wait:0.5
+action:toggle_tab_unread
+wait:0.3
+expect-news:2
+key:cmd+w
+wait:0.8
+expect-tab-count:1
+expect-news:0
+undo:go
+wait:0.8
+expect-tab-count:2
+expect-news:1:first
+# A document tab keeps its mark too.
+open:@ROOT@/docs/CHANGELOG.md
+wait:0.6
+action:toggle_tab_unread
+wait:0.3
+expect-news:2
+roundtrip:go
+tab:1
+wait:0.3
+expect-news:1:CHANGELOG
+# The tabs along the top show the dot too.
+action:set_setting:tab-bar=top
+wait:2.0
+expect-strip:later
+shot:tab-unread-strip.png
+action:reset_setting:tab-bar
+wait:2.0
+expect-news:1:CHANGELOG

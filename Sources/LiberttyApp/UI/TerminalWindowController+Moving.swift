@@ -179,7 +179,8 @@ extension TerminalWindowController {
         adoptAll(tab)
         takeNews(of: tab.everyPane, from: other)
         tabs.insert(tab, at: max(0, min(tabs.count, index)))
-        select(tab)
+        // Moved isn't read: one marked unread stays so, in front here.
+        select(tab, read: false)
         updateBroadcastBorders()
         window?.makeKeyAndOrderFront(nil)
     }

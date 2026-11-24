@@ -1,7 +1,7 @@
 import AppKit
 
 /// Focus history (`FocusHistory`): what it keeps of this window, and its
-/// jumps — Focus Back, Focus Recent — to a pane or a tab of any window.
+/// jumps — Back, Forward, Recent — to a pane or a tab of any window.
 extension TerminalWindowController {
     /// What focus history keeps of the tab in front: a document tab's
     /// document, or the split's focused pane or document pane (a floating
@@ -47,12 +47,12 @@ extension TerminalWindowController {
         return nil
     }
 
-    /// Focus Back (`walking`) or Focus Recent from `controller`'s window
-    /// (the Quick Terminal's too: back to the last pane of a window): the
-    /// pane, or the tab, focus was in before. Its window comes forward, its
-    /// tab is selected, its pane revealed as Go to Pane does. Nowhere to go:
-    /// a beep, and nothing changes.
-    static func jumpInFocusHistory(_ level: FocusHistory.Level, walking: Bool, from controller: TerminalWindowController?) {
+    /// Back, Forward or Recent from `controller`'s window (the Quick
+    /// Terminal's too: back to the last pane of a window): the pane, or the
+    /// tab, focus was in before (or, forward, after). Its window comes
+    /// forward, its tab is selected, its pane revealed as Go to Pane does.
+    /// Nowhere to go: a beep, and nothing changes.
+    static func jumpInFocusHistory(_ level: FocusHistory.Level, _ move: FocusHistory.Move, from controller: TerminalWindowController?) {
         let windows = historyWindows(around: controller)
         // (A floating pane with the keyboard isn't kept: back from it is to the split.)
         let current: NSView? = controller.flatMap { $0.isQuick || $0.focusedFloatingPane != nil ? nil : $0.historyLeaf }
@@ -61,7 +61,7 @@ extension TerminalWindowController {
         case .pane: here = current
         case .tab: here = controller.flatMap { $0.isQuick ? nil : $0.selectedTab }
         }
-        let went = FocusHistory.shared.jump(level, walking: walking, current: current, here: here, stop: { leaf in
+        let went = FocusHistory.shared.jump(level, move, current: current, here: here, stop: { leaf in
             guard let found = place(of: leaf, in: windows) else { return nil }
             switch level {
             case .pane: return found.shown ? leaf : nil

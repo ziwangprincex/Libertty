@@ -85,6 +85,8 @@ struct SavedTab: Codable {
     var worktree: WorktreeInfo?
     /// Muted (Mute Tab); nil: not.
     var muted: Bool?
+    /// Marked unread (Mark Tab as Unread); nil: not.
+    var unread: Bool?
 }
 
 struct SavedParked: Codable {
@@ -350,7 +352,11 @@ extension TerminalWindowController {
     }
 
     private static func savedTab(_ tab: TerminalTab) -> SavedTab {
-        if let doc = tab.document { return SavedTab(title: tab.titleOverride, document: Self.saved(doc.pageURL)) }
+        if let doc = tab.document {
+            var saved = SavedTab(title: tab.titleOverride, document: Self.saved(doc.pageURL))
+            saved.unread = tab.unread ? true : nil
+            return saved
+        }
             let leaves = tab.container?.views ?? []
             var saved = SavedTab(title: tab.titleOverride.isEmpty ? nil : tab.titleOverride,
                             paneTitle: tab.paneTitleOverride.isEmpty ? nil : tab.paneTitleOverride,
@@ -368,6 +374,7 @@ extension TerminalWindowController {
                             })
             saved.worktree = tab.worktree
             saved.muted = tab.muted ? true : nil
+            saved.unread = tab.unread ? true : nil
             return saved
     }
 
@@ -470,6 +477,7 @@ extension TerminalWindowController {
                                                              renderMarkdown: config.markdownRendered))
                 doc.restoredWorkspace = t.workspace
                 doc.restoredSelected = t.front == true
+                doc.unread = t.unread == true
                 tabs.append(doc)
                 continue
             }
@@ -482,6 +490,7 @@ extension TerminalWindowController {
             tab.paneTitleOverride = t.paneTitle ?? ""
             tab.worktree = t.worktree
             tab.muted = t.muted == true
+            tab.unread = t.unread == true
             tab.restoredWorkspace = t.workspace
             tab.restoredSelected = t.front == true
             for entry in t.parked ?? [] {

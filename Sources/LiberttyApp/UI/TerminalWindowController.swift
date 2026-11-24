@@ -21,6 +21,10 @@ final class TerminalTab {
     /// Mute Tab: it goes on showing what it does, but nothing of it
     /// interrupts you (`TabMute`). Saved with the window; goes where the tab goes.
     var muted = false
+    /// Mark as Unread: you meant to come back to it. Its row shows a dot
+    /// until you do — select it from another tab (the tab in front stays
+    /// marked till you've left it and come back). Saved with the window.
+    var unread = false
     /// The git worktree it was made in (New Tab in Worktree…): closing it asks whether that goes too.
     var worktree: WorktreeInfo?
     /// Closing it is asking about its worktree now (a second ⌘W waits for that).

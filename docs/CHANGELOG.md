@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.6
+
+> After Rex's newest build: Forward, to go back the way Back went, and Mark Tab as Unread, a dot on a tab you mean to come back to.
+
+- **Back and Forward, as a browser has them** (`focus_back:pane` / `:tab`, `focus_forward:pane` / `:tab`): Back goes one further each time you press it, however long you take between presses, and Forward retraces those steps toward where you started. Focus moving anywhere else ends the walk, and with it the way forward; Back starts again from where you are then. The 3-second window is gone. `focus_recent` still goes back and forth between the last two. On no key by default: the command palette's Go Back / Go Forward a Pane or a Tab, and Settings ▸ Shortcuts, to bind.
+- **Mark Tab as Unread** (a tab's menu in the sidebar or the strip, the command palette, `toggle_tab_unread`): a filled dot beside the tab's name says you meant to come back to it, the tab in front's too. It stays until you come back to the tab from another one, or choose Mark Tab as Read; the sidebar's Finished or Failed filter lists it. It goes where the tab goes and is remembered with the window. Marking a tab read clears what it did while you weren't looking, too.
+- The news ring's tooltip is in the interface's language.
+- Inside: `roundtrip:` in `--ui-probe` checks the unread marks; the fixture `tab-unread`.
+
 ## 0.7.5
 
 > After Rex's newer builds: back to the pane or tab you were in before, tabs under the panes, Merge into Current Tab, Mute Tab, Attach Files… and Attach from Photos…, and background update downloads that wait out Low Data Mode and hotspots.

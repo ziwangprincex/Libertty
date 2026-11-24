@@ -259,6 +259,10 @@ final class TabStrip: NSView {
             guard let controller = self?.controller, let tab = controller.tab(at: now) else { return }
             controller.toggleMute(tab)
         }
+        item(TabNews.markTitle(unread: tab.unread)) { [weak self] now in
+            guard let controller = self?.controller, let tab = controller.tab(at: now) else { return }
+            controller.toggleUnread(tab)
+        }
         menu.addItem(.separator())
         item("Move Left", enabled: i > 0) { [weak self] now in self?.controller?.moveTab(from: now, to: now - 1) }
         item("Move Right", enabled: i < tabs.count - 1) { [weak self] now in self?.controller?.moveTab(from: now, to: now + 1) }
@@ -351,6 +355,8 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
     private let title = NSTextField(labelWithString: "")
     private let news = CAShapeLayer()
     private let newsView = NSView()
+    /// The news it shows: a ring, or a dot (redrawn in a new appearance's accent).
+    private var newsKind: TabNews = .none
     /// Muted (Mute Tab): a speaker struck through, before the news ring.
     private let mutedGlyph = NSImageView()
     private let close = NSButton()
@@ -454,10 +460,12 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         if tab.paneCount > 1 { tip.append(tab.zoomed ? "\(tab.paneCount) panes, zoomed" : "\(tab.paneCount) panes") }
         if tab.parked > 0 { tip.append("\(tab.parked) parked") }
         if let status = tab.status { tip.append(TerminalWindowController.label(for: status)) }
+        if tab.news == .unread { tip.append(L10n.t("marked unread")) }
         if tab.muted { tip.append(L10n.t("muted")) }
         toolTip = tip.joined(separator: " · ")
         newsView.isHidden = !tab.showsNews
-        if tab.showsNews { news.strokeColor = Accent.color.cgColor }
+        newsKind = tab.news
+        if tab.showsNews { news.showNews(tab.news) }
         mutedGlyph.isHidden = !tab.muted
         close.isHidden = !(closable && hovering)
         setAccessibilityLabel(Self.spoken(tab))
@@ -472,7 +480,7 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         if let status = tab.status { words.append(L10n.t(TerminalWindowController.label(for: status))) }
         if let percent = tab.progress?.percent { words.append("\(percent)%") }
         if tab.paneCount > 1 { words.append(L10n.t("%d panes").replacingOccurrences(of: "%d", with: String(tab.paneCount))) }
-        if tab.showsNews { words.append(L10n.t("needs a look")) }
+        if tab.showsNews { words.append(L10n.t(tab.news == .unread ? "marked unread" : "needs a look")) }
         if tab.muted { words.append(L10n.t("muted")) }
         return words.joined(separator: ", ")
     }
@@ -515,7 +523,7 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        if !newsView.isHidden { news.strokeColor = Accent.color.cgColor }
+        if !newsView.isHidden { news.showNews(newsKind) }
     }
 
     // MARK: Mouse

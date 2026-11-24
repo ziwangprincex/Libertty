@@ -228,14 +228,15 @@ enum Action: Equatable {
     case toggleFullscreen, toggleVisibility, toggleWindowFloatOnTop, resetWindowSize, toggleSecureInput
     case toggleCommandPalette, toggleQuickTerminal, toggleTabOverview, connectToHost, togglePictureInPicture
     /// Focus history: back to where focus was (`focus_back`, further each
-    /// press soon after), or back and forth with it (`focus_recent`).
-    case focusBack(FocusHistory.Level), focusRecent(FocusHistory.Level)
+    /// press), forward again along that walk (`focus_forward`), or back and
+    /// forth with it (`focus_recent`).
+    case focusBack(FocusHistory.Level), focusForward(FocusHistory.Level), focusRecent(FocusHistory.Level)
     case gotoPane, gotoAttention, resumeConversation, newTabInWorktree, toggleAppearance, gotoDirectory, showTabs(TabActivity), restartSurface, parkSurface, unparkSurface, floatSurface
     case newFloatingPane, toggleFloatingPanes
     case moveSurfaceToNewTab, moveSurfaceToNewWindow, moveSurfaceToTab(Int), moveTabToNewWindow
     case newWorkspace, renameWorkspace, closeWorkspace, nextWorkspace, previousWorkspace, gotoWorkspace(Int)
     case openGit, openBrowser, focusAddress, openTasks, newCanvas, openProfiler, openBoard, openPlugins, openScreen
-    case toggleBroadcastInput, toggleTabMute, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
+    case toggleBroadcastInput, toggleTabMute, toggleTabUnread, copyCommandOutput, writeScrollbackFile(String), writeSelectionFile(String)
     case toggleCopyMode, toggleHintMode, quickLook
     case showCompletions, clearAutocompleteHistory
     case undo, redo
@@ -280,7 +281,7 @@ enum Action: Equatable {
         ("next_workspace", .nextWorkspace), ("previous_workspace", .previousWorkspace),
         ("open_git", .openGit), ("open_browser", .openBrowser), ("focus_address", .focusAddress), ("open_tasks", .openTasks), ("new_canvas", .newCanvas), ("open_profiler", .openProfiler), ("open_board", .openBoard), ("open_plugins", .openPlugins), ("open_screen", .openScreen),
         ("toggle_picture_in_picture", .togglePictureInPicture),
-        ("toggle_broadcast_input", .toggleBroadcastInput), ("toggle_tab_mute", .toggleTabMute), ("copy_command_output", .copyCommandOutput),
+        ("toggle_broadcast_input", .toggleBroadcastInput), ("toggle_tab_mute", .toggleTabMute), ("toggle_tab_unread", .toggleTabUnread), ("copy_command_output", .copyCommandOutput),
         ("toggle_copy_mode", .toggleCopyMode), ("toggle_hint_mode", .toggleHintMode),
         ("quick_look", .quickLook),
         ("show_completions", .showCompletions), ("clear_autocomplete_history", .clearAutocompleteHistory),
@@ -316,11 +317,15 @@ enum Action: Equatable {
             guard let a = arg?.trimmingCharacters(in: .whitespaces).lowercased(), let activity = TabActivity(rawValue: a) else { return nil }
             self = .showTabs(activity)
         case "move_surface_to_tab": guard let n = integer(), n > 0 else { return nil }; self = .moveSurfaceToTab(n)
-        case "focus_back", "focus_recent":
+        case "focus_back", "focus_forward", "focus_recent":
             // Without an argument: from pane to pane.
             guard let level = FocusHistory.Level(rawValue: arg?.trimmingCharacters(in: .whitespaces).lowercased() ?? "pane")
             else { return nil }
-            self = name == "focus_back" ? .focusBack(level) : .focusRecent(level)
+            switch name {
+            case "focus_back": self = .focusBack(level)
+            case "focus_forward": self = .focusForward(level)
+            default: self = .focusRecent(level)
+            }
         case "fork_conversation":
             guard let place = arg == nil ? .split : ForkPlace(rawValue: arg!.trimmingCharacters(in: .whitespaces).lowercased())
             else { return nil }
@@ -372,6 +377,7 @@ enum Action: Equatable {
         case .showTabs(let activity): return "show_tabs:\(activity.rawValue)"
         case .moveSurfaceToTab(let n): return "move_surface_to_tab:\(n)"
         case .focusBack(let level): return "focus_back:\(level.rawValue)"
+        case .focusForward(let level): return "focus_forward:\(level.rawValue)"
         case .focusRecent(let level): return "focus_recent:\(level.rawValue)"
         case .forkConversation(.split): return "fork_conversation"
         case .forkConversation(let place): return "fork_conversation:\(place.rawValue)"
@@ -443,7 +449,8 @@ enum Action: Equatable {
         ("toggle_secure_input", "Secure Keyboard Entry: keep other apps from reading keystrokes"),
         ("toggle_command_palette", "Search every command, tab, session and theme by name"),
         ("goto_pane", "Go to any pane of any window, by its program, folder or tab"),
-        ("focus_back:pane|tab", "Back to the pane (or tab) you were in before this one, in any window; pressed again within 3 seconds, one further back each time"),
+        ("focus_back:pane|tab", "Back to the pane (or tab) you were in before this one, in any window; pressed again, one further back each time, as a browser's Back button goes"),
+        ("focus_forward:pane|tab", "Forward again to the pane (or tab) focus_back left, as a browser's Forward button goes; only until focus moves somewhere else"),
         ("focus_recent:pane|tab", "Back and forth between the pane (or tab) you're in and the one you were in before it"),
         ("toggle_appearance", "Switch between the light and the dark appearance (window-theme), whatever macOS uses"),
         ("new_tab_in_worktree", "A new tab on a new branch, in a git worktree of its own (worktree-dir, worktree-base); closing it asks whether the worktree goes too"),
@@ -479,6 +486,7 @@ enum Action: Equatable {
         ("connect_to_host", "A window whose sessions run on another machine over ssh, and survive the link dropping"),
         ("toggle_picture_in_picture", "Show the focused pane, live, in a small window that floats over every app, or close it"),
         ("toggle_broadcast_input", "Type into every pane of the tab at once, or stop"),
+        ("toggle_tab_unread", "Mark the tab in front as unread: a dot beside its name says you meant to come back to it, until you do; or mark it as read"),
         ("toggle_tab_mute", "Mute the tab in front, or unmute it: it goes on showing what it does, but plays no sound, sends no notification, doesn't bounce the Dock icon and isn't counted on its badge"),
         ("toggle_composer", "Write a prompt for the focused pane in the composer: several lines, undo, rich text pasted as Markdown; ⌘Return sends it as one paste, ⌘⇧Return queues it"),
         ("toggle_prompt_queue", "The focused pane's prompt queue, in its composer: prompts that go one by one as the pane's agent (or shell) is ready for them"),

@@ -3,8 +3,9 @@ import Testing
 @testable import LiberttyApp
 
 /// Focus history: where focus has been, newest first, each place once;
-/// Focus Back walks it (pressed again soon), Focus Recent goes back and
-/// forth; closed panes drop out, ones that can't be shown are passed over.
+/// Back walks it and Forward retraces the walk, as a browser's buttons do;
+/// Recent goes back and forth; closed panes drop out, ones that can't be
+/// shown are passed over.
 struct FocusHistoryTests {
     final class Tab {}
     final class Leaf {
@@ -15,11 +16,10 @@ struct FocusHistoryTests {
         init(_ name: String, in tab: Tab) { self.name = name; self.tab = tab }
     }
 
-    /// Panes in tabs, the clock, and focus moving the way the app moves it:
-    /// each landing tells the history, jumps' own landings too.
+    /// Panes in tabs, and focus moving the way the app moves it: each
+    /// landing tells the history, jumps' own landings too.
     final class World {
-        var now: TimeInterval = 1000
-        lazy var history = FocusHistory(clock: { [unowned self] in self.now })
+        let history = FocusHistory()
         private(set) var focused: Leaf?
         /// Each tab's own focused pane: what a jump to the tab lands on.
         private var tabFocus: [ObjectIdentifier: Leaf] = [:]
@@ -30,11 +30,12 @@ struct FocusHistoryTests {
             history.note(leaf)
         }
 
-        func back(_ level: FocusHistory.Level = .pane) -> Bool { jump(level, walking: true) }
-        func recent(_ level: FocusHistory.Level = .pane) -> Bool { jump(level, walking: false) }
+        func back(_ level: FocusHistory.Level = .pane) -> Bool { jump(level, .back) }
+        func forward(_ level: FocusHistory.Level = .pane) -> Bool { jump(level, .forward) }
+        func recent(_ level: FocusHistory.Level = .pane) -> Bool { jump(level, .recent) }
 
-        private func jump(_ level: FocusHistory.Level, walking: Bool) -> Bool {
-            history.jump(level, walking: walking, current: focused, here: level == .pane ? focused : focused?.tab,
+        private func jump(_ level: FocusHistory.Level, _ move: FocusHistory.Move) -> Bool {
+            history.jump(level, move, current: focused, here: level == .pane ? focused : focused?.tab,
                          stop: { object in
                              let leaf = object as! Leaf
                              if level == .tab { return leaf.tab }
@@ -87,14 +88,11 @@ struct FocusHistoryTests {
         for leaf in [a, b, c, d] { world.focus(leaf) }
         #expect(world.back())
         #expect(world.focused === c)
-        world.now += 1
         #expect(world.back())
         #expect(world.focused === b)
-        world.now += 2.5
         #expect(world.back())
         #expect(world.focused === a)
         // The oldest: nowhere further, and nothing changes.
-        world.now += 1
         #expect(!world.back())
         #expect(world.focused === a)
         // Walked past, c and b didn't become the newest; where it stopped does
@@ -104,18 +102,76 @@ struct FocusHistoryTests {
         #expect(world.names == ["c", "a", "d", "b"])
     }
 
-    @Test func laterStartsAgainFromWhereFocusIs() {
+    @Test func forwardRetracesTheWalk() {
+        let world = World(), tab = Tab()
+        let a = Leaf("a", in: tab), b = Leaf("b", in: tab), c = Leaf("c", in: tab), d = Leaf("d", in: tab)
+        for leaf in [a, b, c, d] { world.focus(leaf) }
+        // No walk back: nowhere forward.
+        #expect(!world.forward())
+        #expect(world.focused === d)
+        for leaf in [c, b, a] {
+            #expect(world.back())
+            #expect(world.focused === leaf)
+        }
+        for leaf in [b, c, d] {
+            #expect(world.forward())
+            #expect(world.focused === leaf)
+        }
+        // Back where the walk began: no further forward; back walks it again.
+        #expect(!world.forward())
+        #expect(world.focused === d)
+        #expect(world.back())
+        #expect(world.focused === c)
+        #expect(world.forward())
+        #expect(world.focused === d)
+        // Walked through, none of it became the newest.
+        #expect(world.names == ["d", "c", "b", "a"])
+    }
+
+    @Test func focusElsewhereEndsTheWayForward() {
         let world = World(), tab = Tab()
         let a = Leaf("a", in: tab), b = Leaf("b", in: tab), c = Leaf("c", in: tab), d = Leaf("d", in: tab)
         for leaf in [a, b, c, d] { world.focus(leaf) }
         #expect(world.back())
         #expect(world.back())
         #expect(world.focused === b)
-        // After the walk's time: b is the newest, and back is to where the walk began.
-        world.now += FocusHistory.walkWindow + 0.5
+        // A click somewhere else: where the walk stopped is the newest before it.
+        world.focus(a)
+        #expect(!world.forward())
+        #expect(world.focused === a)
+        #expect(world.names == ["a", "b", "d", "c"])
+        // Recent ends a walk too.
         #expect(world.back())
+        #expect(world.focused === b)
+        #expect(world.recent())
+        #expect(world.focused === a)
+        #expect(!world.forward())
+    }
+
+    @Test func forwardPassesOverWhatCantBeShown() {
+        let world = World(), tab = Tab()
+        let a = Leaf("a", in: tab), b = Leaf("b", in: tab), c = Leaf("c", in: tab), d = Leaf("d", in: tab)
+        for leaf in [a, b, c, d] { world.focus(leaf) }
+        for _ in 0..<3 { #expect(world.back()) }
+        #expect(world.focused === a)
+        c.shown = false
+        #expect(world.forward())
+        #expect(world.focused === b)
+        #expect(world.forward())
         #expect(world.focused === d)
-        #expect(world.names.prefix(2) == ["b", "d"])
+    }
+
+    @Test func forwardOnlyAtTheWalksLevel() {
+        let world = World(), one = Tab(), two = Tab()
+        let a1 = Leaf("a1", in: one), b1 = Leaf("b1", in: two), b2 = Leaf("b2", in: two)
+        for leaf in [a1, b1, b2] { world.focus(leaf) }
+        #expect(world.back(.pane))
+        #expect(world.focused === b1)
+        // Not a walk from tab to tab: nowhere to go, and the pane walk goes on.
+        #expect(!world.forward(.tab))
+        #expect(world.focused === b1)
+        #expect(world.forward(.pane))
+        #expect(world.focused === b2)
     }
 
     @Test func focusElsewhereEndsTheWalk() {
@@ -142,7 +198,6 @@ struct FocusHistoryTests {
         #expect(world.focused === b)
         #expect(world.recent())
         #expect(world.focused === c)
-        world.now += 10
         #expect(world.recent())
         #expect(world.focused === b)
         #expect(world.names == ["b", "c", "a"])
@@ -171,7 +226,6 @@ struct FocusHistoryTests {
         // Kept all the same: back once it can be shown again.
         b.shown = true
         #expect(world.names == ["a", "c", "b"])
-        world.now += 10
         #expect(world.back())
         #expect(world.back())
         #expect(world.focused === b)
@@ -237,7 +291,7 @@ struct FocusHistoryTests {
         world.focus(a)
         world.focus(b)
         var landed: AnyObject?
-        let went = world.history.jump(.pane, walking: true, current: nil, here: nil, stop: { $0 }, go: { landed = $0; return $0 })
+        let went = world.history.jump(.pane, .back, current: nil, here: nil, stop: { $0 }, go: { landed = $0; return $0 })
         #expect(went)
         #expect(landed === b)
     }
@@ -246,15 +300,17 @@ struct FocusHistoryTests {
         #expect(Action("focus_back:pane") == .focusBack(.pane))
         #expect(Action("focus_back:tab") == .focusBack(.tab))
         #expect(Action("focus_recent:pane") == .focusRecent(.pane))
+        #expect(Action("focus_forward:tab") == .focusForward(.tab))
+        #expect(Action("focus_forward") == .focusForward(.pane))
         #expect(Action("focus_recent: tab") == .focusRecent(.tab))
         #expect(Action("focus_back") == .focusBack(.pane))
         #expect(Action("focus_back:window") == nil)
-        for text in ["focus_back:pane", "focus_back:tab", "focus_recent:pane", "focus_recent:tab"] {
+        for text in ["focus_back:pane", "focus_back:tab", "focus_forward:pane", "focus_forward:tab", "focus_recent:pane", "focus_recent:tab"] {
             let action = try #require(Action(text))
             #expect(action.configString == text)
             #expect(Action.catalog.contains { $0.0.hasPrefix(text.split(separator: ":")[0] + ":") })
         }
         // Not bound by default: the keys they'd want are taken.
-        #expect(!Keybinds.defaults.contains { $0.contains("focus_back") || $0.contains("focus_recent") })
+        #expect(!Keybinds.defaults.contains { $0.contains("focus_back") || $0.contains("focus_forward") || $0.contains("focus_recent") })
     }
 }

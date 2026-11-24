@@ -471,8 +471,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         command("Go to Pane…", .gotoPane, "rectangle.3.group")
         command("Jump to Pane Needing You", .gotoAttention, "exclamationmark.bubble")
         // Focus history: where focus was before, in any window.
-        command("Go Back a Pane", .focusBack(.pane), "arrow.uturn.backward.square", keywords: "focus history previous last")
-        command("Go Back a Tab", .focusBack(.tab), "arrow.uturn.backward.circle", keywords: "focus history previous last")
+        command("Go Back a Pane", .focusBack(.pane), "arrow.uturn.backward.square", keywords: "focus history previous last navigate")
+        command("Go Back a Tab", .focusBack(.tab), "arrow.uturn.backward.circle", keywords: "focus history previous last navigate")
+        command("Go Forward a Pane", .focusForward(.pane), "arrow.uturn.forward.square", keywords: "focus history next navigate")
+        command("Go Forward a Tab", .focusForward(.tab), "arrow.uturn.forward.circle", keywords: "focus history next navigate")
         command("Toggle Recent Pane", .focusRecent(.pane), "arrow.left.arrow.right.square", keywords: "focus history last switch")
         command("Toggle Recent Tab", .focusRecent(.tab), "arrow.left.arrow.right.circle", keywords: "focus history last switch")
         command("Resume Conversation…", .resumeConversation, "bubble.left.and.text.bubble.right")
@@ -533,6 +535,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // What it does to the tab in front now: mute it, or unmute it.
         if let tab = controller?.selectedTab, tab.isTerminal {
             command(tab.muted ? "Unmute Tab" : "Mute Tab", .toggleTabMute, tab.muted ? "speaker.wave.2" : TabMute.symbol)
+        }
+        if let tab = controller?.selectedTab {
+            command(tab.unread ? "Mark Tab as Read" : "Mark Tab as Unread", .toggleTabUnread, tab.unread ? "circle" : "circle.fill",
+                    keywords: "unread read later come back remind")
         }
         command("Export Text As…", .writeScrollbackFile("save"), "square.and.arrow.up")
         command("Open Scrollback in Tab", .writeScrollbackFile("open"), "doc.text")

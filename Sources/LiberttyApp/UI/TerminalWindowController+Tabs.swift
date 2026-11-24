@@ -234,10 +234,13 @@ extension TerminalWindowController {
         select(listed[(i + offset + listed.count) % listed.count])
     }
 
-    func select(_ tab: TerminalTab) {
+    /// Bring `tab` forward. Come to from another tab, it's read (Mark Tab
+    /// as Unread); not `read` when it only came back (moved here, Undo Close).
+    func select(_ tab: TerminalTab, read: Bool = true) {
         dismissOverview()
         let changed = tab !== selectedTab
         tab.rang = false
+        if changed, read { tab.unread = false }
         if changed, area.findBar.isHidden == false { _ = endSearch() }
         selectedTab = tab
         if tab.isTerminal { terminalTab = tab }
@@ -353,7 +356,7 @@ extension TerminalWindowController {
             // Back in the workspace it was closed in, if that's still here.
             if let w = self.workspaces.firstIndex(where: { $0.id == home }) { self.switchWorkspace(to: w) }
             self.tabs.insert(tab, at: min(i, self.tabs.count))
-            self.select(tab)
+            self.select(tab, read: false)
             // Programs that ended meanwhile take their panes with them.
             self.clearExited(in: tab)
             return { [weak self] in self?.removeTab(tab) }

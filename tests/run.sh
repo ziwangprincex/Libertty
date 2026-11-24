@@ -308,6 +308,9 @@ mkdir -p $PRIVATE/mute-config/libertty
 print 'bell-features = system,attention,title\nprogram-status-sound = blocked:Ping' > $PRIVATE/mute-config/libertty/config
 expect tab-mute 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/mute-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/tab-mute.txt)" $OUT
+# Mark Tab as Unread (toggle_tab_unread): a dot till you come back to it.
+expect tab-unread 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/tab-unread.txt)" $OUT
 # Coding agents: Claude Code's hook as it runs it, +status, and a session's
 # name on its tab (in liberttyd: --persist).
 expect agent 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
@@ -488,7 +491,8 @@ expect sidebar-news 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-co
 expect attention 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/attention.txt)" $OUT
 # Focus history: back to the pane or tab focus was in before, walking
-# further each press soon after, or back and forth (focus_back, focus_recent).
+# further each press, forward again along the walk, or back and forth
+# (focus_back, focus_forward, focus_recent).
 expect focus-history 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/focus-history.txt)" $OUT
 # active-border: a border round the focused pane of a split, following focus.

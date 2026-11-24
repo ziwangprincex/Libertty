@@ -60,7 +60,7 @@ enum TabActivity: String, CaseIterable {
         case .all: return true
         case .working: return tab.status == .working || tab.progress != nil
         case .waiting: return tab.status == .blocked
-        case .attention: return tab.status == .done || tab.status == .error || tab.news == .attention
+        case .attention: return tab.status == .done || tab.status == .error || tab.news != .none
         }
     }
 }
@@ -70,13 +70,33 @@ enum TabNews: Equatable {
     case none
     /// Something finished or rang the bell there since you last looked.
     case attention
+    /// You marked it unread, to come back to (a dot, not a ring).
+    case unread
+
+    /// Mark Tab as Unread, or as Read: its menu item, by what it does now.
+    static func markTitle(unread: Bool) -> String { L10n.t(unread ? "Mark Tab as Read" : "Mark Tab as Unread") }
+
+    /// What the ring (or the dot) says when the pointer rests on it.
+    var tip: String {
+        L10n.t(self == .unread ? "You marked it unread, to come back to" : "Something happened here since you last looked")
+    }
+}
+
+extension CAShapeLayer {
+    /// A tab's news as its row shows it: a ring, or for one you marked
+    /// unread a dot, in the accent color.
+    func showNews(_ news: TabNews) {
+        strokeColor = Accent.color.cgColor
+        fillColor = news == .unread ? Accent.color.cgColor : nil
+    }
 }
 
 extension SidebarTabInfo {
     /// The ring shows only what the tab's badge doesn't: a program's own
     /// status (working, done, waiting) already says what happened there.
+    /// The dot of a tab you marked unread shows whatever its badge says.
     var showsNews: Bool {
-        news == .attention && StatusBadge.look(status: status, progress: progress, programs: !tiles.isEmpty) == .none
+        news == .unread || news == .attention && StatusBadge.look(status: status, progress: progress, programs: !tiles.isEmpty) == .none
     }
 }
 
@@ -871,6 +891,7 @@ final class SidebarViewController: NSViewController {
         menu.addItem(withTitle: "Duplicate Tab", action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Fork Conversation", action: #selector(forkConversation(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: TabMute.title(muted: menuTab?.muted == true), action: #selector(toggleMute(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: TabNews.markTitle(unread: menuTab?.unread == true), action: #selector(toggleUnread(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Move Up", action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Move Down", action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
@@ -1067,6 +1088,10 @@ final class SidebarViewController: NSViewController {
         if let tab = menuTab { controller?.toggleMute(tab) }
     }
 
+    @objc private func toggleUnread(_ sender: Any?) {
+        if let tab = menuTab { controller?.toggleUnread(tab) }
+    }
+
     @objc fileprivate func closeTab(_ sender: Any?) {
         let row = (sender as? NSButton).map { tab(atTableRow: tabsTable.row(for: $0)) ?? -1 } ?? menuRow
         if row >= 0 { controller?.closeTab(at: row) }
@@ -1227,6 +1252,7 @@ extension SidebarViewController: NSMenuItemValidation {
             return can
         case #selector(resetTabName(_:)): return row >= 0 && !(controller?.tabNameOverride(at: row) ?? "").isEmpty
         case #selector(toggleMute(_:)): return row >= 0 && menuTab?.isTerminal == true
+        case #selector(toggleUnread(_:)): return row >= 0
         case #selector(forkConversation(_:)):
             // Only where an agent runs; greyed out, with why, where its conversation isn't known.
             guard let pane = menuTab?.focusedPane, let controller,
@@ -1372,6 +1398,8 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
     /// News waiting (a ring, on the name's line): accent, no other color.
     private let news = CAShapeLayer()
     private let newsView = NSView()
+    /// The news it shows: a ring, or a dot (redrawn in a new appearance's accent).
+    private var newsKind: TabNews = .none
     private let shortcut = NSTextField(labelWithString: "")
     private let close = NSButton()
     private var tracking: NSTrackingArea?
@@ -1396,7 +1424,6 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         news.path = CGPath(ellipseIn: CGRect(x: 1, y: 1, width: 6, height: 6), transform: nil)
         news.lineWidth = 1.2
         news.fillColor = nil
-        newsView.toolTip = "Something happened here since you last looked"
         newsView.layer?.addSublayer(news)
         newsView.isHidden = true
         well.wantsLayer = true
@@ -1562,6 +1589,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         showTitle()
         let panesText = tab.paneCount > 1 ? (tab.zoomed ? "\(tab.paneCount) panes, zoomed" : "\(tab.paneCount) panes") : ""
         title.toolTip = ([tab.title] + extra + (panesText.isEmpty ? [] : [panesText]) + (tab.subtitle.isEmpty ? [] : [tab.subtitle])
+                         + (tab.news == .unread ? [L10n.t("marked unread")] : [])
                          + (tab.muted ? [L10n.t("muted")] : []))
             .joined(separator: " · ")
         // The pane count, a click from the list of them.
@@ -1577,7 +1605,9 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         // ⌘1–⌘8 select those tabs and ⌘9 the last one, whatever its number.
         shortcut.stringValue = index < 8 ? "⌘\(index + 1)" : index == count - 1 ? "⌘9" : ""
         newsView.isHidden = !tab.showsNews
-        if tab.showsNews { news.strokeColor = Accent.color.cgColor }
+        newsKind = tab.news
+        if tab.showsNews { news.showNews(tab.news) }
+        newsView.toolTip = tab.news.tip
         mutedGlyph.isHidden = !tab.muted
         mutedWidth.constant = tab.muted ? 13 : 0
         mutedGap.constant = tab.muted ? 4 : 0
@@ -1739,7 +1769,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         well.layer?.backgroundColor = Surfaces.current.raised.nsColor.cgColor
         well.layer?.borderWidth = 0.5
         well.layer?.borderColor = Surfaces.current.stroke.nsColor.cgColor
-        if !newsView.isHidden { news.strokeColor = Accent.color.cgColor }
+        if !newsView.isHidden { news.showNews(newsKind) }
     }
 
     override func mouseEntered(with event: NSEvent) { setHovering(true) }
