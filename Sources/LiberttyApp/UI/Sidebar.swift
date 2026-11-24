@@ -1588,10 +1588,12 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         shown = (tab.title, extra.joined(separator: " · "), paragraph)
         showTitle()
         let panesText = tab.paneCount > 1 ? (tab.zoomed ? "\(tab.paneCount) panes, zoomed" : "\(tab.paneCount) panes") : ""
-        title.toolTip = ([tab.title] + extra + (panesText.isEmpty ? [] : [panesText]) + (tab.subtitle.isEmpty ? [] : [tab.subtitle])
-                         + (tab.news == .unread ? [L10n.t("marked unread")] : [])
-                         + (tab.muted ? [L10n.t("muted")] : []))
-            .joined(separator: " · ")
+        var tip = [tab.title] + extra
+        if !panesText.isEmpty { tip.append(panesText) }
+        if !tab.subtitle.isEmpty { tip.append(tab.subtitle) }
+        if tab.news == .unread { tip.append(L10n.t("marked unread")) }
+        if tab.muted { tip.append(L10n.t("muted")) }
+        title.toolTip = tip.joined(separator: " · ")
         // The pane count, a click from the list of them.
         panes = tab.panes
         paneCount.isHidden = tab.paneCount < 2
