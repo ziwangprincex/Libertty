@@ -1077,5 +1077,6 @@
   "The diff is cut short: it's over %@ MB. `git diff` in a terminal shows all of it.": "这份 diff 超过 %@ MB，只显示了前面一部分。在终端里运行 `git diff` 可看完整内容。",
   "Bell": "响铃",
   "%@ narrower": "变窄 %@",
-  "+%@ wider": "加宽 %@"
+  "+%@ wider": "加宽 %@",
+  "The queue is paused: Libertty restarted since these were queued. Resume": "队列已暂停：这些提示排队之后 Libertty 重新启动过。继续"
 }

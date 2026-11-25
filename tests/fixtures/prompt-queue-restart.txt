@@ -1,0 +1,31 @@
+# Prompts queued for a pane, and what its composer had in it, come back with
+# the pane when Libertty restarts (a quit, an update) and liberttyd keeps the
+# pane (--persist), kept meanwhile in a file of the data folder private to
+# you. The queue comes back paused, and says why, until you resume it.
+type:sleep 30
+key:enter
+wait:0.5
+queue-prompt:echo FIRST-$((40+2))
+queue-prompt:echo SECOND-$((50+5))
+key:cmd+shift+e
+type:my draft
+key:escape
+expect-composer:closed
+expect-queue:2
+expect-queue:running
+restart-prompts:go
+expect-shell:stat -f %Lp "$LIBERTTY_DATA_DIR/prompt-queues.json" ==> 600
+expect-queue:order=echo FIRST-$((40+2))|echo SECOND-$((50+5))
+expect-queue:paused
+expect-queue:tag=2 queued · paused
+expect-composer:text=my draft
+# Back at the prompt, it still waits for you…
+key:ctrl+c
+wait:2.0
+expect-not:FIRST-42
+# …until you resume it.
+composer:queue
+click:The queue is paused: Libertty restarted since these were queued. Resume
+expect-queue:running
+wait:2.5
+expect:FIRST-42

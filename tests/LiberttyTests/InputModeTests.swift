@@ -1,3 +1,5 @@
+import AppKit
+import CGhosttyVt
 import Foundation
 import LiberttyCore
 import Testing
@@ -125,5 +127,25 @@ import Testing
             s.show("\u{1b}]133;D;137\u{07}")
             #expect(s.inputModeSummary["mouse"] == "off", "mode \(mode)")
         }
+    }
+
+    /// A modifier key's own press and release, as a program reading every
+    /// key (kitty's report events) hears them: with both Shift keys held,
+    /// letting one go is that key's release, though Shift is still on.
+    @Test func eachSideOfAModifierOnItsOwn() {
+        func action(_ key: GhosttyKey, _ flags: NSEvent.ModifierFlags, _ sides: Int32...) -> GhosttyKeyAction? {
+            TerminalView.modifierAction(key, NSEvent.ModifierFlags(rawValue: flags.rawValue | UInt(sides.reduce(0, |))))
+        }
+        let (press, release) = (GHOSTTY_KEY_ACTION_PRESS, GHOSTTY_KEY_ACTION_RELEASE)
+        #expect(action(GHOSTTY_KEY_SHIFT_LEFT, .shift, NX_DEVICELSHIFTKEYMASK) == press)
+        #expect(action(GHOSTTY_KEY_SHIFT_RIGHT, .shift, NX_DEVICELSHIFTKEYMASK, NX_DEVICERSHIFTKEYMASK) == press)
+        #expect(action(GHOSTTY_KEY_SHIFT_LEFT, .shift, NX_DEVICERSHIFTKEYMASK) == release)
+        #expect(action(GHOSTTY_KEY_SHIFT_RIGHT, []) == release)
+        #expect(action(GHOSTTY_KEY_CONTROL_RIGHT, .control, NX_DEVICELCTLKEYMASK) == release)
+        #expect(action(GHOSTTY_KEY_ALT_LEFT, .option, NX_DEVICERALTKEYMASK) == release)
+        #expect(action(GHOSTTY_KEY_META_RIGHT, .command, NX_DEVICELCMDKEYMASK, NX_DEVICERCMDKEYMASK) == press)
+        // Flags without the side's bits (not from a keyboard): the modifier says.
+        #expect(action(GHOSTTY_KEY_SHIFT_LEFT, .shift) == press)
+        #expect(action(GHOSTTY_KEY_A, .shift) == nil)
     }
 }

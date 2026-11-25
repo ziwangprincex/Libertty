@@ -1,5 +1,6 @@
 import AppKit
 import CGhosttyVt
+import LiberttyCore
 
 /// Prompts waiting for a pane (Otty's Prompt Queue): each goes out when the
 /// pane is ready for it — a coding agent at rest (its status says it's
@@ -22,6 +23,10 @@ struct PromptQueue: Equatable {
         /// You typed into the pane a moment ago: a prompt pasted now would
         /// land on what you're writing there.
         var typing = false
+        /// What you typed there waits unsent in its program's input (a draft
+        /// in an agent's box, a command half written): a prompt pasted now
+        /// would go with it, as one.
+        var draft = false
         /// What its programs report (OSC 7501, the agent's screen, a password): the most urgent.
         var state: ProgramStatusStore.State?
         /// A coding agent is in front.
@@ -55,6 +60,9 @@ struct PromptQueue: Equatable {
         case notOnePaste
         /// The agent the prompts waited for exited: the next would go to the shell.
         case agentExited
+        /// Libertty restarted (quit, updated) with prompts queued: its pane
+        /// may be anywhere by now, so they wait for you.
+        case restarted
     }
     private(set) var pauseReason = PauseReason.notOnePaste
 
@@ -104,7 +112,7 @@ struct PromptQueue: Equatable {
     /// you (a permission, a question, a password); an agent at rest says so,
     /// or at least has stopped printing; a shell is at its prompt.
     static func ready(_ look: Look) -> Bool {
-        if look.typing || look.state == .blocked || look.state == .working { return false }
+        if look.typing || look.draft || look.state == .blocked || look.state == .working { return false }
         if look.agent { return look.quietFor >= 0.6 }
         return look.atPrompt && look.quietFor >= 0.3
     }
@@ -157,6 +165,70 @@ struct PromptQueue: Equatable {
         paused = true
         pauseReason = .agentExited
     }
+
+    /// Prompts kept from before a restart, after any queued since: they
+    /// wait for you (PromptsKept).
+    mutating func restore(_ texts: [String]) {
+        texts.forEach { append($0) }
+        guard !items.isEmpty else { return }
+        phase = .waiting
+        paused = true
+        pauseReason = .restarted
+    }
+}
+
+/// The prompt queues and composer drafts of panes liberttyd keeps, kept
+/// across a restart of the app (a quit, an update) as liberttyd keeps the
+/// panes: in the data folder's prompt-queues.json, private to you, by the
+/// liberttyd session. A pane coming back takes its own (PromptQueues.restore);
+/// what's kept for a session that's gone is dropped.
+enum PromptsKept {
+    struct Entry: Codable, Equatable {
+        var queue: [String] = []
+        var draft = ""
+        /// The machine its session runs on (nil: this Mac's liberttyd).
+        var host: String?
+        /// When it was kept.
+        var saved: Double
+    }
+
+    static var url: URL { Blocks.dataDirectory.appendingPathComponent("prompt-queues.json") }
+
+    /// How long what's kept for a pane that hasn't come back stays: a
+    /// host's sessions can't be asked for while it's out of reach.
+    static let lifetime: Double = 30 * 24 * 3600
+
+    static func load(from url: URL = url) -> [String: Entry] {
+        guard let data = try? Data(contentsOf: url) else { return [:] }
+        return (try? JSONDecoder().decode([String: Entry].self, from: data)) ?? [:]
+    }
+
+    /// What's still worth keeping: not too old, and (when liberttyd could
+    /// say which of its sessions live, `live`) this Mac's only for those.
+    static func pruned(_ kept: [String: Entry], live: Set<String>?, now: Double = Date().timeIntervalSince1970) -> [String: Entry] {
+        kept.filter { id, entry in
+            guard now - entry.saved < lifetime, !entry.queue.isEmpty || !entry.draft.isEmpty else { return false }
+            if entry.host == nil, let live { return live.contains(id) }
+            return true
+        }
+    }
+
+    /// Written whole, private from the start (0600), or removed when there's nothing to keep.
+    static func write(_ kept: [String: Entry], to url: URL = url) {
+        let fm = FileManager.default
+        guard !kept.isEmpty else {
+            try? fm.removeItem(at: url)
+            return
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(kept) else { return }
+        let dir = url.deletingLastPathComponent()
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let temp = dir.appendingPathComponent(".prompt-queues-\(UUID().uuidString)")
+        guard fm.createFile(atPath: temp.path, contents: data, attributes: [.posixPermissions: 0o600]) else { return }
+        if rename(temp.path, url.path) != 0 { try? fm.removeItem(at: temp) }
+    }
 }
 
 /// Every pane's queue, by session (a pane keeps its queue as it moves to
@@ -167,7 +239,7 @@ final class PromptQueues {
 
     private init() { connectToWindows() }
 
-    private struct Entry {
+    fileprivate struct Entry {
         weak var session: TerminalSession?
         var queue = PromptQueue()
         /// The output count when the last prompt went out.
@@ -178,7 +250,7 @@ final class PromptQueues {
         var agentSeen = false
     }
 
-    private var entries: [ObjectIdentifier: Entry] = [:]
+    fileprivate var entries: [ObjectIdentifier: Entry] = [:]
     private var timer: Timer?
     /// Told when a queue changes (its count on the pane and the sidebar).
     static let changed = Notification.Name("LiberttyPromptQueueChanged")
@@ -205,7 +277,7 @@ final class PromptQueues {
         let before = entry.queue
         change(&entry.queue)
         entries[key] = entry.queue.isEmpty && entry.queue.phase == .waiting && !entry.queue.paused ? nil : entry
-        if entry.queue != before { NotificationCenter.default.post(name: Self.changed, object: session) }
+        if entry.queue != before { changed(session) }
         startIfNeeded()
         // Ready already: the first goes now, not a tick later.
         tick()
@@ -213,6 +285,74 @@ final class PromptQueues {
 
     func enqueue(_ text: String, for session: TerminalSession) {
         update(session) { $0.append(text) }
+    }
+
+    /// A queue changed: shown where it shows, and kept for a restart.
+    private func changed(_ session: TerminalSession) {
+        NotificationCenter.default.post(name: Self.changed, object: session)
+        keepSoon()
+    }
+
+    // MARK: Kept across a restart (PromptsKept)
+
+    /// What was kept for sessions whose panes haven't come back yet, read
+    /// at the first that might (nil: not read yet).
+    fileprivate var unclaimed: [String: PromptsKept.Entry]?
+    private var keepWork: DispatchWorkItem?
+
+    /// A pane showing `session` came into a window: what was kept for it
+    /// before a restart comes back — its queue, paused, and its draft.
+    func restore(_ session: TerminalSession) {
+        guard let id = session.persistentID, let entry = readKept()[id] else { return }
+        unclaimed?[id] = nil
+        if !entry.draft.isEmpty { ComposerController.restoreDraft(entry.draft, for: session) }
+        if !entry.queue.isEmpty { update(session) { $0.restore(entry.queue) } }
+        keepSoon()
+    }
+
+    /// Written a moment after the last change (a burst of them is one write).
+    func keepSoon() {
+        guard keepWork == nil else { return }
+        let work = DispatchWorkItem { [weak self] in self?.keepNow() }
+        keepWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    /// What every pane in liberttyd has queued and drafted now, with what's
+    /// kept for panes yet to come back, written (quitting: at once).
+    func keepNow() {
+        keepWork?.cancel()
+        keepWork = nil
+        var kept = readKept()
+        let now = Date().timeIntervalSince1970
+        func keep(_ session: TerminalSession, _ change: (inout PromptsKept.Entry) -> Void) {
+            guard let id = session.persistentID, !session.hasExited else { return }
+            var entry = kept[id] ?? PromptsKept.Entry(host: session.host?.destination, saved: now)
+            change(&entry)
+            entry.saved = now
+            kept[id] = entry
+        }
+        for e in entries.values {
+            guard let session = e.session, !e.queue.isEmpty else { continue }
+            keep(session) { $0.queue = e.queue.items.map(\.text) }
+        }
+        for (session, text) in ComposerController.keptDrafts { keep(session) { $0.draft = text } }
+        guard kept != lastKept else { return }
+        lastKept = kept
+        PromptsKept.write(kept)
+    }
+
+    fileprivate var lastKept: [String: PromptsKept.Entry]?
+
+    /// What's kept for panes yet to come back, read once: this Mac's
+    /// sessions liberttyd no longer has are gone for good.
+    private func readKept() -> [String: PromptsKept.Entry] {
+        if let unclaimed { return unclaimed }
+        let file = PromptsKept.load()
+        let live = Persistence.enabled && !file.isEmpty ? DaemonClient.sessions().map { Set($0.map(\.id)) } : nil
+        let kept = PromptsKept.pruned(file, live: live)
+        unclaimed = kept
+        return kept
     }
 
     /// A queued prompt out of its queue, by hand (the composer's ×): its
@@ -256,6 +396,18 @@ final class PromptQueues {
     /// How long a key typed into a pane holds its queue.
     static let typingHold: CFTimeInterval = 2.5
 
+    /// What's typed in the session's input as its screen shows it (a shell's
+    /// command line, an agent's box), nil when the screen doesn't say; set
+    /// by the app, nil in tests.
+    var typedInput: (TerminalSession) -> String? = { _ in nil }
+
+    /// Whether what was typed into `session`'s pane waits there unsent: typed
+    /// since its last Return, and still in its input where the screen says.
+    private func hasDraft(_ session: TerminalSession) -> Bool {
+        guard session.hasUnsentTyping else { return false }
+        return typedInput(session).map { !$0.isEmpty } ?? true
+    }
+
     /// Whether `session`'s pane takes a prompt: it shows in a window (one
     /// closed, its session kept a while for Undo, gets nothing until it comes
     /// back) and isn't read-only (Stop Sending Input).
@@ -282,13 +434,13 @@ final class PromptQueues {
                 entry.queue.agentExited()
                 entry.agentSeen = false
                 entries[key] = entry
-                NotificationCenter.default.post(name: Self.changed, object: session)
+                changed(session)
                 continue
             }
             entry.agentSeen = !atPrompt && (entry.agentSeen || agentInFront(session))
             let now = CACurrentMediaTime()
             let look = PromptQueue.Look(
-                typing: typedAt[key].map { now - $0 < Self.typingHold } ?? false,
+                typing: typedAt[key].map { now - $0 < Self.typingHold } ?? false, draft: hasDraft(session),
                 state: session.programStatus.headline?.state, agent: entry.agentSeen,
                 atPrompt: atPrompt, quietFor: CACurrentMediaTime() - mark.time,
                 printedSinceSend: mark.count != entry.outputAtSend, now: CACurrentMediaTime())
@@ -299,7 +451,7 @@ final class PromptQueues {
                     entry.queue.putBack(item)
                 }
                 entries[key] = entry
-                NotificationCenter.default.post(name: Self.changed, object: session)
+                changed(session)
             } else {
                 entries[key] = entry
             }
@@ -313,6 +465,21 @@ final class PromptQueues {
         }
     }
 }
+
+#if LIBERTTY_PROBES
+extension PromptQueues {
+    /// The UI probe's restart: what's queued and drafted kept as quitting
+    /// keeps it, then forgotten, as a new launch knows none of it until its
+    /// panes come back.
+    func restartForProbe() {
+        keepNow()
+        entries.removeAll()
+        unclaimed = nil
+        lastKept = nil
+        ComposerController.forgetDraftsForProbe()
+    }
+}
+#endif
 
 /// Typing a prompt into a pane: as one paste (bracketed, when the program
 /// asked for it, so an agent takes several lines as one prompt), then
@@ -328,7 +495,8 @@ enum PromptSender {
         case .needsConfirmation, .nothing: return false
         case .pasted: break
         }
-        if submit { pressReturn(in: session) }
+        // Not submitted (the composer's Insert): it waits there, to be finished.
+        if submit { pressReturn(in: session) } else { session.hasUnsentTyping = true }
         return true
     }
 
@@ -336,6 +504,7 @@ enum PromptSender {
     static func pressReturn(in session: TerminalSession) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak session] in
             guard let session, !session.hasExited else { return }
+            session.hasUnsentTyping = false
             session.send(TerminalSession.Key(action: GHOSTTY_KEY_ACTION_PRESS, key: GHOSTTY_KEY_ENTER, mods: 0, consumedMods: 0,
                                              text: nil, unshiftedCodepoint: 0, composing: false))
         }

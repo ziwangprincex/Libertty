@@ -155,13 +155,12 @@ final class SurfaceOverlay {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = CommandLenses.lens(command: command, output: text, enabled: enabled)
             DispatchQueue.main.async {
-                guard let self, let pane = self.pane else { return }
-                guard let result else {
+                // Nothing found, or its pane gone meanwhile: its row is no longer tracked.
+                guard let result, let self, self.pane != nil else {
                     if let row { session.withTerminal { _ in ghostty_tracked_grid_ref_free(row) } }
                     return
                 }
                 session.surfaces.addLens(result, anchor: row, directory: directory, session)
-                _ = pane
             }
         }
     }

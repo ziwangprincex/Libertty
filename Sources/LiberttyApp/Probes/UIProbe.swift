@@ -51,6 +51,12 @@ import LiberttyCore
 ///   expect-panes:N        the tab in front has N panes in its split
 ///   focus-event:in|out    the focused pane gains or loses the keyboard, as its program hears it
 ///   expect-searching:N    N panes of the tab in front (parked ones too) have a search open
+///   restart-prompts:go    the queues and composer drafts as the app's next launch finds them (liberttyd
+///                         keeping the panes: --persist): kept as quitting keeps them, forgotten, and the
+///                         focused pane coming back (into its window) takes its own back
+///   drag-select:up|down   press in the focused pane and drag past its top (bottom) edge, the button
+///                         held: the selection scrolls as it grows
+///   expect-autoscroll:N   N panes of the window (every tab) are scrolling a selection being dragged
 ///   expect-no-open-animation:go  the window appears as it is (no zoom: its text would seem to change size)
 ///   expect-resize-frames:N the focused pane drew N frames inside a resize since the last of these
 ///   expect-pinned:go      every pane's drawable is its view's size and pinned top-left, also once AppKit sets its gravity again
@@ -984,6 +990,38 @@ enum UIProbe {
                     case .expectNoOpenAnimation:
                         if window.animationBehavior == .none { print("ok    ui-probe window opens without animation") } else {
                             print("FAIL  ui-probe window: it animates as it opens (\(window.animationBehavior.rawValue))")
+                            failures += 1
+                        }
+                    case .dragSelect(let toward):
+                        // Real events at the pane: the press in its middle, the drag past its edge.
+                        let pane = controller.focusedTerminal
+                        func event(_ type: NSEvent.EventType, _ y: CGFloat) -> NSEvent? {
+                            NSEvent.mouseEvent(with: type, location: pane.convert(NSPoint(x: pane.bounds.midX, y: y), to: nil),
+                                               modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                        }
+                        let past = toward == "down" ? pane.bounds.height + 30 : -30
+                        if let down = event(.leftMouseDown, pane.bounds.midY), let drag = event(.leftMouseDragged, past) {
+                            pane.mouseDown(with: down)
+                            pane.mouseDragged(with: drag)
+                        }
+                        pump(0.2)
+                    case .restartPrompts:
+                        PromptQueues.shared.restartForProbe()
+                        let pane = controller.focusedTerminal
+                        pane.updateQueueTag()
+                        // Into its window again, as a pane of the next launch comes.
+                        let holder = pane.superview, frame = pane.frame
+                        let focused = window.firstResponder === pane
+                        pane.removeFromSuperview()
+                        holder?.addSubview(pane)
+                        pane.frame = frame
+                        if focused { window.makeFirstResponder(pane) }
+                        pump(0.3)
+                    case .expectAutoscroll(let n):
+                        let count = controller.allPanes.filter(\.isAutoscrolling).count
+                        if count == n { print("ok    ui-probe \(n) panes autoscrolling") } else {
+                            print("FAIL  ui-probe autoscroll: \(count) panes, not \(n)")
                             failures += 1
                         }
                     case .expectSearching(let n):
@@ -2232,7 +2270,7 @@ enum UIProbe {
         case expectAtBottom(Bool)
         case hint(String, copy: Bool), expectKeyHints(String), clickText(String)
         case expectStripAt(String), tabMenu(Int, String, choose: Bool)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), dragSelect(String), expectAutoscroll(Int), restartPrompts, expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
         case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
@@ -2457,6 +2495,9 @@ enum UIProbe {
             case "conversation": steps.append(.conversation(arg))
             case "focus-event": steps.append(.focusEvent(arg == "in"))
             case "expect-searching": steps.append(.expectSearching(Int(arg) ?? -1))
+            case "drag-select": steps.append(.dragSelect(arg))
+            case "restart-prompts": steps.append(.restartPrompts)
+            case "expect-autoscroll": steps.append(.expectAutoscroll(Int(arg) ?? -1))
             case "expect-no-open-animation": steps.append(.expectNoOpenAnimation)
             case "expect-resize-frames": steps.append(.expectResizeFrames(Int(arg) ?? -1))
             case "expect-pinned": steps.append(.expectPinned)

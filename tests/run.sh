@@ -537,12 +537,17 @@ expect prompt-queue 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-co
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/prompt-queue.txt)" $OUT
 expect prompt-queue-closed 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-closed.txt)" $OUT
+expect prompt-queue-draft 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-draft.txt)" $OUT
 expect composer 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/composer.txt)" $OUT
 expect composer-exited 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/composer-exited.txt)" $OUT --persist
 expect prompt-queue-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-cli.txt)" $OUT --persist
+# Queues and drafts come back with their panes after a restart, the queue paused.
+expect prompt-queue-restart 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-restart.txt)" $OUT --persist
 # Fork Conversation: the panes run cat, so the agents' fork commands are only shown.
 mkdir -p $PRIVATE/fork-config/libertty
 print 'command = cat' > $PRIVATE/fork-config/libertty/config
@@ -785,6 +790,9 @@ expect key-hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/key-hints-c
 # Copy mode: a cursor of its own through the screen and the scrollback, selecting and copying; no key reaches the program.
 expect copy-mode 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/copy-mode.txt)" $OUT
+# A selection dragged past the pane's edge stops scrolling when another tab comes forward mid-drag.
+expect selection-drag-away 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/selection-drag-away.txt)" $OUT
 # Hint mode: labels on the links, paths, hashes and addresses on screen; a label opens or copies one.
 expect hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/hints.txt)" $OUT

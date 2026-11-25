@@ -1,4 +1,5 @@
 import AppKit
+import LiberttyCore
 
 /// A pane with prompts queued says so at its bottom left ("2 queued", and
 /// "paused" when the queue waits for you); a click opens the queue in its
@@ -76,6 +77,12 @@ extension PromptQueues {
     /// and its tab's row. Once, as the app or a probe starts.
     func connectToWindows() {
         takesInput = { session in Self.pane(of: session).map { !$0.1.isReadOnly } ?? false }
+        // A shell's command line where shell integration marks it (text after
+        // the cursor counts as typed too); else an agent's input box.
+        typedInput = { session in
+            if let (line, _) = session.promptLine() { return line.atEnd ? line.typed.trimmingCharacters(in: .whitespaces) : "…" }
+            return AgentScreen.typedInput(session.screenRowsWithoutFaintText())
+        }
         agentInFront = { session in
             guard let (controller, _) = Self.pane(of: session) else { return false }
             if controller.programs[ObjectIdentifier(session)]?.agent != nil { return true }
@@ -83,6 +90,10 @@ extension PromptQueues {
             return session.programStatus.records.values.contains {
                 ProgramBadge.agentKey(session.programStatus.effectiveApp(of: $0)) != nil
             }
+        }
+        // Quitting (an update's restart too): what's queued and drafted is kept now.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            PromptQueues.shared.keepNow()
         }
         NotificationCenter.default.addObserver(forName: Self.changed, object: nil, queue: .main) { note in
             guard let session = note.object as? TerminalSession, let (controller, pane) = Self.pane(of: session) else { return }

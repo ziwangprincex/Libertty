@@ -16,11 +16,15 @@ key:cmd+enter
 wait:2.0
 expect:GOT[hello]
 expect-composer:closed
+# What was typed there isn't left on the windows' undo stack (Edit ▸ Undo
+# Close …), to be undone where it's gone.
+expect-undo:none
 # A draft stays when it's put away.
 key:cmd+shift+e
 type:draft
 key:escape
 expect-composer:closed
+expect-undo:none
 expect-composer:text=draft
 key:cmd+shift+e
 expect-composer:text=draft
@@ -81,6 +85,16 @@ expect-composer:text=one\ntwo
 # Popped out into a window of its own, and back.
 composer:pop-out
 expect-composer:popped
+composer:pop-in
+expect-composer:open
+# Popped out, its tab in the background a while: still there, with its
+# text, when the tab is back (the pane is in a tab still, not closed).
+composer:pop-out
+tab:new
+wait:1.5
+tab:1
+expect-composer:popped
+expect-composer:text=one\ntwo
 composer:pop-in
 expect-composer:open
 key:escape

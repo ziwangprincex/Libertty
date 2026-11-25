@@ -1,4 +1,6 @@
+import CGhosttyVt
 import Foundation
+import LiberttyCore
 import Testing
 @testable import LiberttyApp
 
@@ -107,6 +109,25 @@ struct SurfaceProtocolTests {
 }
 
 /// Command lenses' readings (CommandLenses).
+/// A pane's surfaces and output marks go with its session: the rows they
+/// track are freed after the terminal is (as libghostty allows), once.
+@Suite @MainActor struct SurfaceStoreLifetimeTests {
+    @Test func theirRowsGoWithTheSession() throws {
+        weak var gone: SurfaceStore?
+        do {
+            let s = try TerminalSession(size: GridSize(cols: 30, rows: 6, widthPx: 0, heightPx: 0), config: Config())
+            gone = s.surfaces
+            s.show("\u{1b}]133;A\u{07}$ ls\u{1b}]133;C\u{07}\r\nout\r\n\u{1b}]133;D;0\u{07}")
+            s.show("\u{1b}]7502;s;{\"id\":\"a\",\"rows\":2,\"elements\":[{\"type\":\"text\",\"text\":\"hi\"}]}\u{07}")
+            // The set waits for the main thread's turn; the session goes before it.
+            if let row = s.surfaces.lastOutput(s)?.commandRow { s.withTerminal { _ in ghostty_tracked_grid_ref_free(row) } }
+        }
+        #expect(gone == nil)
+        // What was queued for the main thread finds nothing.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+}
+
 struct CommandLensTests {
     @Test func whichLens() {
         #expect(CommandLenses.kind(for: "git status") == .gitStatus)
