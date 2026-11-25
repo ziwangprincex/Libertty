@@ -332,10 +332,15 @@ final class ComposerView: NSView, CapsuleObstacle {
             panel.setFrameTopLeftPoint(NSPoint(x: screenFrame.minX + 20, y: screenFrame.minY + panel.frame.height + 20))
         }
         window_ = panel
-        // Its pane closing (or leaving every window) takes it along.
+        // Its pane closing (or its window kept hidden for Undo) takes it
+        // along, its draft kept. Its tab in the background, or another
+        // workspace's, still has the pane: that's not out of every window.
         orphanCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self, self.pane?.window == nil else { return }
-            self.closeWindow()
+            guard let self else { return }
+            guard let pane = self.pane else { return self.closeWindow() }
+            guard PromptQueues.pane(of: pane.session)?.1 !== pane else { return }
+            ComposerController.saveDraft(of: self)
+            ComposerController.close(self, refocus: false)
         }
         layer?.cornerRadius = 0
         layer?.borderWidth = 0
@@ -565,10 +570,20 @@ enum ComposerController {
         objc_getAssociatedObject(pane, &composerKey) as? ComposerView
     }
 
+    /// The pane's composer where it shows: one left in no view (its window
+    /// gone from under it) is put away, its draft kept, for a new one to open.
+    private static func shown(of pane: TerminalView) -> ComposerView? {
+        guard let open = composer(of: pane) else { return nil }
+        guard open.superview == nil else { return open }
+        saveDraft(of: open)
+        close(open, refocus: false)
+        return nil
+    }
+
     /// ⌘⇧E: open the focused pane's composer (with its draft), or put it away.
     static func toggle(in pane: TerminalView?, queue: Bool = false) {
         guard let pane else { return NSSound.beep() }
-        if let open = composer(of: pane) {
+        if let open = shown(of: pane) {
             // Open but not where you type (you clicked the terminal), or open
             // for the other default: there it is, not gone.
             let window = open.window_ ?? pane.window
@@ -584,7 +599,7 @@ enum ComposerController {
 
     @discardableResult
     static func show(in pane: TerminalView, queue: Bool = false) -> ComposerView {
-        if let open = composer(of: pane) {
+        if let open = shown(of: pane) {
             open.queueByDefault = queue
             focus(open)
             return open

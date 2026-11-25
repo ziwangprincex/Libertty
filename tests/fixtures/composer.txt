@@ -83,5 +83,15 @@ composer:pop-out
 expect-composer:popped
 composer:pop-in
 expect-composer:open
+# Popped out, its tab in the background a while: still there, with its
+# text, when the tab is back (the pane is in a tab still, not closed).
+composer:pop-out
+tab:new
+wait:1.5
+tab:1
+expect-composer:popped
+expect-composer:text=one\ntwo
+composer:pop-in
+expect-composer:open
 key:escape
 expect-composer:closed
