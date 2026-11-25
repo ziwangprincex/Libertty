@@ -500,9 +500,14 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     private var editorReady = false
     private var pendingEditorLine: Int?
     /// The file as this view last read or wrote it (nil: not on disk). What
-    /// the watcher compares with, so our own save isn't news, and what a save
-    /// checks so it never overwrites a change the editor hasn't seen.
+    /// the watcher compares with, so our own save (or a change already
+    /// offered to the editor) isn't news.
     private var diskText: String?
+    /// The file as the editor's text last took it in: loaded, saved, or a
+    /// change on disk it took, or whose question was answered (Reload, Keep
+    /// Mine). What a save checks, so it never overwrites a change the editor
+    /// was told of but nobody has seen (its banner in a tab not in front).
+    private var baseText: String?
     private var fileMissing = false
     /// The file's encoding (and byte-order mark), kept when saving. Only
     /// UTF-8 and UTF-16 with a mark are editable: anything else is shown
@@ -576,7 +581,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         // Our own save (or a touch): nothing new.
         guard text != diskText else { return }
         diskText = text
-        runEditor("libertty.diskChanged(\(Self.jsString(text)))")
+        // Taken at once (nothing unsaved here), it's what the text is based
+        // on; asked about, not until the question is answered (`diskSeen`).
+        runEditor("libertty.diskChanged(\(Self.jsString(text)))") { [weak self] taken in
+            guard let self, taken as? Bool == true, self.diskText == text else { return }
+            self.baseText = text
+        }
     }
 
     private func sendFileToEditor() {
@@ -584,6 +594,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         diskText = text
         fileMissing = text == nil
         let body = text ?? ""
+        // Back after the page's process died with unsaved text: that text is
+        // still based on the file as it was before.
+        if backupText == nil || backupText == body || baseText == nil { baseText = text }
         let indent = body.contains("\n\t") ? "\t" : "    "
         var options: [String: Any] = [
             "text": body, "theme": EditorAssets.theme(theme, fontSize: ConfigStore.shared.config.fontSize),
@@ -638,6 +651,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             onEditingStateChange?(self)
         case "backup":
             backupText = body["text"] as? String
+        case "diskSeen":
+            // The change on disk was answered: Reload took it, Keep Mine kept
+            // what's here over it. Either way a save may go over it now.
+            if let text = body["text"] as? String { baseText = text }
         case "save":
             guard let text = body["text"] as? String else { return }
             let close = body["close"] as? Bool == true
@@ -692,7 +709,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                 buttons: ["OK"]) { _ in completion(false) }
             return
         }
-        if !checked, !fileMissing, let now = readFileQuietly(), now != diskText {
+        if !checked, !fileMissing, let now = readFileQuietly(), now != baseText {
             ask("“\(url.lastPathComponent)” changed on disk", "Another program changed it since it opened here. Save over its changes?",
                 buttons: ["Overwrite", "Cancel"]) { [weak self] button in
                 if button == 0 { self?.write(text, checked: true, completion: completion) } else { completion(false) }
@@ -734,6 +751,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                 watch()
             }
             diskText = text
+            baseText = text
             backupText = nil
             completion(true)
         } catch {
