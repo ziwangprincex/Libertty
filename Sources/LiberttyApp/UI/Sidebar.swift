@@ -1302,7 +1302,9 @@ extension SidebarViewController: NSMenuDelegate {
             addGroupingItems(to: grouping)
             menu.addItem(withTitle: L10n.t("Group Tabs"), action: nil, keyEquivalent: "").submenu = grouping
         case nil:
-            addTabItems(to: menu)
+            // Below the rows: no tab to rename, duplicate or close; how
+            // the tabs are grouped.
+            addGroupingItems(to: menu)
         }
     }
 }
@@ -1954,7 +1956,8 @@ private final class GroupHeaderCell: NSTableCellView {
     }
     override func mouseUp(with event: NSEvent) {
         guard !event.modifierFlags.contains(.control) else { return super.mouseUp(with: event) }
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onToggle?() }
+        // (A double click's second half: the first folded it already.)
+        if event.clickCount <= 1, bounds.contains(convert(event.locationInWindow, from: nil)) { onToggle?() }
     }
 
     func configure(_ group: SidebarGroup, byHost: Bool, folded: Bool, canAdd: Bool) {
