@@ -294,11 +294,12 @@ final class RemoteHost: @unchecked Sendable {
             source.cancel()
             self?.forget(source)
             // ssh ends with the status of the command there, or 255 for its
-            // own failure (the link down): 1 to 127 is liberttyd failing
-            // there (127: the host's shell can't find it). Above that, a
-            // signal ended it, which says nothing about what's installed.
+            // own failure (the link down). 127 and 126 are the host's shell
+            // finding no liberttyd to run there, or one it can't run; any
+            // other is liberttyd's own, which tries again (1: it couldn't
+            // start one, a moment while another takes over or recovers).
             let code = status & 0x7f == 0 ? (status >> 8) & 0xff : 0
-            if (1...127).contains(code) { self?.helperFailed(status: code, setUp: made) }
+            if code == 126 || code == 127 { self?.helperFailed(status: code, setUp: made) }
         }
         stateLock.withLock { reapers.append(source) }
         source.resume()
@@ -404,12 +405,11 @@ final class RemoteHost: @unchecked Sendable {
         statusChanged()
     }
 
-    /// A connection's liberttyd failed there (`status`: 127, the host's
-    /// shell can't find it — ~/.libertty deleted; 1, it couldn't start):
-    /// the next connection sets the host up again first, which installs
-    /// what's missing. Failing so again within a minute of that, it's said,
-    /// and the windows wait for Retry instead of redialing a liberttyd that
-    /// isn't there for good.
+    /// A connection found no liberttyd it could run there (`status` 127 or
+    /// 126: ~/.libertty deleted, say): the next connection sets the host up
+    /// again first, which installs what's missing. Failing so again within
+    /// a minute of that, it's said, and the windows wait for Retry instead
+    /// of redialing a liberttyd that isn't there for good.
     private func helperFailed(status: Int32, setUp: Int) {
         let stuck: Bool = stateLock.withLock {
             // Made with a setup since replaced, or being made again: nothing new.
