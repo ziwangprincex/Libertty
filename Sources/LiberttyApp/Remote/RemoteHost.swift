@@ -308,6 +308,69 @@ final class RemoteHost: @unchecked Sendable {
     private var reapers: [DispatchSourceProcess] = []
     private func forget(_ source: DispatchSourceProcess) { stateLock.withLock { reapers.removeAll { $0 === source } } }
 
+    // MARK: Holding the shared connection up
+
+    /// A session over the shared connection that does nothing (`cat`, reading
+    /// our end of a socket until we close it), held while the host has port
+    /// forwards: ssh's master counts sessions, not forwards, as what it's
+    /// there for, and with no window's session on it, it would exit
+    /// ControlPersist seconds after the last forward was made, every
+    /// forward with it. `master`: the master it holds (`masterProcess`).
+    private var keeper: (pid: pid_t, input: Int32, master: Int32)?
+    /// The session holding the connection up, if any (for the probes).
+    var keeperProcess: pid_t? { stateLock.withLock { keeper?.pid } }
+
+    /// Hold the shared connection up — the master whose process is `master`
+    /// (`RemoteHost.master`) — or, nil, let it go. One already held is left
+    /// as it is; a new master (the link came back) is held instead. Never
+    /// logs in: it's asked of a master that's up. Blocking, briefly.
+    func keepConnection(on master: Int32?) {
+        let (held, stale): (Bool, Int32?) = stateLock.withLock {
+            if let master, let keeper, keeper.master == master { return (true, nil) }
+            defer { keeper = nil }
+            return (false, keeper?.input)
+        }
+        guard !held else { return }
+        // Its end of the socket closed: `cat` there reads the end, and the
+        // session ends (its reaper finds it isn't the keeper any more).
+        if let stale { close(stale) }
+        guard let master else { return }
+        var fds: [Int32] = [-1, -1]
+        guard libertty_socketpair(&fds) == 0 else { return }
+        let argv = ["ssh"] + options + ["-o", "BatchMode=yes", destination, "cat > /dev/null"]
+        var cargv = argv.map { strdup($0) } + [nil]
+        var cenv = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer {
+            cargv.forEach { free($0) }
+            cenv.forEach { free($0) }
+        }
+        let pid = libertty_spawn_io(ssh, &cargv, &cenv, fds[1], -1, -1)
+        close(fds[1])
+        guard pid > 0 else {
+            close(fds[0])
+            return
+        }
+        stateLock.withLock { keeper = (pid, fds[0], master) }
+        // Ended by us, or with its master (the link dropped): held again
+        // once the link is back and its forwards are (PortForwarder).
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global())
+        source.setEventHandler { [weak self] in
+            var status: Int32 = 0
+            waitpid(pid, &status, 0)
+            source.cancel()
+            guard let self else { return }
+            self.forget(source)
+            let input: Int32? = self.stateLock.withLock {
+                guard let keeper = self.keeper, keeper.pid == pid else { return nil }
+                self.keeper = nil
+                return keeper.input
+            }
+            if let input { close(input) }
+        }
+        stateLock.withLock { reapers.append(source) }
+        source.resume()
+    }
+
     /// For a single remote shell word (remote shells all take single quotes).
     static func quote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 

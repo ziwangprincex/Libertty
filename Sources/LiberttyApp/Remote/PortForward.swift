@@ -270,7 +270,9 @@ struct PortForward: Sendable, Equatable {
 /// no listener on this Mac outlives the window that asked for it (ssh's own
 /// master lingers for ControlPersist seconds after that, forward-free). A
 /// forward made by `libertty +forward` with no window open stays until it's
-/// closed or Libertty quits.
+/// closed or Libertty quits: while a host has any, its connection is held
+/// up (`RemoteHost.keepConnection`), which ssh would otherwise close a
+/// minute after the last window's session went, the forwards with it.
 ///
 /// Asking for a forward runs ssh, so every call that changes one blocks and
 /// belongs off the main thread; reading the list doesn't.
@@ -443,6 +445,7 @@ final class PortForwarder: @unchecked Sendable {
         let result = host.control(first, cancel: false)
         if result.ok {
             remember(first, host: host.destination, keeping: true)
+            host.keepConnection(on: master)
             return first
         }
         guard retrying, let other = PortForward.freePort(preferring: 0), other != forward.local else {
@@ -453,6 +456,7 @@ final class PortForwarder: @unchecked Sendable {
         let second = host.control(again, cancel: false)
         guard second.ok else { throw Failure.ssh(again, second.why) }
         remember(again, host: host.destination, keeping: true)
+        host.keepConnection(on: master)
         return again
     }
 
@@ -503,8 +507,11 @@ final class PortForwarder: @unchecked Sendable {
     /// whatever ssh says: a master that is down took the forward with it,
     /// and an entry nobody can close would be there for good.
     private func drop(_ forward: PortForward) {
-        _ = RemoteHost.named(forward.destination).control(forward, cancel: true)
+        let host = RemoteHost.named(forward.destination)
+        _ = host.control(forward, cancel: true)
         remember(forward, host: forward.destination, keeping: false)
+        // The last one: the connection goes once nothing else uses it.
+        if forwards(on: forward.destination).isEmpty { host.keepConnection(on: nil) }
     }
 
     /// The host's last window closed: its forwards were for those panes.
@@ -533,6 +540,9 @@ final class PortForwarder: @unchecked Sendable {
                 }
                 _ = try? establish(again, on: host, master: master, retrying: forward.direction == .open)
             }
+            // And the connection held up: this new master, or the same one
+            // if the session holding it ended (`keepConnection` keeps one that's still there).
+            if !forwards(on: host.destination).isEmpty { host.keepConnection(on: master) }
         }
     }
 
