@@ -1227,17 +1227,31 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     override func flagsChanged(with event: NSEvent) {
         modifiersChangedForLinks(event)
-        guard !isInMode, let key = ghosttyKeyForKeyCode[event.keyCode] else { return }
-        let flag: NSEvent.ModifierFlags = switch key {
-        case GHOSTTY_KEY_SHIFT_LEFT, GHOSTTY_KEY_SHIFT_RIGHT: .shift
-        case GHOSTTY_KEY_CONTROL_LEFT, GHOSTTY_KEY_CONTROL_RIGHT: .control
-        case GHOSTTY_KEY_ALT_LEFT, GHOSTTY_KEY_ALT_RIGHT: .option
-        case GHOSTTY_KEY_META_LEFT, GHOSTTY_KEY_META_RIGHT: .command
-        default: []
+        guard !isInMode, let key = ghosttyKeyForKeyCode[event.keyCode],
+              let action = Self.modifierAction(key, event.modifierFlags), !hasMarkedText() else { return }
+        send(event, action: action, text: nil)
+    }
+
+    /// Whether a modifier key's own event is its press or its release (nil:
+    /// not a modifier key). The key's own side decides, by the
+    /// device-dependent bits: with both Shift keys held, letting one go
+    /// leaves Shift on, and that's the released key's release. Flags without
+    /// those bits (made by a program, not a keyboard) go by the modifier.
+    static func modifierAction(_ key: GhosttyKey, _ flags: NSEvent.ModifierFlags) -> GhosttyKeyAction? {
+        let (flag, left, right): (NSEvent.ModifierFlags, Int32, Int32) = switch key {
+        case GHOSTTY_KEY_SHIFT_LEFT, GHOSTTY_KEY_SHIFT_RIGHT: (.shift, NX_DEVICELSHIFTKEYMASK, NX_DEVICERSHIFTKEYMASK)
+        case GHOSTTY_KEY_CONTROL_LEFT, GHOSTTY_KEY_CONTROL_RIGHT: (.control, NX_DEVICELCTLKEYMASK, NX_DEVICERCTLKEYMASK)
+        case GHOSTTY_KEY_ALT_LEFT, GHOSTTY_KEY_ALT_RIGHT: (.option, NX_DEVICELALTKEYMASK, NX_DEVICERALTKEYMASK)
+        case GHOSTTY_KEY_META_LEFT, GHOSTTY_KEY_META_RIGHT: (.command, NX_DEVICELCMDKEYMASK, NX_DEVICERCMDKEYMASK)
+        default: ([], 0, 0)
         }
-        guard !flag.isEmpty, !hasMarkedText() else { return }
-        let pressed = event.modifierFlags.contains(flag)
-        send(event, action: pressed ? GHOSTTY_KEY_ACTION_PRESS : GHOSTTY_KEY_ACTION_RELEASE, text: nil)
+        guard !flag.isEmpty else { return nil }
+        var pressed = flags.contains(flag)
+        if pressed, flags.rawValue & UInt(left | right) != 0 {
+            let isLeft = [GHOSTTY_KEY_SHIFT_LEFT, GHOSTTY_KEY_CONTROL_LEFT, GHOSTTY_KEY_ALT_LEFT, GHOSTTY_KEY_META_LEFT].contains(key)
+            pressed = flags.rawValue & UInt(isLeft ? left : right) != 0
+        }
+        return pressed ? GHOSTTY_KEY_ACTION_PRESS : GHOSTTY_KEY_ACTION_RELEASE
     }
 
     /// `translationFlags`: the modifiers the key's text was made with
