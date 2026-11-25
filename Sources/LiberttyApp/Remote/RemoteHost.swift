@@ -338,7 +338,7 @@ final class RemoteHost: @unchecked Sendable {
         guard let master else { return }
         var fds: [Int32] = [-1, -1]
         guard libertty_socketpair(&fds) == 0 else { return }
-        let argv = ["ssh"] + options + ["-o", "BatchMode=yes", destination, "cat > /dev/null"]
+        let argv = ["ssh"] + Self.keeperArguments(options: options, destination: destination)
         var cargv = argv.map { strdup($0) } + [nil]
         var cenv = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
@@ -370,6 +370,15 @@ final class RemoteHost: @unchecked Sendable {
         }
         stateLock.withLock { reapers.append(source) }
         source.resume()
+    }
+
+    /// The keeper's ssh command line, after `ssh`: a session over the master
+    /// only. Not one that may become a master itself (ControlMaster=auto,
+    /// as `options` say): with the master gone a moment before, it would log
+    /// in and be the new one, holding none of the forwards. (Before the
+    /// options: ssh takes the first value it's given.)
+    static func keeperArguments(options: [String], destination: String) -> [String] {
+        ["-o", "ControlMaster=no"] + options + ["-o", "BatchMode=yes", destination, "cat > /dev/null"]
     }
 
     /// For a single remote shell word (remote shells all take single quotes).

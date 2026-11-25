@@ -147,6 +147,19 @@ import Testing
                 == options + ["-O", "cancel", "-L", "127.0.0.1:49231:localhost:5173", "me@devbox"])
     }
 
+    /// The session that holds the shared connection up while it carries
+    /// forwards only ever uses the master: one gone a moment before doesn't
+    /// make it log in as a new master, holding none of them. ssh takes the
+    /// first value it's given, so it comes before the connection's own.
+    @Test func theKeeperNeverBecomesAMaster() {
+        let options = ["-T", "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/ssh-abc"]
+        let argv = RemoteHost.keeperArguments(options: options, destination: "me@devbox")
+        let first = argv.firstIndex { $0.hasPrefix("ControlMaster=") }
+        #expect(first.map { argv[$0] } == "ControlMaster=no")
+        #expect(argv.suffix(2) == ["me@devbox", "cat > /dev/null"])
+        #expect(argv.contains("BatchMode=yes"))
+    }
+
     // MARK: How one is named and described
 
     @Test func namesAndSummaries() {
