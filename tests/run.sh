@@ -828,6 +828,8 @@ expect cli-admin 'cli-admin: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-conf
 # liberttyd crashing: its guardian gives the sessions to a new one (not if it
 # keeps crashing; a kill still ends them), and a window keeps its screen.
 expect daemon-crash 'daemon-crash: all passed' zsh $ROOT/tests/daemon-crash-test.sh $LIBERTTY
+# liberttyd with more windows than descriptors: it raises its limit, and waits for one when out.
+expect daemon-limits 'daemon-limits: all passed' zsh $ROOT/tests/daemon-limits-test.sh $LIBERTTY
 expect crash-window 'crash-probe: all passed' $LIBERTTY --crash-probe
 # libertty +hosts: the hosts you keep, and check connecting to one (fake-ssh).
 expect hosts 'hosts: all passed' zsh $ROOT/tests/hosts-test.sh $LIBERTTY

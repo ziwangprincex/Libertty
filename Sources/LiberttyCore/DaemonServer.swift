@@ -29,6 +29,11 @@ public final class DaemonServer {
     public static func main(_ arguments: [String]) -> Never {
         signal(SIGPIPE, SIG_IGN)
         signal(SIGHUP, SIG_IGN)
+        // A few descriptors for each session and one for each window (its
+        // guardian holds one per session): macOS starts a process with 256,
+        // which some 60 sessions use up, and a liberttyd that can't take
+        // one more connection can't serve.
+        libertty_raise_fd_limit()
         let executable = currentExecutablePath() ?? arguments[0]
         if arguments.contains("--version") {
             print("liberttyd protocol \(Wire.version) build \(buildID(ofExecutable: executable))")
@@ -41,6 +46,11 @@ public final class DaemonServer {
             let env = ProcessInfo.processInfo.environment
             let home = env["LIBERTTY_HOME"] ?? userHomeDirectory().appendingPath(".libertty")
             let log = env["LIBERTTY_DAEMON_LOG"] ?? home.appendingPath("liberttyd.log")
+            // (Said here, where Libertty shows what ssh said, as well as in the log.)
+            if let problem = Wire.prepareDirectory(for: Wire.socketPath) {
+                writeError("liberttyd: \(problem)\n")
+                exit(1)
+            }
             guard DaemonClient.ensureRunning(executable: executable, logPath: log, responsible: false) else {
                 writeError("liberttyd: couldn't start (see \(log))\n")
                 exit(1)
@@ -56,7 +66,10 @@ public final class DaemonServer {
         // Started by liberttyd to keep its sessions' ptys open should it go (DaemonGuardian).
         if arguments.contains("--guardian") { DaemonGuardian.main() }
         let path = Wire.socketPath
-        Wire.prepareDirectory(for: path)
+        if let problem = Wire.prepareDirectory(for: path) {
+            log(problem)
+            exit(1)
+        }
         let server = DaemonServer(path: path)
         // One liberttyd per socket: whoever holds the lock owns the path.
         let lockFD = open(path + ".lock", O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
@@ -71,10 +84,21 @@ public final class DaemonServer {
             }
         } else if arguments.contains("--recover") {
             // Started by the guardian of a liberttyd that went away: the lock
-            // first (another liberttyd may have been started meanwhile), then
-            // the sessions, from the guardian on stdin.
+            // first, then the sessions, from the guardian on stdin. The
+            // guardian took the lock when it saw that one gone and hands it
+            // on, held (descriptor 3, `--locked`), so no liberttyd started
+            // meanwhile can have it. Else (an older guardian) it may have
+            // to wait for it.
+            var held = false
+            if arguments.contains("--locked") {
+                var passed = stat(), lock = stat()
+                held = fstat(3, &passed) == 0 && fstat(lockFD, &lock) == 0 && passed.st_dev == lock.st_dev
+                    && passed.st_ino == lock.st_ino && flock(3, LOCK_EX | LOCK_NB) == 0
+                // (None of the programs it starts may hold it once it's gone.)
+                if held { _ = fcntl(3, F_SETFD, FD_CLOEXEC) }
+            }
             var tries = 0
-            while flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+            while !held, flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
                 tries += 1
                 if tries > 500 { log("recover: another liberttyd serves \(path)"); exit(1) }
                 usleep(10_000)
@@ -181,17 +205,30 @@ public final class DaemonServer {
         scheduleExitIfIdle()
         keepFilesFresh()
         endOnTerm()
+        // Out of descriptors, and said so in the log (once each time).
+        var starved = false
         while true {
             let fd = libertty_sock_accept(listener)
             if fd < 0 {
-                if errno == EPERM || errno == ECONNABORTED || errno == EINTR { continue }
+                let error = errno
+                if error == EPERM || error == ECONNABORTED || error == EINTR { continue }
                 lock.lock()
                 let over = handingOver
                 lock.unlock()
                 if over { Thread.sleep(forTimeInterval: 3600) }  // the takeover thread exits the process
-                Self.log("accept failed: \(String(cString: strerror(errno)))")
+                // Out of descriptors or memory for now: the connection waits
+                // in the backlog until a session ends or a window lets go of
+                // one. Exiting would end every session.
+                if error == EMFILE || error == ENFILE || error == ENOMEM || error == ENOBUFS {
+                    if !starved { Self.log("accept failed: \(String(cString: strerror(error))); waiting for a descriptor") }
+                    starved = true
+                    Thread.sleep(forTimeInterval: 0.1)
+                    continue
+                }
+                Self.log("accept failed: \(String(cString: strerror(error)))")
                 exit(1)
             }
+            starved = false
             let connection = Connection(fd: fd)
             let peer = libertty_sock_peer_pid(fd)
             var name = [CChar](repeating: 0, count: 256)
@@ -276,7 +313,12 @@ public final class DaemonServer {
         return sessions[id]
     }
 
-    private func register(_ session: DaemonSession) {
+    /// The session is ours: listed, guarded, its end heard. Not during a
+    /// takeover (false): the sessions to hand over are counted, and one
+    /// started now would end with us. Its output flows once the caller
+    /// `start`s it.
+    @discardableResult
+    private func register(_ session: DaemonSession) -> Bool {
         session.onEnd = { [weak self] ended in
             guard let self else { return }
             self.lock.lock()
@@ -287,10 +329,15 @@ public final class DaemonServer {
             self.scheduleExitIfIdle()
         }
         lock.lock()
+        guard !handingOver else {
+            lock.unlock()
+            return false
+        }
         sessions[session.id] = session
         lock.unlock()
         GuardianLink.shared.keep(session)
         DaemonEvents.shared.publish("session-started", session: session.id, ["command": session.command])
+        return true
     }
 
     private func handle(_ connection: Connection) {
@@ -331,10 +378,20 @@ public final class DaemonServer {
             case .create:
                 guard bound == nil, let request = frame.decode(CreateRequest.self) else { fail("bad create"); continue }
                 guard session(request.id) == nil else { fail("session \(request.id) exists"); continue }
+                // Mid-takeover a session started here would end with us: the
+                // app asks the newer liberttyd, which has the socket in a moment.
+                guard !lock.withLock({ handingOver }) else { fail(Wire.handingOver); continue }
                 do {
                     let s = try DaemonSession(request: request)
-                    register(s)
+                    guard register(s) else {
+                        // (The takeover began meanwhile.) Its program ends now, not with us.
+                        s.start()
+                        s.terminate()
+                        fail(Wire.handingOver)
+                        continue
+                    }
                     s.attach(connection, sendSnapshot: false, catchUp: request.catchUp ?? false)
+                    s.start()
                     bound = s
                     note { $0.session = s.id }
                 } catch {
@@ -393,8 +450,9 @@ public final class DaemonServer {
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
                 // `format` is newer than capture: an older app asks for plain text by leaving it out.
                 let format = (json["format"] as? String).flatMap(Snapshots.TextFormat.init) ?? .plain
-                connection.send(.result, json: ["ok": true, "format": format.rawValue,
-                                                "text": s.capture(scrollback: json["scrollback"] as? Bool ?? false, format: format)])
+                let sent = connection.send(.result, json: ["ok": true, "format": format.rawValue,
+                                                           "text": s.capture(scrollback: json["scrollback"] as? Bool ?? false, format: format)])
+                if !sent { fail("the capture is too big to send") }
             case .sendKey:
                 let json = frame.json
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
@@ -489,7 +547,7 @@ public final class DaemonServer {
                     }
                 }
                 lock.unlock()
-                if refused { fail("handing over"); continue }
+                if refused { fail(Wire.handingOver); continue }
                 connection.send(.result, json: ["ok": true])
             case .loadLayout:
                 // The asking Mac's own entry; for a host's windows, else the
@@ -566,6 +624,19 @@ public final class DaemonServer {
 
     // MARK: Takeover
 
+    /// Take no more connections. A shutdown stops a listener on Linux but
+    /// not on macOS, where it must close: /dev/null goes over it, so its
+    /// number can't be another descriptor's while the accepting thread
+    /// (woken either way) still uses it.
+    private func stopListening() {
+        sysShutdown(listener)
+        let null = open("/dev/null", O_RDONLY | O_CLOEXEC)
+        guard null >= 0 else { return sysClose(listener) }
+        dup2(null, listener)
+        _ = fcntl(listener, F_SETFD, FD_CLOEXEC)
+        sysClose(null)
+    }
+
     /// Old side: give every session to the newer liberttyd on `connection`, then exit.
     private func handOver(to connection: Connection) {
         lock.lock()
@@ -576,7 +647,7 @@ public final class DaemonServer {
         // The newer one has a guardian of its own once it has them.
         GuardianLink.shared.standDown()
         // No new connections; the new liberttyd binds the path when we're done.
-        sysShutdown(listener)
+        stopListening()
         Self.log("handing \(all.count) sessions over")
         connection.setReceiveTimeout(10)
         var handed = 0
@@ -659,6 +730,7 @@ public final class DaemonServer {
             do {
                 let s = try DaemonSession(adopting: fd, header: header, snapshot: snapshot)
                 register(s)
+                s.start()
                 adopted += 1
             } catch {
                 Self.log("takeover: couldn't adopt a session: \(error)")
@@ -812,11 +884,22 @@ final class DaemonSession {
             defer { self.lock.unlock() }
             body(self.terminal)
         }
-        if awaitingRestore {
+    }
+
+    /// Its program's output flows from now on, and so can its end: once the
+    /// server has it, `onEnd` set (a program that ends at once would end
+    /// unheard otherwise, and stay listed for good), and a window that
+    /// made it attached (it misses none of it).
+    func start() {
+        lock.lock()
+        let waiting = awaitingRestore
+        lock.unlock()
+        if waiting {
             // Not for long without a window to give its screen back.
             queue.asyncAfter(deadline: .now() + Self.restoreWait) { [weak self] in self?.restore(nil, from: nil) }
         } else {
-            pty.startReading()
+            // On `queue`, in step with a takeover's `release` (then it mustn't read).
+            queue.async { [self] in pty.startReading() }
         }
     }
 
@@ -1201,7 +1284,7 @@ final class DaemonSession {
             header["recovered"] = true
             outbox.send(.attached, Connection.headed(header, body: UnsafeRawBufferPointer(start: nil, count: 0)))
             queue.asyncAfter(deadline: .now() + Self.attachWait) { [weak self] in self?.restore(nil, from: nil) }
-        } else if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
+        } else if sendSnapshot, let snapshot = Snapshots.encode(terminal, fitting: Snapshots.maxBytes) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
         } else {
@@ -1243,15 +1326,20 @@ final class DaemonSession {
     private var catchUps = 0
 
     /// Our state for a window catching up: a snapshot, its kitty images
-    /// included (under `lock`).
+    /// included (as many as fit in the frame; under `lock`).
     private func catchUpFrames() -> [(Wire.Kind, Data)] {
-        guard let snapshot = Snapshots.encode(terminal) else { return [] }
+        guard let snapshot = Snapshots.encode(terminal, fitting: Snapshots.maxBytes) else { return [] }
         return [(.snapshot, snapshot)]
     }
 
     func detach(_ connection: Connection) {
         lock.lock()
         defer { lock.unlock() }
+        letGo(connection)
+    }
+
+    /// Under `lock`: the window on `connection` is no longer one of ours.
+    private func letGo(_ connection: Connection) {
         if let i = clients.firstIndex(where: { $0.connection === connection }) { clients.remove(at: i).hangUp() }
         // Repaired either way: the window may have left the list already.
         if primary === connection { primary = clients.last?.connection }
@@ -1425,13 +1513,15 @@ final class DaemonSession {
     func terminate() { pty.terminate() }
 
     /// A window closed its pane: end the program, or with other windows still
-    /// showing it (mirrors), just let this one go.
+    /// showing it (mirrors), just let this one go. Decided and done in one
+    /// go: two mirrors closing at once mustn't each see the other and both
+    /// let go, leaving the program running with no window.
     func close(from connection: Connection) {
         lock.lock()
         let others = clients.contains { $0.connection !== connection }
+        if others { letGo(connection) }
         lock.unlock()
         if others {
-            detach(connection)
             connection.close()
         } else {
             pty.terminate()
@@ -1532,7 +1622,9 @@ final class DaemonSession {
         clients.forEach { $0.hangUp() }  // they redial the new liberttyd
         clients = []
         primary = nil
-        let snapshot = Snapshots.encode(terminal) ?? Data()
+        // One that fits in the handoff frame: a frame too big to send would
+        // end the takeover, and every session with it.
+        let snapshot = Snapshots.encode(terminal, fitting: Snapshots.maxBytes) ?? Data()
         // Still waiting for a window's screen: the new one waits instead.
         let header = handoffHeader()
         awaitingRestore = false
@@ -1633,8 +1725,39 @@ public enum Snapshots {
         return Data(bytes: ptr, count: len)
     }
 
+    /// The most a snapshot may be: one frame, with room for a header beside it.
+    public static let maxBytes = Wire.maxFrame - (1 << 20)
+
+    /// `terminal`'s snapshot, made to fit in a frame (`fitting`).
+    public static func encode(_ terminal: GhosttyTerminal, fitting limit: Int) -> Data? {
+        encode(terminal).flatMap { fitting($0, limit: limit) }
+    }
+
+    /// A snapshot of at most `limit` bytes: as it is when it fits, else
+    /// with only as many of its newest kitty images as fit beside the rest
+    /// (their pixels go raw, up to 320 MB a screen: a frame too big to send
+    /// would leave a window unable to attach at all). The screen and its
+    /// scrollback come first; nil when even they don't fit.
+    public static func fitting(_ snapshot: Data, limit: Int = maxBytes) -> Data? {
+        guard snapshot.count > limit else { return snapshot }
+        guard let bare = reencoded(snapshot, imageLimit: 0), bare.count <= limit else { return nil }
+        // What's left, shared by the two screens (each keeps its own images).
+        let room = UInt64(limit - bare.count) / 2
+        guard room > 0, let some = reencoded(snapshot, imageLimit: room), some.count <= limit else { return bare }
+        return some
+    }
+
+    /// The snapshot again, from a terminal restored keeping `imageLimit`
+    /// bytes of images a screen (the newest; 0: none).
+    private static func reencoded(_ snapshot: Data, imageLimit: UInt64) -> Data? {
+        guard let terminal = decode(snapshot, trackContinuation: true, imageLimit: imageLimit) else { return nil }
+        defer { ghostty_terminal_free(terminal) }
+        return encode(terminal)
+    }
+
     /// A terminal restored from `data`, or nil if it doesn't decode.
-    public static func decode(_ data: Data, trackContinuation: Bool) -> GhosttyTerminal? {
+    public static func decode(_ data: Data, trackContinuation: Bool,
+                              imageLimit: UInt64 = KittyGraphics.storageLimit) -> GhosttyTerminal? {
         data.withUnsafeBytes { raw -> GhosttyTerminal? in
             guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return nil }
             var decoder: GhosttySnapshotDecoder?
@@ -1647,7 +1770,7 @@ public enum Snapshots {
             var compress = true
             _ = ghostty_snapshot_decoder_set(decoder, GHOSTTY_SNAPSHOT_DECODER_OPT_COMPRESS_HISTORY, &compress)
             // Its images: libghostty's default keeps only 10 MB of them.
-            var limit = KittyGraphics.storageLimit
+            var limit = imageLimit
             _ = ghostty_snapshot_decoder_set(decoder, GHOSTTY_SNAPSHOT_DECODER_OPT_KITTY_IMAGE_STORAGE_LIMIT, &limit)
             var terminal: GhosttyTerminal?
             guard ghostty_snapshot_decoder_decode(decoder, &terminal) == GHOSTTY_SUCCESS else { return nil }

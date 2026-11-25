@@ -13,10 +13,27 @@
 #include <spawn.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+void libertty_raise_fd_limit(void) {
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) return;
+    rlim_t wanted = limit.rlim_max;
+#ifdef __APPLE__
+    // More than OPEN_MAX is refused (setrlimit(2)).
+    if (wanted > OPEN_MAX) wanted = OPEN_MAX;
+#else
+    // No more than a pty's child closes before it runs its program (pty.c).
+    if (wanted > 65536) wanted = 65536;
+#endif
+    if (limit.rlim_cur >= wanted) return;
+    limit.rlim_cur = wanted;
+    setrlimit(RLIMIT_NOFILE, &limit);
+}
 
 static int fill_address(struct sockaddr_un *addr, const char *path) {
     memset(addr, 0, sizeof(*addr));
@@ -49,6 +66,19 @@ int libertty_sock_listen(const char *path) {
     return fd;
 }
 
+// Whether the process at the other end runs as this user.
+static int peer_is_us(int fd) {
+#ifdef __linux__
+    struct ucred cred;
+    socklen_t length = sizeof(cred);
+    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &length) == 0 && cred.uid == getuid();
+#else
+    uid_t uid;
+    gid_t gid;
+    return getpeereid(fd, &uid, &gid) == 0 && uid == getuid();
+#endif
+}
+
 int libertty_sock_connect(const char *path) {
     struct sockaddr_un addr;
     if (fill_address(&addr, path) != 0) return -1;
@@ -65,6 +95,13 @@ int libertty_sock_connect(const char *path) {
         errno = saved;
         return -1;
     }
+    // Only our own liberttyd: another user's, listening where ours should
+    // (a directory they made first), would be sent every keystroke.
+    if (!peer_is_us(fd)) {
+        close(fd);
+        errno = EPERM;
+        return -1;
+    }
     return fd;
 }
 
@@ -79,16 +116,7 @@ int libertty_sock_accept(int listener) {
 #endif
     // Another user's process could only get here through a misconfigured
     // directory; refuse it anyway.
-#ifdef __linux__
-    struct ucred cred;
-    socklen_t length = sizeof(cred);
-    int peer_ok = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &length) == 0 && cred.uid == getuid();
-#else
-    uid_t uid;
-    gid_t gid;
-    int peer_ok = getpeereid(fd, &uid, &gid) == 0 && uid == getuid();
-#endif
-    if (!peer_ok) {
+    if (!peer_is_us(fd)) {
         close(fd);
         errno = EPERM;
         return -1;
@@ -174,20 +202,22 @@ int libertty_sock_recv_fd(int sock) {
 
 pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
                               int responsible) {
-    return libertty_spawn_detached_stdin(path, argv, envp, log_path, responsible, -1);
+    return libertty_spawn_detached_stdin(path, argv, envp, log_path, responsible, -1, -1);
 }
 
 #ifdef __linux__
 // No POSIX_SPAWN_CLOEXEC_DEFAULT here: fork, start a session, close what
 // isn't ours to pass on, exec.
 pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
-                                    int responsible, int in_fd) {
+                                    int responsible, int in_fd, int pass_fd) {
     (void)responsible;  // a macOS notion
     int out = open(log_path ? log_path : "/dev/null", O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     int in = in_fd >= 0 ? fcntl(in_fd, F_DUPFD_CLOEXEC, 0) : open("/dev/null", O_RDONLY | O_CLOEXEC);
-    if (out < 0 || in < 0) {
+    int pass = pass_fd >= 0 ? fcntl(pass_fd, F_DUPFD_CLOEXEC, 3) : -1;
+    if (out < 0 || in < 0 || (pass_fd >= 0 && pass < 0)) {
         if (out >= 0) close(out);
         if (in >= 0) close(in);
+        if (pass >= 0) close(pass);
         return -1;
     }
     long max = sysconf(_SC_OPEN_MAX);
@@ -197,6 +227,7 @@ pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *
         int saved = errno;
         close(out);
         close(in);
+        if (pass >= 0) close(pass);
         errno = saved;
         return -1;
     }
@@ -205,7 +236,11 @@ pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *
         dup2(in, STDIN_FILENO);
         dup2(out, STDOUT_FILENO);
         dup2(out, STDERR_FILENO);
-        for (long fd = 3; fd < max; fd++) close((int)fd);
+        if (pass >= 0) {
+            if (pass != 3) dup2(pass, 3);
+            fcntl(3, F_SETFD, 0);  // (dup2 onto itself keeps close-on-exec)
+        }
+        for (long fd = pass >= 0 ? 4 : 3; fd < max; fd++) close((int)fd);
         sigset_t none;
         sigemptyset(&none);
         sigprocmask(SIG_SETMASK, &none, NULL);
@@ -215,6 +250,7 @@ pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *
     }
     close(out);
     close(in);
+    if (pass >= 0) close(pass);
     return pid;
 }
 #else
@@ -236,7 +272,7 @@ static void disclaim_responsibility(posix_spawnattr_t *attr) {
 }
 
 pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
-                                    int responsible, int in_fd) {
+                                    int responsible, int in_fd, int pass_fd) {
     posix_spawnattr_t attr;
     posix_spawn_file_actions_t actions;
     posix_spawnattr_init(&attr);
@@ -256,6 +292,8 @@ pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *
     posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, log_path ? log_path : "/dev/null",
                                      O_WRONLY | O_CREAT | O_APPEND, 0600);
     posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
+    if (pass_fd == 3) posix_spawn_file_actions_addinherit_np(&actions, 3);
+    else if (pass_fd >= 0) posix_spawn_file_actions_adddup2(&actions, pass_fd, 3);
     pid_t pid = -1;
     int err = posix_spawn(&pid, path, &actions, &attr, argv, envp);
     posix_spawn_file_actions_destroy(&actions);

@@ -96,10 +96,18 @@ public enum Wire {
 
     public static let maxFrame = 256 << 20
 
+    /// What a liberttyd handing its sessions to a newer one answers a request
+    /// it can't take now (a session to start): ask the newer one in a moment.
+    public static let handingOver = "handing over"
+
     /// liberttyd's socket: `$LIBERTTY_DAEMON_SOCKET`, else liberttyd.sock in a private
     /// directory under the per-user temporary directory.
     public static var socketPath: String {
         if let path = ProcessInfo.processInfo.environment["LIBERTTY_DAEMON_SOCKET"], !path.isEmpty { return path }
+        return defaultSocketPath
+    }
+
+    static var defaultSocketPath: String {
         #if os(Linux)
         // A private directory in /tmp, as tmux does. Not $XDG_RUNTIME_DIR:
         // systemd deletes it when the last login session ends, which is
@@ -113,11 +121,32 @@ public enum Wire {
         #endif
     }
 
-    /// Make the socket's directory, private to the user.
-    public static func prepareDirectory(for path: String) {
+    /// Make the socket's directory, private to the user. Nil, or why it
+    /// mustn't be used: the default one has to be ours alone — on Linux it's
+    /// in /tmp, where another user could make it first, then listen there
+    /// in liberttyd's place or link where liberttyd keeps its uploads to
+    /// somewhere else. (A socket given in $LIBERTTY_DAEMON_SOCKET is the
+    /// user's own choice.)
+    @discardableResult
+    public static func prepareDirectory(for path: String) -> String? {
         let dir = path.parentPath
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        return path == defaultSocketPath ? privacyProblem(dir) : nil
+    }
+
+    /// Why `dir` isn't private to this user, as tmux checks its own in /tmp:
+    /// it's a link or no directory, another user's, or others may write in
+    /// it (and may have left anything there). One others may only look into
+    /// is made private. Nil when it's fine.
+    static func privacyProblem(_ dir: String) -> String? {
+        var st = stat()
+        guard lstat(dir, &st) == 0 else { return "can't use \(dir): \(SystemError(errno))" }
+        guard Int(st.st_mode) & Int(S_IFMT) == Int(S_IFDIR) else { return "\(dir) isn't a directory of its own (remove it)" }
+        guard st.st_uid == getuid() else { return "\(dir) belongs to another user (uid \(st.st_uid)); not using it" }
+        guard Int(st.st_mode) & 0o022 == 0 else { return "other users may write in \(dir) (remove it)" }
+        if Int(st.st_mode) & 0o077 != 0, chmod(dir, 0o700) != 0 { return "can't make \(dir) private: \(SystemError(errno))" }
+        return nil
     }
 }
 
@@ -324,14 +353,23 @@ public final class Connection {
     }
 
     /// Give up after `seconds` blocked in one send (a hung peer), or never with 0.
-    public func setSendTimeout(_ seconds: Int) {
-        var tv = timeval(tv_sec: seconds, tv_usec: 0)
+    public func setSendTimeout(_ seconds: Double) {
+        var tv = Self.timeout(seconds)
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     }
 
     public func setReceiveTimeout(_ seconds: Double) {
-        var tv = timeval(tv_sec: Int(seconds), tv_usec: suseconds_t((seconds - Double(Int(seconds))) * 1e6))
+        var tv = Self.timeout(seconds)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    }
+
+    /// `seconds` as a socket timeout. What isn't a time to wait at all
+    /// (`--timeout inf`, a huge number, a negative one) waits forever, as 0
+    /// does: Int() would trap on it.
+    private static func timeout(_ seconds: Double) -> timeval {
+        guard seconds.isFinite, seconds > 0, seconds < 1e9 else { return timeval(tv_sec: 0, tv_usec: 0) }
+        let whole = Int(seconds)
+        return timeval(tv_sec: whole, tv_usec: suseconds_t((seconds - Double(whole)) * 1e6))
     }
 
     public func setBufferSizes(_ bytes: Int32) {
@@ -342,8 +380,11 @@ public final class Connection {
 
     // MARK: Sending
 
+    /// False, and nothing sent, for a frame bigger than Wire.maxFrame: the
+    /// other side would take it for garbage and hang up.
     @discardableResult
     public func send(_ kind: Wire.Kind, _ payload: UnsafeRawBufferPointer) -> Bool {
+        guard payload.count < Wire.maxFrame else { return false }
         var header = [UInt8](repeating: 0, count: 5)
         let length = UInt32(payload.count + 1)
         withUnsafeBytes(of: length.littleEndian) { for i in 0..<4 { header[i] = $0[i] } }

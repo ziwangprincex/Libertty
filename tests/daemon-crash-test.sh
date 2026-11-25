@@ -28,10 +28,16 @@ $L +wait $ID --until prompt --timeout 5
 SH=$(shell $ID)
 grep -q "guardian liberttyd\[[0-9]*\] holds" $LIBERTTY_DAEMON_LOG && ok "a guardian holds the session" || bad "no guardian: $(tail -3 $LIBERTTY_DAEMON_LOG)"
 
-# A crash: the same shell, in a new liberttyd.
+# A crash: the same shell, in a new liberttyd. Its guardian takes the lock
+# as it sees the old one gone and hands it to the new one, held: a liberttyd
+# started meanwhile (a host's windows reconnecting, a new tab) can't take it
+# in between, and serve without the session.
 old=$(pid)
 kill -SEGV $old
 replaced $old && ok "after a crash, a new liberttyd: $old → $(pid)" || bad "after a crash: no new liberttyd"
+new=$(pid)
+[[ $(ps -o command= -p $new) == *"--recover --locked"* ]] && lsof -a -p $new -d 3 -Fn 2> /dev/null | grep -qx "n${LIBERTTY_DAEMON_SOCKET:A}.lock" \
+  && ok "it holds the lock its guardian handed it" || bad "the lock: $(ps -o command= -p $new); $(lsof -a -p $new -d 3 -Fn 2> /dev/null)"
 kill -0 $SH 2> /dev/null && [[ $(shell $ID) == $SH ]] && ok "the shell lived on" || bad "the shell is gone"
 $L +send $ID 'echo MARK-IS-$MARK\n'
 $L +wait $ID --until prompt --timeout 10

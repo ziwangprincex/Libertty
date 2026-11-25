@@ -28,6 +28,11 @@ pid_t libertty_pty_spawn(const char *path,
     };
     int master = -1, slave = -1;
     if (openpty(&master, &slave, NULL, NULL, &ws) != 0) return -1;
+    // Neither end may leak into another child: another thread may fork
+    // (another pane starting) before this one is done, and a shell that
+    // holds this pane's slave keeps it from ever seeing its own shell exit.
+    fcntl(master, F_SETFD, FD_CLOEXEC);
+    fcntl(slave, F_SETFD, FD_CLOEXEC);
 
     // Canonical-mode line editing erases whole UTF-8 characters (as Tern does).
     struct termios t;
@@ -36,8 +41,9 @@ pid_t libertty_pty_spawn(const char *path,
         tcsetattr(slave, TCSANOW, &t);
     }
 
-    // The parent keeps only the master; neither end may leak into other children.
-    fcntl(master, F_SETFD, FD_CLOEXEC);
+    // What the child closes (sysconf isn't for after fork).
+    long max = sysconf(_SC_OPEN_MAX);
+    if (max < 0 || max > 65536) max = 65536;
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -55,8 +61,11 @@ pid_t libertty_pty_spawn(const char *path,
         dup2(slave, STDIN_FILENO);
         dup2(slave, STDOUT_FILENO);
         dup2(slave, STDERR_FILENO);
-        if (slave > STDERR_FILENO) close(slave);
-        close(master);
+        // (dup2 onto itself keeps close-on-exec: a slave that was already 0, 1 or 2.)
+        for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; fd++) fcntl(fd, F_SETFD, 0);
+        // Only the terminal: whatever else is open here — another pane's
+        // pty, opened between its openpty and its close-on-exec — stays here.
+        for (long fd = STDERR_FILENO + 1; fd < max; fd++) close((int)fd);
 
         // The app may have ignored or blocked signals; the shell expects defaults.
         sigset_t none;

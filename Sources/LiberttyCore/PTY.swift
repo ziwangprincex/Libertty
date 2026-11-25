@@ -128,7 +128,15 @@ public final class PTY: TerminalBackend {
         let pid = libertty_pty_spawn(executable, &argv, &envp, workingDirectory,
                                   size.cols, size.rows, size.widthPx, size.heightPx, &master)
         guard pid > 0 else { throw SystemError(errno) }
-        try self.init(adopting: master, pid: pid, queue: queue)
+        do {
+            try self.init(adopting: master, pid: pid, queue: queue)
+        } catch {
+            // (Out of descriptors.) The child runs on a terminal nobody
+            // reads: end it, and reap it, or it stays a zombie of ours.
+            kill(pid, SIGHUP)
+            reapWhenDone(pid)
+            throw error
+        }
     }
 
     /// Take over a pty master someone else opened (a previous liberttyd handing

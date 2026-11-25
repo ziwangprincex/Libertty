@@ -107,6 +107,68 @@ $L +send $ID 'echo MARK-IS-$MARK\n'
 $L +wait $ID --until prompt --timeout 5
 $L +capture $ID | grep -q "MARK-IS-kept-across" && ok "restart: the shell kept running" || bad "restart: the shell's gone"
 
+# restart while windows make sessions: one made mid-handover would end with
+# the old liberttyd, so it's refused (the app asks the newer one). Sessions
+# enough for the handover to take a moment, then windows that ask for one
+# the moment it begins: none they're given is gone after it.
+python3 -I - $LIBERTTY_DAEMON_SOCKET $LIBERTTY_DAEMON_LOG $L > $T/made <<'EOF'
+import json, os, socket, struct, subprocess, sys, time, uuid
+path, log, libertty = sys.argv[1:4]
+def window():
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.connect(path)
+    s.settimeout(20)
+    return s
+def create(s):
+    sid = uuid.uuid4().hex[:8]
+    body = json.dumps({"id": sid, "executable": "/bin/sleep", "arguments": ["sleep", "300"], "environment": {},
+                       "workingDirectory": "/tmp", "cols": 80, "rows": 24, "widthPx": 0, "heightPx": 0,
+                       "scrollback": 1000}).encode()
+    s.sendall(struct.pack("<I", len(body) + 1) + bytes([2]) + body)
+    return sid
+def answer(s):
+    try:
+        head = s.recv(5, socket.MSG_WAITALL)
+        if len(head) < 5: return None, {}
+        n = struct.unpack("<I", head[:4])[0] - 1
+        body = s.recv(n, socket.MSG_WAITALL) if n else b""
+        return head[4], json.loads(body) if head[4] == 105 else {}
+    except OSError:
+        return None, {}
+before = []
+for _ in range(60):
+    s = window()
+    before.append(create(s))
+    answer(s)
+    s.close()
+late = [window() for _ in range(30)]
+seen = os.path.getsize(log)
+restart = subprocess.Popen([libertty, "+daemon", "restart"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+deadline = time.time() + 15
+while time.time() < deadline:
+    with open(log, "rb") as f:
+        f.seek(seen)
+        if b"] handing " in f.read(): break
+    time.sleep(0.001)
+asked = [create(s) for s in late]
+made, refused = [], 0
+for s, sid in zip(late, asked):
+    kind, result = answer(s)
+    if kind == 102: made.append(sid)
+    if result.get("error") == "handing over": refused += 1
+restart.wait()
+print(" ".join(made))
+print(refused)
+print(" ".join(before))
+EOF
+made=(${=$(sed -n 1p $T/made)})
+refused=$(sed -n 2p $T/made)
+listed=(${=$($L +list-sessions --json | python3 -I -c "import json,sys; print(' '.join(s['id'] for s in json.load(sys.stdin)))")})
+lost=(${made:|listed})
+(( ${#lost} == 0 && ${#made} + refused > 0 )) && ok "restart mid-making: none made is gone (${#made} made, $refused refused)" \
+  || bad "restart mid-making: ${#lost} of ${#made} made mid-handover are gone ($refused refused)"
+for s in $made ${=$(sed -n 3p $T/made)}; do $L +kill-session $s > /dev/null 2>&1; done
+
 # +send --enter: the text, then Return as its own key.
 $L +send $ID --enter 'echo SENT-$((40+2))'
 $L +wait $ID --until prompt --timeout 5

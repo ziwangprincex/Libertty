@@ -181,6 +181,9 @@ final class RemoteHost: @unchecked Sendable {
         do { try p.run() } catch { return (-1, "", error.localizedDescription) }
         try? out.close()
         try? err.close()
+        // An ssh that ends mid-upload (the link dropped, the host's disk is
+        // full) mustn't take Libertty down with SIGPIPE: the write fails instead.
+        _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         if let input { try? stdin.fileHandleForWriting.write(contentsOf: input) }
         try? stdin.fileHandleForWriting.close()
         p.waitUntilExit()

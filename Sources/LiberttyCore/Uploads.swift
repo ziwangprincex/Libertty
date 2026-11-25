@@ -75,9 +75,13 @@ public enum Uploads {
         }
     }
 
-    /// Batches last changed before `before`, and nothing else in the folder.
+    /// Batches last changed before `before`, and nothing else in the folder:
+    /// nothing through a link either (the folder itself one, or a batch), so
+    /// never what it points to.
     static func prune(_ root: String, before: Double) {
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: root) else { return }
+        var folder = stat()
+        guard lstat(root, &folder) == 0, Int(folder.st_mode) & Int(S_IFMT) == Int(S_IFDIR),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: root) else { return }
         for name in names {
             let path = root.appendingPath(name)
             var st = stat()

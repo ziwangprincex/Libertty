@@ -5,7 +5,8 @@
 #include <sys/types.h>
 
 /// Spawn `path` with `argv`/`envp` on a new pseudo-terminal of the given size,
-/// as a session leader with the pty as its controlling terminal.
+/// as a session leader with the pty as its controlling terminal, and no other
+/// descriptor than the terminal as stdin, stdout and stderr.
 /// Returns the child pid and stores the master fd (close-on-exec) in
 /// `*master_out`, or returns -1 with errno set.
 pid_t libertty_pty_spawn(const char *path,
@@ -94,9 +95,13 @@ int libertty_proc_started(pid_t pid, int64_t *seconds, int64_t *microseconds);
 /// numbers, not their memory or arguments). Returns how many were written.
 int libertty_proc_snapshot(struct libertty_proc *out, int cap);
 
+/// Raise the soft limit on open descriptors as far as the hard limit lets
+/// it (and macOS's OPEN_MAX; at most 65536); never lower it.
+void libertty_raise_fd_limit(void);
+
 /// Unix-domain stream sockets for liberttyd. Descriptors are close-on-exec and
-/// never raise SIGPIPE. listen() replaces a stale socket file; accept()
-/// refuses peers running as another user. All return -1 with errno on failure.
+/// never raise SIGPIPE. listen() replaces a stale socket file; connect() and
+/// accept() refuse a peer running as another user. All return -1 with errno on failure.
 int libertty_sock_listen(const char *path);
 int libertty_sock_connect(const char *path);
 int libertty_sock_accept(int listener);
@@ -118,9 +123,10 @@ int libertty_sock_recv_fd(int sock);
 pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const envp[], const char *log_path,
                               int responsible);
 /// The same with stdin from `in_fd` (liberttyd's guardian: the socket it
-/// talks to liberttyd over).
+/// talks to liberttyd over), and `pass_fd` (unless -1) as its descriptor 3
+/// (the guardian: liberttyd's lock, held).
 pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
-                                    int responsible, int in_fd);
+                                    int responsible, int in_fd, int pass_fd);
 
 /// A connected pair of Unix stream sockets (close-on-exec, no SIGPIPE).
 int libertty_socketpair(int fds[2]);

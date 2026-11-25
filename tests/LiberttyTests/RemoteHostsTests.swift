@@ -60,4 +60,14 @@ struct RemoteHostsTests {
         #expect(SavedHosts.reordered(list, fromOffsets: [1, 2], toOffset: 4) == ["a", "d", "b", "c"])
         #expect(SavedHosts.isValid("me@box") && !SavedHosts.isValid("-oProxy=x") && !SavedHosts.isValid("a b"))
     }
+
+    /// An ssh that ends before it has read what it's given (here one that
+    /// reads nothing) fails the upload; SIGPIPE would end the whole app.
+    @Test func sshGoneMidUpload() {
+        setenv("LIBERTTY_SSH", "/usr/bin/true", 1)
+        defer { unsetenv("LIBERTTY_SSH") }
+        let host = RemoteHost.named("sigpipe.test")
+        let result = host.run("", input: Data(count: 4 << 20), arguments: [])
+        #expect(result.status == 0)
+    }
 }
