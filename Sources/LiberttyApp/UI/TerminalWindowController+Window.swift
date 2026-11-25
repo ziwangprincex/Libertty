@@ -204,7 +204,10 @@ extension TerminalWindowController {
         onHide?(self)
         // Strong: while it can come back, nothing else keeps this controller alive.
         CloseUndo.shared.closed("Close Window", restore: { [self] in
-            guard let window = self.window else { return nil }
+            // Closed for good meanwhile (its programs all ended, which closes
+            // it): nothing to bring back.
+            guard let window = self.window, !self.closedForGood, self.allPanes.contains(where: { !$0.session.hasExited })
+            else { return nil }
             // Back as it was: its next close asks as any close does.
             self.skipCloseConfirmation = false
             self.worktreesOnClose = nil
@@ -217,6 +220,7 @@ extension TerminalWindowController {
                 _ = self.windowShouldClose(window)
             }
         }, expire: {
+            guard !self.closedForGood else { return }
             self.skipCloseConfirmation = true
             self.window?.close()
         })
@@ -229,6 +233,7 @@ extension TerminalWindowController {
     }
 
     func windowWillClose(_ notification: Notification) {
+        closedForGood = true
         documentsClosed(documents(in: everyTab))
         // The worktrees it was asked to take with it, once its programs end.
         removeWorktreesOnClose()

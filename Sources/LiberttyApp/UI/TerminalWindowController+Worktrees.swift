@@ -48,9 +48,10 @@ extension TerminalWindowController {
 
     /// The worktree a tab is of: the one it was made in, else one Libertty
     /// made that a pane of it works in (`+new-session --worktree`'s, after
-    /// a relaunch).
+    /// a relaunch) — while Libertty looks after it: one kept is yours, and
+    /// isn't asked about again.
     func worktree(of tab: TerminalTab, among made: [WorktreeInfo]) -> WorktreeInfo? {
-        if let worktree = tab.worktree { return worktree }
+        if let worktree = tab.worktree, made.contains(where: { $0.path == worktree.path }) { return worktree }
         for pane in tab.everyPane {
             if let dir = pane.session.workingDirectory, let w = Worktrees.made(containing: dir, among: made) { return w }
         }

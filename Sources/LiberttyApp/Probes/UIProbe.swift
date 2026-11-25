@@ -130,7 +130,8 @@ import LiberttyCore
 ///   tab-menu-not:N:TITLE that menu doesn't offer TITLE (it's not there, hidden or greyed out)
 ///   action:ACTION        perform a keybind action (`libertty +list-actions`), e.g. move_surface_to_new_tab;
 ///                        ACTION,ACTION… performs them one right after the other (a key pressed twice)
-///   expect-windows:N     the probe has N windows (Move … to New Window opens them, off screen)
+///   expect-windows:N     the probe has N windows showing (Move … to New Window opens them, off screen;
+///                        its own is one until it closes, or hides for Undo Close Window)
 ///   expect-other:TEXT    a sidebar row of the newest other window contains TEXT, or its panes' text does
 ///   take-tab:N           tab N of the newest other window moves back here, at the end (as dropped on the sidebar)
 ///   other-click:LABEL    click:LABEL in the newest other window
@@ -1759,7 +1760,7 @@ enum UIProbe {
                         }
                         pump(0.6)  // a pane slides out of its split
                     case .expectWindows(let n):
-                        let count = 1 + others.filter { $0.window?.isVisible == true }.count
+                        let count = (window.isVisible ? 1 : 0) + others.filter { $0.window?.isVisible == true }.count
                         if count == n {
                             print("ok    ui-probe \(n) windows")
                         } else {

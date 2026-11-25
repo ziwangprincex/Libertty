@@ -1,0 +1,35 @@
+# Closing the window's last pane while a program runs asks once, not
+# again for the window it takes along; Edit ▸ Undo brings the window back,
+# its program still running. A window that closed for good while it waited
+# for Undo (its programs all ended, which closes it) stays closed.
+# (tests/run.sh gives it undo-timeout = 30s: the shell's exit is waited for.)
+type:sleep 31338
+key:enter
+wait:0.8
+action:close_surface
+wait:0.6
+expect-sheet:yes
+expect-sheet-text:A program is still running
+sheet:Close
+wait:0.8
+expect-sheet:no
+expect-windows:0
+undo:go
+wait:0.6
+expect-windows:1
+expect-shell:pgrep -f 'sleep 3133[8]' >/dev/null && echo STILL-RUNNING ==> STILL-RUNNING
+key:ctrl+c
+wait:0.4
+type:sleep 3; exit
+key:enter
+wait:0.3
+action:close_window
+wait:0.3
+sheet:Close
+wait:0.5
+expect-windows:0
+# Its shell exits while it's hidden: closed for good, and Undo can't show it.
+wait:4.0
+undo:go
+wait:0.6
+expect-windows:0

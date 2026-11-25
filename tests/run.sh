@@ -374,6 +374,11 @@ expect floating-moved 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-
 # Undo Close from another workspace brings the pane back there; where it can't come back, its program ends, not runs on unseen.
 expect close-undo-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-undo-elsewhere.txt)" $OUT --persist
+# The window's last pane closing asks once and closes the window; Undo can't bring back one closed for good since.
+mkdir -p $PRIVATE/undo-config/libertty
+print 'undo-timeout = 30s' > $PRIVATE/undo-config/libertty/config
+expect close-once 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/undo-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-once.txt)" $OUT
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist
