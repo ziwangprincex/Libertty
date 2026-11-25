@@ -162,7 +162,7 @@ libertty +diff --turn                      # what an agent changed in its last t
 libertty +migrate-prompt --from tmux       # a prompt that has an agent move your keybindings over
 ```
 
-Session commands take `--host HOST`. `$LIBERTTY_SESSION` is the current pane's session.
+Session commands take `--host HOST`, before `-e` or `--` (what follows those is the command's own). `$LIBERTTY_SESSION` is the current pane's session.
 
 ## Build
 
