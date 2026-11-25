@@ -91,6 +91,10 @@ extension PromptQueues {
                 ProgramBadge.agentKey(session.programStatus.effectiveApp(of: $0)) != nil
             }
         }
+        // Quitting (an update's restart too): what's queued and drafted is kept now.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            PromptQueues.shared.keepNow()
+        }
         NotificationCenter.default.addObserver(forName: Self.changed, object: nil, queue: .main) { note in
             guard let session = note.object as? TerminalSession, let (controller, pane) = Self.pane(of: session) else { return }
             pane.updateQueueTag()

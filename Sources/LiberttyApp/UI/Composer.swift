@@ -189,9 +189,11 @@ final class ComposerView: NSView, CapsuleObstacle {
             queueList.addArrangedSubview(more)
         }
         pausedNote.isHidden = !queue.paused || queue.isEmpty
-        let why = queue.pauseReason == .agentExited
-            ? L10n.t("The queue is paused: the agent exited, and the next prompt would go to the shell. Resume")
-            : L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume")
+        let why = switch queue.pauseReason {
+        case .agentExited: L10n.t("The queue is paused: the agent exited, and the next prompt would go to the shell. Resume")
+        case .restarted: L10n.t("The queue is paused: Libertty restarted since these were queued. Resume")
+        case .notOnePaste: L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume")
+        }
         pausedNote.attributedTitle = NSAttributedString(
             string: why,
             attributes: [.font: Typeface.ui(11, .medium), .foregroundColor: NSColor.systemOrange])
@@ -417,7 +419,10 @@ final class ComposerTextView: NSTextView {
 
     override func didChangeText() {
         super.didChangeText()
-        if let composer, composer.window_ == nil, let pane = composer.pane { ComposerController.place(composer, in: pane) }
+        guard let composer else { return }
+        // Kept as it's written: the app quitting (or updating) with it open loses none of it.
+        ComposerController.saveDraft(of: composer)
+        if composer.window_ == nil, let pane = composer.pane { ComposerController.place(composer, in: pane) }
     }
 
     // What's typed goes on its window's undo stack, a terminal window's
@@ -675,6 +680,20 @@ enum ComposerController {
         let key = ObjectIdentifier(session)
         let text = composer.textView.string
         if text.isEmpty { drafts[key] = nil } else { drafts[key] = ({ [weak session] in session }, text) }
+        PromptQueues.shared.keepSoon()
+    }
+
+    /// Every pane's draft, open or put away, for a restart (PromptsKept).
+    static var keptDrafts: [(session: TerminalSession, text: String)] {
+        drafts.values.compactMap { draft in draft.session().map { ($0, draft.text) } }
+    }
+
+    /// A draft kept from before a restart, for the pane back on its session
+    /// (one written since stays).
+    static func restoreDraft(_ text: String, for session: TerminalSession) {
+        let key = ObjectIdentifier(session)
+        guard drafts[key]?.session() !== session else { return }
+        drafts[key] = ({ [weak session] in session }, text)
     }
 
     /// What's in a pane's composer, open or put away.
@@ -697,6 +716,16 @@ enum ComposerController {
             pane.window?.makeFirstResponder(pane)
         }
     }
+
+    #if LIBERTTY_PROBES
+    /// The UI probe's restart: no composer open, no draft known.
+    static func forgetDraftsForProbe() {
+        for controller in PromptQueues.controllers {
+            for pane in controller.allPanes { composer(of: pane).map { close($0, refocus: false) } }
+        }
+        drafts.removeAll()
+    }
+    #endif
 
     /// A popped-out composer's window closing is the composer closing (its draft kept).
     static let windowDelegate = PanelDelegate()

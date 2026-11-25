@@ -92,6 +92,49 @@ struct PromptQueueTests {
         #expect(q.step(look(.idle, now: 1001))?.text == "go")
     }
 
+    /// Kept from before a restart: back after what was queued since, paused
+    /// until you resume them, saying why.
+    @Test func restoredAfterARestart() {
+        var q = PromptQueue()
+        q.append("new")
+        q.restore(["kept one", "kept two"])
+        #expect(q.items.map(\.text) == ["new", "kept one", "kept two"])
+        #expect(q.paused && q.pauseReason == .restarted)
+        #expect(q.step(look(.idle)) == nil)
+        q.paused = false
+        #expect(q.step(look(.idle, now: 101))?.text == "new")
+        var none = PromptQueue()
+        none.restore([])
+        #expect(!none.paused)
+    }
+
+    /// The file they're kept in: private, whole, gone once there's nothing in
+    /// it; what's kept for a session liberttyd no longer has, or kept too
+    /// long, is dropped.
+    @Test func keptAcrossARestart() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kept-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("prompt-queues.json")
+        let now = 1_000_000_000.0
+        let kept: [String: PromptsKept.Entry] = [
+            "live": .init(queue: ["a", "b"], draft: "half", saved: now),
+            "gone": .init(queue: ["c"], saved: now),
+            "host": .init(draft: "there", host: "me@box", saved: now),
+            "old": .init(queue: ["d"], host: "me@box", saved: now - PromptsKept.lifetime - 1),
+            "empty": .init(saved: now),
+        ]
+        PromptsKept.write(kept, to: url)
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+        #expect(mode?.intValue == 0o600)
+        #expect(PromptsKept.load(from: url) == kept)
+        #expect(PromptsKept.pruned(kept, live: ["live", "host"], now: now).keys.sorted() == ["host", "live"])
+        // liberttyd couldn't say: this Mac's are kept a while all the same.
+        #expect(PromptsKept.pruned(kept, live: nil, now: now).keys.sorted() == ["gone", "host", "live"])
+        PromptsKept.write([:], to: url)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(PromptsKept.load(from: url).isEmpty)
+    }
+
     @Test func pausedAndPutBack() {
         var q = PromptQueue()
         q.append("a")

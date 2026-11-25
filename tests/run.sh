@@ -545,6 +545,9 @@ expect composer-exited 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/composer-exited.txt)" $OUT --persist
 expect prompt-queue-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-cli.txt)" $OUT --persist
+# Queues and drafts come back with their panes after a restart, the queue paused.
+expect prompt-queue-restart 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-restart.txt)" $OUT --persist
 # Fork Conversation: the panes run cat, so the agents' fork commands are only shown.
 mkdir -p $PRIVATE/fork-config/libertty
 print 'command = cat' > $PRIVATE/fork-config/libertty/config

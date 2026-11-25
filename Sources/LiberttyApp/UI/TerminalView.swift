@@ -251,6 +251,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             lastDrag = nil
             return
         }
+        // Back after a restart: its queue and draft, kept meanwhile.
+        PromptQueues.shared.restore(session)
+        updateQueueTag()
         let link = displayLink(target: self, selector: #selector(step(_:)))
         // ProMotion: ask for the panel's full rate; the system clamps it.
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
