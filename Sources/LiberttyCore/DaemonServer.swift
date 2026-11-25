@@ -313,6 +313,8 @@ public final class DaemonServer {
         return sessions[id]
     }
 
+    /// The session is ours: listed, guarded, its end heard. Its output
+    /// flows once the caller `start`s it.
     private func register(_ session: DaemonSession) {
         session.onEnd = { [weak self] ended in
             guard let self else { return }
@@ -372,6 +374,7 @@ public final class DaemonServer {
                     let s = try DaemonSession(request: request)
                     register(s)
                     s.attach(connection, sendSnapshot: false, catchUp: request.catchUp ?? false)
+                    s.start()
                     bound = s
                     note { $0.session = s.id }
                 } catch {
@@ -697,6 +700,7 @@ public final class DaemonServer {
             do {
                 let s = try DaemonSession(adopting: fd, header: header, snapshot: snapshot)
                 register(s)
+                s.start()
                 adopted += 1
             } catch {
                 Self.log("takeover: couldn't adopt a session: \(error)")
@@ -850,11 +854,22 @@ final class DaemonSession {
             defer { self.lock.unlock() }
             body(self.terminal)
         }
-        if awaitingRestore {
+    }
+
+    /// Its program's output flows from now on, and so can its end: once the
+    /// server has it, `onEnd` set (a program that ends at once would end
+    /// unheard otherwise, and stay listed for good), and a window that
+    /// made it attached (it misses none of it).
+    func start() {
+        lock.lock()
+        let waiting = awaitingRestore
+        lock.unlock()
+        if waiting {
             // Not for long without a window to give its screen back.
             queue.asyncAfter(deadline: .now() + Self.restoreWait) { [weak self] in self?.restore(nil, from: nil) }
         } else {
-            pty.startReading()
+            // On `queue`, in step with a takeover's `release` (then it mustn't read).
+            queue.async { [self] in pty.startReading() }
         }
     }
 
@@ -1290,6 +1305,11 @@ final class DaemonSession {
     func detach(_ connection: Connection) {
         lock.lock()
         defer { lock.unlock() }
+        letGo(connection)
+    }
+
+    /// Under `lock`: the window on `connection` is no longer one of ours.
+    private func letGo(_ connection: Connection) {
         if let i = clients.firstIndex(where: { $0.connection === connection }) { clients.remove(at: i).hangUp() }
         // Repaired either way: the window may have left the list already.
         if primary === connection { primary = clients.last?.connection }
@@ -1463,13 +1483,15 @@ final class DaemonSession {
     func terminate() { pty.terminate() }
 
     /// A window closed its pane: end the program, or with other windows still
-    /// showing it (mirrors), just let this one go.
+    /// showing it (mirrors), just let this one go. Decided and done in one
+    /// go: two mirrors closing at once mustn't each see the other and both
+    /// let go, leaving the program running with no window.
     func close(from connection: Connection) {
         lock.lock()
         let others = clients.contains { $0.connection !== connection }
+        if others { letGo(connection) }
         lock.unlock()
         if others {
-            detach(connection)
             connection.close()
         } else {
             pty.terminate()
