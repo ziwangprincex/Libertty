@@ -917,7 +917,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
             return activate()
         }
-        guard let text = info["action"], let action = Action(text), ActionDispatcher.allowedRemotely(action) else { return }
+        // An action is a request without a kind (`libertty +action`); one of
+        // a kind not handled above does nothing.
+        guard info["kind"] == nil || info["kind"] == "action", let text = info["action"], let action = Action(text),
+              ActionDispatcher.allowedRemotely(action) else { return }
         ActionDispatcher.perform(action)
     }
 

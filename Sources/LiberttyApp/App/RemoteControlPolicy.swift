@@ -17,11 +17,12 @@ enum RemoteControlPolicy {
         "+resize-pane", "+send", "+send-key", "+prompt", "+new-session", "+kill-session", "+resume", "+pick", "+input",
     ]
 
-    /// The requests the app refuses (`RemoteControl` kinds; one without a kind is an action).
-    static let drivingKinds: Set<String> = [
-        "action", "focus", "new-window", "attach", "connect", "split", "move-pane", "swap-pane", "resize-pane", "resume",
-        "prompt",
-    ]
+    /// The requests the app still takes (`RemoteControl` kinds): they read,
+    /// or show something, as the commands above. Every other one is refused —
+    /// one without a kind (an action), and one of a kind it doesn't know:
+    /// any program can post a request, and the app mustn't do what one
+    /// slipped past this as.
+    static let readingKinds: Set<String> = ["open", "browser", "list-panes"]
 
     static var message: String {
         "remote-control = false: Libertty doesn't let commands drive it (Settings ▸ Integrations ▸ Command Line)"
@@ -59,6 +60,6 @@ enum RemoteControlPolicy {
         guard !config.remoteControl else { return false }
         if info["kind"] == "queue" { return info["op"] != "list" }
         if info["kind"] == "forward" { return info["op"] != "ls" }
-        return drivingKinds.contains(info["kind"] ?? "action")
+        return !readingKinds.contains(info["kind"] ?? "action")
     }
 }

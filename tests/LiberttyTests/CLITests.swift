@@ -150,6 +150,11 @@ struct CLITests {
         #expect(!RemoteControlPolicy.refuses(["kind": "open"], config: off))
         #expect(!RemoteControlPolicy.refuses(["kind": "list-panes"], config: off))
         #expect(!RemoteControlPolicy.refuses(["kind": "split"], config: config(true)))
+        #expect(!RemoteControlPolicy.refuses(["kind": "browser"], config: off))
+        #expect(!RemoteControlPolicy.refuses(["kind": "queue", "op": "list"], config: off))
+        // A kind it doesn't know is refused, not let through to the action it carries.
+        #expect(RemoteControlPolicy.refuses(["kind": "x", "action": "new_window"], config: off))
+        #expect(RemoteControlPolicy.refuses(["kind": "", "action": "new_window"], config: off))
         var c = Config()
         #expect(c.set("remote-control", "maybe") != nil)
     }
