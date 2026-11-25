@@ -323,7 +323,9 @@ enum GitDiff {
             // Whole lines, after a word on what's missing (text before a diff shows as such).
             let head = data.prefix(GitBlock.diffLimit)
             let end = head.lastIndex(of: UInt8(ascii: "\n")).map { $0 + 1 } ?? head.startIndex
-            data = Data("The diff is cut short: it's over \(GitBlock.diffLimit / 1_000_000) MB. `git diff` in a terminal shows all of it.\n\n".utf8)
+            let note = L10n.t("The diff is cut short: it's over %@ MB. `git diff` in a terminal shows all of it.")
+                .replacingOccurrences(of: "%@", with: String(GitBlock.diffLimit / 1_000_000))
+            data = Data((note + "\n\n").utf8)
                 + head[..<end]
         }
         let top = run(["-C", directory, "rev-parse", "--show-toplevel"]) ?? directory

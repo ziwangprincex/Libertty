@@ -264,10 +264,12 @@ enum Completer {
         text.unicodeScalars.contains { $0.properties.generalCategory == .control }
     }
 
-    /// Characters a shell would take as its own, escaped outside quotes.
+    /// Characters a shell would take as its own, escaped: outside quotes
+    /// all of them; inside double quotes those it still expands or that end
+    /// them; inside single quotes the quote itself, closed and reopened.
     static func escape(_ text: String, in quote: Character?) -> String {
-        guard quote == nil else { return text }
-        let special = Set(" \t\\'\"$`&;|()<>*?[]#~!{}")
+        if quote == "'" { return text.replacingOccurrences(of: "'", with: "'\\''") }
+        let special = quote == "\"" ? Set("\\\"$`") : Set(" \t\\'\"$`&;|()<>*?[]#~!{}")
         var out = ""
         for ch in text {
             if special.contains(ch) { out.append("\\") }

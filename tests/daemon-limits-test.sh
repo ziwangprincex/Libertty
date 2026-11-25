@@ -35,7 +35,11 @@ for _ in range(count):
         except OSError:
             s.close()
             time.sleep(0.01)
-    s.sendall(struct.pack("<I", len(hello) + 1) + bytes([1]) + hello)
+    # (Out of descriptors, liberttyd may hang up on one it took: not welcomed.)
+    try:
+        s.sendall(struct.pack("<I", len(hello) + 1) + bytes([1]) + hello)
+    except OSError:
+        pass
     held.append(s)
 deadline = time.time() + 5
 welcomed = 0

@@ -166,11 +166,16 @@ class FileBlock: BlockService {
                 // saves: the file keeps its extended attributes, Finder tags,
                 // ACL, permissions and creation date, which a plain atomic
                 // write (a new file renamed over it) drops.
-                let scratch = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
-                defer { try? fm.removeItem(at: scratch) }
-                let temp = scratch.appendingPathComponent(target.lastPathComponent)
-                try data.write(to: temp)
-                _ = try fm.replaceItemAt(target, withItemAt: temp)
+                // (A volume with no place for one — some network or FAT disks
+                // — gets the plain atomic write.)
+                if let scratch = try? fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true) {
+                    defer { try? fm.removeItem(at: scratch) }
+                    let temp = scratch.appendingPathComponent(target.lastPathComponent)
+                    try data.write(to: temp)
+                    _ = try fm.replaceItemAt(target, withItemAt: temp)
+                } else {
+                    try data.write(to: target, options: .atomic)
+                }
             }
         } catch {
             known = previous

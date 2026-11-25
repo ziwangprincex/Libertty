@@ -1187,9 +1187,8 @@ enum CLI {
         return Int32(frame.json["status"] as? Int ?? 0)
     }
 
-    /// A `--timeout SECONDS` given: more than 0 and finite, and at most
-    /// Int32.max seconds (68 years) — the socket's timeout takes whole
-    /// seconds as an integer, which `inf` or 1e300 would trap making.
+    /// A `--timeout SECONDS` given: more than 0 and finite (`inf` or 1e300
+    /// is a usage error, not a wait), and at most Int32.max seconds (68 years).
     static func waitSeconds(_ text: String?) -> Double? {
         guard let text, let seconds = Double(text), seconds > 0, seconds.isFinite else { return nil }
         return min(seconds, Double(Int32.max))

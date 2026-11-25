@@ -241,6 +241,9 @@ struct AutocompleteTests {
         try "x".write(to: dir.appendingPathComponent("esc\u{1B}[A"), atomically: true, encoding: .utf8)
         try "x".write(to: dir.appendingPathComponent("easy"), atomically: true, encoding: .utf8)
 
+        // Inside quotes too: what the shell would still expand there.
+        #expect(Completer.escape("x$(cmd)`id`\"\\", in: "\"") == "x\\$(cmd)\\`id\\`\\\"\\\\")
+        #expect(Completer.escape("it's $HOME", in: "'") == "it'\\''s $HOME")
         let run = completions("npm run ", folder: dir.path)
         #expect(!run.contains { Completer.hasControl($0.title) || Completer.hasControl($0.insert) })
         #expect(run.first { $0.title == "lint;echo hi" }?.insert == "lint\\;echo\\ hi ")
