@@ -29,6 +29,23 @@ struct SettingsTests {
         }
     }
 
+    /// Each section of a page has a title of its own: the page tells its
+    /// sections apart by it, and a footer goes under the section it names
+    /// (the startup command's under Shell, once shown under a second Shell).
+    @Test @MainActor func sectionTitlesAreUniqueOnAPage() {
+        for page in SettingsPage.allCases {
+            let titles = SettingsForm.sections(of: page).map(\.title)
+            #expect(Set(titles).count == titles.count, "\(page): \(titles)")
+        }
+    }
+
+    /// Themes shows its switch and its Import button under the cards in
+    /// every language: found by their controls (by English titles, they
+    /// were missing in Chinese, whose section titles are its own).
+    @Test @MainActor func theThemesPageShowsItsRowsBelowTheCards() {
+        #expect(ThemesPage.sectionsBelowCards.flatMap(\.rows).map(\.id) == ["palette-generate", "theme-import"])
+    }
+
     /// Each choice list holds the default, so a config that doesn't set the
     /// key still shows a choice picked.
     @Test func choicesIncludeTheDefault() {

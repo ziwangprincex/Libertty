@@ -287,6 +287,8 @@ enum SettingsRegistry {
                  keywords: "cursor blink"),
             bool(.terminal, "Cursor", "Cursor trail", "cursor-trail",
                  help: "A short trail fades behind the cursor as it moves. Off while Reduce Motion is on.", keywords: "animation effect"),
+            bool(.terminal, "Cursor", "Click to move the cursor", "cursor-click-to-move",
+                 help: "A click in the command you're typing moves the cursor there.", keywords: "prompt click arrow"),
             item(.terminal, "Keyboard", "Option key", "macos-option-as-alt", .popup(options([
                 ("Types characters", "false"), ("Acts as Alt", "true"), ("Left Option is Alt", "left"), ("Right Option is Alt", "right"),
             ])), help: "Which Option keys act as Alt (Meta) instead of typing accents and symbols.", keywords: "meta alt"),
@@ -297,8 +299,6 @@ enum SettingsRegistry {
             item(.terminal, "Padding", "Horizontal padding", "window-padding-x", .stepper(0...100, step: 1, unit: "pt")),
             item(.terminal, "Padding", "Vertical padding", "window-padding-y", .stepper(0...100, step: 1, unit: "pt")),
             bool(.terminal, "Selection", "Copy on selection", "copy-on-select"),
-            bool(.terminal, "Shell", "Click to move the cursor", "cursor-click-to-move",
-                 help: "A click in the command you're typing moves the cursor there.", keywords: "prompt click arrow"),
             bool(.terminal, "Autocomplete", "Suggest as you type", "autocomplete",
                  help: "At the shell's prompt, the likeliest way to go on from your history shows dimmed; → takes it. ⌃⇧Space lists more.",
                  keywords: "autosuggest ghost text completion history"),
