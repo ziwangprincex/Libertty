@@ -474,6 +474,9 @@ final class SettingsModel: ObservableObject {
     func startRecording(_ id: String) {
         problems[id] = nil
         recording = id
+        // A key registered system-wide (⌃⌥T for a new window) would be taken
+        // before the recorder heard it, and do what it does.
+        GlobalHotkeys.shared.paused = true
         if keyMonitor == nil {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 // (A monitor runs on the main thread, with the event of this moment.)
@@ -486,6 +489,7 @@ final class SettingsModel: ObservableObject {
 
     func stopRecording() {
         recording = nil
+        GlobalHotkeys.shared.paused = false
         if let monitor = keyMonitor { NSEvent.removeMonitor(monitor) }
         keyMonitor = nil
     }
