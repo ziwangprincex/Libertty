@@ -189,8 +189,11 @@ final class ComposerView: NSView, CapsuleObstacle {
             queueList.addArrangedSubview(more)
         }
         pausedNote.isHidden = !queue.paused || queue.isEmpty
+        let why = queue.pauseReason == .agentExited
+            ? L10n.t("The queue is paused: the agent exited, and the next prompt would go to the shell. Resume")
+            : L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume")
         pausedNote.attributedTitle = NSAttributedString(
-            string: L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume"),
+            string: why,
             attributes: [.font: Typeface.ui(11, .medium), .foregroundColor: NSColor.systemOrange])
         pausedNote.setAccessibleLabel(pausedNote.attributedTitle.string)
         needsLayout = true

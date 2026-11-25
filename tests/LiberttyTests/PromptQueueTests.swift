@@ -90,6 +90,19 @@ struct PromptQueueTests {
         #expect(q.step(look(.idle, now: 201))?.text == "a")
     }
 
+    /// The agent exited: what was queued for it waits for you, never typed into the shell.
+    @Test func agentExitedPausesIt() {
+        var q = PromptQueue()
+        q.append("a")
+        q.append("b")
+        #expect(q.step(look(.idle))?.text == "a")
+        q.agentExited()
+        #expect(q.paused && q.pauseReason == .agentExited && q.items.map(\.text) == ["b"])
+        #expect(q.step(look(agent: false, atPrompt: true, now: 200)) == nil)
+        q.paused = false
+        #expect(q.step(look(agent: false, atPrompt: true, now: 201))?.text == "b")
+    }
+
     @Test func editing() {
         var q = PromptQueue()
         q.append("a"); q.append("b"); q.append("c")

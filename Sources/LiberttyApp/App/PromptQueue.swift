@@ -49,6 +49,14 @@ struct PromptQueue: Equatable {
     /// Stopped by hand, or because the last couldn't go (a program without
     /// bracketed paste and a prompt of several lines): nothing goes until resumed.
     var paused = false
+    /// Why it stopped (what the composer says of it).
+    enum PauseReason: Equatable {
+        /// The last prompt couldn't go as one paste.
+        case notOnePaste
+        /// The agent the prompts waited for exited: the next would go to the shell.
+        case agentExited
+    }
+    private(set) var pauseReason = PauseReason.notOnePaste
 
     var isEmpty: Bool { items.isEmpty }
 
@@ -139,6 +147,15 @@ struct PromptQueue: Equatable {
         items.insert(item, at: 0)
         phase = .waiting
         paused = true
+        pauseReason = .notOnePaste
+    }
+
+    /// The agent they were queued for has exited and the shell is back:
+    /// prompts typed there would run as commands, so they wait for you.
+    mutating func agentExited() {
+        phase = .waiting
+        paused = true
+        pauseReason = .agentExited
     }
 }
 
@@ -258,6 +275,15 @@ final class PromptQueues {
             }
             let mark = session.outputMark
             let atPrompt = !session.hasForegroundProgram
+            // The agent they waited for has exited (/exit, ⌃C twice) and the
+            // shell is back: the next would be typed into it, and run.
+            if entry.agentSeen, atPrompt, !entry.queue.paused {
+                entry.queue.agentExited()
+                entry.agentSeen = false
+                entries[key] = entry
+                NotificationCenter.default.post(name: Self.changed, object: session)
+                continue
+            }
             entry.agentSeen = !atPrompt && (entry.agentSeen || agentInFront(session))
             let now = CACurrentMediaTime()
             let look = PromptQueue.Look(

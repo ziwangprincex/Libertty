@@ -1072,5 +1072,6 @@
   "Mark Tab as Unread/Read": "标签标为未读/已读",
   "marked unread": "已标为未读",
   "You marked it unread, to come back to": "你标为了未读，打算回头再看",
-  "Something happened here since you last looked": "你上次看过之后，这里有了新动静"
+  "Something happened here since you last looked": "你上次看过之后，这里有了新动静",
+  "The queue is paused: the agent exited, and the next prompt would go to the shell. Resume": "队列已暂停：代理已退出，下一条提示会发给 shell。继续"
 }

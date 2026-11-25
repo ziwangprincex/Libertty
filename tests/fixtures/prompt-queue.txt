@@ -29,3 +29,12 @@ expect:GOT[third]
 expect-queue:0
 expect-queue:untagged
 expect-tab-not:queued
+# The agent exits with prompts still queued for it: they wait for you, not
+# typed into the shell that's back (each line would run there).
+queue-prompt:quit
+queue-prompt:echo SHELL-GOT-IT
+wait:2.0
+expect-queue:1
+expect-queue:paused
+expect-queue:tag=paused
+expect-not:SHELL-GOT-IT
