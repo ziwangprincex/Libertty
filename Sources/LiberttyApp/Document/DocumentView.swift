@@ -6,7 +6,8 @@ import WebKit
 /// file is saved, keeping the scroll position. Page JavaScript is off, so
 /// HTML inside Markdown can't run scripts (nor take the page anywhere unclicked).
 final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
-    let url: URL
+    /// Where the file is: it changes when the file tree renames or moves it.
+    private(set) var url: URL
 
     /// What the pane shows: a text file (source, Markdown, a diff), an
     /// image, a PDF, or a web page (a dev server beside its terminal).
@@ -168,7 +169,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             install(editing ? makeEditorWeb() : Self.makeViewerWeb(kind))
         }
         load(keepScroll: false)
-        if kind != .web && kind != .block { watch() }
+        if kind != .web && kind != .block {
+            watch()
+            NotificationCenter.default.addObserver(self, selector: #selector(filesMoved), name: FileOperations.moved, object: nil)
+        }
         if kind == .web { observePage() }
     }
 
@@ -1300,6 +1304,40 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     func resetZoom() { web.pageZoom = 1 }
 
     // MARK: Live reload
+
+    /// The file tree renamed or moved this file (or a folder it's in), or
+    /// undid that: follow it, so a save writes where the file is now — not
+    /// a new file at its old name — and the page reads from there.
+    @objc private func filesMoved(_ note: Notification) {
+        guard let moves = note.userInfo?["moves"] as? [URL: URL], let moved = Self.place(of: url, after: moves) else { return }
+        url = moved
+        watch()
+        // A page's images and links are where the document is now.
+        if !isEditing { load(keepScroll: true) }
+        onTitleChange?()
+    }
+
+    /// Where `file` is after `moves` (each old place to its new one): moved
+    /// itself, or in a folder that moved; nil when neither. Paths compare
+    /// with their folders' links resolved (`/tmp` is `/private/tmp`), as
+    /// far as those folders are still there.
+    static func place(of file: URL, after moves: [URL: URL]) -> URL? {
+        func resolved(_ url: URL) -> String {
+            var there = url.standardizedFileURL, rest: [String] = []
+            while there.pathComponents.count > 1, !FileManager.default.fileExists(atPath: there.path) {
+                rest.insert(there.lastPathComponent, at: 0)
+                there.deleteLastPathComponent()
+            }
+            return rest.reduce(there.resolvingSymlinksInPath()) { $0.appendingPathComponent($1) }.path
+        }
+        let path = resolved(file)
+        for (from, to) in moves {
+            let old = resolved(from)
+            if path == old { return to }
+            if path.hasPrefix(old + "/") { return to.appendingPathComponent(String(path.dropFirst(old.count + 1))) }
+        }
+        return nil
+    }
 
     private func watch() {
         watcher?.cancel()

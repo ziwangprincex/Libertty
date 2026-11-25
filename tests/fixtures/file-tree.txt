@@ -73,3 +73,30 @@ expect-shell:ls @FINDER@ | wc -l | tr -d ' ' ==> 0
 undo:go
 expect-tree-not:pic.png
 expect-shell:ls @FINDER@ ==> pic.png
+# A file open in the editor, renamed: the editor follows it (the same tab,
+# its new name), and a save writes the renamed file, not a new one at the
+# old name. Undone, it follows the file back.
+open:@DIR@/docs/notes.md
+editor-wait:go
+expect-tab-count:2
+tree-select:docs/notes.md
+tree-menu:Rename
+type-then:enter:renamed
+expect-tree:docs/renamed.md
+expect-tab:renamed.md
+open:@DIR@/docs/renamed.md
+editor-wait:go
+expect-tab-count:2
+editor-insert:after the rename
+editor-save:go
+expect-file:@DIR@/docs/renamed.md=after the rename
+expect-shell:ls @DIR@/docs ==> renamed.md
+expect-shell:test -e @DIR@/docs/notes.md && echo back || echo gone ==> gone
+undo:go
+wait:0.5
+expect-shell:ls @DIR@/docs ==> notes.md
+expect-tab:notes.md
+editor-insert:back again
+editor-save:go
+expect-file:@DIR@/docs/notes.md=back again
+expect-shell:test -e @DIR@/docs/renamed.md && echo there || echo gone ==> gone

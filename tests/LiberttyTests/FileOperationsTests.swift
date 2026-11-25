@@ -88,4 +88,38 @@ struct FileOperationsTests {
         manager.redo()
         #expect(!exists("a.txt"))
     }
+
+    /// Renames and moves (and undoing them) say where files went, so open
+    /// documents follow theirs; the Trash says nothing (they find it gone).
+    @Test func movesAreAnnouncedAndDocumentsFindTheirPlace() async throws {
+        var heard: [[URL: URL]] = []
+        let token = NotificationCenter.default.addObserver(forName: FileOperations.moved, object: nil, queue: nil) { note in
+            if let moves = note.userInfo?["moves"] as? [URL: URL] { heard.append(moves) }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        let a = dir.appendingPathComponent("a.txt"), b = dir.appendingPathComponent("b.txt")
+        try step { _ = try FileOperations.rename(a, to: "b.txt", undo: manager) }
+        #expect(heard.last == [a: b])
+        #expect(DocumentView.place(of: a, after: heard.last ?? [:]) == b)
+        manager.undo()
+        #expect(heard.last == [b: a])
+        // A file in a folder that moves goes with it.
+        try Data("x".utf8).write(to: dir.appendingPathComponent("src/notes.md"))
+        let lib = dir.appendingPathComponent("lib")
+        try step { _ = try FileOperations.rename(dir.appendingPathComponent("src"), to: "lib", undo: manager) }
+        #expect(DocumentView.place(of: dir.appendingPathComponent("src/notes.md"), after: heard.last ?? [:])
+            == lib.appendingPathComponent("notes.md"))
+        #expect(DocumentView.place(of: dir.appendingPathComponent("srcfile.md"), after: heard.last ?? [:]) == nil)
+        // The same folder by another name (/tmp is /private/tmp) is the same place.
+        let other = URL(fileURLWithPath: dir.path.hasPrefix("/private/") ? String(dir.path.dropFirst("/private".count)) : "/private" + dir.path)
+        if FileManager.default.fileExists(atPath: other.path) {
+            #expect(DocumentView.place(of: other.appendingPathComponent("src/notes.md"), after: heard.last ?? [:])
+                == lib.appendingPathComponent("notes.md"))
+        }
+        let count = heard.count
+        manager.beginUndoGrouping()
+        await withCheckedContinuation { done in FileOperations.trash([a], undo: manager) { _ in done.resume() } }
+        manager.endUndoGrouping()
+        #expect(heard.count == count)
+    }
 }
