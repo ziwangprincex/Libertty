@@ -5,6 +5,7 @@ import AppKit
 /// line, word or character and new output is announced.
 extension TerminalView {
     /// The screen text as VoiceOver sees it, and where each row starts in it.
+    /// The cursor scrolled out of view (below what's shown) is at its end.
     private var accessibleText: (text: String, lineStarts: [Int], cursor: Int) {
         let (lines, cursor) = session.viewportText()
         var starts: [Int] = []
@@ -13,9 +14,10 @@ extension TerminalView {
             starts.append((text as NSString).length)
             text += line + "\n"
         }
-        let row = min(max(0, cursor.row), max(0, lines.count - 1))
-        let col = lines.isEmpty ? 0 : min(cursor.col, (lines[row] as NSString).length)
-        return (text, starts, (starts.isEmpty ? 0 : starts[row]) + col)
+        guard let cursor, !lines.isEmpty else { return (text, starts, (text as NSString).length) }
+        let row = min(max(0, cursor.row), lines.count - 1)
+        let col = min(cursor.col, (lines[row] as NSString).length)
+        return (text, starts, starts[row] + col)
     }
 
     override func isAccessibilityElement() -> Bool { true }
@@ -29,7 +31,10 @@ extension TerminalView {
     override func accessibilityValue() -> Any? { accessibleText.text }
     override func accessibilityNumberOfCharacters() -> Int { (accessibleText.text as NSString).length }
     override func accessibilityVisibleCharacterRange() -> NSRange { NSRange(location: 0, length: accessibilityNumberOfCharacters()) }
-    override func accessibilityInsertionPointLineNumber() -> Int { session.cursorPosition.y.toInt }
+    override func accessibilityInsertionPointLineNumber() -> Int {
+        let (_, starts, cursor) = accessibleText
+        return max(0, starts.lastIndex { $0 <= cursor } ?? 0)
+    }
 
     override func accessibilitySelectedTextRange() -> NSRange {
         NSRange(location: accessibleText.cursor, length: 0)
@@ -80,8 +85,4 @@ extension TerminalView {
         lastAccessibilityAnnouncement = now
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
-}
-
-private extension UInt16 {
-    var toInt: Int { Int(self) }
 }

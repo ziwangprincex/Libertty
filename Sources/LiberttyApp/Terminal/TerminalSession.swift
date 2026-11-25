@@ -2268,8 +2268,9 @@ extension TerminalSession {
 
 extension TerminalSession {
     /// The viewport as text, one string per row (trailing blanks trimmed),
-    /// and the cursor's cell: what VoiceOver reads. Computed on demand.
-    func viewportText() -> (lines: [String], cursor: (row: Int, col: Int)) {
+    /// and the cursor's cell in it, nil when it's out of view (scrolled
+    /// back): what VoiceOver reads. Computed on demand.
+    func viewportText() -> (lines: [String], cursor: (row: Int, col: Int)?) {
         lock.withLock {
             let cols = Int(size.cols), rows = Int(size.rows)
             var lines: [String] = []
@@ -2278,13 +2279,18 @@ extension TerminalSession {
             var cx: UInt16 = 0, cy: UInt16 = 0
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_X, &cx)
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &cy)
+            // The cursor's row is the active area's (the screen at the
+            // bottom); scrolled back, the viewport is higher up, by this much.
+            let cursorRow = ScreenCells.screenRow(terminal, GHOSTTY_POINT_TAG_ACTIVE, y: Int(cy))
+                .flatMap { row in ScreenCells.screenRow(terminal, GHOSTTY_POINT_TAG_VIEWPORT, y: 0).map { row - $0 } }
+                .flatMap { (0..<rows).contains($0) ? $0 : nil }
             // Where the cursor is in its line's text (UTF-16, as VoiceOver
             // counts): a wide character is two cells but one character.
             var cursorOffset = Int(cx)
             for y in 0..<rows {
                 var line = ""
                 for x in 0..<cols {
-                    if y == Int(cy), x == Int(cx) { cursorOffset = (line as NSString).length }
+                    if y == cursorRow, x == Int(cx) { cursorOffset = (line as NSString).length }
                     var point = GhosttyPoint()
                     point.tag = GHOSTTY_POINT_TAG_VIEWPORT
                     point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
@@ -2304,7 +2310,7 @@ extension TerminalSession {
                 while line.hasSuffix(" ") { line.removeLast() }
                 lines.append(line)
             }
-            return (lines, (Int(cy), cursorOffset))
+            return (lines, cursorRow.map { ($0, cursorOffset) })
         }
     }
 }
