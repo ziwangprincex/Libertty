@@ -573,6 +573,12 @@ enum UIProbe {
                             failures += 1
                         }
                         pump(0.2)
+                    case .treeRename(let path, let name):
+                        if !controller.sidebar.fileTree.rename(path: path, to: name) {
+                            print("FAIL  ui-probe tree-rename: couldn't rename \(path) to \(name)")
+                            failures += 1
+                        }
+                        pump(0.4)
                     case .treeMenu(let title):
                         if !controller.sidebar.fileTree.chooseMenuItem(title) {
                             print("FAIL  ui-probe tree-menu: no \(title) item")
@@ -2241,7 +2247,7 @@ enum UIProbe {
         /// many show, a row of a session not open here (or none), a click on
         /// the row showing TEXT.
         case expectGroup(String), expectGroupCount(Int), expectElsewhere(String, Bool), clickRow(String)
-        case treeSelect(String), treeMenu(String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
+        case treeSelect(String), treeMenu(String), treeRename(String, String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
         case appleScript(String, String?)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
         case pageJS(String, String?)
@@ -2498,6 +2504,11 @@ enum UIProbe {
             case "expect-diagrams": steps.append(.expectDiagrams(Int(arg) ?? -1))
             case "tree-select": steps.append(.treeSelect(arg))
             case "tree-menu": steps.append(.treeMenu(arg))
+            case "tree-rename":
+                // `tree-rename:PATH:NAME`: PATH renamed NAME, as typed in place.
+                if let r = arg.range(of: ":", options: .backwards) {
+                    steps.append(.treeRename(String(arg[..<r.lowerBound]), String(arg[r.upperBound...])))
+                }
             case "tree-drop", "tree-drop-move":
                 // FILE[,FILE…]>FOLDER (a folder under the tree's top; "." is the top)
                 if let r = arg.range(of: ">") {

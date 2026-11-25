@@ -2703,6 +2703,17 @@ final class FileTreeView: NSScrollView, NSOutlineViewDataSource, NSOutlineViewDe
         return true
     }
 
+    /// The file at `path` (under the top folder) renamed `name`, as its
+    /// name typed in place would rename it — without the field, whose
+    /// keyboard a window that isn't key may not keep (the UI probe).
+    @discardableResult
+    func rename(path: String, to name: String) -> Bool {
+        guard let rootPath else { return false }
+        let url = URL(fileURLWithPath: rootPath).appendingPathComponent(path)
+        do { afterChange(selecting: [try FileOperations.rename(url, to: name)]) } catch { return false }
+        return true
+    }
+
     /// The selected row's menu item titled `title`, chosen.
     func chooseMenuItem(_ title: String) -> Bool {
         guard let menu = outline.menu else { return false }

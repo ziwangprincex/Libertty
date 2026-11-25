@@ -75,20 +75,17 @@ expect-tree-not:pic.png
 expect-shell:ls @FINDER@ ==> pic.png
 # A file open in the editor, renamed: the editor follows it (the same tab,
 # its new name), and a save writes the renamed file, not a new one at the
-# old name. Undone, it follows the file back. (Renamed from the terminal's
-# tab: the editor's page keeps the keyboard from the tree's name field in
-# a window that isn't key, as a probe's never is.)
+# old name. Undone, it follows the file back. (Renamed as the name typed
+# in place renames it, without the field: with an editor open, CI's macOS
+# doesn't keep the field's keyboard in a window that isn't key, as a
+# probe's never is. Typing the name is above.)
 open:@DIR@/docs/notes.md
 editor-wait:go
 expect-tab-count:2
 tab:1
-wait:1.0
+wait:0.5
 expect-tree:docs/notes.md
-tree-select:docs/notes.md
-tree-menu:Rename
-shot:file-tree-rename-open.png
-type-then:enter:renamed
-shot:file-tree-renamed.png
+tree-rename:docs/notes.md:renamed.md
 expect-tree:docs/renamed.md
 expect-tab:renamed.md
 open:@DIR@/docs/renamed.md
