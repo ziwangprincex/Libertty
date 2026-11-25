@@ -276,8 +276,9 @@ final class PromptQueues {
             let mark = session.outputMark
             let atPrompt = !session.hasForegroundProgram
             // The agent they waited for has exited (/exit, ⌃C twice) and the
-            // shell is back: the next would be typed into it, and run.
-            if entry.agentSeen, atPrompt, !entry.queue.paused {
+            // shell is back: the next would be typed into it, and run. (Once:
+            // the agent isn't seen in front from now.)
+            if entry.agentSeen, atPrompt {
                 entry.queue.agentExited()
                 entry.agentSeen = false
                 entries[key] = entry
