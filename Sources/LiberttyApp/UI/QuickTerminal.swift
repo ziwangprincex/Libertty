@@ -137,7 +137,11 @@ final class QuickTerminal {
             // Its last pane closed: the next toggle starts a fresh one.
             self?.controller = nil
             UserDefaults.standard.removeObject(forKey: Self.sessionKey)
+            (NSApp.delegate as? AppDelegate)?.updateDockBadge()
         }
+        // What its programs wait on counts on the Dock's badge (and keeps
+        // the Mac awake while an agent works) as a window's does.
+        controller.onAttentionChange = { (NSApp.delegate as? AppDelegate)?.updateDockBadge() }
         if let window = controller.window {
             window.isMovable = false
             window.hasShadow = true

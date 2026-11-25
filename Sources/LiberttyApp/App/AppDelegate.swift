@@ -238,10 +238,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             self?.forgetForwards(of: c)
         }
         // Hidden for undo: not a window to save or count; back on undo.
-        controller.onHide = { [weak self] c in self?.controllers.removeAll { $0 === c } }
+        controller.onHide = { [weak self] c in
+            self?.controllers.removeAll { $0 === c }
+            self?.updateDockBadge()
+        }
         controller.onUnhide = { [weak self] c in
             guard let self, !self.controllers.contains(where: { $0 === c }) else { return }
             self.controllers.append(c)
+            self.updateDockBadge()
         }
         controller.onAttentionChange = { [weak self] in self?.updateDockBadge() }
         controller.onLayoutChange = { [weak self] in self?.saveSoon() }
@@ -283,9 +287,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     /// The Dock icon counts panes whose programs are in a state it counts
-    /// (`program-status-dock-badge`; by default, waiting for you).
-    private func updateDockBadge() {
-        let n = controllers.reduce(0) { $0 + $1.attentionCount }
+    /// (`program-status-dock-badge`; by default, waiting for you) — the
+    /// Quick Terminal's too, and a session two windows show once.
+    func updateDockBadge() {
+        let n = TabMute.badgeCount(allControllers.flatMap(\.badgePanes), counting: ConfigStore.shared.config.programStatusDockBadge)
         NSApp.dockTile.badgeLabel = n > 0 ? String(n) : nil
         updateKeepAwake()
         MainActor.assumeIsolated { MenuBarIcon.shared.update(waiting: n) }

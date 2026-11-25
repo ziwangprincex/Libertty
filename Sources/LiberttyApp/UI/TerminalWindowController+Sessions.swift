@@ -371,9 +371,12 @@ extension TerminalWindowController {
     /// How many panes have a program in a state the Dock badge counts
     /// (`program-status-dock-badge`; by default, waiting for you), muted
     /// tabs' aside. The menu bar's icon shows the same count.
-    var attentionCount: Int {
-        let panes = everyTab.flatMap { tab in tab.everyPane.map { (status: $0.session.programStatus, muted: tab.muted) } }
-        return TabMute.badgeCount(panes, counting: config.programStatusDockBadge)
+    var attentionCount: Int { TabMute.badgeCount(badgePanes, counting: config.programStatusDockBadge) }
+
+    /// Every pane as the badge counts it: a session by its pane's ID (a
+    /// mirror of it in another window has the same), its state, its tab muted.
+    var badgePanes: [(id: String, status: ProgramStatusStore, muted: Bool)] {
+        everyTab.flatMap { tab in tab.everyPane.map { (id: $0.paneID, status: $0.session.programStatus, muted: tab.muted) } }
     }
 
     func sessionExited(_ session: TerminalSession, status: Int32) {
