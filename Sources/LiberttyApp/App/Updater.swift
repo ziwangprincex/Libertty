@@ -201,10 +201,18 @@ enum Updater {
         } catch {
             throw Failure.install(error.localizedDescription)
         }
-        var aside: URL?
+        try swap(staged, into: app)
+    }
+
+    /// Put the bundle at `staged` where `app` is: the old one goes to the
+    /// Trash (or aside, on a volume without one), and comes back from
+    /// there if the new one can't take its place.
+    static func swap(_ staged: URL, into app: URL, fileManager fm: FileManager = .default) throws {
+        var aside: URL?, trashed: URL?
         do {
-            var trashed: NSURL?
-            try fm.trashItem(at: app, resultingItemURL: &trashed)
+            var put: NSURL?
+            try fm.trashItem(at: app, resultingItemURL: &put)
+            trashed = put as URL?
         } catch {
             // No Trash on this volume: move the old one aside instead.
             let path = app.deletingLastPathComponent().appendingPathComponent(".Libertty-old-\(getpid()).app")
@@ -218,8 +226,9 @@ enum Updater {
         do {
             try fm.moveItem(at: staged, to: app)
         } catch {
-            // Put the old one back rather than leave no app at all.
-            if let aside { try? fm.moveItem(at: aside, to: app) }
+            // Put the old one back rather than leave no app at all — from
+            // the Trash too.
+            if let old = aside ?? trashed { try? fm.moveItem(at: old, to: app) }
             throw Failure.install("the new version is at \(staged.path): \(error.localizedDescription)")
         }
         if let aside { try? fm.removeItem(at: aside) }

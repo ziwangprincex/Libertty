@@ -37,6 +37,14 @@ for c in "+capture nosuch" "+send nosuch hi" "+send-key nosuch enter" "+wait nos
 done
 $L +nosuch > /dev/null 2>&1; r=$?; (( r == 2 )) && ok "an unknown command: 2" || bad "unknown command: $r"
 
+# Typed paths and numbers that trapped once: a usage error, 2.
+for c in "+validate-config --config-file=" "+wait $ID --timeout inf" "+events --timeout inf" "+prompt $ID hi --timeout inf"; do
+  $L ${=c} > /dev/null 2>&1; r=$?
+  (( r == 2 )) && ok "$c: 2" || bad "$c: $r"
+done
+$L +wait $ID --until prompt --timeout 1e300 > /dev/null 2>&1; r=$?
+(( r == 0 )) && ok "+wait --timeout 1e300: as long as a socket waits" || bad "+wait --timeout 1e300: $r"
+
 # +daemon status
 $L +daemon status > $T/status
 grep -q "sessions  1 (" $T/status && grep -q "^liberttyd [0-9]" $T/status && ok "status: pid, build, sessions" || bad "status: $(cat $T/status)"

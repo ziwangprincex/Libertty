@@ -16,6 +16,9 @@ struct ConversationTests {
         #expect(!Conversations.isValidID("$(id)"))
         #expect(!Conversations.isValidID("é"))
         #expect(!Conversations.isValidID(String(repeating: "a", count: 129)))
+        // An option to the agent, not an id.
+        #expect(!Conversations.isValidID("--dangerously-skip-permissions"))
+        #expect(!Conversations.isValidID("-x"))
     }
 
     @Test func resumeCommands() {

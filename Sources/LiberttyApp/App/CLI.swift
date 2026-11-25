@@ -415,15 +415,23 @@ enum CLI {
 
     private static func validate(_ args: [String]) -> Int32 {
         var url = store.url
-        if let i = args.firstIndex(where: { $0.hasPrefix("--config-file") }) {
-            let a = args[i]
-            let path = a.contains("=") ? String(a.split(separator: "=", maxSplits: 1)[1]) : (i + 1 < args.count ? args[i + 1] : "")
+        if let path = configFileArgument(args) {
+            guard !path.isEmpty else { fail("usage: libertty +validate-config [--config-file PATH]"); return 2 }
             url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         }
         let (_, warnings, _) = Config.load(url)
         for w in warnings { print("\(url.path): \(w)") }
         if warnings.isEmpty { print("\(url.path): ok") }
         return warnings.isEmpty ? 0 : 1
+    }
+
+    /// +validate-config's `--config-file=PATH` or `--config-file PATH`: the
+    /// path, "" when the flag has none (`--config-file=`), nil without it.
+    static func configFileArgument(_ args: [String]) -> String? {
+        guard let i = args.firstIndex(where: { $0.hasPrefix("--config-file") }) else { return nil }
+        let a = args[i]
+        if let equals = a.firstIndex(of: "=") { return String(a[a.index(after: equals)...]) }
+        return i + 1 < args.count ? args[i + 1] : ""
     }
 
     private static func editConfig() -> Int32 {
@@ -1144,7 +1152,7 @@ enum CLI {
                     return 2
                 }
                 i += 2
-            } else if a == "--timeout", let next, let seconds = Double(next), seconds > 0 {
+            } else if a == "--timeout", let seconds = waitSeconds(next) {
                 timeout = seconds
                 i += 2
             } else if !a.hasPrefix("--"), id == nil {
@@ -1177,6 +1185,14 @@ enum CLI {
         }
         if frame.json["reached"] != nil { return 0 }
         return Int32(frame.json["status"] as? Int ?? 0)
+    }
+
+    /// A `--timeout SECONDS` given: more than 0 and finite, and at most
+    /// Int32.max seconds (68 years) — the socket's timeout takes whole
+    /// seconds as an integer, which `inf` or 1e300 would trap making.
+    static func waitSeconds(_ text: String?) -> Double? {
+        guard let text, let seconds = Double(text), seconds > 0, seconds.isFinite else { return nil }
+        return min(seconds, Double(Int32.max))
     }
 
     /// 124 if the answer didn't come because the time ran out.
@@ -1224,7 +1240,7 @@ enum CLI {
                 once = true
                 i += 1
             case "--timeout":
-                guard let next, let seconds = Double(next), seconds > 0 else { fail(usage); return 2 }
+                guard let seconds = waitSeconds(next) else { fail(usage); return 2 }
                 timeout = seconds
                 i += 2
             default:
@@ -1290,8 +1306,9 @@ enum CLI {
                 quiet = ms
                 i += 2
             case "--timeout":
-                guard let next, Double(next) != nil else { fail(usage); return 2 }
-                timeout = Double(next)
+                // Checked here, before anything is typed (+wait checks it again).
+                guard let seconds = waitSeconds(next) else { fail(usage); return 2 }
+                timeout = seconds
                 i += 2
             case "-n":
                 guard let next, let n = Int(next), n > 0 else { fail(usage); return 2 }

@@ -34,6 +34,23 @@ struct CloseUndoTests {
         #expect(undo.manager.canRedo)
     }
 
+    /// Undone where it can't come back (its tab in another workspace, its
+    /// window minimized): what it kept running ends then, not never.
+    @Test func aCloseThatCantComeBackEnds() {
+        let undo = CloseUndo()
+        var ended = 0
+        let first = closing(undo) { undo.closed("Close Pane", restore: { nil }, expire: { ended += 1 }) }
+        _ = closing(undo) { undo.closed("Close Tab", restore: { nil }, expire: { ended += 1 }) }
+        undo.manager.undo()
+        #expect(ended == 1)
+        #expect(!undo.manager.canRedo)
+        #expect(undo.undo(first))
+        #expect(ended == 2)
+        // Ended once: quitting doesn't end it again.
+        undo.expireAll()
+        #expect(ended == 2)
+    }
+
     /// Made again and closed again: the older close can't be undone any
     /// more, and nothing is ended for it.
     @Test func aDiscardedCloseIsGone() {

@@ -304,9 +304,11 @@ final class ElsewhereSessions {
     /// A session's key among those shown: its machine and ID.
     private static func key(_ host: String?, _ id: String) -> String { (host ?? "") + "\u{1F}" + id }
 
-    /// The sessions the panes of `windows` show, by key.
+    /// The sessions the panes of `windows` show, by key — and the Quick
+    /// Terminal's before it has come down (it attaches that one itself).
     private static func shown(in windows: [TerminalWindowController]) -> Set<String> {
         var shown = Set<String>()
+        if let id = QuickTerminal.shared.sessionToAttach { shown.insert(key(nil, id)) }
         for controller in windows {
             for pane in controller.allPanes {
                 guard let id = pane.session.persistentID else { continue }

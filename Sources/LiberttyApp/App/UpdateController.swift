@@ -288,7 +288,7 @@ final class UpdateController: NSObject {
     static func notesView(for release: Updater.Release) -> NSView? {
         let markdown = [release.releaseNotes, release.notes].compactMap { $0 }.first { !$0.isEmpty } ?? ""
         let text = render(notes: markdown)
-        if let page = release.releasePage.flatMap(URL.init(string:)) {
+        if let page = openable(release.releasePage.flatMap(URL.init(string:))) {
             if text.length > 0 { text.append(NSAttributedString(string: "\n")) }
             text.append(NSAttributedString(string: "All changes on GitHub", attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .link: page,
@@ -389,6 +389,16 @@ final class UpdateController: NSObject {
         return out
     }
 
+    /// A link of the notes (or the release's page) that a click may open:
+    /// the feed isn't signed, only its archive is, so the web only, on the
+    /// releases' own site — not a file, another app's URL scheme or a page
+    /// anywhere else. Others show as text.
+    static func openable(_ url: URL?) -> URL? {
+        guard let url, url.scheme?.lowercased() == "https", let host = url.host?.lowercased(),
+              host == "github.com" || host.hasSuffix(".github.com") else { return nil }
+        return url
+    }
+
     /// One line's inline Markdown; as typed if it isn't Markdown.
     private static func inline(_ line: String, size: CGFloat, bold: Bool) -> NSAttributedString {
         let base = bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
@@ -403,7 +413,7 @@ final class UpdateController: NSObject {
             if intent.contains(.emphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
             var attributes: [NSAttributedString.Key: Any] = [.font: font]
             if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-            if let link = run.link { attributes[.link] = link }
+            if let link = openable(run.link) { attributes[.link] = link }
             out.append(NSAttributedString(string: String(parsed[run.range].characters), attributes: attributes))
         }
         return out

@@ -65,7 +65,10 @@ enum SurfaceCLI {
             write("\u{1b}]7502;c\u{7}")
             return 0
         case "read":
-            let timeout = option("--timeout").flatMap(Double.init)
+            // Seconds, 0 or more and finite (`inf` and `nan` aren't a wait).
+            let given = option("--timeout")
+            let timeout = given.flatMap(Double.init)
+            guard given == nil || timeout.map({ $0 >= 0 && $0.isFinite }) == true else { return usage() }
             guard let tty = openTTY() else { return fail("no terminal") }
             defer { close(tty) }
             guard let body = read(tty, prefix: "\u{1b}]7502;e;", timeout: timeout) else { return 124 }
@@ -132,7 +135,7 @@ enum SurfaceCLI {
         return body()
     }
 
-    private static func frame(_ tty: Int32, prefix: String, timeout: Double?) -> String? {
+    static func frame(_ tty: Int32, prefix: String, timeout: Double?) -> String? {
         var buffer: [UInt8] = []
         let want = Array(prefix.utf8)
         let deadline = timeout.map { Date().addingTimeInterval($0) }
@@ -141,9 +144,14 @@ enum SurfaceCLI {
                 return String(decoding: buffer[(start + want.count)..<end], as: UTF8.self)
             }
             var pfd = pollfd(fd: tty, events: Int16(POLLIN), revents: 0)
-            let wait = deadline.map { Int32(max(0, $0.timeIntervalSinceNow) * 1000) } ?? -1
+            // A minute at most at a time (poll's milliseconds are an Int32;
+            // a long timeout is waited out a minute after another).
+            let wait = deadline.map { Int32(min(max(0, $0.timeIntervalSinceNow), 60) * 1000) } ?? -1
             if let deadline, deadline.timeIntervalSinceNow <= 0 { return nil }
-            guard poll(&pfd, 1, wait) > 0 else { if deadline != nil { return nil } else { continue } }
+            let ready = poll(&pfd, 1, wait)
+            // Nothing yet: a minute of it is over, not the whole timeout.
+            if ready == 0, let deadline, deadline.timeIntervalSinceNow > 0 { continue }
+            guard ready > 0 else { if deadline != nil { return nil } else { continue } }
             var chunk = [UInt8](repeating: 0, count: 65536)
             let n = Darwin.read(tty, &chunk, chunk.count)
             guard n > 0 else { return nil }
