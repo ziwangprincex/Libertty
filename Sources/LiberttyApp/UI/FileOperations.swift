@@ -90,11 +90,25 @@ enum FileOperations {
                 done.append((from, to))
             }
         } catch {
-            // What moved stays undoable; the rest says why it didn't.
-            register(name, manager) { manager in try? move(done.map { ($1, $0) }, name: name, undo: manager) }
+            // What moved stays undoable (nothing moved: nothing to undo); the rest says why it didn't.
+            if !done.isEmpty { register(name, manager) { manager in moveBack(done.map { ($1, $0) }, name: name, manager) } }
             throw error
         }
-        register(name, manager) { manager in try? move(done.map { ($1, $0) }, name: name, undo: manager) }
+        register(name, manager) { manager in moveBack(done.map { ($1, $0) }, name: name, manager) }
+    }
+
+    /// Undoing a move (or Move to Trash): each back where it was. One that
+    /// can't go (a file made at its old name since, the Trash emptied) is
+    /// said, with where it is still — never skipped in silence, as Edit ▸
+    /// Undo had promised it. What did go back can be redone.
+    private static func moveBack(_ pairs: [(URL, URL)], name: String, _ manager: UndoManager) {
+        do { try move(pairs, name: name, undo: manager) } catch {
+            let left = pairs.map(\.0).filter { FileManager.default.fileExists(atPath: $0.path) }
+            let still = left.map { String(format: L10n.t("“%@” is still in %@."), $0.lastPathComponent,
+                                          ($0.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath) }
+            undoFailed(String(format: L10n.t("Couldn't undo %@"), L10n.t(name)),
+                       ([error.localizedDescription] + still).joined(separator: "\n\n"), reveal: left)
+        }
     }
 
     /// Files dropped on a folder: copied in (moved with `move`), a name
@@ -164,7 +178,7 @@ enum FileOperations {
     private static func put(_ trashed: [URL: URL], name: String, _ manager: UndoManager?) {
         guard !trashed.isEmpty else { return }
         let back = trashed.map { ($0.value, $0.key) }
-        register(name, manager) { manager in try? move(back, name: name, undo: manager) }
+        register(name, manager) { manager in moveBack(back, name: name, manager) }
     }
 
     // MARK: Helpers
@@ -185,13 +199,40 @@ enum FileOperations {
     /// What making `urls` is undone by: they go to the Trash.
     private static func registerTrash(_ urls: [URL], name: String, manager: UndoManager?) {
         guard !urls.isEmpty else { return }
-        register(name, manager) { manager in trash(urls, name: name, undo: manager) { _ in } }
+        register(name, manager) { manager in
+            trash(urls, name: name, undo: manager) { result in
+                // Not done: said, as a move back that can't be done is.
+                guard case .failure(let error) = result else { return }
+                let left = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+                undoFailed(String(format: L10n.t("Couldn't undo %@"), L10n.t(name)), error.localizedDescription, reveal: left)
+            }
+        }
     }
 
     private static func register(_ name: String, _ given: UndoManager?, _ handler: @escaping (UndoManager) -> Void) {
         let manager = given ?? CloseUndo.shared.manager
         manager.registerUndo(withTarget: target) { _ in MainActor.assumeIsolated { handler(manager) } }
         manager.setActionName(name)
+    }
+
+    /// Where an undo that couldn't be done is said, in place of the alert (a test's own).
+    static var reportUndoFailure: ((_ title: String, _ message: String) -> Void)?
+
+    /// An alert on the window in front (Edit ▸ Undo's), offering to show
+    /// what's left where it is.
+    private static func undoFailed(_ title: String, _ message: String, reveal: [URL]) {
+        if let reportUndoFailure { return reportUndoFailure(title, message) }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: L10n.t("OK"))
+        if !reveal.isEmpty { alert.addButton(withTitle: L10n.t("Show in Finder")) }
+        let done = { (response: NSApplication.ModalResponse) in
+            if response == .alertSecondButtonReturn { NSWorkspace.shared.activateFileViewerSelecting(reveal) }
+        }
+        let window = NSApp.keyWindow ?? NSApp.mainWindow
+            ?? NSApp.windows.first { $0.isVisible && $0.windowController is TerminalWindowController }
+        if let window, window.attachedSheet == nil { alert.beginSheetModal(for: window, completionHandler: done) } else { done(alert.runModal()) }
     }
 
     /// `name` in `folder`, or the first free one after it: `a copy.txt`,

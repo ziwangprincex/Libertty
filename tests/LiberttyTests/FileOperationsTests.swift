@@ -122,4 +122,35 @@ struct FileOperationsTests {
         manager.endUndoGrouping()
         #expect(heard.count == count)
     }
+
+    /// An undo that can't be done (a new file at the old name meanwhile)
+    /// says so, and where the item is still; nothing is overwritten, and
+    /// there's nothing to redo.
+    @Test func anUndoThatCantBeDoneSaysWhereTheItemIs() async throws {
+        var said: [(String, String)] = []
+        FileOperations.reportUndoFailure = { said.append(($0, $1)) }
+        defer { FileOperations.reportUndoFailure = nil }
+        let a = dir.appendingPathComponent("a.txt")
+        manager.beginUndoGrouping()
+        let trashed: [URL: URL] = await withCheckedContinuation { done in
+            FileOperations.trash([a], undo: manager) { result in done.resume(returning: (try? result.get()) ?? [:]) }
+        }
+        manager.endUndoGrouping()
+        try Data("new".utf8).write(to: a)
+        manager.undo()
+        #expect(said.count == 1)
+        #expect(said.last?.0 == "Couldn't undo Move to Trash")
+        #expect(said.last?.1.contains("“a.txt” is still in \(dir.appendingPathComponent(".trash").path)") == true)
+        #expect(try String(contentsOf: a, encoding: .utf8) == "new")
+        #expect(trashed[a].map { FileManager.default.fileExists(atPath: $0.path) } == true)
+        #expect(!manager.canRedo)
+        // A rename's undo the same.
+        try step { _ = try FileOperations.rename(a, to: "b.txt", undo: manager) }
+        try Data("another".utf8).write(to: a)
+        manager.undo()
+        #expect(said.count == 2 && said.last?.0 == "Couldn't undo Rename")
+        #expect(said.last?.1.contains("“b.txt” is still in") == true)
+        #expect(exists("b.txt"))
+        #expect(try String(contentsOf: a, encoding: .utf8) == "another")
+    }
 }

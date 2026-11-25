@@ -14,7 +14,11 @@ class FileBlock: BlockService {
     /// Bigger than this isn't read: the page holds the whole file.
     static let sizeLimit = 64_000_000
     weak var host: BlockHost?
-    let file: URL
+    /// Where the file is: it changes when the file tree renames or moves it.
+    var file: URL { placeLock.withLock { place } }
+    private var place: URL
+    /// (Its own lock: `file` is read under `lock` too, in a write.)
+    private let placeLock = NSLock()
 
     /// The file's bytes as last read or written here (nil: it wasn't there).
     private var known: SHA256.Digest?
@@ -36,8 +40,19 @@ class FileBlock: BlockService {
 
     required init?(url: URL) {
         guard let path = Blocks.parameter("file", of: url), path.hasPrefix("/") else { return nil }
-        file = URL(fileURLWithPath: path).standardizedFileURL
+        place = URL(fileURLWithPath: path).standardizedFileURL
         DispatchQueue.main.async { [weak self] in self?.watch() }
+    }
+
+    /// The file tree renamed or moved the file (or a folder it's in), or
+    /// undid that: read, write and watch it where it is now. Its bytes are
+    /// the same, so what this block last saw of them still holds. (Under
+    /// `lock`, so a write under way finishes where it started.)
+    func moved(to url: URL) {
+        lock.withLock { placeLock.withLock { place = url.standardizedFileURL } }
+        watch()
+        host?.titleChanged()
+        host?.send("fileMoved", ["name": url.lastPathComponent, "path": url.standardizedFileURL.path])
     }
 
     var title: String { file.lastPathComponent }
@@ -97,6 +112,8 @@ class FileBlock: BlockService {
 
     private func read() throws -> [String: Any] {
         let fm = FileManager.default
+        // One place throughout, should the file tree move it meanwhile.
+        let file = self.file
         var data: Data?
         if fm.fileExists(atPath: file.path) {
             let size = (try? fm.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0

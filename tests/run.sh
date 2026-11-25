@@ -587,6 +587,9 @@ ln -s target.txt $ED/linked.txt
 printf 'start\n' > $ED/wq.txt
 { print '[Far](#far-below) [Café](#café)\n'; for i in {1..200}; print "line $i\n"; print '## Far below\n\n## Café\n'; for i in {1..60}; print "more $i\n" } > $ED/toc.md
 expect editor 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@DIR@|$ED|g" $ROOT/tests/fixtures/editor.txt)" $OUT
+# A file open in the editor or as a page that grows past 5 MB: no longer read at each change, and it says so.
+expect document-grows 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/document-grows|g" $ROOT/tests/fixtures/document-grows.txt)" $OUT
 # The Git block: stage a hunk, commit, history, a branch, a stash — through its page.
 GB=$PRIVATE/gitblock
 mkdir -p $GB
@@ -743,6 +746,9 @@ SITE_PID=$!
 # Up before a page asks it (a slow start is the server's, not the browser's).
 for i in {1..100}; do curl -sf -o /dev/null --max-time 1 http://127.0.0.1:$PORT/index.html && break; sleep 0.1; done
 expect browser 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@SITE@|http://127.0.0.1:$PORT|g" $ROOT/tests/fixtures/browser.txt)" $OUT
+# A page's confirm(), prompt() and alert() as sheets naming its host; its file input gets what's picked.
+expect browser-dialogs 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config $LIBERTTY --ui-probe \
+  "$(sed -e "s|@SITE@|http://127.0.0.1:$PORT|g" -e "s|@HOST@|127.0.0.1:$PORT|g" -e "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/browser-dialogs.txt)" $OUT
 mkdir -p $PRIVATE/browser-config/libertty
 print 'browser-automation = true' > $PRIVATE/browser-config/libertty/config
 settle

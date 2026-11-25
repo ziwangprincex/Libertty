@@ -1,0 +1,48 @@
+# A file open in Libertty that grows past 5 MB (a log being written) is no
+# longer read again at each change, and the page says so. The editor keeps
+# its text, unsaved changes too; a save asks before writing over the file,
+# and the file is followed again once it's what the editor wrote.
+# (Made here, so a second attempt starts as the first did.)
+shell:rm -rf @DIR@ && mkdir -p @DIR@ && printf 'first line\n' > @DIR@/app.log && printf '# Log\n\nStarted.\n' > @DIR@/notes.md
+edit:@DIR@/app.log
+editor-wait:go
+expect-editor:first line
+shell:printf 'second line\n' >> @DIR@/app.log
+wait:0.5
+expect-editor:second line
+editor-insert:mine-
+expect-dirty:yes
+shell:head -c 6000000 /dev/zero | tr '\0' x >> @DIR@/app.log
+wait:1.0
+expect-page:grew past 5 MB
+expect-dirty:yes
+expect-editor:mine-
+page-js:libertty.text().length < 1000 ==> true
+shell:printf 'more\n' >> @DIR@/app.log
+wait:0.5
+page-js:libertty.text().includes('more') ==> false
+key:cmd+s
+wait:0.6
+expect-sheet-text:changed on disk
+sheet:Overwrite
+expect-file:@DIR@/app.log=mine-
+expect-shell:test $(wc -c < @DIR@/app.log) -lt 1000 && echo small ==> small
+expect-dirty:no
+expect-page-not:grew past 5 MB
+shell:printf 'after\n' >> @DIR@/app.log
+wait:0.8
+expect-editor:after
+# A page (Markdown shown rendered) the same: it stays as it was, saying why.
+open:@DIR@/notes.md
+page-wait:go
+expect-page:Started.
+shell:printf 'Then more.\n' >> @DIR@/notes.md
+expect-page:Then more.
+shell:head -c 6000000 /dev/zero | tr '\0' x >> @DIR@/notes.md
+wait:1.5
+expect-page:grew past 5 MB
+expect-page:Then more.
+shell:printf 'Later on.\n' >> @DIR@/notes.md
+wait:0.8
+expect-page-not:Later on.
+expect-page:grew past 5 MB

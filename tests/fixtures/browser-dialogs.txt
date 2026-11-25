@@ -1,0 +1,50 @@
+# A web page's dialogs: confirm(), prompt() and alert() are sheets on the
+# window naming the page's host, and the page gets the answer; its
+# <input type=file> gets the files picked (a probe's pick, the open panel
+# apart). A block's page gets no sheet. tests/run.sh serves @SITE@ (as
+# @HOST@); @ROOT@ is the repository.
+browser:open @SITE@/dialogs.html ==> b1
+page-wait:go
+expect-tab:Probe Dialogs
+# (Clicked a moment after page-js has its answer: the page waits for the
+# sheet's, and page-js would wait with it.)
+page-js:(() => { setTimeout(() => document.getElementById('delete').click(), 300); return "asked"; })() ==> asked
+wait:0.8
+expect-sheet:yes
+expect-sheet-text:@HOST@ says
+expect-sheet-text:Delete the draft?
+sheet:Cancel
+expect-page:kept
+page-js:(() => { setTimeout(() => document.getElementById('delete').click(), 300); return "asked"; })() ==> asked
+wait:0.8
+sheet:OK
+expect-page:deleted
+# prompt(): its field starts with the page's text; what's typed goes back.
+page-js:(() => { setTimeout(() => document.getElementById('rename').click(), 300); return "asked"; })() ==> asked
+wait:0.8
+expect-sheet-text:A new name?
+expect-sheet-text:draft
+sheet-type:final plan
+sheet:OK
+expect-page:named final plan
+page-js:(() => { setTimeout(() => document.getElementById('rename').click(), 300); return "asked"; })() ==> asked
+wait:0.8
+sheet:Cancel
+expect-page:no name
+page-js:(() => { setTimeout(() => document.getElementById('hello').click(), 300); return "asked"; })() ==> asked
+wait:0.8
+expect-sheet-text:Hello there
+sheet:OK
+expect-page:greeted
+expect-sheet:no
+# A file input: what's picked goes to the page.
+pick-files:@ROOT@/tests/fixtures/site/index.html|@ROOT@/tests/fixtures/site/second.html
+page-js:(() => { document.getElementById('file').click(); return "clicked"; })() ==> clicked
+wait:0.8
+expect-page:picked index.html 383, second.html 100
+# A block's page asks nothing of the window: confirm() is answered no at once.
+action:open_tasks
+wait:1.0
+page-wait:go
+page-js:String(confirm('Anything?')) ==> false
+expect-sheet:no

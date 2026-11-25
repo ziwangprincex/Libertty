@@ -107,3 +107,35 @@ editor-insert:back again
 editor-save:go
 expect-file:@DIR@/docs/notes.md=back again
 expect-shell:test -e @DIR@/docs/renamed.md && echo there || echo gone ==> gone
+# A board (a block of a file) follows its file too: renamed, its tab and
+# its page take the new name, opening the file finds it, and a change is
+# written there. Undone, it follows the file back.
+shell:printf '# Plan\n\n## To Do\n\n- [ ] One\n- [ ] Two\n' > @DIR@/plan.board.md
+open:@DIR@/plan.board.md
+page-wait:go
+expect-tab:plan.board.md
+expect-tab-count:3
+tab:1
+wait:0.3
+tree-select:plan.board.md
+tree-menu:Rename
+type-then:enter:sprint.board
+expect-tree:sprint.board.md
+expect-tab:sprint.board.md
+open:@DIR@/sprint.board.md
+expect-tab-count:3
+expect-page:sprint.board.md
+page-js:(() => { libertty_board.moveCard(0, libertty_board.board.columns[0].entries.find(e => e.card && e.card.text === "Two").card, 0, 0); return "moved"; })() ==> moved
+wait:1.0
+expect-shell:cat @DIR@/sprint.board.md | tr '\n' '|' ==> - [ ] Two|- [ ] One|
+expect-shell:test -e @DIR@/plan.board.md && echo back || echo gone ==> gone
+undo:go
+wait:0.5
+expect-tab:plan.board.md
+open:@DIR@/plan.board.md
+expect-tab-count:3
+expect-page:plan.board.md
+page-js:(() => { libertty_board.moveCard(0, libertty_board.board.columns[0].entries.find(e => e.card && e.card.text === "One").card, 0, 0); return "moved"; })() ==> moved
+wait:1.0
+expect-shell:cat @DIR@/plan.board.md | tr '\n' '|' ==> - [ ] One|- [ ] Two|
+expect-shell:test -e @DIR@/sprint.board.md && echo there || echo gone ==> gone

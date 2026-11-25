@@ -100,6 +100,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         return imageExtensions.contains(ext) ? .image : .text
     }
 
+    /// Text bigger than this isn't shown (nor followed, grown past it while open).
+    static let textLimit = 5_000_000
+
     /// Whether Libertty can show this file itself: text it knows (under 5 MB),
     /// an image or PDF (under 200 MB), or a web page.
     static func canShow(_ url: URL) -> Bool {
@@ -118,7 +121,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return false
         }
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-        return size < 5_000_000
+        return size < textLimit
     }
 
     /// The glyph for this document's tab, its row in the palette.
@@ -169,8 +172,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             install(editing ? makeEditorWeb() : Self.makeViewerWeb(kind))
         }
         load(keepScroll: false)
-        if kind != .web && kind != .block {
-            watch()
+        if kind != .web && kind != .block { watch() }
+        // A file's page follows the file tree's renames and moves; so does a
+        // block of a file (a board, a drawing, a notebook).
+        if kind != .web && (kind != .block || service is FileBlock) {
             NotificationCenter.default.addObserver(self, selector: #selector(filesMoved), name: FileOperations.moved, object: nil)
         }
         if kind == .web { observePage() }
@@ -761,6 +766,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             diskText = text
             baseText = text
             backupText = nil
+            // Written over a file that had grown too big: it's what's here now, followed again.
+            if outgrown {
+                outgrown = false
+                web.evaluateJavaScript("document.getElementById('banner')?.remove()")
+                watch()
+            }
             completion(true)
         } catch {
             ask("Couldn't save “\(url.lastPathComponent)”", error.localizedDescription, buttons: ["OK"]) { _ in completion(false) }
@@ -791,6 +802,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             guard FileManager.default.fileExists(atPath: self.url.path) else { return }
             timer.invalidate()
             self.returnPoll = nil
+            guard !self.outgrew() else { return }
             self.watch()
             self.load(keepScroll: true)
         }
@@ -1003,6 +1015,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
 
     private func load(keepScroll: Bool) {
         if kind == .block { return loadBlock() }
+        // Grown too big: what shows stays (a new theme, a moved file: not read again).
+        if outgrown, loaded { return }
         if isEditing { return loadEditor() }
         guard keepScroll else { return show(scroll: nil) }
         // A reload under way already knows where the reader was (the new
@@ -1100,6 +1114,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
+        // (A page read as the file was still growing came after the note.)
+        if outgrown { showNotice(outgrownNote) }
         if kind == .block {
             sendBlockTheme()
             (service as? FileBlock)?.pageStarted()
@@ -1282,6 +1298,80 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         }
     }
 
+    // MARK: A web page's dialogs and file picker
+
+    /// A web page's `<input type=file>` (attaching a file to an issue): an
+    /// open panel on the window, taking several files or a folder when the
+    /// input does. A document's or a block's page gets none.
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        #if LIBERTTY_PROBES
+        if kind == .web, let picked = ProbePick.files {
+            ProbePick.files = nil
+            return completionHandler(picked)
+        }
+        #endif
+        // Never during a probe (an off-screen window, the user's files); nor
+        // over another sheet, where it would wait out of sight.
+        guard kind == .web, !Probe.running, let window, window.attachedSheet == nil else { return completionHandler(nil) }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.prompt = L10n.t("Upload")
+        if let asker = Self.asker(frame) {
+            let message = parameters.allowsMultipleSelection ? "Choose files to upload to %@." : "Choose a file to upload to %@."
+            panel.message = String(format: L10n.t(message), asker)
+        }
+        panel.beginSheetModal(for: window) { response in completionHandler(response == .OK ? panel.urls : nil) }
+    }
+
+    /// A web page's alert(), confirm() and prompt(): a sheet on the window
+    /// saying whose page asks (a dev server's "Delete it?" waits for the
+    /// answer). A page not in front, or asking over another sheet, gets
+    /// the answer of a dismissed one.
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+        pageDialog(frame, message, cancels: false) { _ in completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        pageDialog(frame, message, cancels: true) { completionHandler($0) }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        let field = NSTextField(string: defaultText ?? "")
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+        pageDialog(frame, prompt, cancels: true, field: field) { completionHandler($0 ? field.stringValue : nil) }
+    }
+
+    /// `message` from the page in `frame`, OK (and Cancel) to answer it; `done(true)` for OK.
+    private func pageDialog(_ frame: WKFrameInfo, _ message: String, cancels: Bool, field: NSTextField? = nil,
+                            done: @escaping (Bool) -> Void) {
+        guard kind == .web, let window, window.attachedSheet == nil else { return done(false) }
+        let alert = NSAlert()
+        alert.messageText = Self.asker(frame).map { String(format: L10n.t("%@ says"), $0) } ?? L10n.t("This page says")
+        // (A page's words, as long as it likes: cut where a sheet still fits.)
+        alert.informativeText = String(message.prefix(2000))
+        alert.addButton(withTitle: L10n.t("OK"))
+        if cancels { alert.addCancelButton() }
+        if let field {
+            alert.accessoryView = field
+            alert.window.initialFirstResponder = field
+        }
+        alert.beginSheetModal(for: window) { done($0 == .alertFirstButtonReturn) }
+    }
+
+    /// Who a page's dialog comes from: its frame's host (and port), which a
+    /// page can't pretend to be another's; nil for one without (data:).
+    private static func asker(_ frame: WKFrameInfo) -> String? {
+        let origin = frame.securityOrigin
+        guard !origin.host.isEmpty else { return nil }
+        return origin.host + (origin.port > 0 ? ":\(origin.port)" : "")
+    }
+
     // MARK: Find and zoom
 
     /// The editor finds with its own panel (it draws only the lines in view,
@@ -1309,7 +1399,16 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     /// undid that: follow it, so a save writes where the file is now — not
     /// a new file at its old name — and the page reads from there.
     @objc private func filesMoved(_ note: Notification) {
-        guard let moves = note.userInfo?["moves"] as? [URL: URL], let moved = Self.place(of: url, after: moves) else { return }
+        guard let moves = note.userInfo?["moves"] as? [URL: URL] else { return }
+        if let block = service as? FileBlock {
+            // A block's file: it reads and writes there now, and its address
+            // (what reopening the file finds, what a saved layout keeps) says so.
+            guard let moved = Self.place(of: block.file, after: moves) else { return }
+            url = Blocks.address(url, file: moved)
+            // (Which names the tab anew.)
+            return block.moved(to: moved)
+        }
+        guard let moved = Self.place(of: url, after: moves) else { return }
         url = moved
         watch()
         // A page's images and links are where the document is now.
@@ -1341,6 +1440,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
 
     private func watch() {
         watcher?.cancel()
+        watcher = nil
+        guard !outgrown else { return }
         let fd = open(url.path, O_EVTONLY)
         // Not there right now (mid-replace, a branch switch): watch for it to come back.
         guard fd >= 0 else { return watchForReturn() }
@@ -1351,19 +1452,61 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             // Editors save by replacing the file: follow the new one.
             if source.data.contains(.rename) || source.data.contains(.delete) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    guard !self.outgrew() else { return }
                     self.watch()
                     // Still gone (a branch switch): the page stays as it was
                     // until the file is back, so its scroll is kept for it.
                     // (The editor hears it's gone: its text is unsaved now.)
                     if self.isEditing || FileManager.default.fileExists(atPath: self.url.path) { self.load(keepScroll: true) }
                 }
-            } else {
+            } else if !self.outgrew() {
                 self.load(keepScroll: true)
             }
         }
         source.setCancelHandler { close(fd) }
         source.resume()
         watcher = source
+    }
+
+    /// The file grew past `textLimit` while open (a log being written):
+    /// it's no longer read again at each change — the whole of it, on the
+    /// main thread — nor watched. What the page or the editor shows stays.
+    private var outgrown = false
+
+    /// Whether the file is past `textLimit` now; the first time, stop
+    /// following it and say so in the page. The editor keeps its text,
+    /// unsaved changes and all (a save asks before writing over the file).
+    private func outgrew() -> Bool {
+        guard kind == .text, !outgrown else { return outgrown }
+        let path = url.resolvingSymlinksInPath().path
+        let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.intValue ?? 0
+        guard size >= Self.textLimit else { return false }
+        outgrown = true
+        watcher?.cancel()
+        watcher = nil
+        returnPoll?.invalidate()
+        returnPoll = nil
+        showNotice(outgrownNote)
+        return true
+    }
+
+    /// What the page says of a file grown too big.
+    private var outgrownNote: String {
+        let note = isEditing
+            ? "“%@” grew past %@ MB: its changes aren't shown here any more. Your text here stays; saving it asks before writing over the file."
+            : "“%@” grew past %@ MB: its changes aren't shown here any more."
+        return String(format: L10n.t(note), url.lastPathComponent, "\(Self.textLimit / 1_000_000)")
+    }
+
+    /// A line over the page (the editor's banner, or one like it over a
+    /// document), until its OK. Made from here: neither page has a call for it.
+    private func showNotice(_ text: String) {
+        web.evaluateJavaScript("""
+            (function(t,ok){var o=document.getElementById('banner');if(o)o.remove();
+            var b=document.createElement('div');b.id='banner';var s=document.createElement('span');s.textContent=t;b.appendChild(s);
+            var k=document.createElement('button');k.textContent=ok;k.onclick=function(){b.remove();};b.appendChild(k);
+            document.body.appendChild(b);})(\(Self.jsString(text)), \(Self.jsString(L10n.t("OK"))))
+            """)
     }
 
     // MARK: Style
@@ -1435,6 +1578,11 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         .image-view img { max-width: 100%; max-height: calc(100vh - 76px); object-fit: contain;
           background: repeating-conic-gradient(var(--l2) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
         \(DiffRenderer.css(dark: dark))
+        #banner { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 10; display: flex; gap: 10px; align-items: center;
+          padding: 8px 12px; border-radius: 10px; font: 12.5px var(--sans); background: var(--code-bg); color: var(--t1);
+          box-shadow: 0 0 0 1px var(--l3), 0 6px 20px rgba(0,0,0,.25); }
+        #banner span { flex: 1; }
+        #banner button { font: inherit; color: inherit; background: var(--l2); border: 0; border-radius: 6px; padding: 4px 10px; }
         .md .table { margin: 0 0 16px; overflow-x: auto; }
         .md table { border-collapse: collapse; font-size: 13.5px; line-height: 1.5; }
         .md th, .md td { padding: 5px 16px 5px 0; border-bottom: 1px solid var(--l1); text-align: left; vertical-align: top; }
