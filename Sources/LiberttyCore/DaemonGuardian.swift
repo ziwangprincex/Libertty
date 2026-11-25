@@ -79,17 +79,18 @@ enum DaemonGuardian {
     private static func recover(_ sessions: [Held], socket: String) -> Never {
         // Gone, or did it only hang up on us? Its lock says: it lets go of it
         // as it goes (maybe a moment after the socket, maybe later while the
-        // system writes its crash report).
+        // system writes its crash report). Once we have it we keep it, for
+        // the liberttyd we start to have (`--locked`): one started meanwhile
+        // (a host's windows reconnecting, a new tab) can't take it between
+        // the two of us, and serve without these sessions.
         let lockFD = open(socket + ".lock", O_RDWR | O_CLOEXEC)
+        var locked = false
         if lockFD >= 0 {
-            var free = false
             for _ in 0..<1000 {
-                if flock(lockFD, LOCK_EX | LOCK_NB) == 0 { free = true; break }
+                if flock(lockFD, LOCK_EX | LOCK_NB) == 0 { locked = true; break }
                 usleep(10_000)
             }
-            flock(lockFD, LOCK_UN)
-            sysClose(lockFD)
-            guard free else {
+            guard locked else {
                 log("liberttyd hung up but still runs: it keeps its \(sessions.count) sessions")
                 exit(0)
             }
@@ -109,7 +110,10 @@ enum DaemonGuardian {
         env["LIBERTTY_DAEMON_SOCKET"] = socket
         var left = sessions
         for _ in 0..<maxRecoveries where !left.isEmpty {
-            guard let (c, _) = spawn(["liberttyd", "--recover"], env: env) else { break }
+            // The lock as its descriptor 3: it shares our hold of it, which
+            // outlasts us once it has it.
+            guard let (c, _) = spawn(["liberttyd", "--recover"] + (locked ? ["--locked"] : []), env: env,
+                                     passing: locked ? lockFD : -1) else { break }
             // The first run of a binary the system hasn't checked yet can take long.
             c.setReceiveTimeout(60)
             left = handOver(left, on: c)
@@ -139,9 +143,10 @@ enum DaemonGuardian {
         return []
     }
 
-    /// Start this program with `arguments`, a socket to it on its stdin,
-    /// logging where we do: the socket, and its pid.
-    static func spawn(_ arguments: [String], env: [String: String], responsible: Bool? = nil) -> (Connection, pid_t)? {
+    /// Start this program with `arguments`, a socket to it on its stdin
+    /// (and `passing` as its descriptor 3), logging where we do: the socket, and its pid.
+    static func spawn(_ arguments: [String], env: [String: String], responsible: Bool? = nil,
+                      passing descriptor: Int32 = -1) -> (Connection, pid_t)? {
         guard let executable = currentExecutablePath() else { return nil }
         var pair: [Int32] = [-1, -1]
         guard libertty_socketpair(&pair) == 0 else { return nil }
@@ -154,7 +159,8 @@ enum DaemonGuardian {
             argv.forEach { free($0) }
             envp.forEach { free($0) }
         }
-        let pid = libertty_spawn_detached_stdin(executable, &argv, &envp, DaemonServer.logPath(), answers ? 1 : 0, pair[1])
+        let pid = libertty_spawn_detached_stdin(executable, &argv, &envp, DaemonServer.logPath(), answers ? 1 : 0,
+                                                pair[1], descriptor)
         let failure = errno
         sysClose(pair[1])
         let c = Connection(fd: pair[0])

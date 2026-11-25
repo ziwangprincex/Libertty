@@ -84,10 +84,21 @@ public final class DaemonServer {
             }
         } else if arguments.contains("--recover") {
             // Started by the guardian of a liberttyd that went away: the lock
-            // first (another liberttyd may have been started meanwhile), then
-            // the sessions, from the guardian on stdin.
+            // first, then the sessions, from the guardian on stdin. The
+            // guardian took the lock when it saw that one gone and hands it
+            // on, held (descriptor 3, `--locked`), so no liberttyd started
+            // meanwhile can have it. Else (an older guardian) it may have
+            // to wait for it.
+            var held = false
+            if arguments.contains("--locked") {
+                var passed = stat(), lock = stat()
+                held = fstat(3, &passed) == 0 && fstat(lockFD, &lock) == 0 && passed.st_dev == lock.st_dev
+                    && passed.st_ino == lock.st_ino && flock(3, LOCK_EX | LOCK_NB) == 0
+                // (None of the programs it starts may hold it once it's gone.)
+                if held { _ = fcntl(3, F_SETFD, FD_CLOEXEC) }
+            }
             var tries = 0
-            while flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+            while !held, flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
                 tries += 1
                 if tries > 500 { log("recover: another liberttyd serves \(path)"); exit(1) }
                 usleep(10_000)
