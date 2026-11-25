@@ -205,7 +205,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         // Programs still running that no saved window holds (the layout was
         // saved before they started, or isn't restored): a window of tabs.
-        let shown = Set(controllers.flatMap(\.persistentSessionIDs))
+        // Not the Quick Terminal's: it attaches that one when it comes down.
+        let shown = Set(allControllers.flatMap(\.persistentSessionIDs) + [QuickTerminal.shared.sessionToAttach].compactMap { $0 })
         let orphans = sessions.filter { !shown.contains($0.id) && $0.clients == 0 }
         guard !orphans.isEmpty else { return }
         let saved = SavedWindow(frame: "", sidebar: config.windowSidebar, inspector: config.windowInspector, fontSize: nil,

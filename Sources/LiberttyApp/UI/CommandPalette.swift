@@ -599,9 +599,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         }
         // (Panes come first, from `panes()`: tabs are reached through them.)
         // Sessions this Mac's liberttyd keeps that no window shows (a host's
-        // window shows that machine's sessions only: not these).
+        // window shows that machine's sessions only: not these), but the
+        // Quick Terminal's, not down yet: it attaches that one itself.
         if Persistence.enabled, controller?.host == nil, let sessions = DaemonClient.sessions() {
-            for s in sessions where s.clients == 0 {
+            let quick = QuickTerminal.shared.sessionToAttach
+            for s in sessions where s.clients == 0 && s.id != quick {
                 let dir = SessionInfo.directory(fromPwd: s.workingDirectory).map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
                 out.append(Item(title: "Show Session \(s.id)", subtitle: [s.title, dir].filter { !$0.isEmpty }.joined(separator: " · "),
                                 symbol: "rectangle.stack", kind: .session) { controller?.attachTab(s.id, on: nil) })

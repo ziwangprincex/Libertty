@@ -24,6 +24,13 @@ final class QuickTerminal {
     /// Its window, once it has come down (Go to Pane lists its panes).
     var windowController: TerminalWindowController? { controller }
 
+    /// The liberttyd session it attaches when it first comes down (kept
+    /// from last time); nil once it has. Until then no window shows it,
+    /// yet it's this one's: no other window is to show it or list it.
+    var sessionToAttach: String? {
+        controller == nil ? UserDefaults.standard.string(forKey: Self.sessionKey) : nil
+    }
+
     func toggle() {
         if isVisible, controller?.window?.isKeyWindow == true { hide(restoreFocus: true) } else { show() }
     }
