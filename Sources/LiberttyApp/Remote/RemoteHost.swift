@@ -302,7 +302,7 @@ final class RemoteHost: @unchecked Sendable {
         if waiting { return nil }
         // While the host is down, don't try every quarter second.
         if let last, Date().timeIntervalSince(last.time) < 3 { return nil }
-        return try? prepare()
+        return try? prepareHeld()
     }
 
     /// The user asked to try again (after fixing what was wrong).
@@ -330,8 +330,17 @@ final class RemoteHost: @unchecked Sendable {
 
     /// Reach the host, install or update Libertty's helper there if needed, and
     /// make sure its liberttyd runs (blocking; not on the main thread).
+    /// After a setup already under way (a window reconnecting meanwhile),
+    /// never beside it: one password prompt at a time, one install.
     @discardableResult
     func prepare(progress: (String) -> Void = { _ in }) throws -> Info {
+        prepareLock.lock()
+        defer { prepareLock.unlock() }
+        return try prepareHeld(progress: progress)
+    }
+
+    /// `prepare`, under `prepareLock`.
+    private func prepareHeld(progress: (String) -> Void = { _ in }) throws -> Info {
         resolveHostOptions()
         stateLock.withLock { connecting = true }
         statusChanged()

@@ -26,7 +26,28 @@ extension ProbeLauncher {
             if !ok { failed.append(name) }
         }
         do {
+            // Set up twice at once (Connect to Host… while a window
+            // reconnects): the second waits for the first and finds the
+            // helper installed. Counted under fake-ssh, which notes what it
+            // runs there, from a home with no helper yet.
+            let fake = ProcessInfo.processInfo.environment["FAKE_SSH_HOME"]
+            let commands = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-remote-probe-\(getpid()).txt")
+            if let fake {
+                try? FileManager.default.removeItem(atPath: fake + "/VERSION")
+                setenv("FAKE_SSH_COMMANDS", commands.path, 1)
+            }
+            let together = DispatchGroup()
+            DispatchQueue.global().async(group: together) { _ = try? host.prepare() }
             let info = try host.prepare { print("progress: \($0)") }
+            together.wait()
+            if let fake {
+                let ran = (try? String(contentsOf: commands, encoding: .utf8)) ?? ""
+                let installs = ran.split(separator: "\n").filter { $0.contains("tar xzf") }.count
+                check("set up twice at once, installed once", installs == 1
+                    && !FileManager.default.fileExists(atPath: fake + "/bin/bin"))
+                unsetenv("FAKE_SSH_COMMANDS")
+                try? FileManager.default.removeItem(at: commands)
+            }
             print("host: \(info.os) \(info.arch) terminfo=\(info.terminfo) shell=\((info.shell as NSString).lastPathComponent)")
             let size = GridSize(cols: 60, rows: 12, widthPx: 600, heightPx: 240)
             let session = try TerminalSession(size: size)
