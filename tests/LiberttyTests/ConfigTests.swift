@@ -87,6 +87,25 @@ struct ConfigTests {
         #expect(Config.duration("5x") == nil)
     }
 
+    /// `notify-on-command-finish-after = 1e20` once trapped (Int(1e20)) on
+    /// every ⌘⇧P, in Settings ▸ Notifications and in +show-config.
+    @Test func hugeDurationsDontTrap() {
+        let week = 7.0 * 24 * 3600
+        #expect(Config.duration("1e20") == week)
+        #expect(Config.duration(String(repeating: "9", count: 30) + "h") == week)
+        for text in ["inf", "-inf", "nan", "1e400", String(repeating: "9", count: 400), "-5"] {
+            #expect(Config.duration(text) == nil, "\(text)")
+        }
+        var c = Config()
+        #expect(c.set("notify-on-command-finish-after", "1e20") == nil)
+        #expect(c.values(of: "notify-on-command-finish-after") == ["604800s"])
+        #expect(c.set("notify-on-command-finish-after", "inf") != nil)
+        c.notifyOnCommandFinishAfter = 1e20
+        #expect(c.values(of: "notify-on-command-finish-after") == ["1e+20s"])
+        // Every key reads back, at once, without a trap.
+        for (key, _) in Config.documentation { _ = c.values(of: key) }
+    }
+
     @Test func programStates() throws {
         #expect(try Config.states("blocked,done").get() == [.blocked, .done])
         #expect(try Config.states("none").get().isEmpty)

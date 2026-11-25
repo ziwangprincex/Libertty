@@ -550,7 +550,11 @@ struct Config: Equatable {
     /// Current values in config syntax. Repeatable keys give one string per line.
     func values(of key: String) -> [String] {
         func color(_ c: RGB?) -> [String] { [c?.hexString ?? ""] }
-        func num(_ d: Double) -> String { d == d.rounded() ? String(Int(d)) : String(d) }
+        // (Int(exactly:): a whole number past any Int, which Int(_:) traps on, prints as a Double.)
+        func num(_ d: Double) -> String {
+            if d == d.rounded(), let whole = Int(exactly: d) { return String(whole) }
+            return String(d)
+        }
         switch key {
         case "theme": return [theme.configString]
         case "font-family": return fontFamilies
@@ -731,9 +735,12 @@ struct Config: Equatable {
         return breaks ? "a line break or control character (a value is one line)" : nil
     }
 
-    /// "10", "10s", "2m", "1h", "1m30s" → seconds.
+    /// "10", "10s", "2m", "1h", "1m30s" → seconds, a week at most: no
+    /// setting waits longer, and a number past what an Int holds trapped
+    /// where it was printed (values(of:)). Infinity is no duration.
     static func duration(_ text: String) -> Double? {
-        if let n = Double(text), n >= 0 { return n }
+        func held(_ seconds: Double) -> Double? { seconds.isFinite && seconds >= 0 ? min(seconds, 7 * 24 * 3600) : nil }
+        if let n = Double(text) { return held(n) }
         var total = 0.0, number = ""
         for ch in text {
             if ch.isNumber || ch == "." { number.append(ch); continue }
@@ -746,7 +753,7 @@ struct Config: Equatable {
             }
             number = ""
         }
-        return number.isEmpty ? total : nil
+        return number.isEmpty ? held(total) : nil
     }
 
     /// Parse config text. Unknown keys and bad values are reported, not
