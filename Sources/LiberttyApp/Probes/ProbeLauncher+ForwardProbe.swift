@@ -166,6 +166,29 @@ extension ProbeLauncher {
             check("every forward closed", forwarder.forwards(on: destination).isEmpty && forwarder.all.isEmpty)
             check("…and their ports are free", wait(5) { !PortForward.isListening(quiet) && !PortForward.isListening(mine) })
 
+            // A host slow to answer a forward (a `-R` waits for its far side)
+            // holds up only its own: another host's forward is made meanwhile.
+            let slow = RemoteHost.named(destination + "-slow")
+            _ = try slow.prepare()
+            let stall = dir.appendingPathComponent("stall")
+            try? slow.destination.write(to: stall, atomically: true, encoding: .utf8)
+            setenv("FAKE_SSH_STALL", stall.path, 1)
+            let slowDone = DispatchSemaphore(value: 0)
+            let slowPort = PortForward.freePort(preferring: 0) ?? 1
+            DispatchQueue.global().async {
+                _ = try? forwarder.share(local: slowPort, on: slow)
+                slowDone.signal()
+            }
+            _ = wait(5) { fm.fileExists(atPath: stall.path + ".started") }
+            let began = Date()
+            _ = try forwarder.open(remote: quiet, on: host)
+            check("a stalled host holds up no other host's forwards", Date().timeIntervalSince(began) < 3)
+            try? fm.removeItem(at: stall)
+            unsetenv("FAKE_SSH_STALL")
+            check("…and has its own once it answers", slowDone.wait(timeout: .now() + 10) == .success
+                && forwarder.forwards(on: slow.destination).contains { $0.local == slowPort })
+            forwarder.closeAll()
+
             stopServer()
             print(failed.isEmpty ? "forward-probe: all passed" : "forward-probe failed: \(failed)")
             exit(failed.isEmpty ? 0 : 1)

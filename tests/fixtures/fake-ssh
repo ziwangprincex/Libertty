@@ -77,6 +77,17 @@ if [ "$control" = forward ] || [ "$control" = cancel ]; then
     echo "Warning: remote port forwarding failed for listen port $remote_port" >&2
     exit 255
   fi
+  # $FAKE_SSH_STALL names a file: while it's there, the host named in it is
+  # slow to answer a forward (as one waiting on its far side would be), for
+  # up to 6 s; $FAKE_SSH_STALL.started says it began.
+  if [ -n "$FAKE_SSH_STALL" ] && [ -e "$FAKE_SSH_STALL" ] && [ "$(cat "$FAKE_SSH_STALL")" = "$host" ]; then
+    touch "$FAKE_SSH_STALL.started"
+    i=0
+    while [ -e "$FAKE_SSH_STALL" ] && [ $i -lt 120 ]; do
+      sleep 0.05
+      i=$((i + 1))
+    done
+  fi
   ready="$FAKE_SSH_FORWARDS.ready.$$"
   rm -f "$ready"
   python3 -I "$(dirname "$0")/fake-ssh-relay.py" "$local_port" "$remote_port" "$ready" \
