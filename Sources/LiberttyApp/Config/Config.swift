@@ -1620,8 +1620,16 @@ final class ConfigStore {
                       !isGlobal else { return false }
                 return keys == old.map { [$0] } || keys == new.map { [$0] } || a == action
             }
-            if let old, Keybinds(entries: []).local.contains(where: { $0.trigger == old }) {
-                Self.append("keybind = \(old.configString)=unbind", to: &lines)
+            // Every key the action still has goes too: a default's second
+            // (⌘↩ and ⌃⌘F both toggle full screen) would stay the action's,
+            // shown in the menu and the recorder in place of the new one.
+            let left = Keybinds(entries: lines.compactMap { Self.key(of: $0) == "keybind" ? Self.value(of: $0) : nil })
+            var unbound = left.local.filter { $0.action == action }.map(\.trigger)
+            if let old, !unbound.contains(old), Keybinds(entries: []).local.contains(where: { $0.trigger == old }) {
+                unbound.append(old)
+            }
+            for trigger in unbound where trigger != new {
+                Self.append("keybind = \(trigger.configString)=unbind", to: &lines)
             }
             if let new { Self.append("keybind = \(new.configString)=\(action.configString)", to: &lines) }
         }

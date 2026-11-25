@@ -238,6 +238,36 @@ struct ConfigFileTests {
         #expect(store.savedConfig.keybinds == ["cmd+j=new_window", "cmd+b=close_tab"])
     }
 
+    /// A shortcut recorded for an action with two keys by default (⌘↩ and
+    /// ⌃⌘F for full screen) is its only key: the other default once stayed,
+    /// shown in the menu and the recorder, and Delete took two presses.
+    @Test func aRecordedShortcutIsTheActionsOnlyKey() throws {
+        let (store, file) = try store("font-size = 13\n")
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let shiftF = try #require(Trigger("cmd+shift+f"))
+        store.rebind(.toggleFullscreen, from: store.keybinds.trigger(for: .toggleFullscreen), to: shiftF)
+        #expect(store.keybinds.trigger(for: .toggleFullscreen) == shiftF)
+        #expect(store.keybinds.local.filter { $0.action == .toggleFullscreen }.map(\.trigger) == [shiftF])
+        // Recorded again: still one key, and the file a line for each.
+        let altG = try #require(Trigger("cmd+alt+g"))
+        store.rebind(.toggleFullscreen, from: store.keybinds.trigger(for: .toggleFullscreen), to: altG)
+        #expect(store.keybinds.local.filter { $0.action == .toggleFullscreen }.map(\.trigger) == [altG])
+        #expect(try String(contentsOf: file, encoding: .utf8) == """
+            font-size = 13
+            keybind = cmd+enter=unbind
+            keybind = ctrl+cmd+f=unbind
+            keybind = alt+cmd+g=toggle_fullscreen
+
+            """)
+        // Delete, once: no key left.
+        store.rebind(.previousTab, from: store.keybinds.trigger(for: .previousTab), to: nil)
+        #expect(store.keybinds.trigger(for: .previousTab) == nil)
+        // A default's own key recorded keeps only that one.
+        let tab = try #require(Trigger("ctrl+tab"))
+        store.rebind(.nextTab, from: store.keybinds.trigger(for: .nextTab), to: tab)
+        #expect(store.keybinds.local.filter { $0.action == .nextTab }.map(\.trigger) == [tab])
+    }
+
     /// A config kept with your dotfiles, linked into ~/.config/libertty: a
     /// change in Settings is written there, and the link stays a link.
     @Test func aLinkedConfigStaysLinked() throws {
