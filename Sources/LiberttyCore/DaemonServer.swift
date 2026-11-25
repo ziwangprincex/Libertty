@@ -419,8 +419,9 @@ public final class DaemonServer {
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
                 // `format` is newer than capture: an older app asks for plain text by leaving it out.
                 let format = (json["format"] as? String).flatMap(Snapshots.TextFormat.init) ?? .plain
-                connection.send(.result, json: ["ok": true, "format": format.rawValue,
-                                                "text": s.capture(scrollback: json["scrollback"] as? Bool ?? false, format: format)])
+                let sent = connection.send(.result, json: ["ok": true, "format": format.rawValue,
+                                                           "text": s.capture(scrollback: json["scrollback"] as? Bool ?? false, format: format)])
+                if !sent { fail("the capture is too big to send") }
             case .sendKey:
                 let json = frame.json
                 guard let id = json["id"] as? String, let s = session(id) else { fail("no such session"); continue }
@@ -1227,7 +1228,7 @@ final class DaemonSession {
             header["recovered"] = true
             outbox.send(.attached, Connection.headed(header, body: UnsafeRawBufferPointer(start: nil, count: 0)))
             queue.asyncAfter(deadline: .now() + Self.attachWait) { [weak self] in self?.restore(nil, from: nil) }
-        } else if sendSnapshot, let snapshot = Snapshots.encode(terminal) {
+        } else if sendSnapshot, let snapshot = Snapshots.encode(terminal, fitting: Snapshots.maxBytes) {
             header["snapshot"] = true
             outbox.send(.attached, snapshot.withUnsafeBytes { Connection.headed(header, body: $0) })
         } else {
@@ -1269,9 +1270,9 @@ final class DaemonSession {
     private var catchUps = 0
 
     /// Our state for a window catching up: a snapshot, its kitty images
-    /// included (under `lock`).
+    /// included (as many as fit in the frame; under `lock`).
     private func catchUpFrames() -> [(Wire.Kind, Data)] {
-        guard let snapshot = Snapshots.encode(terminal) else { return [] }
+        guard let snapshot = Snapshots.encode(terminal, fitting: Snapshots.maxBytes) else { return [] }
         return [(.snapshot, snapshot)]
     }
 
@@ -1558,7 +1559,9 @@ final class DaemonSession {
         clients.forEach { $0.hangUp() }  // they redial the new liberttyd
         clients = []
         primary = nil
-        let snapshot = Snapshots.encode(terminal) ?? Data()
+        // One that fits in the handoff frame: a frame too big to send would
+        // end the takeover, and every session with it.
+        let snapshot = Snapshots.encode(terminal, fitting: Snapshots.maxBytes) ?? Data()
         // Still waiting for a window's screen: the new one waits instead.
         let header = handoffHeader()
         awaitingRestore = false
@@ -1659,8 +1662,39 @@ public enum Snapshots {
         return Data(bytes: ptr, count: len)
     }
 
+    /// The most a snapshot may be: one frame, with room for a header beside it.
+    public static let maxBytes = Wire.maxFrame - (1 << 20)
+
+    /// `terminal`'s snapshot, made to fit in a frame (`fitting`).
+    public static func encode(_ terminal: GhosttyTerminal, fitting limit: Int) -> Data? {
+        encode(terminal).flatMap { fitting($0, limit: limit) }
+    }
+
+    /// A snapshot of at most `limit` bytes: as it is when it fits, else
+    /// with only as many of its newest kitty images as fit beside the rest
+    /// (their pixels go raw, up to 320 MB a screen: a frame too big to send
+    /// would leave a window unable to attach at all). The screen and its
+    /// scrollback come first; nil when even they don't fit.
+    public static func fitting(_ snapshot: Data, limit: Int = maxBytes) -> Data? {
+        guard snapshot.count > limit else { return snapshot }
+        guard let bare = reencoded(snapshot, imageLimit: 0), bare.count <= limit else { return nil }
+        // What's left, shared by the two screens (each keeps its own images).
+        let room = UInt64(limit - bare.count) / 2
+        guard room > 0, let some = reencoded(snapshot, imageLimit: room), some.count <= limit else { return bare }
+        return some
+    }
+
+    /// The snapshot again, from a terminal restored keeping `imageLimit`
+    /// bytes of images a screen (the newest; 0: none).
+    private static func reencoded(_ snapshot: Data, imageLimit: UInt64) -> Data? {
+        guard let terminal = decode(snapshot, trackContinuation: true, imageLimit: imageLimit) else { return nil }
+        defer { ghostty_terminal_free(terminal) }
+        return encode(terminal)
+    }
+
     /// A terminal restored from `data`, or nil if it doesn't decode.
-    public static func decode(_ data: Data, trackContinuation: Bool) -> GhosttyTerminal? {
+    public static func decode(_ data: Data, trackContinuation: Bool,
+                              imageLimit: UInt64 = KittyGraphics.storageLimit) -> GhosttyTerminal? {
         data.withUnsafeBytes { raw -> GhosttyTerminal? in
             guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return nil }
             var decoder: GhosttySnapshotDecoder?
@@ -1673,7 +1707,7 @@ public enum Snapshots {
             var compress = true
             _ = ghostty_snapshot_decoder_set(decoder, GHOSTTY_SNAPSHOT_DECODER_OPT_COMPRESS_HISTORY, &compress)
             // Its images: libghostty's default keeps only 10 MB of them.
-            var limit = KittyGraphics.storageLimit
+            var limit = imageLimit
             _ = ghostty_snapshot_decoder_set(decoder, GHOSTTY_SNAPSHOT_DECODER_OPT_KITTY_IMAGE_STORAGE_LIMIT, &limit)
             var terminal: GhosttyTerminal?
             guard ghostty_snapshot_decoder_decode(decoder, &terminal) == GHOSTTY_SUCCESS else { return nil }

@@ -134,4 +134,39 @@ struct SnapshotTests {
         defer { ghostty_terminal_free(restored) }
         #expect(images(restored, upTo: 4) == [1, 2, 3, 4])
     }
+
+    /// A snapshot too big for a frame (images' raw pixels: up to 320 MB a
+    /// screen) keeps its screen and as many of its newest images as fit.
+    @Test func aSnapshotFitsInAFrame() throws {
+        let source = terminal(images: 4, side: 1024)
+        defer { ghostty_terminal_free(source) }
+        Array("kept\r\n".utf8).withUnsafeBufferPointer { ghostty_terminal_vt_write(source, $0.baseAddress, $0.count) }
+        let full = try #require(Snapshots.encode(source))
+        #expect(Snapshots.fitting(full, limit: full.count) == full)
+        let limit = 10 << 20
+        let fitted = try #require(Snapshots.encode(source, fitting: limit))
+        #expect(fitted.count <= limit && fitted.count < full.count)
+        let restored = try #require(Snapshots.decode(fitted, trackContinuation: false))
+        defer { ghostty_terminal_free(restored) }
+        let kept = images(restored, upTo: 4)
+        #expect(!kept.isEmpty && kept.contains(4) && !kept.contains(1))
+        #expect(Snapshots.plainText(restored, scrollback: true).contains("kept"))
+        // Not even the screen fits: none.
+        #expect(Snapshots.fitting(full, limit: 16) == nil)
+    }
+
+    /// A frame bigger than the other side takes isn't sent (it would hang
+    /// up on it as garbage): the send fails, and the connection goes on.
+    @Test func noFrameOverTheLimit() throws {
+        var fds: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        let (a, b) = (Connection(fd: fds[0]), Connection(fd: fds[1]))
+        // (Never touched: it's refused for its size.)
+        let huge = UnsafeMutableRawPointer.allocate(byteCount: Wire.maxFrame, alignment: 16)
+        defer { huge.deallocate() }
+        #expect(!a.send(.snapshot, UnsafeRawBufferPointer(start: huge, count: Wire.maxFrame)))
+        #expect(a.send(.list, json: ["after": 1]))
+        let frame = try #require(b.receive())
+        #expect(frame.kind == .list && frame.json["after"] as? Int == 1)
+    }
 }

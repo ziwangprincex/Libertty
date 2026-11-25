@@ -373,8 +373,11 @@ public final class Connection {
 
     // MARK: Sending
 
+    /// False, and nothing sent, for a frame bigger than Wire.maxFrame: the
+    /// other side would take it for garbage and hang up.
     @discardableResult
     public func send(_ kind: Wire.Kind, _ payload: UnsafeRawBufferPointer) -> Bool {
+        guard payload.count < Wire.maxFrame else { return false }
         var header = [UInt8](repeating: 0, count: 5)
         let length = UInt32(payload.count + 1)
         withUnsafeBytes(of: length.littleEndian) { for i in 0..<4 { header[i] = $0[i] } }

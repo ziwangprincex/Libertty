@@ -362,8 +362,11 @@ public final class RemotePTY: TerminalBackend {
             if settled(c) { return false }
             if recovered {
                 // Its screen went with the liberttyd that crashed: ours is
-                // still right (it waited for us), so we keep it and give it back.
-                if let mine = queue.sync(execute: { onRecovered?() }) { _ = c.send(.restore, mine) }
+                // still right (it waited for us), so we keep it and give it back
+                // (as much of it as one frame takes).
+                if let mine = queue.sync(execute: { onRecovered?() }).flatMap({ Snapshots.fitting($0) }) {
+                    _ = c.send(.restore, mine)
+                }
             } else {
                 // Before reading on: output from the old connection still queued
                 // applies first, and nothing from the new one can land in a
