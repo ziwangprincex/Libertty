@@ -1036,14 +1036,20 @@ struct ShortcutsPage: View {
 struct ThemesPage: View {
     @ObservedObject var model: SettingsModel
 
+    /// The page's sections under the theme cards: found by their controls,
+    /// not their titles, which are in the interface's language.
+    static var sectionsBelowCards: [(title: String, rows: [SettingsForm.Row])] {
+        SettingsForm.sections(of: .themes).filter { !$0.rows.contains { ["themes-light", "themes-dark"].contains($0.id) } }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             Form {
                 ThemeModeSection(model: model, dark: false)
                 ThemeModeSection(model: model, dark: true)
-                ForEach(["Extended Palette", "Import Theme"], id: \.self) { title in
-                    Section(title) {
-                        ForEach(SettingsRegistry.items(on: .themes).filter { $0.section == title }) { item in
+                ForEach(Self.sectionsBelowCards, id: \.title) { section in
+                    Section(section.title) {
+                        ForEach(section.rows.flatMap(\.items)) { item in
                             SettingsRow(model: model, item: item)
                                 .modifier(SearchHighlight(on: model.target == item.id))
                                 .id(item.id)

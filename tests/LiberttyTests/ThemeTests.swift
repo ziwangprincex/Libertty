@@ -52,6 +52,52 @@ struct ThemeTests {
         #expect(t.fullPalette[16] == t.background)
     }
 
+    /// Settings ▸ Themes ▸ Import keeps what the Theme Editor keeps: a
+    /// theme's cursor text, selected text, colors 16–255 and
+    /// palette-generate were left out of the file it wrote.
+    @Test @MainActor func settingsImportKeepsEveryColor() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("themes-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("Probe")
+        try """
+            background = #101010
+            foreground = #eeeeee
+            cursor-text = #202020
+            selection-foreground = #e0e0e0
+            palette = 3=#333333
+            palette = 200=#c8c8c8
+            palette-generate = true
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let ghostty = Theme.parse(name: "Probe", text: try #require(SettingsModel.themeFile(importing: file, name: "Probe")))
+        #expect(ghostty.cursorText == RGB(0x20, 0x20, 0x20))
+        #expect(ghostty.selectionForeground == RGB(0xe0, 0xe0, 0xe0))
+        #expect(ghostty.ansi[3] == RGB(0x33, 0x33, 0x33))
+        #expect(ghostty.extendedPalette == [200: RGB(200, 200, 200)])
+        #expect(ghostty.paletteGenerate)
+        // An iTerm2 preset's cursor text and selected text.
+        func color(_ r: Double, _ g: Double, _ b: Double) -> [String: Double] {
+            ["Red Component": r, "Green Component": g, "Blue Component": b]
+        }
+        let plist: [String: Any] = ["Background Color": color(0, 0, 0), "Foreground Color": color(1, 1, 1),
+                                    "Cursor Text Color": color(0, 0, 1), "Selected Text Color": color(0, 1, 0)]
+        let preset = dir.appendingPathComponent("Probe.itermcolors")
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: preset)
+        let iterm = Theme.parse(name: "Probe", text: try #require(SettingsModel.themeFile(importing: preset, name: "Probe")))
+        #expect(iterm.cursorText == RGB(0, 0, 255))
+        #expect(iterm.selectionForeground == RGB(0, 255, 0))
+        #expect(SettingsModel.themeFile(importing: dir.appendingPathComponent("none"), name: "None") == nil)
+    }
+
+    /// A theme deleted in the Theme Editor: only the half of `theme` that
+    /// used it goes back to the default (the other was reset too).
+    @Test @MainActor func deletingAThemeResetsOnlyItsHalf() throws {
+        let both = try #require(ThemeSpec("light:Mine,dark:Nord"))
+        #expect(ThemeEditor.theme(both, without: "Mine") == ThemeSpec(light: Config().theme.light, dark: "Nord"))
+        #expect(ThemeEditor.theme(both, without: "Nord") == ThemeSpec(light: "Mine", dark: Config().theme.dark))
+        #expect(ThemeEditor.theme(try #require(ThemeSpec("Mine")), without: "Mine") == Config().theme)
+    }
+
     @Test func configCoversTheThemesColors() {
         var c = Config()
         #expect(c.set("cursor-text", "#0a0b0c") == nil)

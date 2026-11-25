@@ -1074,5 +1074,8 @@
   "You marked it unread, to come back to": "你标为了未读，打算回头再看",
   "Something happened here since you last looked": "你上次看过之后，这里有了新动静",
   "The queue is paused: the agent exited, and the next prompt would go to the shell. Resume": "队列已暂停：代理已退出，下一条提示会发给 shell。继续",
-  "The diff is cut short: it's over %@ MB. `git diff` in a terminal shows all of it.": "这份 diff 超过 %@ MB，只显示了前面一部分。在终端里运行 `git diff` 可看完整内容。"
+  "The diff is cut short: it's over %@ MB. `git diff` in a terminal shows all of it.": "这份 diff 超过 %@ MB，只显示了前面一部分。在终端里运行 `git diff` 可看完整内容。",
+  "Bell": "响铃",
+  "%@ narrower": "变窄 %@",
+  "+%@ wider": "加宽 %@"
 }

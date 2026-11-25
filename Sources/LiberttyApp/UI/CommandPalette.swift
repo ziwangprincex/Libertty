@@ -640,9 +640,10 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // Settings gives it and the words Search knows it by. Listed with
         // the settings, so a search finds one and an empty palette has none.
         for item in SettingsRegistry.items {
-            // (A switch is on unless its value is the off one, as Settings reads it.)
+            // (A switch is on unless its value is the off one, or none, as Settings reads it.)
             guard let key = item.key, case .toggle(let onValue, let offValue) = item.kind else { continue }
-            let on = (config.values(of: key).first ?? "") != offValue
+            let now = config.values(of: key).first ?? ""
+            let on = now != offValue && !now.isEmpty
             let action = Action.toggleSetting(key)
             var row = Item(title: L10n.t(on ? "Turn Off" : "Turn On") + " " + item.title, subtitle: key,
                            symbol: on ? "checkmark.square" : "square", kind: .setting,
