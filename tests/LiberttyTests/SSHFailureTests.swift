@@ -383,4 +383,24 @@ struct SSHAgentTests {
         // An agent that isn't on this Mac: no option, so ssh keeps its own way.
         #expect(SSHAgent.options(for: "devbox", setting: .custom("/nowhere/at/all.sock")).isEmpty)
     }
+
+    /// ssh splits an option's value into words: 1Password's socket, in
+    /// "Group Containers", has to reach it quoted, as one path.
+    @Test func aPathWithASpaceIsOneWord() throws {
+        let socket = NSHomeDirectory() + "/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+        #expect(SSHAgent.identityAgentOption(socket) == "IdentityAgent=\"" + socket + "\"")
+        #expect(SSHAgent.identityAgentOption("/a\"b\\c") == #"IdentityAgent="/a\"b\\c""#)
+        // As ssh itself reads it.
+        let ssh = Process()
+        ssh.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        ssh.arguments = ["-G", "-F", "/dev/null", "-o", SSHAgent.identityAgentOption(socket), "localhost"]
+        let out = Pipe()
+        ssh.standardOutput = out
+        ssh.standardError = Pipe()
+        try ssh.run()
+        let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        ssh.waitUntilExit()
+        #expect(ssh.terminationStatus == 0)
+        #expect(text.split(separator: "\n").contains { $0 == "identityagent " + socket })
+    }
 }

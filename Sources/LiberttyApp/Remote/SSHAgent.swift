@@ -362,7 +362,15 @@ extension SSHAgent {
         // Any IdentityAgent the config sets for the host stands, SSH_AUTH_SOCK
         // too (ssh -G says it only when the config does).
         if configuredAgent(for: destination) != nil { return [] }
-        return ["-o", "IdentityAgent=" + socket]
+        return ["-o", identityAgentOption(socket)]
+    }
+
+    /// `IdentityAgent="PATH"`: ssh splits an option's value into words, so
+    /// a path with a space in it (1Password's, under Group Containers) is
+    /// quoted, a quote or backslash in it escaped.
+    static func identityAgentOption(_ socket: String) -> String {
+        let escaped = socket.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "IdentityAgent=\"" + escaped + "\""
     }
 
     /// Run a tool and read all it said, with a deadline so a hung agent

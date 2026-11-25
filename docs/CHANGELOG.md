@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.7
+
+> A bug hunt through the whole app: the security holes, crashes and ways to lose work it found are closed — from remote-control and the config file to liberttyd on shared Linux hosts, completions, the prompt queue, documents and undo.
+
+- **Security**
+  - On a Linux host, liberttyd's folder in `/tmp` must be yours alone: one another user made first, or a link, isn't used, and a `libertty` command talks only to a liberttyd of its own user. Old uploads are never cleared through a link.
+  - `remote-control = false` lets programs in only to read: a request of a kind Libertty doesn't know is refused, where it used to run its action. With it off, `+set`, `+unset` and `+import-ghostty` are refused to programs too (Settings and the config file still change everything).
+  - `browser-automation`, `remote-control` and `config-file` stay yours to change: no `+action set_setting:…`, request, script or key bound by a program sets them, and a value with a line break in it can't slip a second line into the config file.
+  - A completion never types a name with a control character in it (a package.json script whose name holds a newline would have run its second line), and script, branch and file names are escaped inside quotes as well as outside.
+  - Prompts queued for an agent that exits wait, paused, instead of going to the shell.
+  - A rendered document (a README) goes nowhere nobody clicked: no redirect, no form sending what you typed elsewhere, no `target=_blank` link opening a script without asking.
+  - Conversation IDs that start with `-` aren't typed into `claude --resume`; the update dialog's notes link only to GitHub over https.
+- **Crashes**: a huge `notify-on-command-finish-after` (1e20, inf) crashed the command palette; ssh ending mid-upload of the host helper took Libertty down; a flood of OSC 7502 surfaces, an inline surface as a program switched screens, a very long Markdown paragraph, a bad Web Access frame, a remote liberttyd's out-of-range numbers, and `--timeout inf` or `+validate-config --config-file=` could each crash it.
+- **Sessions kept**
+  - liberttyd raises its descriptor limit and, out of descriptors, waits instead of exiting with every session; a session showing many large images still attaches and survives an update's handover; one started during a handover begins in the new liberttyd; after a crash the guardian keeps liberttyd's lock for the one it starts.
+  - A pane's terminal can't leak into another pane's shell, a program that ends at once is always heard, and two mirrored panes closing together end their program.
+  - Undo Close brings a pane back from another workspace, or a tab into a minimized window; what truly can't come back ends instead of running on unseen.
+  - The Quick Terminal's session no longer comes back as an extra window at launch, ⌘Q asks about its unsaved documents, and Quit and End Sessions ends it.
+- **Work kept**
+  - Saving a document that changed on disk asks again, even when its "changed on disk" bar went unanswered.
+  - A file renamed or moved in the sidebar takes its open document along; a board, drawing or notebook keeps its tags and attributes when saved.
+  - `set_setting` on a palette color, a key or a font feature changes that one line, not every line of its kind; a config file kept as a link stays a link; `bell-features = audio` reads as the alert sound.
+  - The composer keeps a prompt queued for a pane whose program has ended; a window kept for Undo Close takes no queued prompts.
+  - An update that can't put its new copy in place puts the old one back.
+- **Fixed**
+  - A pane could stop updating after a scroll or a selection made while it was idle.
+  - A read-only pane took text from an input method while broadcasting, and clicks on what its program drew.
+  - Import from Ghostty in Settings works with `remote-control = false`.
+  - Show Changes and the Git panel's diffs stop at 2 MB instead of freezing the window.
+  - A notebook's Jupyter log no longer keeps a thread busy after the server exits.
+  - The 1Password and other ssh agents' sockets in folders with spaces work.
+- Inside: the fixtures `close-undo-elsewhere`, `document-navigation`, `broadcast-readonly`, `composer-exited`, `prompt-queue-closed`; `tests/daemon-limits-test.sh`; unit tests for Markdown, Web Access, the daemon, the updater and more.
+
 ## 0.7.6
 
 > After Rex's newest build: Forward, to go back the way Back went, and Mark Tab as Unread, a dot on a tab you mean to come back to.
