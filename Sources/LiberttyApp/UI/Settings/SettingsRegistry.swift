@@ -160,6 +160,8 @@ enum SettingsRegistry {
 
     static let items: [SettingsItem] = {
         var all: [SettingsItem] = []
+        // Unset, the update channel is the build's own: a beta's is beta (Updater.channel).
+        let betaBuild = Version(Updater.currentVersion).isPrerelease
 
         // liberttyd (Rex's Server)
         all += [
@@ -265,13 +267,16 @@ enum SettingsRegistry {
             custom(.terminal, "Typography", "Bold italic style", id: "font-style-bold-italic", keys: ["font-style-bold-italic"],
                    keywords: "weight slant face"),
             item(.terminal, "Typography", "Font size", "font-size", .stepper(6...72, step: 1, unit: "pt"), keywords: "text size"),
+            // (Their labels in the interface's language here: a number in the words.)
             item(.terminal, "Typography", "Line height", "adjust-cell-height", .popup([SettingsOption(label: "The font's own", value: "")]
                 + ["-10%", "-5%", "5%", "10%", "15%", "20%", "25%", "30%", "40%", "50%"].map {
-                    SettingsOption(label: $0.hasPrefix("-") ? "\($0) shorter" : "+\($0) taller", value: $0)
+                    SettingsOption(label: $0.hasPrefix("-") ? String(format: L10n.t("%@ shorter"), String($0.dropFirst()))
+                                       : String(format: L10n.t("+%@ taller"), $0), value: $0)
                 }), keywords: "cell height spacing"),
             item(.terminal, "Typography", "Cell width", "adjust-cell-width", .popup([SettingsOption(label: "The font's own", value: "")]
                 + ["-10%", "-5%", "3%", "5%", "10%", "20%", "50%", "100%"].map {
-                    SettingsOption(label: $0.hasPrefix("-") ? "\($0) narrower" : "+\($0) wider", value: $0)
+                    SettingsOption(label: $0.hasPrefix("-") ? String(format: L10n.t("%@ narrower"), String($0.dropFirst()))
+                                       : String(format: L10n.t("+%@ wider"), $0), value: $0)
                 }), help: "Wider or narrower columns, the text's size unchanged.", keywords: "letter spacing columns"),
             custom(.terminal, "Typography", "Ligatures", id: "ligatures", keys: ["font-feature"], help: "Programming ligatures such as -> != ===.",
                    keywords: "calt liga"),
@@ -428,7 +433,8 @@ enum SettingsRegistry {
                 ("Check and offer", "check"), ("Download in the background", "download"), ("Off", "off"),
             ])), keywords: "update version"),
             item(.advanced, "Updates", "Channel", "auto-update-channel", .popup([
-                SettingsOption(label: "Stable releases", value: "stable", also: [""]), SettingsOption(label: "Betas too", value: "beta"),
+                SettingsOption(label: "Stable releases", value: "stable", also: betaBuild ? [] : [""]),
+                SettingsOption(label: "Betas too", value: "beta", also: betaBuild ? [""] : []),
             ]), help: "Betas come first and may break; they get every stable release too.", keywords: "beta prerelease preview"),
             item(.advanced, "Updates", "Install a downloaded update", "auto-update-restart",
                  .popup(options([("When I restart", "ask"), ("When idle", "idle")])),

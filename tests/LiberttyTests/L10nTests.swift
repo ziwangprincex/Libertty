@@ -22,9 +22,17 @@ struct L10nTests {
         #expect(table.count > 300)
         var english = Set<String>()
         for item in SettingsRegistry.items where !item.title.isEmpty { english.insert(item.title) }
+        // Its sections' titles and its choices' labels too (Bell had none),
+        // but for names (1Password) and the cell sizes, which say their
+        // number in words of their own (below).
+        for item in SettingsRegistry.items {
+            if !item.section.isEmpty { english.insert(item.section) }
+            for option in item.options where !option.label.contains("%") { english.insert(option.label) }
+        }
+        for words in ["%@ shorter", "+%@ taller", "%@ narrower", "+%@ wider"] { english.insert(words) }
         for page in SettingsPage.allCases { english.insert(page.title) }
         let missing = english.filter { table[$0] == nil && !$0.hasPrefix("Show Tab ") && $0 != $0.uppercased()
-            && !["liberttyd", "Git"].contains($0) && !$0.contains("·") }
+            && !["liberttyd", "Git", "1Password", "Bitwarden", "GnuPG", "Secretive", "YubiKey"].contains($0) && !$0.contains("·") }
         #expect(missing.isEmpty, "untranslated: \(missing.sorted().prefix(20))")
         for (en, zh) in table {
             #expect(en.hasSuffix("…") == zh.hasSuffix("…") || en.hasSuffix("...") , "\(en) → \(zh)")

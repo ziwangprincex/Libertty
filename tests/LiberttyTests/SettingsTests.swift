@@ -183,6 +183,28 @@ struct SettingActionTests {
         #expect(SettingActions.next(toggle, in: config)?.value == first.value)
     }
 
+    /// A switch that's unset (palette-generate: the theme decides) is off, as
+    /// Settings shows it: the first toggle turns it on (it once wrote false).
+    @Test func anUnsetSwitchIsOff() {
+        var config = Config()
+        #expect(config.values(of: "palette-generate") == [""])
+        #expect(!SettingShape("palette-generate").isOn(""))
+        #expect(SettingActions.next(Action("toggle_setting:palette-generate")!, in: config)?.value == "true")
+        _ = config.set("palette-generate", "true")
+        #expect(SettingActions.next(Action("toggle_setting:palette-generate")!, in: config)?.value == "false")
+        // A switch with a default reads as its default when unset.
+        #expect(SettingShape("copy-on-select").isOn("") == SettingShape("copy-on-select").isOn(SettingsModel.defaultValue("copy-on-select")))
+    }
+
+    /// Unset, the update channel is the build's own, and Settings shows that
+    /// one: Stable releases here (a test build isn't a beta).
+    @Test func theUpdateChannelShownIsTheOneInEffect() throws {
+        let item = try #require(SettingsRegistry.item("auto-update-channel"))
+        let shown = item.options.filter { SettingsModel.matches($0, "", of: "auto-update-channel") }.map(\.value)
+        #expect(shown == [Version(Updater.currentVersion).isPrerelease ? "beta" : "stable"])
+        #expect(!Version("0.9.0").isPrerelease && Version("0.9.0-beta.2").isPrerelease)
+    }
+
     /// A choice goes round its control's values, or the ones the keybind names.
     @Test func aChoiceGoesRound() {
         var config = Config()
