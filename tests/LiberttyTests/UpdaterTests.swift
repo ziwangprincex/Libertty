@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import LiberttyApp
 
@@ -64,5 +64,21 @@ struct UpdaterTests {
         #expect(version(at: b.app) == "old")
         // And the new one is still where the error says it is.
         #expect(version(at: b.staged) == "new")
+    }
+
+    /// The feed isn't signed: its notes' links open only on the releases'
+    /// own site, over https; the rest show as text.
+    @MainActor @Test func theNotesLinkOnlyToTheReleasesSite() {
+        let notes = "- [page](https://github.com/x/y/releases/tag/v1) [file](file:///Applications/Calculator.app) "
+            + "[scheme](x-man-page://ls) [web](http://github.com/x) [elsewhere](https://example.com/)"
+        let text = UpdateController.render(notes: notes)
+        var links: [String] = []
+        text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+            if let url = value as? URL { links.append(url.absoluteString) }
+        }
+        #expect(links == ["https://github.com/x/y/releases/tag/v1"])
+        #expect(text.string.contains("elsewhere"))
+        #expect(UpdateController.openable(URL(string: "https://GitHub.com/a")) != nil)
+        #expect(UpdateController.openable(URL(string: "https://github.com.example.org/a")) == nil)
     }
 }
