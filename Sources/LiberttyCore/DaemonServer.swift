@@ -46,6 +46,11 @@ public final class DaemonServer {
             let env = ProcessInfo.processInfo.environment
             let home = env["LIBERTTY_HOME"] ?? userHomeDirectory().appendingPath(".libertty")
             let log = env["LIBERTTY_DAEMON_LOG"] ?? home.appendingPath("liberttyd.log")
+            // (Said here, where Libertty shows what ssh said, as well as in the log.)
+            if let problem = Wire.prepareDirectory(for: Wire.socketPath) {
+                writeError("liberttyd: \(problem)\n")
+                exit(1)
+            }
             guard DaemonClient.ensureRunning(executable: executable, logPath: log, responsible: false) else {
                 writeError("liberttyd: couldn't start (see \(log))\n")
                 exit(1)
@@ -61,7 +66,10 @@ public final class DaemonServer {
         // Started by liberttyd to keep its sessions' ptys open should it go (DaemonGuardian).
         if arguments.contains("--guardian") { DaemonGuardian.main() }
         let path = Wire.socketPath
-        Wire.prepareDirectory(for: path)
+        if let problem = Wire.prepareDirectory(for: path) {
+            log(problem)
+            exit(1)
+        }
         let server = DaemonServer(path: path)
         // One liberttyd per socket: whoever holds the lock owns the path.
         let lockFD = open(path + ".lock", O_CREAT | O_RDWR | O_CLOEXEC, 0o600)

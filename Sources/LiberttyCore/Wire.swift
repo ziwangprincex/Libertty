@@ -100,6 +100,10 @@ public enum Wire {
     /// directory under the per-user temporary directory.
     public static var socketPath: String {
         if let path = ProcessInfo.processInfo.environment["LIBERTTY_DAEMON_SOCKET"], !path.isEmpty { return path }
+        return defaultSocketPath
+    }
+
+    static var defaultSocketPath: String {
         #if os(Linux)
         // A private directory in /tmp, as tmux does. Not $XDG_RUNTIME_DIR:
         // systemd deletes it when the last login session ends, which is
@@ -113,11 +117,29 @@ public enum Wire {
         #endif
     }
 
-    /// Make the socket's directory, private to the user.
-    public static func prepareDirectory(for path: String) {
+    /// Make the socket's directory, private to the user. Nil, or why it
+    /// mustn't be used: the default one has to be ours alone — on Linux it's
+    /// in /tmp, where another user could make it first, then listen there
+    /// in liberttyd's place or link where liberttyd keeps its uploads to
+    /// somewhere else. (A socket given in $LIBERTTY_DAEMON_SOCKET is the
+    /// user's own choice.)
+    @discardableResult
+    public static func prepareDirectory(for path: String) -> String? {
         let dir = path.parentPath
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
+        return path == defaultSocketPath ? privacyProblem(dir) : nil
+    }
+
+    /// Why `dir` isn't private to this user, as tmux checks its own in /tmp:
+    /// it's a link or no directory, another user's, or open to others. Nil when it's fine.
+    static func privacyProblem(_ dir: String) -> String? {
+        var st = stat()
+        guard lstat(dir, &st) == 0 else { return "can't use \(dir): \(SystemError(errno))" }
+        guard Int(st.st_mode) & Int(S_IFMT) == Int(S_IFDIR) else { return "\(dir) isn't a directory of its own (remove it)" }
+        guard st.st_uid == getuid() else { return "\(dir) belongs to another user (uid \(st.st_uid)); not using it" }
+        guard Int(st.st_mode) & 0o077 == 0 else { return "\(dir) is open to other users (chmod 700 it, or remove it)" }
+        return nil
     }
 }
 

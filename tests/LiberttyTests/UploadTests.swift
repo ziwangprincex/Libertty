@@ -50,6 +50,28 @@ struct UploadTests {
         #expect(FileManager.default.fileExists(atPath: root.path + "/not-a-batch"))
     }
 
+    /// An uploads folder that's a link (someone else's doing) leads nowhere:
+    /// the week-old folders where it points stay where they are, and so do
+    /// the ones a batch's link points to.
+    @Test func noPruningThroughALink() throws {
+        let dir = try temporary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = dir.appendingPathComponent("home")
+        let work = home.appendingPathComponent("work")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        let then = Date().addingTimeInterval(-8 * 24 * 3600)
+        try FileManager.default.setAttributes([.modificationDate: then], ofItemAtPath: work.path)
+        let link = dir.appendingPathComponent("uploads")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: home)
+        Uploads.prune(link.path, before: Date().timeIntervalSince1970)
+        #expect(FileManager.default.fileExists(atPath: work.path))
+        let real = dir.appendingPathComponent("real")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: real.appendingPathComponent("batch"), withDestinationURL: work)
+        Uploads.prune(real.path, before: Date().timeIntervalSince1970)
+        #expect(FileManager.default.fileExists(atPath: work.path))
+    }
+
     /// A folder dropped goes with its files under it (links inside aren't
     /// followed); its path is the one typed.
     @Test func folders() throws {

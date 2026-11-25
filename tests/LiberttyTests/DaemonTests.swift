@@ -38,4 +38,25 @@ struct DaemonTests {
         #expect(open.isSuperset(of: [0, 1, 2]))
         #expect(!open.contains(stray))
     }
+
+    /// liberttyd's own directory (in /tmp on Linux) must be its user's
+    /// alone: one another user made first, or a link, isn't used.
+    @Test func itsDirectoryIsPrivate() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-dir-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: base) }
+        let dir = base + "/mine"
+        #expect(mkdir(base, 0o700) == 0 && mkdir(dir, 0o700) == 0)
+        #expect(Wire.privacyProblem(dir) == nil)
+        chmod(dir, 0o755)
+        #expect(Wire.privacyProblem(dir)?.contains("open to other users") == true)
+        chmod(dir, 0o700)
+        let link = base + "/link"
+        #expect(symlink(dir, link) == 0)
+        #expect(Wire.privacyProblem(link)?.contains("isn't a directory") == true)
+        #expect(Wire.privacyProblem(base + "/none") != nil)
+        // Another user's: the root directory, say.
+        #expect(Wire.privacyProblem("/")?.contains("another user") == true)
+        // A socket chosen with $LIBERTTY_DAEMON_SOCKET: its folder as it is.
+        #expect(Wire.prepareDirectory(for: "/tmp/libertty-test.sock") == nil)
+    }
 }

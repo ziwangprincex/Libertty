@@ -66,6 +66,19 @@ int libertty_sock_listen(const char *path) {
     return fd;
 }
 
+// Whether the process at the other end runs as this user.
+static int peer_is_us(int fd) {
+#ifdef __linux__
+    struct ucred cred;
+    socklen_t length = sizeof(cred);
+    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &length) == 0 && cred.uid == getuid();
+#else
+    uid_t uid;
+    gid_t gid;
+    return getpeereid(fd, &uid, &gid) == 0 && uid == getuid();
+#endif
+}
+
 int libertty_sock_connect(const char *path) {
     struct sockaddr_un addr;
     if (fill_address(&addr, path) != 0) return -1;
@@ -82,6 +95,13 @@ int libertty_sock_connect(const char *path) {
         errno = saved;
         return -1;
     }
+    // Only our own liberttyd: another user's, listening where ours should
+    // (a directory they made first), would be sent every keystroke.
+    if (!peer_is_us(fd)) {
+        close(fd);
+        errno = EPERM;
+        return -1;
+    }
     return fd;
 }
 
@@ -96,16 +116,7 @@ int libertty_sock_accept(int listener) {
 #endif
     // Another user's process could only get here through a misconfigured
     // directory; refuse it anyway.
-#ifdef __linux__
-    struct ucred cred;
-    socklen_t length = sizeof(cred);
-    int peer_ok = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &length) == 0 && cred.uid == getuid();
-#else
-    uid_t uid;
-    gid_t gid;
-    int peer_ok = getpeereid(fd, &uid, &gid) == 0 && uid == getuid();
-#endif
-    if (!peer_ok) {
+    if (!peer_is_us(fd)) {
         close(fd);
         errno = EPERM;
         return -1;

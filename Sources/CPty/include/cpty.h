@@ -100,8 +100,8 @@ int libertty_proc_snapshot(struct libertty_proc *out, int cap);
 void libertty_raise_fd_limit(void);
 
 /// Unix-domain stream sockets for liberttyd. Descriptors are close-on-exec and
-/// never raise SIGPIPE. listen() replaces a stale socket file; accept()
-/// refuses peers running as another user. All return -1 with errno on failure.
+/// never raise SIGPIPE. listen() replaces a stale socket file; connect() and
+/// accept() refuse a peer running as another user. All return -1 with errno on failure.
 int libertty_sock_listen(const char *path);
 int libertty_sock_connect(const char *path);
 int libertty_sock_accept(int listener);
