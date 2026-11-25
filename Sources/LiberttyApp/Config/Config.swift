@@ -1186,17 +1186,18 @@ struct Config: Equatable {
             guard let x = bool() else { return "true or false" }; cursorTrail = x
         case "bell-features":
             if reset { bellFeatures = defaults.bellFeatures; return nil }
-            var features = defaults.bellFeatures
+            var features = defaults.bellFeatures, listed = Set<String>()
             for raw in v.split(separator: ",") {
                 let item = raw.trimmingCharacters(in: .whitespaces).lowercased()
-                let name = item.hasPrefix("no-") ? String(item.dropFirst(3)) : item
+                var name = item.hasPrefix("no-") ? String(item.dropFirst(3)) : item
                 guard ["system", "audio", "attention", "title", "border"].contains(name) else { return "unknown bell feature “\(name)”" }
-                if item.hasPrefix("no-") { features.remove(name) } else { features.insert(name) }
+                // Ghostty's audio is the alert sound here too: one feature, as
+                // Settings shows it and writes it back.
+                if name == "audio" { name = "system" }
+                if item.hasPrefix("no-") { features.remove(name) } else { features.insert(name); listed.insert(name) }
             }
             // A plain list (no no-) means exactly those.
-            if !v.contains("no-") {
-                features = Set(v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
-            }
+            if !v.contains("no-") { features = listed }
             bellFeatures = features
         case "window-padding-color":
             if reset { windowPaddingColor = defaults.windowPaddingColor; return nil }

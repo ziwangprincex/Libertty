@@ -106,6 +106,19 @@ struct ConfigTests {
         for (key, _) in Config.documentation { _ = c.values(of: key) }
     }
 
+    /// `bell-features = audio` (Ghostty's) rings the alert sound, and is that
+    /// sound's switch: Settings showed it off, and the next bell switch
+    /// written there dropped it.
+    @Test func theBellsAudioIsItsAlertSound() {
+        var c = Config()
+        #expect(c.set("bell-features", "audio,title") == nil)
+        #expect(c.bellFeatures == ["system", "title"])
+        #expect(c.values(of: "bell-features") == ["system,title"])
+        #expect(c.set("bell-features", "no-audio,border") == nil)
+        #expect(!c.bellFeatures.contains("system") && c.bellFeatures.contains("border"))
+        #expect(c.set("bell-features", "chime") != nil)
+    }
+
     @Test func programStates() throws {
         #expect(try Config.states("blocked,done").get() == [.blocked, .done])
         #expect(try Config.states("none").get().isEmpty)
