@@ -147,6 +147,25 @@ struct PromptQueueTests {
         #expect(!md.contains("\n\n\n"))
     }
 
+    /// A long page (thousands of blocks) converts at once: each block looks
+    /// at the end of what's written so far, not all of it.
+    @Test func longPageIsQuick() {
+        var html = "<html><body>"
+        for i in 0..<3000 { html += "<div><p>Paragraph \(i) with <a href=\"https://x.test/\(i)\">a link</a>.</p></div>" }
+        html += "</body></html>"
+        let start = Date()
+        let md = HTMLToMarkdown.convert(html)
+        #expect(Date().timeIntervalSince(start) < 3)
+        #expect(md.hasPrefix("Paragraph 0 with [a link](https://x.test/0).\n\nParagraph 1 with [a link](https://x.test/1)."))
+        #expect(md.hasSuffix("\n\nParagraph 2999 with [a link](https://x.test/2999)."))
+        // A quote's marks left at a block's end go, before a last line break too.
+        let quoted = "<blockquote><p>one</p><p>two<br>three</p><blockquote><p>deep</p><pre>code\nmore</pre></blockquote>"
+            + "<ul><li>l1</li><li>l2</li></ul></blockquote><p>after</p>"
+        #expect(HTMLToMarkdown.convert(quoted)
+            == "> one\n\n> two\n> three\n\n> > deep\n\n> > ```\n> > code\n> > more\n> > ```\n\n> - l1\n> - l2\n\nafter")
+        #expect(HTMLToMarkdown.convert("<blockquote><pre>x &gt;\n\n</pre><p>y</p></blockquote>") == "> ```\n> x >\n> ```\n\n> y")
+    }
+
     @Test func forkCommands() {
         let claude = Conversation(agent: "claude", id: "abc-123", session: "s", directory: "/tmp", started: 0, active: 0)
         #expect(Conversations.forkCommand(claude) == "claude --resume abc-123 --fork-session")
