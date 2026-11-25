@@ -5,6 +5,13 @@ import LiberttyCore
 final class QuickPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// ⌘W on its last pane, Close Tab, Close Window: closed as its close
+    /// button would close it, asking what any close asks. It has no such
+    /// button, and AppKit's own only beeps then.
+    override func performClose(_ sender: Any?) {
+        if delegate?.windowShouldClose?(self) ?? true { close() }
+    }
 }
 
 /// Ghostty's quick terminal: a terminal that slides in from a screen edge
