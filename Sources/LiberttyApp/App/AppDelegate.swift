@@ -296,6 +296,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             c.skipCloseConfirmation = true
             c.window?.close()
         }
+        // The Quick Terminal's too (it's no window of the list), down or not yet.
+        QuickTerminal.shared.endSessions()
         endingSessions = true
         NSApp.terminate(nil)
     }
@@ -306,8 +308,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// without persistence it ends them, so (as in Ghostty) it asks first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Unsaved edits first, whatever happens to the programs (Quit and End
-        // Sessions asked already: its windows are gone by now).
-        let unsaved = endingSessions ? [] : controllers.flatMap(\.unsavedDocuments)
+        // Sessions asked already: its windows are gone by now). The Quick
+        // Terminal's documents too: quitting closes them as well.
+        let unsaved = endingSessions ? [] : allControllers.flatMap(\.unsavedDocuments)
         if !oneShot, !unsaved.isEmpty {
             switch askAboutUnsaved(unsaved, quitting: true) {
             case .alertFirstButtonReturn:
@@ -339,9 +342,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     /// Before closing every window without the windows' own questions:
-    /// unsaved documents anywhere, saved (and waited for) or let go.
+    /// unsaved documents anywhere, saved (and waited for) or let go —
+    /// quitting, the Quick Terminal's too (Close All Windows leaves it).
     private func confirmUnsavedEverywhere(quitting: Bool) -> Bool {
-        let unsaved = controllers.flatMap(\.unsavedDocuments)
+        let unsaved = (quitting ? allControllers : controllers).flatMap(\.unsavedDocuments)
         guard !unsaved.isEmpty else { return true }
         switch askAboutUnsaved(unsaved, quitting: quitting) {
         case .alertFirstButtonReturn:
@@ -362,10 +366,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     /// With persistence, only programs in panes liberttyd doesn't hold end
-    /// (Quit and End Sessions ends them all, and asks about all).
+    /// (Quit and End Sessions ends them all, and asks about all) — the
+    /// Quick Terminal's as well as the windows'.
     private func confirmEndingPrograms(title: String, all: Bool = false) -> Bool {
         let ending: (TerminalWindowController) -> Bool = Persistence.enabled && !all ? \.hasRunningLocalPrograms : \.hasRunningPrograms
-        guard ConfigStore.shared.config.confirmClose, controllers.contains(where: ending) else { return true }
+        guard ConfigStore.shared.config.confirmClose, allControllers.contains(where: ending) else { return true }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = "Programs are still running and will be ended."

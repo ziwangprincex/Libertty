@@ -1,4 +1,5 @@
 import AppKit
+import LiberttyCore
 
 /// A borderless panel that can still take the keyboard.
 final class QuickPanel: NSPanel {
@@ -29,6 +30,18 @@ final class QuickTerminal {
     /// yet it's this one's: no other window is to show it or list it.
     var sessionToAttach: String? {
         controller == nil ? UserDefaults.standard.string(forKey: Self.sessionKey) : nil
+    }
+
+    /// Libertty ▸ Quit and End Sessions: its programs end with the rest,
+    /// come down already or not.
+    func endSessions() {
+        if let controller {
+            controller.skipCloseConfirmation = true
+            controller.window?.close()
+        } else if let id = sessionToAttach {
+            _ = DaemonClient.request(.kill, json: ["id": id])
+            UserDefaults.standard.removeObject(forKey: Self.sessionKey)
+        }
     }
 
     func toggle() {
