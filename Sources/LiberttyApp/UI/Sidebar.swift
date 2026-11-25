@@ -52,8 +52,15 @@ enum TabActivity: String, CaseIterable {
         }
     }
 
-    /// As the filter's placeholder says it: "Filter waiting tabs".
-    var word: String { self == .attention ? "finished" : rawValue }
+    /// The filter's placeholder while these tabs show: "Filter waiting tabs".
+    var placeholder: String {
+        switch self {
+        case .all: return L10n.t("Filter tabs")
+        case .working: return L10n.t("Filter working tabs")
+        case .waiting: return L10n.t("Filter waiting tabs")
+        case .attention: return L10n.t("Filter finished tabs")
+        }
+    }
 
     func includes(_ tab: SidebarTabInfo) -> Bool {
         switch self {
@@ -927,20 +934,20 @@ final class SidebarViewController: NSViewController {
     }
 
     private func addTabItems(to menu: NSMenu) {
-        menu.addItem(withTitle: "Rename Tab…", action: #selector(renameTab(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Reset Name", action: #selector(resetTabName(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Duplicate Tab", action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Fork Conversation", action: #selector(forkConversation(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Rename Tab…"), action: #selector(renameTab(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Reset Name"), action: #selector(resetTabName(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Duplicate Tab"), action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Fork Conversation"), action: #selector(forkConversation(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: TabMute.title(muted: menuTab?.muted == true), action: #selector(toggleMute(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: TabNews.markTitle(unread: menuTab?.unread == true), action: #selector(toggleUnread(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Move Up", action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Move Down", action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Move to New Window", action: #selector(moveTabToNewWindow(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Move Up"), action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Move Down"), action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Move to New Window"), action: #selector(moveTabToNewWindow(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: L10n.t("Merge into Current Tab"), action: #selector(mergeIntoCurrentTab(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Close Other Tabs", action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Close Tab"), action: #selector(closeTab(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Close Other Tabs"), action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
     }
 
     /// A header's menu: fold or unfold it, a tab there, and how to group.
@@ -2826,11 +2833,10 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
         self.activity = activity
         let filtering = activity != .all
         let symbol = filtering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
-        activityButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Show Tabs")
+        activityButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: L10n.t("Show Tabs"))
         activityButton.contentTintColor = filtering ? .labelColor : .tertiaryLabelColor
-        activityButton.toolTip = filtering ? "Showing: \(activity.title)" : "Show Tabs by Activity"
-        let placeholder = filtering ? "Filter \(activity.word) tabs" : L10n.t("Filter tabs")
-        field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+        activityButton.toolTip = filtering ? String(format: L10n.t("Showing: %@"), activity.title) : L10n.t("Show Tabs by Activity")
+        field.placeholderAttributedString = NSAttributedString(string: activity.placeholder, attributes: [
             .font: Typeface.row, .foregroundColor: NSColor.tertiaryLabelColor,
         ])
     }

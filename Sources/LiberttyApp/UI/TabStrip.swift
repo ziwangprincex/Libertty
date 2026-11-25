@@ -242,7 +242,7 @@ final class TabStrip: NSView {
         // The tab itself, found again when the item runs: tabs may come and
         // go while the menu is open, and an index from before would be another's.
         func item(_ title: String, enabled: Bool = true, _ action: @escaping (Int) -> Void) {
-            let item = ClosureMenuItem(title: title) { [weak self, weak tab] in
+            let item = ClosureMenuItem(title: L10n.t(title)) { [weak self, weak tab] in
                 guard let self, let tab, let now = self.controller?.tabs.firstIndex(where: { $0 === tab }) else { return }
                 action(now)
             }
@@ -272,7 +272,7 @@ final class TabStrip: NSView {
         }
         // Its panes into the tab in front (only another tab's: none on that one).
         if controller?.canMerge(tab) == true {
-            item(L10n.t("Merge into Current Tab")) { [weak self] now in
+            item("Merge into Current Tab") { [weak self] now in
                 guard let controller = self?.controller, let tab = controller.tab(at: now) else { return }
                 controller.merge(tab)
             }
