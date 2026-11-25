@@ -874,8 +874,14 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func tabClicked(_ sender: Any?) {
+        // A click that picked another row picked its tab already, and that
+        // may have taken rows away (the tab left showing under a folded
+        // header): the row clicked is then another tab's. Only a click on
+        // the row selected (the tab in front, again) is acted on here.
+        let row = tabsTable.clickedRow
+        guard tabsTable.selectedRow < 0 || row == tabsTable.selectedRow else { return }
         // (A header's and a session's rows take their own clicks.)
-        if let i = tab(atTableRow: tabsTable.clickedRow) { controller?.selectTab(at: i) }
+        if let i = tab(atTableRow: row) { controller?.selectTab(at: i) }
     }
 
     private func tabMenu() -> NSMenu {
