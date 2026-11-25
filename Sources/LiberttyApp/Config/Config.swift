@@ -354,12 +354,16 @@ struct Config: Equatable {
     /// a password (Otty's Auto Secure Input).
     var secureInputOnPassword = true
 
-    /// The effective key table, including the global-hotkey shorthands.
+    /// The effective key table, including the global-hotkey shorthands:
+    /// after the last `keybind = clear`, which clears keybind lines, not
+    /// settings of their own (Settings shows them set), and before the
+    /// lines after it, which can still unbind their keys.
     var keybindTable: Keybinds {
         var entries = keybinds
-        if !globalNewWindowHotkey.isEmpty { entries.insert("global:\(globalNewWindowHotkey)=new_window", at: 0) }
-        if !globalHotkey.isEmpty { entries.insert("global:\(globalHotkey)=toggle_visibility", at: 0) }
-        if !quickTerminalHotkey.isEmpty { entries.insert("global:\(quickTerminalHotkey)=toggle_quick_terminal", at: 0) }
+        let at = (entries.lastIndex { $0.trimmingCharacters(in: .whitespaces) == "clear" }).map { $0 + 1 } ?? 0
+        if !globalNewWindowHotkey.isEmpty { entries.insert("global:\(globalNewWindowHotkey)=new_window", at: at) }
+        if !globalHotkey.isEmpty { entries.insert("global:\(globalHotkey)=toggle_visibility", at: at) }
+        if !quickTerminalHotkey.isEmpty { entries.insert("global:\(quickTerminalHotkey)=toggle_quick_terminal", at: at) }
         return Keybinds(entries: entries)
     }
 

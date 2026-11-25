@@ -23,6 +23,23 @@ struct ConfigTests {
         #expect(c.fontSize == Config().fontSize)
     }
 
+    /// `keybind = clear` clears keybind lines: the keys set as settings of
+    /// their own (global-hotkey and the like) stay, as Settings shows them;
+    /// a keybind after it can still unbind one.
+    @Test func clearKeepsTheGlobalHotkeys() {
+        var c = Config()
+        for (key, value) in [("global-hotkey", "ctrl+alt+space"), ("quick-terminal-hotkey", "ctrl+alt+grave_accent"),
+                             ("keybind", "cmd+b=new_tab"), ("keybind", "clear"), ("keybind", "cmd+j=new_window")] {
+            #expect(c.set(key, value) == nil, "\(key) = \(value)")
+        }
+        let table = c.keybindTable
+        #expect(table.global.map(\.action.configString).sorted() == ["new_window", "toggle_quick_terminal", "toggle_visibility"])
+        #expect(table.trigger(for: .newWindow) == Trigger("cmd+j"))
+        #expect(table.trigger(for: .newTab) == nil)
+        #expect(c.set("keybind", "global:ctrl+alt+t=unbind") == nil)
+        #expect(!c.keybindTable.global.contains { $0.action == .newWindow })
+    }
+
     @Test(arguments: [("font-size", "abc"), ("cursor-style", "triangle"), ("minimum-contrast", "x"),
                       ("adjust-cell-height", "tall"), ("accent-color", "blurple"), ("pane-style", "roomy"),
                       ("web-access", "everywhere"), ("theme", "No Such Theme At All"),
