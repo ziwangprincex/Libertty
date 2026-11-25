@@ -644,6 +644,15 @@ mkdir -p $PRIVATE/mermaid
 cp $ROOT/tests/fixtures/diagrams.md $PRIVATE/mermaid/
 expect mermaid 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/mermaid|g" $ROOT/tests/fixtures/mermaid.txt)" $OUT
+# A Markdown document's own HTML goes nowhere unclicked: a refresh, a form.
+DN=$PRIVATE/document-navigation
+mkdir -p $DN
+printf '# Refresh document\n\n<meta http-equiv="refresh" content="0;url=elsewhere.html">\n' > $DN/refresh.md
+printf '# Form document\n\n<form action="elsewhere.html"><button>Send</button></form>\n\n<a href="tool.command" target="_blank">Run the tool</a>\n' > $DN/form.md
+printf '<p>Elsewhere</p>\n' > $DN/elsewhere.html
+printf 'true\n' > $DN/tool.command
+expect document-navigation 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$DN|g" $ROOT/tests/fixtures/document-navigation.txt)" $OUT
 # The file tree's changes to files, undone; files dropped in from "the Finder".
 mkdir -p $PRIVATE/file-tree/top/src $PRIVATE/file-tree/finder
 print one > $PRIVATE/file-tree/top/a.txt

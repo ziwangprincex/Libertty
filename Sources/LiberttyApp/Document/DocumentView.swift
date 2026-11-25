@@ -4,7 +4,7 @@ import WebKit
 /// A file shown in a tab: Markdown rendered (Tern's `markdown_rendered`),
 /// or source code with highlighting and line numbers. Re-renders when the
 /// file is saved, keeping the scroll position. Page JavaScript is off, so
-/// HTML inside Markdown can't run scripts.
+/// HTML inside Markdown can't run scripts (nor take the page anywhere unclicked).
 final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     let url: URL
 
@@ -72,6 +72,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     private var watcher: DispatchSourceFileSystemObject?
     private var pendingScroll: Double?
     private var htmlFile: URL?
+    /// What this view itself loads into its page (a document's HTML file, a
+    /// PDF, or the folder a page from a string is based in): the one place a
+    /// document's page goes without a click.
+    private var ownPage: URL?
 
     static let textExtensions: Set<String> = [
         "md", "markdown", "mdown", "mkd", "txt", "text", "log", "csv", "tsv", "rst", "adoc", "org",
@@ -1014,6 +1018,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return
         case .pdf:
             // WebKit shows PDFs itself.
+            ownPage = url
             web.loadFileURL(url, allowingReadAccessTo: url)
             return
         case .block:
@@ -1042,8 +1047,11 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             }
         }
         let dir = url.deletingLastPathComponent()
+        // A document's own HTML (Markdown passes it through) posts no form
+        // and frames no other page.
         let html = """
             <!doctype html><html><head><meta charset="utf-8">
+            <meta http-equiv="Content-Security-Policy" content="form-action 'none'; frame-src 'none'; object-src 'none'">
             <base href="\(MarkdownRenderer.escapeAttribute(dir.absoluteString))">
             <style>\(Self.css(theme))</style></head><body>\(body)</body></html>
             """
@@ -1056,8 +1064,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         htmlFile = file
         do {
             try html.write(to: file, atomically: true, encoding: .utf8)
+            ownPage = file
             web.loadFileURL(file, allowingReadAccessTo: URL(fileURLWithPath: "/"))
         } catch {
+            ownPage = dir
             web.loadHTMLString(html, baseURL: dir)
         }
     }
@@ -1149,7 +1159,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return decisionHandler(action.request.url?.standardizedFileURL == page?.standardizedFileURL ? .allow : .cancel)
         }
         guard action.navigationType == .linkActivated, let target = action.request.url else {
-            return decisionHandler(.allow)
+            // Unclicked, a document's page goes only where this view loads
+            // it. Its own HTML (a README's `<meta http-equiv="refresh">`, a
+            // form, a frame) never turns the pane, which has no address bar,
+            // into some other page.
+            let own = action.targetFrame?.isMainFrame == true && action.request.url.map(isOwnPage) == true
+            return decisionHandler(own ? .allow : .cancel)
         }
         // In-page anchors scroll; everything else leaves the page.
         if target.isFileURL, let htmlFile, target.path == htmlFile.path { return decisionHandler(.allow) }
@@ -1161,6 +1176,18 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return scroll(toAnchor: fragment.removingPercentEncoding ?? fragment)
         }
         decisionHandler(.cancel)
+        follow(link: target)
+    }
+
+    /// Whether `target` is the page this view loads itself (or an anchor in it).
+    private func isOwnPage(_ target: URL) -> Bool {
+        guard target.isFileURL, let ownPage else { return false }
+        return target.standardizedFileURL.path == ownPage.standardizedFileURL.path
+    }
+
+    /// A document's link, clicked: a file Libertty shows opens in a tab,
+    /// another file asks first, anything else goes to its app.
+    private func follow(link target: URL) {
         if target.isFileURL, Self.canShow(target), FileManager.default.fileExists(atPath: target.path) {
             onOpenDocument?(target)
         } else if target.isFileURL {
@@ -1207,7 +1234,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         // A browser opens it in a tab of its own (this page stays); a
-        // document's link leaves for the default browser.
+        // document's link goes where it would in the page (a file it leads
+        // to, a script, asks first as it does there).
         guard let target = action.request.url else { return nil }
         if kind == .web, ["http", "https"].contains(target.scheme?.lowercased() ?? "") {
             if let onOpenBrowser { onOpenBrowser(target) } else { webView.load(URLRequest(url: target)) }
@@ -1215,8 +1243,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             openElsewhere(target, clicked: action.navigationType == .linkActivated)
         } else if kind == .block {
             openFromBlock(target)
-        } else {
-            NSWorkspace.shared.open(target)
+        } else if action.navigationType == .linkActivated {
+            follow(link: target)
         }
         return nil
     }
