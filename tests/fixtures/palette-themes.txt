@@ -1,0 +1,61 @@
+# The palette's themes start at the theme in use and try nothing out until
+# you move: the half of theme = light:probe-theme,dark:Libertty Dark that the
+# appearance picks (tests/run.sh gives it a config of its own: probe-theme's
+# background is #112233).
+appearance:light
+wait:0.4
+expect-background:#112233
+# The Themes chip (Tab walks the chips): on probe-theme, the windows as they were.
+key:cmd+shift+p
+wait:0.4
+key:tab
+key:tab
+key:tab
+key:tab
+key:tab
+key:tab
+key:tab
+wait:0.4
+expect-scope:[Themes]
+expect-palette-selected:Theme: probe-theme
+expect-background:#112233
+# ↑ tries the one above.
+key:up
+wait:0.4
+expect-palette-selected:Theme:
+key:escape
+wait:0.4
+expect-background:#112233
+# Change Theme… starts there too (its row checked), trying nothing either.
+key:cmd+shift+p
+wait:0.4
+type:change theme
+wait:0.3
+key:enter
+wait:0.4
+expect-palette-selected:probe-theme
+expect-background:#112233
+key:escape
+wait:0.3
+key:escape
+wait:0.4
+# Dark: the pair's other half is the one in use.
+appearance:dark
+wait:0.4
+expect-background:#1c1c1e
+key:cmd+shift+p
+wait:0.4
+type:change theme
+wait:0.3
+key:enter
+wait:0.4
+expect-palette-selected:Libertty Dark
+expect-background:#1c1c1e
+key:down
+wait:0.4
+expect-background:#faf9f6
+key:escape
+wait:0.3
+expect-background:#1c1c1e
+key:escape
+wait:0.3

@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 @testable import LiberttyApp
 
@@ -26,5 +27,19 @@ struct PaletteMatchTests {
         #expect(CommandPalette.wordsBegin("侧栏 side", text))
         #expect(!CommandPalette.wordsBegin("窗栏", text))
         #expect(!CommandPalette.wordsBegin("剪贴板", text))
+    }
+
+    /// A key cap takes its colors in its own light or dark (the palette's
+    /// is the theme's), not in the one AppKit has current.
+    @Test @MainActor func keyCapsFollowTheirOwnAppearance() throws {
+        let cap = KeyCap("esc")
+        for (name, light) in [(NSAppearance.Name.darkAqua, false), (.aqua, true)] {
+            cap.appearance = NSAppearance(named: name)
+            NSAppearance(named: light ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
+                cap.viewDidChangeEffectiveAppearance()
+            }
+            let color = try #require(cap.layer?.backgroundColor.flatMap { NSColor(cgColor: $0)?.usingColorSpace(.sRGB) })
+            #expect((color.redComponent < 0.5) == light, "\(name.rawValue): \(color)")
+        }
     }
 }

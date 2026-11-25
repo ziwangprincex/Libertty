@@ -1088,5 +1088,17 @@
   "Choose files to upload to %@.": "选择要上传到 %@ 的文件。",
   "Choose a file to upload to %@.": "选择要上传到 %@ 的文件。",
   "“%@” grew past %@ MB: its changes aren't shown here any more. Your text here stays; saving it asks before writing over the file.": "“%@”已超过 %@ MB：这里不再显示它的改动。你在这里的文本保持不变；保存时会先询问是否覆盖该文件。",
-  "“%@” grew past %@ MB: its changes aren't shown here any more.": "“%@”已超过 %@ MB：这里不再显示它的改动。"
+  "“%@” grew past %@ MB: its changes aren't shown here any more.": "“%@”已超过 %@ MB：这里不再显示它的改动。",
+  "Reset Name": "恢复默认名称",
+  "Duplicate Tab": "复制标签",
+  "Move Left": "左移",
+  "Move Right": "右移",
+  "Move to New Window": "移到新窗口",
+  "Close Other Tabs": "关闭其他标签",
+  "Filter working tabs": "过滤工作中的标签",
+  "Filter waiting tabs": "过滤等你处理的标签",
+  "Filter finished tabs": "过滤已完成或失败的标签",
+  "Show Tabs": "显示标签",
+  "Showing: %@": "显示：%@",
+  "Show Tabs by Activity": "按动态显示标签"
 }

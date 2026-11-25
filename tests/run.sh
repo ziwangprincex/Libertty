@@ -379,6 +379,9 @@ mkdir -p $PRIVATE/undo-config/libertty
 print 'undo-timeout = 30s' > $PRIVATE/undo-config/libertty/config
 expect close-once 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/undo-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-once.txt)" $OUT
+# The palette's sessions no window shows, asked of liberttyd off the main thread.
+expect palette-sessions 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@BIN@|$LIBERTTY|g" $ROOT/tests/fixtures/palette-sessions.txt)" $OUT --persist
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist
@@ -455,6 +458,12 @@ printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/picker-config/libertty
 printf 'background = #112233\n' > $PRIVATE/picker-config/libertty/themes/probe-theme
 expect settings-picker 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/picker-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/picker-config/libertty|g" $ROOT/tests/fixtures/settings-picker.txt)" $OUT
+# The palette's themes start at the one in use (a light/dark pair's half), trying nothing out.
+mkdir -p $PRIVATE/palette-themes-config/libertty/themes
+printf 'theme = light:probe-theme,dark:Libertty Dark\n' > $PRIVATE/palette-themes-config/libertty/config
+printf 'background = #112233\n' > $PRIVATE/palette-themes-config/libertty/themes/probe-theme
+expect palette-themes 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/palette-themes-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/palette-themes.txt)" $OUT
 # Setting actions on a key (toggle_setting, increase_setting…): the config
 # file changed in place, the windows following, and a switch's own command
 # in the palette once a search asks for it.

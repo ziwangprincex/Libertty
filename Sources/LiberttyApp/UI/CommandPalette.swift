@@ -160,6 +160,60 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
             : Self.panes(around: controller) + Self.conversations(around: controller) + Self.folders(around: controller) + items()
         build()
         filter("")
+        if !panesOnly { askForSessions() }
+    }
+
+    /// Sessions this Mac's liberttyd keeps that no window shows (a host's
+    /// window shows that machine's sessions only: not these), asked off the
+    /// main thread: a liberttyd busy or stuck would hold the palette up for
+    /// as long as it takes to give up on it. Their rows come with its
+    /// answer, where they'd have been listed.
+    private func askForSessions() {
+        guard Persistence.enabled, controller?.host == nil else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let sessions = DaemonClient.sessions()
+            DispatchQueue.main.async {
+                guard let self, Self.current === self, let sessions else { return }
+                self.add(sessions)
+            }
+        }
+    }
+
+    private func add(_ sessions: [SessionInfo]) {
+        // But the Quick Terminal's, not down yet: it attaches that one itself.
+        let quick = QuickTerminal.shared.sessionToAttach
+        let controller = self.controller
+        let items = sessions.filter { $0.clients == 0 && $0.id != quick }.map { s in
+            let dir = SessionInfo.directory(fromPwd: s.workingDirectory).map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
+            return Item(title: "Show Session \(s.id)", subtitle: [s.title, dir].filter { !$0.isEmpty }.joined(separator: " · "),
+                        symbol: "rectangle.stack", kind: .session) { [weak controller] in controller?.attachTab(s.id, on: nil) }
+        }
+        guard !items.isEmpty else { return }
+        // After the workspaces, before the themes.
+        func adding(to list: [Item]) -> [Item] {
+            var list = list
+            list.insert(contentsOf: items, at: list.firstIndex { $0.kind == .theme } ?? list.endIndex)
+            return list
+        }
+        // A setting's choices (or a page) up meanwhile: with the list it goes back to.
+        if var before = beforePicker {
+            before.all = adding(to: before.all)
+            beforePicker = before
+            return
+        }
+        all = adding(to: all)
+        guard scope.admits(.session) else { return }
+        // Listed again, with the row picked still picked (new rows may come above it).
+        let row = table.selectedRow
+        var picked: Item?
+        if !noMatches, rows.indices.contains(row), case .item(let item) = rows[row] { picked = item }
+        filter(field.stringValue)
+        if let picked, let again = rows.firstIndex(where: {
+            if case .item(let item) = $0 { item.title == picked.title && item.subtitle == picked.subtitle && item.kind == picked.kind } else { false }
+        }), again != table.selectedRow {
+            table.selectRowIndexes([again], byExtendingSelection: false)
+            table.scrollRowToVisible(again)
+        }
     }
 
     // MARK: A script's question (libertty +pick, +input)
@@ -597,18 +651,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
                 })
             }
         }
-        // (Panes come first, from `panes()`: tabs are reached through them.)
-        // Sessions this Mac's liberttyd keeps that no window shows (a host's
-        // window shows that machine's sessions only: not these), but the
-        // Quick Terminal's, not down yet: it attaches that one itself.
-        if Persistence.enabled, controller?.host == nil, let sessions = DaemonClient.sessions() {
-            let quick = QuickTerminal.shared.sessionToAttach
-            for s in sessions where s.clients == 0 && s.id != quick {
-                let dir = SessionInfo.directory(fromPwd: s.workingDirectory).map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
-                out.append(Item(title: "Show Session \(s.id)", subtitle: [s.title, dir].filter { !$0.isEmpty }.joined(separator: " · "),
-                                symbol: "rectangle.stack", kind: .session) { controller?.attachTab(s.id, on: nil) })
-            }
-        }
+        // (Panes come first, from `panes()`: tabs are reached through them.
+        // Sessions no window shows come once liberttyd answers: `askForSessions`.)
         // Themes: built-in, ~/.config/libertty/themes, and Ghostty's.
         var names = Theme.all.map(\.name)
         let known = Set(names.map { $0.lowercased() })
@@ -714,9 +758,18 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// Whether the files' config has this option now (a default written or
     /// left out alike).
     private static func isCurrent(_ option: SettingPicker.Option, of picker: SettingPicker) -> Bool {
+        if picker.key == "theme" { return isThemeInUse(option.value) }
         var c = Config()
         _ = c.set(picker.key, option.value.replacingOccurrences(of: "\"", with: ""))
         return c.values(of: picker.key) == ConfigStore.shared.savedConfig.values(of: picker.key)
+    }
+
+    /// Whether the theme `value` names (quoted or not) is the one the
+    /// windows show: `theme = light:A,dark:B`'s half for the appearance in
+    /// use, its name in any case (`theme = dracula` is Dracula's).
+    static func isThemeInUse(_ value: String, spec: ThemeSpec = ConfigStore.shared.savedConfig.theme,
+                             dark: Bool = SystemAppearance.isDark) -> Bool {
+        value.replacingOccurrences(of: "\"", with: "").caseInsensitiveCompare(spec.name(dark: dark)) == .orderedSame
     }
 
     // MARK: A page of its own
@@ -758,11 +811,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // The window as it'll look, not dimmed behind the palette.
         dim?.isHidden = true
         updateFooter()
+        // (It starts on the choice in use.)
         filter("")
-        if let row = rows.firstIndex(where: { if case .item(let item) = $0 { item.symbol == "checkmark" } else { false } }) {
-            table.selectRowIndexes([row], byExtendingSelection: false)
-            table.scrollRowToVisible(row)
-        }
     }
 
     /// Esc while picking: back to how it was, and to the list.
@@ -799,7 +849,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         // (A script's items try nothing out: what another window's palette tries stays.)
-        if prompt == nil { previewSelected() }
+        if prompt == nil, !startingSelection { previewSelected() }
         // The footer is framed to what it shows.
         if updateRunHint() { layout() }
     }
@@ -1011,19 +1061,30 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         noMatchesText = L10n.t(q.isEmpty ? "Nothing here" : "No matches")
         table.reloadData()
         // The quiet "No matches" row is never the one Return would run.
-        // Browsing themes starts at the one in use (nothing changes yet).
-        let theme = ConfigStore.shared.savedConfig.values(of: "theme").first
-        let inUse = scope == .themes && q.isEmpty
-            ? rows.firstIndex { if case .item(let item) = $0 { item.preview.first?.value.replacingOccurrences(of: "\"", with: "") == theme } else { false } }
+        // Browsing themes, or a setting's choices, starts at the one in use,
+        // and tries nothing out: nothing changes until you move (what's
+        // typed is tried as it narrows them).
+        let inUse = q.isEmpty
+            ? rows.firstIndex { row in
+                guard case .item(let item) = row else { return false }
+                if picker != nil { return item.symbol == "checkmark" }
+                return scope == .themes && item.kind == .theme && Self.isThemeInUse(item.preview.first?.value ?? "")
+            }
             : nil
+        startingSelection = q.isEmpty
         if let first = inUse ?? rows.firstIndex(where: { if case .item = $0 { true } else { false } }) {
             table.selectRowIndexes([first], byExtendingSelection: false)
             table.scrollRowToVisible(inUse ?? 0)
         } else {
             table.deselectAll(nil)
         }
+        startingSelection = false
+        if q.isEmpty, prompt == nil { ConfigStore.shared.endPreview() }
         layout()
     }
+
+    /// The selection the list starts on is being made: it tries nothing out.
+    private var startingSelection = false
 
     private static func heading(_ kind: Kind) -> String { L10n.t(englishHeading(kind)) }
 
@@ -1601,9 +1662,13 @@ final class KeyCap: NSView {
         NSSize(width: max(19, ceil(label.intrinsicContentSize.width) + 10), height: 19)
     }
 
+    /// In the cap's own light or dark (the palette's is the theme's, which
+    /// may not be the system's): a layer's color is resolved once.
     private func updateColors() {
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
-        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.10).cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
+            layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.10).cgColor
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
