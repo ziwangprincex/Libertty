@@ -116,10 +116,13 @@ final class SurfaceStore {
         // A flood: past the rate, commands wait for the next second, a
         // surface's later sets replacing its earlier one still waiting (the
         // first's anchor stands): its latest is what shows.
-        let now = DispatchTime.now().uptimeNanoseconds
         var item = Pending(command: command, anchor: nil, alternate: Self.isAlternate(terminal), owner: session.foregroundGroup)
         if case .set = command { item.anchor = Self.trackCursorRow(terminal) }
         pendingLock.lock()
+        // Read under the lock: the main thread starts a new window (at its
+        // own now) under it, and a now read before that would be earlier
+        // than the window's start — the subtractions below would trap.
+        let now = DispatchTime.now().uptimeNanoseconds
         if now - windowStart > 1_000_000_000, deferred.isEmpty { windowStart = now; inWindow = 0 }
         inWindow += 1
         if inWindow > SurfaceProtocol.ratePerSecond || !deferred.isEmpty {
@@ -382,9 +385,12 @@ final class SurfaceStore {
     /// every cell they cover), else only where they are.
     func placed(_ session: TerminalSession, checkRows: Bool = true) -> [Placed] {
         guard !surfaces.isEmpty else { return [] }
-        let alternate = session.isAlternateScreen
         var gone: [Int] = []
         let result: [Placed] = session.withTerminal { t in
+            // Which screen, read with its cells: the program may switch
+            // between two looks, and a main screen's anchor read against the
+            // alternate screen's rows would be past their end.
+            let alternate = Self.isAlternate(t)
             let cells = ScreenCells(t)
             var out: [Placed] = []
             for (i, s) in surfaces.enumerated() {
@@ -398,6 +404,8 @@ final class SurfaceStore {
                 guard let anchorRow = s.anchor.flatMap(Self.screenRow) else { gone.append(i); continue }
                 let top = fromCursor ? anchorRow : anchorRow - rows
                 if top < 0 { gone.append(i); continue }
+                // Below the screen's last row: nothing to show it on (now).
+                if top >= cells.rows { continue }
                 // Its rows were written over: it's no longer what's there.
                 if checkRows, (top..<min(cells.rows, top + rows)).contains(where: { Self.rowHasText(cells, $0) }) {
                     gone.append(i)
