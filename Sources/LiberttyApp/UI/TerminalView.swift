@@ -140,7 +140,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             insertFiles(urls)
         } else if let text = pasteboard.string(forType: .string) {
             // As a paste: text that may run commands asks first (it used to go nowhere).
-            if session.paste(text, allowUnsafe: false) == .needsConfirmation { confirmUnsafePaste(text) }
+            switch session.paste(text, allowUnsafe: false) {
+            case .needsConfirmation: confirmUnsafePaste(text)
+            case .pasted: session.hasUnsentTyping = true
+            case .nothing: break
+            }
         } else {
             return false
         }
@@ -154,8 +158,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     func insertFiles(_ urls: [URL]) {
         guard !isReadOnly, !urls.isEmpty else { return }
         if session.host != nil { uploadAndType(urls: urls) } else {
-            sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
+            typeUnsent(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
         }
+    }
+
+    /// Text typed at the program's input for you (files' paths): it waits
+    /// there unsent, as what you type does (`hasUnsentTyping`).
+    func typeUnsent(_ text: String) {
+        guard !isReadOnly else { return }
+        session.hasUnsentTyping = true
+        sendInput(text)
     }
 
     /// Take on new settings. The font size follows the config only when the
@@ -1196,6 +1208,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             // commits each syllable so; Japanese, typing on after a conversion).
             // Nothing committed: it only edited or cancelled the composition.
             if !committed.isEmpty, !isReadOnly {
+                session.hasUnsentTyping = true
                 committed.forEach(session.sendText)
                 broadcastPeers?().filter { !$0.isReadOnly }.forEach { peer in committed.forEach(peer.session.sendText) }
             }
@@ -1211,19 +1224,33 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     /// What a key leaves at the program's input (`hasUnsentTyping`, which
-    /// holds the prompt queue): text, until Return sends it or ⌃C or ⌃U
-    /// clears the line. Keys answering what the program asks (a permission,
-    /// a choice) make no draft.
+    /// holds the prompt queue). Before the input method has it: a Return
+    /// that confirms a composition sends nothing (what it commits is typed).
     private func noteUnsentTyping(_ event: NSEvent) {
+        if let unsent = Self.unsentTyping(after: event, composing: hasMarkedText(),
+                                          answering: session.programStatus.headline?.state == .blocked) {
+            session.hasUnsentTyping = unsent
+        }
+    }
+
+    /// Whether text waits unsent at the program's input after `event`, nil
+    /// when the key changes nothing of it: text, until a plain Return sends
+    /// it or ⌃C or ⌃U clears the line. A Return confirming a composition
+    /// (`composing`), or with a modifier (Shift+Return, a new line in an
+    /// agent's box), sends nothing. Keys answering what the program asks
+    /// (`answering`: a permission, a choice) make no draft.
+    static func unsentTyping(after event: NSEvent, composing: Bool, answering: Bool) -> Bool? {
         let mods = event.modifierFlags.intersection([.command, .control, .option])
         if event.keyCode == 36 || event.keyCode == 76 {
-            session.hasUnsentTyping = false
+            guard !composing, event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return nil }
+            return false
         } else if mods == .control, ["c", "u"].contains(event.charactersIgnoringModifiers?.lowercased()) {
-            session.hasUnsentTyping = false
-        } else if !mods.contains(.command), !mods.contains(.control), session.programStatus.headline?.state != .blocked,
-                  let text = Self.keyText(event), text.unicodeScalars.contains(where: { $0.value >= 0x20 && $0.value != 0x7F }) {
-            session.hasUnsentTyping = true
+            return false
+        } else if !mods.contains(.command), !mods.contains(.control), !answering,
+                  let text = keyText(event), text.unicodeScalars.contains(where: { $0.value >= 0x20 && $0.value != 0x7F }) {
+            return true
         }
+        return nil
     }
 
     /// What a key types for the encoder: its characters, a control
@@ -2203,7 +2230,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         case .text(let t): text = t
         case .paths(let paths):
             // Files' paths, or a pasted image's: one quoted word each, nothing to confirm.
-            if session.paste(paths, allowUnsafe: true) == .pasted { setNeedsRender() }
+            if session.paste(paths, allowUnsafe: true) == .pasted {
+                session.hasUnsentTyping = true
+                setNeedsRender()
+            }
             return
         case .nothing: return
         }
@@ -2229,7 +2259,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }
-            _ = self.session.paste(text, allowUnsafe: true)
+            if self.session.paste(text, allowUnsafe: true) == .pasted { self.session.hasUnsentTyping = true }
             self.setNeedsRender()
         }
     }
@@ -2335,6 +2365,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         } else {
             // Text not tied to a key event (e.g. emoji picker, dictation).
             if !isReadOnly {
+                session.hasUnsentTyping = true
                 session.sendText(text)
                 broadcastPeers?().filter { !$0.isReadOnly }.forEach { $0.session.sendText(text) }
             }

@@ -1,3 +1,5 @@
+import AppKit
+import Carbon.HIToolbox
 import Foundation
 import Testing
 @testable import LiberttyApp
@@ -90,6 +92,34 @@ struct PromptQueueTests {
         drafting.now = 1000
         #expect(q.step(drafting) == nil)
         #expect(q.step(look(.idle, now: 1001))?.text == "go")
+    }
+
+    private func key(_ code: Int, _ characters: String, _ flags: NSEvent.ModifierFlags = []) -> NSEvent {
+        var typed = characters
+        if flags.contains(.control), let ascii = characters.unicodeScalars.first?.value {
+            typed = String(UnicodeScalar(UInt8(ascii & 0x1f)))
+        }
+        return NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                                context: nil, characters: typed, charactersIgnoringModifiers: characters,
+                                isARepeat: false, keyCode: UInt16(code))!
+    }
+
+    /// Only a Return that sends what's typed ends the draft: not one that
+    /// confirms an input method's composition (Japanese, Chinese: what it
+    /// commits is in the box, unsent), nor Shift+Return or Option+Return (a
+    /// new line in an agent's box).
+    @Test @MainActor func onlyAReturnThatSendsEndsADraft() {
+        let enter = key(kVK_Return, "\r")
+        #expect(TerminalView.unsentTyping(after: key(kVK_ANSI_A, "a"), composing: false, answering: false) == true)
+        #expect(TerminalView.unsentTyping(after: enter, composing: false, answering: false) == false)
+        #expect(TerminalView.unsentTyping(after: key(kVK_ANSI_KeypadEnter, "\u{3}"), composing: false, answering: false) == false)
+        #expect(TerminalView.unsentTyping(after: enter, composing: true, answering: false) == nil)
+        #expect(TerminalView.unsentTyping(after: key(kVK_Return, "\r", .shift), composing: false, answering: false) == nil)
+        #expect(TerminalView.unsentTyping(after: key(kVK_Return, "\r", .option), composing: false, answering: false) == nil)
+        // ⌃U and ⌃C clear the line; an answer to what the program asks is no draft.
+        #expect(TerminalView.unsentTyping(after: key(kVK_ANSI_U, "u", .control), composing: false, answering: false) == false)
+        #expect(TerminalView.unsentTyping(after: key(kVK_ANSI_C, "c", .control), composing: false, answering: false) == false)
+        #expect(TerminalView.unsentTyping(after: key(kVK_ANSI_Y, "y"), composing: false, answering: true) == nil)
     }
 
     /// Kept from before a restart: back after what was queued since, paused
