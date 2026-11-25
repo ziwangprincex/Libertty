@@ -1,0 +1,12 @@
+# A window closed and kept a while for Undo (undo-timeout) takes no queued
+# prompt: its sessions end when that's over. Brought back, its queue goes on.
+action:close_window
+wait:0.5
+queue-prompt:echo UNDO-$((6*7))
+wait:1.5
+expect-queue:1
+expect-not:UNDO-42
+undo:go
+wait:2.0
+expect:UNDO-42
+expect-queue:0

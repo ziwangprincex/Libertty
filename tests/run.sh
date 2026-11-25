@@ -535,8 +535,12 @@ mkdir -p $PRIVATE/queue
 cc -o $PRIVATE/queue/claude $ROOT/tests/fixtures/fake-agent-queue.c
 expect prompt-queue 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/prompt-queue.txt)" $OUT
+expect prompt-queue-closed 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-closed.txt)" $OUT
 expect composer 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/composer.txt)" $OUT
+expect composer-exited 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/composer-exited.txt)" $OUT --persist
 expect prompt-queue-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-cli.txt)" $OUT --persist
 # Fork Conversation: the panes run cat, so the agents' fork commands are only shown.
@@ -740,6 +744,9 @@ expect workspaces 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests
 # Panes: zoomed navigation, Redo of a close, two siblings ending at once.
 expect splits 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/splits.txt)" $OUT
+# Broadcast Input skips a read-only pane: keys, and text an input method commits.
+expect broadcast-readonly 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/broadcast-readonly.txt)" $OUT
 # The system is told where the cursor is after it moves (output, a split, the window dragged):
 # its input-source indicator stayed where the pane took the keyboard.
 expect caret 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \

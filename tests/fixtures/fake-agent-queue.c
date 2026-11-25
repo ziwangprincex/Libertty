@@ -2,7 +2,8 @@
 // composer.txt, built by tests/run.sh as "claude" (the name Libertty knows
 // the agent by): it says it's at rest (OSC 7501, as Claude Code's hooks
 // do), takes a line, works on it a moment, then says it's done; the line
-// "ask" first waits for you (blocked) a while, as a permission question would.
+// "ask" first waits for you (blocked) a while, as a permission question would;
+// the line "quit" exits, as /exit does.
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -17,6 +18,7 @@ int main(void) {
     state("idle");
     while (fgets(line, sizeof line, stdin)) {
         line[strcspn(line, "\r\n")] = 0;
+        if (strcmp(line, "quit") == 0) return 0;
         state("working");
         if (strcmp(line, "ask") == 0) {
             usleep(500000);

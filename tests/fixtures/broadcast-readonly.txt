@@ -1,0 +1,16 @@
+# Broadcast Input: what's typed in one pane goes to every pane of the tab,
+# never to a read-only one (Stop Sending Input) — keys, nor text an input
+# method commits (中 and 文 here, as an emoji from the picker or dictation
+# would be). Keys between them, so only a pane that got the committed text
+# alone would show it together.
+action:new_split:right
+wait:1.5
+action:toggle_readonly
+action:goto_split:previous
+wait:0.3
+action:toggle_broadcast_input
+type:echo 中X文-$((40+2))
+key:enter
+wait:1.0
+expect:中X文-42
+expect-not:中文

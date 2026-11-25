@@ -1,0 +1,15 @@
+# A pane whose program has ended (kept open, its error to be read) takes no
+# prompt: queued there, the text stays in the composer rather than going
+# with the pane's queue at its next look.
+type:libertty +split -e 'echo BOOM-$((40+2)); exit 3'
+key:enter
+wait:2.5
+expect:Exited with status 3
+key:cmd+shift+e
+expect-composer:open
+type:late prompt
+key:cmd+shift+enter
+wait:0.5
+expect-composer:open
+expect-composer:text=late prompt
+expect-queue:0

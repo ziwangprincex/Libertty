@@ -189,8 +189,11 @@ final class ComposerView: NSView, CapsuleObstacle {
             queueList.addArrangedSubview(more)
         }
         pausedNote.isHidden = !queue.paused || queue.isEmpty
+        let why = queue.pauseReason == .agentExited
+            ? L10n.t("The queue is paused: the agent exited, and the next prompt would go to the shell. Resume")
+            : L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume")
         pausedNote.attributedTitle = NSAttributedString(
-            string: L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume"),
+            string: why,
             attributes: [.font: Typeface.ui(11, .medium), .foregroundColor: NSColor.systemOrange])
         pausedNote.setAccessibleLabel(pausedNote.attributedTitle.string)
         needsLayout = true
@@ -279,6 +282,9 @@ final class ComposerView: NSView, CapsuleObstacle {
     /// ⌘⇧Return (or Queue): to go when the pane is ready; the composer stays for the next.
     @objc func queue(_ sender: Any?) {
         guard let session = pane?.session, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { NSSound.beep(); return }
+        // The pane's program has ended: a queue would drop it at its next
+        // look, so the text stays here.
+        guard !session.hasExited else { NSSound.beep(); return }
         PromptQueues.shared.enqueue(text, for: session)
         textView.string = ""
         ComposerController.saveDraft(of: self)

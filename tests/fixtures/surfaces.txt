@@ -15,6 +15,12 @@ expect-surface:demo
 expect-surface-text:demo=Deploy now?
 expect-surface-text:demo=From
 expect-surface-live:demo=yes
+# A read-only pane (Stop Sending Input) tells its program nothing: a click there is input too.
+action:toggle_readonly
+surface-choose:demo=env=staging
+wait:0.6
+expect-not:EVENT select env  staging
+action:toggle_readonly
 surface-choose:demo=env=prod
 wait:0.6
 expect:EVENT select env  prod

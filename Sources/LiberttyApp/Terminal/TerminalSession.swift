@@ -9,6 +9,9 @@ import os
 protocol TerminalSessionDelegate: AnyObject {
     /// All delegate calls arrive on the main thread.
     func sessionNeedsRender(_ session: TerminalSession)
+    /// A frame is due for a change made on this side, not output (a scroll,
+    /// a selection, a search): the pane draws it, and that's all.
+    func sessionNeedsFrame(_ session: TerminalSession)
     func sessionTitleChanged(_ session: TerminalSession, title: String)
     func sessionBell(_ session: TerminalSession)
     func sessionProgramStatusChanged(_ session: TerminalSession)
@@ -30,6 +33,7 @@ protocol TerminalSessionDelegate: AnyObject {
 }
 
 extension TerminalSessionDelegate {
+    func sessionNeedsFrame(_ session: TerminalSession) {}
     func sessionForegroundChanged(_ session: TerminalSession) {}
     func sessionPortsChanged(_ session: TerminalSession) {}
     func sessionProgramSizeChanged(_ session: TerminalSession) {}
@@ -151,7 +155,8 @@ final class TerminalSession {
     private(set) var label = ""
     /// The link has been up at least once (so a drop is a reconnect).
     private(set) var hasConnectedOnce = false
-    /// Set on `io` when new output landed; cleared by the renderer.
+    /// Set when a frame is due (new output on `io`, a change made here);
+    /// cleared by the renderer. Whoever sets it asks the delegate for the frame.
     private let renderPending = AtomicFlag()
 
     convenience init(size: GridSize, config: Config = ConfigStore.shared.config) throws {
@@ -1126,7 +1131,15 @@ final class TerminalSession {
     }
 
     private func markRenderPending() {
-        _ = renderPending.set()
+        // Asked for as output asks for it (requestRender): a flag set and
+        // left there while the pane's display link sleeps would keep every
+        // later output from asking, and the pane would stop updating.
+        if renderPending.set() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.delegate?.sessionNeedsFrame(self)
+            }
+        }
     }
 
     /// The terminal, under the lock, for the pane's own modes (copy mode,
