@@ -282,6 +282,9 @@ final class ComposerView: NSView, CapsuleObstacle {
     /// ⌘⇧Return (or Queue): to go when the pane is ready; the composer stays for the next.
     @objc func queue(_ sender: Any?) {
         guard let session = pane?.session, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { NSSound.beep(); return }
+        // The pane's program has ended: a queue would drop it at its next
+        // look, so the text stays here.
+        guard !session.hasExited else { NSSound.beep(); return }
         PromptQueues.shared.enqueue(text, for: session)
         textView.string = ""
         ComposerController.saveDraft(of: self)

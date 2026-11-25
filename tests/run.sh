@@ -534,6 +534,8 @@ expect prompt-queue 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-co
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/prompt-queue.txt)" $OUT
 expect composer 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/composer.txt)" $OUT
+expect composer-exited 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/composer-exited.txt)" $OUT --persist
 expect prompt-queue-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-cli.txt)" $OUT --persist
 # Fork Conversation: the panes run cat, so the agents' fork commands are only shown.
