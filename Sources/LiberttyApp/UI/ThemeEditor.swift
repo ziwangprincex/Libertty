@@ -239,14 +239,28 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
             guard response == .alertFirstButtonReturn else { return }
             MainActor.assumeIsolated {
                 try? FileManager.default.trashItem(at: entry.url, resultingItemURL: nil)
-                // In use: back to the default, rather than a theme that's gone.
+                // In use: back to the default, rather than a theme that's gone
+                // (only the half that used it: light:Mine,dark:Nord keeps Nord).
                 let config = ConfigStore.shared.savedConfig
-                if [config.theme.light, config.theme.dark].contains(picked) { ConfigStore.shared.set("theme", nil) }
+                if [config.theme.light, config.theme.dark].contains(picked) {
+                    let spec = Self.theme(config.theme, without: picked)
+                    ConfigStore.shared.set("theme", spec == Config().theme ? nil : spec.configString)
+                }
                 ThemeLibrary.shared.invalidate()
                 ConfigStore.shared.reload(force: true)
                 self.model.load(Self.themeInUse(), from: Self.themeInUseName())
             }
         }
+    }
+
+    /// `spec` once the theme `name` is gone: each half that used it back
+    /// to the default's, the other as it was.
+    static func theme(_ spec: ThemeSpec, without name: String) -> ThemeSpec {
+        let defaults = Config().theme
+        var spec = spec
+        if spec.light == name { spec.light = defaults.light }
+        if spec.dark == name { spec.dark = defaults.dark }
+        return spec
     }
 
     func save() {

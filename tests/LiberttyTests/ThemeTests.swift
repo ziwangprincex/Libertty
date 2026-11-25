@@ -89,6 +89,15 @@ struct ThemeTests {
         #expect(SettingsModel.themeFile(importing: dir.appendingPathComponent("none"), name: "None") == nil)
     }
 
+    /// A theme deleted in the Theme Editor: only the half of `theme` that
+    /// used it goes back to the default (the other was reset too).
+    @Test @MainActor func deletingAThemeResetsOnlyItsHalf() throws {
+        let both = try #require(ThemeSpec("light:Mine,dark:Nord"))
+        #expect(ThemeEditor.theme(both, without: "Mine") == ThemeSpec(light: Config().theme.light, dark: "Nord"))
+        #expect(ThemeEditor.theme(both, without: "Nord") == ThemeSpec(light: "Mine", dark: Config().theme.dark))
+        #expect(ThemeEditor.theme(try #require(ThemeSpec("Mine")), without: "Mine") == Config().theme)
+    }
+
     @Test func configCoversTheThemesColors() {
         var c = Config()
         #expect(c.set("cursor-text", "#0a0b0c") == nil)
