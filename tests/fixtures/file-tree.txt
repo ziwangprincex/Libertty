@@ -82,10 +82,13 @@ open:@DIR@/docs/notes.md
 editor-wait:go
 expect-tab-count:2
 tab:1
-wait:0.3
+wait:1.0
+expect-tree:docs/notes.md
 tree-select:docs/notes.md
 tree-menu:Rename
+shot:file-tree-rename-open.png
 type-then:enter:renamed
+shot:file-tree-renamed.png
 expect-tree:docs/renamed.md
 expect-tab:renamed.md
 open:@DIR@/docs/renamed.md
