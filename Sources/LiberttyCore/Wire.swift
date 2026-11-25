@@ -324,14 +324,23 @@ public final class Connection {
     }
 
     /// Give up after `seconds` blocked in one send (a hung peer), or never with 0.
-    public func setSendTimeout(_ seconds: Int) {
-        var tv = timeval(tv_sec: seconds, tv_usec: 0)
+    public func setSendTimeout(_ seconds: Double) {
+        var tv = Self.timeout(seconds)
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     }
 
     public func setReceiveTimeout(_ seconds: Double) {
-        var tv = timeval(tv_sec: Int(seconds), tv_usec: suseconds_t((seconds - Double(Int(seconds))) * 1e6))
+        var tv = Self.timeout(seconds)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    }
+
+    /// `seconds` as a socket timeout. What isn't a time to wait at all
+    /// (`--timeout inf`, a huge number, a negative one) waits forever, as 0
+    /// does: Int() would trap on it.
+    private static func timeout(_ seconds: Double) -> timeval {
+        guard seconds.isFinite, seconds > 0, seconds < 1e9 else { return timeval(tv_sec: 0, tv_usec: 0) }
+        let whole = Int(seconds)
+        return timeval(tv_sec: whole, tv_usec: suseconds_t((seconds - Double(whole)) * 1e6))
     }
 
     public func setBufferSizes(_ bytes: Int32) {

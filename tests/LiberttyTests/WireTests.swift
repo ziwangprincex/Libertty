@@ -38,6 +38,51 @@ struct WireTests {
         #expect(seen == (0..<200).map(String.init))
     }
 
+    /// `+wait --timeout inf` (or a number too big for a time) waits forever
+    /// instead of trapping; a real one still runs out.
+    @Test func timeoutsThatArentTimes() {
+        let (a, b) = pair()
+        for seconds in [Double.infinity, -.infinity, .nan, 1e300, -1, 0] {
+            a.setReceiveTimeout(seconds)
+            a.setSendTimeout(seconds)
+        }
+        b.setReceiveTimeout(0.2)
+        let start = Date()
+        #expect(b.receive() == nil)
+        #expect(Date().timeIntervalSince(start) < 5)
+        #expect(a.send(.list, json: [:]))
+    }
+
+    /// A host's liberttyd could answer with any numbers: a window clamps
+    /// them rather than trap (and take the whole app down).
+    @Test func numbersOutOfRangeFromLiberttyd() throws {
+        let (app, daemon) = pair()
+        let address = DaemonAddress(host: "host") { app }
+        let server = Thread {
+            guard let create = daemon.receive(), create.kind == .create else { return }
+            let header: [String: Any] = ["id": "s", "pid": Int.max, "cols": 1 << 40, "rows": -7, "sizes": true]
+            _ = daemon.send(.attached, header: header, body: UnsafeRawBufferPointer(start: nil, count: 0))
+            _ = daemon.send(.ptySize, json: ["cols": -1, "rows": Int.max])
+            _ = daemon.send(.exited, json: ["status": Int.min])
+            daemon.close()
+        }
+        server.start()
+        let request = CreateRequest(id: "s", executable: "/bin/sh", arguments: [], environment: [:], workingDirectory: "/",
+                                    size: GridSize(cols: 80, rows: 24, widthPx: 0, heightPx: 0), scrollback: 0)
+        let queue = DispatchQueue(label: "test.remote")
+        let pty = try RemotePTY.create(request, address: address, queue: queue)
+        #expect(pty.pid == pid_t.max)
+        #expect(pty.ptySize?.cols == UInt16.max && pty.ptySize?.rows == 0)
+        let ended = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var status: Int32?
+        pty.onExit = { status = $0; ended.signal() }
+        pty.startReading()
+        #expect(ended.wait(timeout: .now() + 5) == .success)
+        #expect(status == 0)
+        #expect(pty.ptySize?.cols == 0 && pty.ptySize?.rows == UInt16.max)
+        pty.detach()
+    }
+
     @Test func osc7Paths() {
         #expect(SessionInfo.fileURL("file://mac/Users/me/%E6%88%91%E7%9A%84%20%E6%96%87%E6%A1%A3")! == ("mac", "/Users/me/我的 文档"))
         #expect(SessionInfo.fileURL("file://mac/tmp/a#b?c")! == ("mac", "/tmp/a#b?c"))

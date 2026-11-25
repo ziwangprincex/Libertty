@@ -128,7 +128,9 @@ public final class RemotePTY: TerminalBackend {
             throw DaemonClientError.refused(reply.json["error"] as? String ?? "unexpected reply")
         }
         c.setReceiveTimeout(0)
-        return (pid_t(header["pid"] as? Int ?? 0), header)
+        // (Its numbers clamped, here and wherever liberttyd's are read: a
+        // host's could say anything, and a trapping conversion ends the app.)
+        return (pid_t(clamping: header["pid"] as? Int ?? 0), header)
     }
 
     /// Attach to a running session. Returns its snapshot too (empty if liberttyd
@@ -169,7 +171,7 @@ public final class RemotePTY: TerminalBackend {
             throw DaemonClientError.refused(reply.json["error"] as? String ?? "unexpected reply")
         }
         c.setReceiveTimeout(0)
-        return (pid_t(header["pid"] as? Int ?? 0), body, header["label"] as? String ?? "", inputMode(header), header)
+        return (pid_t(clamping: header["pid"] as? Int ?? 0), body, header["label"] as? String ?? "", inputMode(header), header)
     }
 
     /// Begin delivering output; set the handlers first.
@@ -214,11 +216,11 @@ public final class RemotePTY: TerminalBackend {
                         }
                     case .ptySize:
                         let json = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
-                        if let cols = json?["cols"] as? Int, let rows = json?["rows"] as? Int { setPtySize(UInt16(cols), UInt16(rows)) }
+                        if let cols = json?["cols"] as? Int, let rows = json?["rows"] as? Int { setPtySize(UInt16(clamping: cols), UInt16(clamping: rows)) }
                     case .exited:
                         let status = (try? JSONSerialization.jsonObject(with: Data(payload))) as? [String: Any]
                         stateLock.lock()
-                        exitStatus = Int32(status?["status"] as? Int ?? 0)
+                        exitStatus = Int32(truncatingIfNeeded: status?["status"] as? Int ?? 0)
                         stateLock.unlock()
                     default:
                         break
@@ -249,9 +251,9 @@ public final class RemotePTY: TerminalBackend {
         // (Only a liberttyd that tells sizes later says it now: one before
         // them would leave a window thinking its size was another's.)
         if header["sizes"] as? Bool == true, let cols = header["cols"] as? Int, let rows = header["rows"] as? Int {
-            if tell { setPtySize(UInt16(cols), UInt16(rows)) } else {
+            if tell { setPtySize(UInt16(clamping: cols), UInt16(clamping: rows)) } else {
                 stateLock.lock()
-                currentPtySize = (UInt16(cols), UInt16(rows))
+                currentPtySize = (UInt16(clamping: cols), UInt16(clamping: rows))
                 stateLock.unlock()
             }
         }
@@ -512,7 +514,7 @@ public enum DaemonClient {
         guard let reply = c.receive(), reply.kind == .welcome else { return nil }
         let json = reply.json
         return Welcome(version: json["version"] as? Int ?? 0, build: json["build"] as? String ?? "",
-                       pid: pid_t(json["pid"] as? Int ?? 0), features: json["features"] as? [String] ?? [],
+                       pid: pid_t(clamping: json["pid"] as? Int ?? 0), features: json["features"] as? [String] ?? [],
                        session: SecuritySession(json: json["session"]))
     }
 
@@ -530,7 +532,7 @@ public enum DaemonClient {
                                address: DaemonAddress = .local) -> Connection.Frame? {
         guard let c = address.connect() else { return nil }
         c.setReceiveTimeout(timeout)
-        c.setSendTimeout(Int(timeout.rounded(.up)))
+        c.setSendTimeout(timeout)
         c.send(kind, payload)
         return c.receive()
     }
@@ -551,7 +553,7 @@ public enum DaemonClient {
                                timeout: Double = 5, address: DaemonAddress = .local) -> Reply {
         guard let c = address.connect() else { return .unanswered }
         c.setReceiveTimeout(timeout)
-        c.setSendTimeout(Int(timeout.rounded(.up)))
+        c.setSendTimeout(timeout)
         c.send(.hello, json: ["version": Wire.version])
         guard let welcome = c.receive(), welcome.kind == .welcome else { return .unanswered }
         guard (welcome.json["features"] as? [String] ?? []).contains(feature) else { return .unsupported }
