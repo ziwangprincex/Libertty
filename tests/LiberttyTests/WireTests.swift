@@ -1,13 +1,16 @@
+import CGhosttyVt
+import CPty
 import Foundation
 import Testing
-import CGhosttyVt
 import LiberttyCore
 
 /// liberttyd's protocol: frames over a socket pair, as the app and the daemon send them.
 struct WireTests {
     private func pair() -> (Connection, Connection) {
         var fds: [Int32] = [0, 0]
-        precondition(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        // (liberttyd's own: no SIGPIPE, which would end the whole test run
+        // when a session writes to a window whose end a finished test closed.)
+        precondition(libertty_socketpair(&fds) == 0)
         return (Connection(fd: fds[0]), Connection(fd: fds[1]))
     }
 
@@ -188,7 +191,7 @@ struct SnapshotTests {
     /// up on it as garbage): the send fails, and the connection goes on.
     @Test func noFrameOverTheLimit() throws {
         var fds: [Int32] = [0, 0]
-        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        #expect(libertty_socketpair(&fds) == 0)
         let (a, b) = (Connection(fd: fds[0]), Connection(fd: fds[1]))
         // (Never touched: it's refused for its size.)
         let huge = UnsafeMutableRawPointer.allocate(byteCount: Wire.maxFrame, alignment: 16)
