@@ -93,6 +93,17 @@ struct SurfaceProtocolTests {
         #expect(SurfaceStore.peekID(#"{"id" : "a.b"}"#) == "a.b")
         #expect(SurfaceStore.peekID(#"{"title":"x"}"#) == nil)
     }
+
+    /// `+surface read --timeout` waits a minute at a time: a timeout past
+    /// poll's milliseconds (an Int32) reads the event, not traps.
+    @Test func readingWithALongTimeout() throws {
+        var fds: [Int32] = [0, 0]
+        try #require(pipe(&fds) == 0)
+        defer { close(fds[0]); close(fds[1]) }
+        let event = Array("\u{1b}]7502;e;b64:aGk=\u{7}".utf8)
+        #expect(write(fds[1], event, event.count) == event.count)
+        #expect(SurfaceCLI.frame(fds[0], prefix: "\u{1b}]7502;e;", timeout: 1e300) == "b64:aGk=")
+    }
 }
 
 /// Command lenses' readings (CommandLenses).

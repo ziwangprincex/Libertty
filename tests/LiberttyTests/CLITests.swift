@@ -184,4 +184,19 @@ struct CLITests {
         #expect(back.pid == 42 && back.client == "cli +events" && back.session == "1a2b3c4d" && back.listening && back.waiting == ["5e6f7a8b"])
         #expect(CLI.isMissing("no such session") && CLI.isMissing("no session 1a2b3c4d") && !CLI.isMissing("unknown key x"))
     }
+
+    /// Numbers and paths typed at the command line: whatever is typed, no
+    /// trap (`--config-file=`, `--timeout inf`), only a usage error.
+    @Test func typedArgumentsDontTrap() {
+        #expect(CLI.configFileArgument(["--config-file=~/c"]) == "~/c")
+        #expect(CLI.configFileArgument(["--config-file", "/tmp/c"]) == "/tmp/c")
+        #expect(CLI.configFileArgument(["--config-file=a=b"]) == "a=b")
+        #expect(CLI.configFileArgument(["--config-file="]) == "")
+        #expect(CLI.configFileArgument(["--config-file"]) == "")
+        #expect(CLI.configFileArgument([]) == nil)
+        #expect(CLI.waitSeconds("2.5") == 2.5)
+        for bad in ["inf", "-inf", "nan", "0", "-1", "soon", nil] { #expect(CLI.waitSeconds(bad) == nil) }
+        // Past what a socket's timeout holds: the most it holds.
+        #expect(CLI.waitSeconds("1e300") == Double(Int32.max))
+    }
 }
