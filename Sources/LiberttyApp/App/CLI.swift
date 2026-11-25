@@ -29,10 +29,12 @@ enum CLI {
         guard let command = args.first, command.hasPrefix("+") else { return }
         var rest = Array(args.dropFirst())
         // `--host HOST`: the session commands talk to that machine's liberttyd (over ssh).
-        if let i = rest.firstIndex(of: "--host") {
-            guard i + 1 < rest.count, !rest[i + 1].hasPrefix("-") else { fail("--host needs an ssh destination"); exit(2) }
-            host = RemoteHost.named(rest[i + 1])
-            rest.removeSubrange(i...(i + 1))
+        switch hostOption(rest, of: command) {
+        case .none: break
+        case .missing: fail("--host needs an ssh destination"); exit(2)
+        case .given(let destination, let others):
+            host = RemoteHost.named(destination)
+            rest = others
         }
         guard CLISpec.command(named: command) != nil else {
             fail("unknown command \(command); see libertty +help")
@@ -118,6 +120,26 @@ enum CLI {
     /// Set with `--host`; nil for this Mac's liberttyd.
     nonisolated(unsafe) static var host: RemoteHost?
     static var daemon: DaemonAddress { host?.address ?? .local }
+
+    enum HostOption: Equatable {
+        case none, missing
+        /// The destination, and the arguments without `--host DESTINATION`.
+        case given(String, rest: [String])
+    }
+
+    /// `--host HOST` of a command that takes it (CLISpec's hostable ones;
+    /// `+attach` says it doesn't), before `-e` or `--`: what follows those is
+    /// a command line of its own, and its `--host` is its own
+    /// (`+split -e vite --host 0.0.0.0`). Another command's is one of its words.
+    static func hostOption(_ args: [String], of command: String) -> HostOption {
+        guard CLISpec.command(named: command)?.hostable == true || command == "+attach" else { return .none }
+        let own = args.prefix { $0 != "-e" && $0 != "--" }
+        guard let i = own.firstIndex(of: "--host") else { return .none }
+        guard i + 1 < own.count, !own[i + 1].hasPrefix("-") else { return .missing }
+        var rest = args
+        rest.removeSubrange(i...(i + 1))
+        return .given(own[i + 1], rest: rest)
+    }
 
     private static var version: String {
         "Libertty " + ((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "dev")
@@ -289,7 +311,8 @@ enum CLI {
                                          Libertty keeps TERM=xterm-ghostty there (ssh-terminfo = true: by itself)
           --host HOST                    with +list-sessions, +new-session, +capture, +send, +send-key,
                                          +kill-session, +wait, +events, +ports, +split, +move-pane, +forward,
-                                         +daemon or +clients: that machine's sessions
+                                         +rename-session, +prompt, +daemon or +clients: that machine's sessions
+                                         (before -e: what follows it is the command's own)
 
         With remote-control = false (Settings ▸ Integrations), commands may read but not drive Libertty:
         +split, +send, +focus, +action, +new-window, +new-session, +kill-session, +set, +daemon stop… are refused.
@@ -1565,9 +1588,10 @@ enum CLI {
         }
         if info["cwd"] == nil { info["cwd"] = FileManager.default.currentDirectoryPath }
         guard liberttyRunning else {
-            // Not running: start it; the first window then runs the command.
-            var launch = ["-a", Bundle.main.bundleURL.pathExtension == "app" ? Bundle.main.bundlePath : "Libertty"]
-            if let command = info["command"] { launch += ["--args", "-e", command] }
+            // Not running: start it as usual (its windows come back, its
+            // sessions are kept), with this window asked for too.
+            let launch = ["-a", Bundle.main.bundleURL.pathExtension == "app" ? Bundle.main.bundlePath : "Libertty", "--args"]
+                + newWindowLaunchArguments(info)
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             p.arguments = launch
@@ -1577,6 +1601,28 @@ enum CLI {
         }
         RemoteControl.post(info)
         return 0
+    }
+
+    /// `--new-window tab=0|1 cwd=DIR command=COMMAND` (AppDelegate reads it
+    /// back): a window `+new-window` or `+new-tab` asked for while Libertty
+    /// wasn't running. Not `-e`: that makes a one-command run of the app,
+    /// which keeps nothing and quits with its window.
+    static func newWindowLaunchArguments(_ info: [String: String]) -> [String] {
+        ["--new-window", "tab=" + (info["tab"] ?? "0"), "cwd=" + (info["cwd"] ?? ""), "command=" + (info["command"] ?? "")]
+    }
+
+    /// The request `newWindowLaunchArguments` passed, as `+new-window` posts
+    /// it to a running Libertty; nil when the launch asked for none.
+    static func newWindowRequest(launchArguments args: [String]) -> [String: String]? {
+        guard let i = args.firstIndex(of: "--new-window") else { return nil }
+        var info = ["kind": "new-window"]
+        for arg in args[(i + 1)...].prefix(3) {
+            for key in ["tab", "cwd", "command"] where arg.hasPrefix(key + "=") {
+                let value = String(arg.dropFirst(key.count + 1))
+                if !value.isEmpty { info[key] = value }
+            }
+        }
+        return info
     }
 }
 

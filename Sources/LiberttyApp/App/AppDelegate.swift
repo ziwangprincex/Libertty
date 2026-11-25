@@ -99,8 +99,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // `libertty +open` when Libertty wasn't running: its requests ride on the
         // launch arguments (a notification would arrive before anyone listens).
         let opens = Self.launchOpenRequests()
-        if !openedDocument && controllers.isEmpty && !opens.contains(where: { $0["split"] != "1" }) {
+        // `libertty +new-window`/`+new-tab` when Libertty wasn't running: that
+        // window (or tab) after the saved ones, in place of the usual first one.
+        let asked = CLI.newWindowRequest(launchArguments: CommandLine.arguments)
+        if !openedDocument && controllers.isEmpty && asked == nil && !opens.contains(where: { $0["split"] != "1" }) {
             open(tabbedInto: nil, command: launch.command, cols: launch.cols, rows: launch.rows)
+        }
+        if let asked {
+            open(tabbedInto: asked["tab"] == "1" ? frontController?.window : nil, command: asked["command"],
+                 workingDirectory: asked["cwd"])
         }
         opens.forEach(handleOpen)
         if !oneShot {
