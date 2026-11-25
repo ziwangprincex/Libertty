@@ -28,10 +28,13 @@ expect-shown:4
 expect-focus:1
 action:show_tabs:working
 expect-shown:1:WORKER
+# The tabs filtered out leave no blank bands in the list.
+expect-tabs-packed:go
 action:show_tabs:waiting
 expect-shown:1:ASKER
 action:show_tabs:attention
 expect-shown:1:BREAKER
+expect-tabs-packed:go
 # Again: every tab.
 action:show_tabs:attention
 expect-shown:4

@@ -288,7 +288,9 @@ final class SidebarViewController: NSViewController {
         tabsTable.backgroundColor = .clear
         tabsTable.style = .plain
         tabsTable.rowHeight = Layout.rowHeight
-        tabsTable.intercellSpacing = NSSize(width: 0, height: Self.rowSpacing)
+        // The space between rows is in each row's height (`rowSpacing`): a
+        // table's own spacing would come with the rows folded away too.
+        tabsTable.intercellSpacing = .zero
         tabsTable.selectionHighlightStyle = .regular
         tabsTable.addTableColumn(NSTableColumn(identifier: .init("tab")))
         tabsTable.dataSource = self
@@ -525,6 +527,7 @@ final class SidebarViewController: NSViewController {
         // Rex names the session; Libertty's sets of tabs are workspaces.
         tabsTitle?.stringValue = name
     }
+    /// The space under each row that shows (none under one filtered out).
     private static let rowSpacing: CGFloat = 2
 
     // MARK: Filter
@@ -579,6 +582,14 @@ final class SidebarViewController: NSViewController {
                   let off = cell.newsOffCenter else { return nil }
             return (tabs[i].title, off)
         }
+    }
+
+    /// The blank space in the list beyond its rows that show, in points:
+    /// what the rows filtered out still take (`--ui-probe`).
+    var blankInTabs: CGFloat {
+        view.window?.contentView?.layoutSubtreeIfNeeded()
+        let shown = rows.indices.filter(shows(tableRow:)).reduce(0) { $0 + tabsTable.rect(ofRow: $1).height }
+        return tabsScroll.frame.height - shown
     }
 
     /// The tabs whose row shows the muted glyph, each with what VoiceOver
@@ -736,7 +747,7 @@ final class SidebarViewController: NSViewController {
         let shown = tabs.filter(matches).count
         let folded = tabs.count - shown
         tabsHeight.constant = rows.indices.reduce(2) { height, r in
-            height + (shows(tableRow: r) ? self.height(of: rows[r]) : Self.foldedRowHeight) + Self.rowSpacing
+            height + (shows(tableRow: r) ? self.height(of: rows[r]) + Self.rowSpacing : Self.foldedRowHeight)
         }
         // How many, and how many of them show while filtered: "1/4".
         tabCount.stringValue = folded > 0 ? "\(shown)/\(tabs.count)" : String(tabs.count)
@@ -1328,7 +1339,7 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         guard rows.indices.contains(row) else { return rowHeight }
-        return shows(tableRow: row) ? height(of: rows[row]) : Self.foldedRowHeight
+        return shows(tableRow: row) ? height(of: rows[row]) + Self.rowSpacing : Self.foldedRowHeight
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { TabRowView() }
