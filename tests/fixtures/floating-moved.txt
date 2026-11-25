@@ -1,0 +1,26 @@
+# A tab's floating pane goes where its tab goes: moved to a window of its
+# own, its bar's buttons act in that window (they acted on the old one,
+# where the tab no longer was, and nothing happened). Run with --persist.
+tab:new
+wait:0.6
+action:new_floating_pane
+wait:1.2
+expect-floating:1 keyboard
+action:move_tab_to_new_window
+expect-windows:2
+expect-floating:0
+other-click:Minimize (it keeps running)
+wait:0.4
+# Back here: minimized, as it was put there, its capsule in the corner.
+take-tab:1
+wait:0.6
+expect-windows:1
+expect-floating:0
+expect-capsules:bottom-right: libertty-ui-probe
+capsule:1:click
+wait:0.5
+expect-floating:1 keyboard
+type:echo MOVED-$((40+2))
+key:enter
+wait:0.6
+expect:MOVED-42

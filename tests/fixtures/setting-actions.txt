@@ -31,3 +31,15 @@ expect-palette-not:Turn On
 type:turn on copy on sel
 expect-palette:Turn On Copy on selection
 key:escape
+# An unset switch (palette-generate: the theme decides) is off, as Settings
+# shows it: the palette offers to turn it on, and that turns it on.
+key:cmd+shift+p
+type:turn on use extended
+expect-palette:Turn On Use extended theme palette
+key:escape
+action:toggle_setting:palette-generate
+wait:0.4
+key:cmd+shift+p
+type:turn off use extended
+expect-palette:Turn Off Use extended theme palette
+key:escape

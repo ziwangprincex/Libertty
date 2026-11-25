@@ -252,8 +252,12 @@ struct PortForward: Sendable, Equatable {
             return (port(of: url), there, url)
         }
         if let colon = text.lastIndex(of: ":") {
-            let name = String(text[text.startIndex..<colon]), rest = String(text[text.index(after: colon)...])
-            guard let port = Int(rest), (1...65535).contains(port), !name.isEmpty, !name.contains(" ") else { return nil }
+            var name = String(text[text.startIndex..<colon]), rest = String(text[text.index(after: colon)...])
+            // `[::1]:5173`: the brackets set the address off from its port,
+            // and aren't its name (`specification` puts them back for ssh).
+            if name.count > 2, name.hasPrefix("["), name.hasSuffix("]") { name = String(name.dropFirst().dropLast()) }
+            guard let port = Int(rest), (1...65535).contains(port), !name.isEmpty, !name.contains(" "),
+                  !name.contains("["), !name.contains("]") else { return nil }
             return (port, loopback(name)?.there ?? name, nil)
         }
         guard let port = Int(text), (1...65535).contains(port) else { return nil }
@@ -266,7 +270,9 @@ struct PortForward: Sendable, Equatable {
 /// no listener on this Mac outlives the window that asked for it (ssh's own
 /// master lingers for ControlPersist seconds after that, forward-free). A
 /// forward made by `libertty +forward` with no window open stays until it's
-/// closed or Libertty quits.
+/// closed or Libertty quits: while a host has any, its connection is held
+/// up (`RemoteHost.keepConnection`), which ssh would otherwise close a
+/// minute after the last window's session went, the forwards with it.
 ///
 /// Asking for a forward runs ssh, so every call that changes one blocks and
 /// belongs off the main thread; reading the list doesn't.
@@ -304,11 +310,11 @@ final class PortForwarder: @unchecked Sendable {
     private var held: [String: [PortForward]] = [:]
     /// One change at a time per host, so two panes asking for the same port
     /// don't both pick the same local one (as `prepareLock` serializes
-    /// logins). Per host: ssh to one that stalls holds up only its own.
+    /// logins). Nothing is held across hosts while ssh runs: one that stalls
+    /// (a `-R` waits for the host's answer) holds up only its own forwards.
+    /// Two hosts' forwards that pick the same free port at once: the master
+    /// that listens on it second can't, and `establish` tries another.
     private var workLocks: [String: NSLock] = [:]
-    /// Two hosts' forwards may both want the same free port here: the local
-    /// one is picked and taken under this, briefly.
-    private let pickLock = NSLock()
 
     private func work<T>(on destination: String, _ body: () throws -> T) rethrows -> T {
         let hostLock = lock.withLock { () -> NSLock in
@@ -374,7 +380,7 @@ final class PortForwarder: @unchecked Sendable {
                 // it for the next reconnect.
                 if Self.isHeld(known, by: master) { return known }
                 var again = known
-                again.local = pickLock.withLock { PortForward.canBind(known.local) ? known.local : 0 }
+                again.local = PortForward.canBind(known.local) ? known.local : 0
                 if again.local == 0, let other = PortForward.freePort(preferring: 0) { again.local = other }
                 return try establish(again, on: host, master: master, retrying: true)
             }
@@ -430,24 +436,27 @@ final class PortForwarder: @unchecked Sendable {
 
     /// Ask the host's ControlMaster for a forward, and keep it if it took.
     /// `retrying`: a local port that was free a moment ago may have been
-    /// taken since (or by a master that still holds an old forward of
-    /// ours), so try once more on a port the system picks.
+    /// taken since (by another host's forward made at the same moment, or
+    /// a master that still holds an old forward of ours), so try once more
+    /// on a port the system picks.
     private func establish(_ forward: PortForward, on host: RemoteHost, master: Int32, retrying: Bool) throws -> PortForward {
         var first = forward
         first.master = master
-        let result = pickLock.withLock { host.control(first, cancel: false) }
+        let result = host.control(first, cancel: false)
         if result.ok {
             remember(first, host: host.destination, keeping: true)
+            host.keepConnection(on: master)
             return first
         }
-        guard retrying, let other = pickLock.withLock({ PortForward.freePort(preferring: 0) }), other != forward.local else {
+        guard retrying, let other = PortForward.freePort(preferring: 0), other != forward.local else {
             throw Failure.ssh(first, result.why)
         }
         var again = first
         again.local = other
-        let second = pickLock.withLock { host.control(again, cancel: false) }
+        let second = host.control(again, cancel: false)
         guard second.ok else { throw Failure.ssh(again, second.why) }
         remember(again, host: host.destination, keeping: true)
+        host.keepConnection(on: master)
         return again
     }
 
@@ -463,7 +472,7 @@ final class PortForwarder: @unchecked Sendable {
             if let known = forwards(on: host.destination).first(where: { $0.id == forward.id }),
                Self.isHeld(known, by: master) { return known }
             var again = forward
-            again.local = pickLock.withLock { PortForward.canBind(forward.local) ? forward.local : 0 }
+            again.local = PortForward.canBind(forward.local) ? forward.local : 0
             if again.local == 0 {
                 guard let other = PortForward.freePort(preferring: 0) else { throw Failure.noLocalPort }
                 again.local = other
@@ -498,8 +507,11 @@ final class PortForwarder: @unchecked Sendable {
     /// whatever ssh says: a master that is down took the forward with it,
     /// and an entry nobody can close would be there for good.
     private func drop(_ forward: PortForward) {
-        _ = RemoteHost.named(forward.destination).control(forward, cancel: true)
+        let host = RemoteHost.named(forward.destination)
+        _ = host.control(forward, cancel: true)
         remember(forward, host: forward.destination, keeping: false)
+        // The last one: the connection goes once nothing else uses it.
+        if forwards(on: forward.destination).isEmpty { host.keepConnection(on: nil) }
     }
 
     /// The host's last window closed: its forwards were for those panes.
@@ -520,7 +532,7 @@ final class PortForwarder: @unchecked Sendable {
             guard let master = host.master else { return }
             for forward in forwards(on: host.destination) where !Self.isHeld(forward, by: master) {
                 var again = forward
-                if forward.direction == .open, !pickLock.withLock({ PortForward.canBind(forward.local) }) {
+                if forward.direction == .open, !PortForward.canBind(forward.local) {
                     // Its port was taken here meanwhile: another one, and the
                     // next click on its link opens that.
                     guard let other = PortForward.freePort(preferring: 0) else { continue }
@@ -528,6 +540,9 @@ final class PortForwarder: @unchecked Sendable {
                 }
                 _ = try? establish(again, on: host, master: master, retrying: forward.direction == .open)
             }
+            // And the connection held up: this new master, or the same one
+            // if the session holding it ended (`keepConnection` keeps one that's still there).
+            if !forwards(on: host.destination).isEmpty { host.keepConnection(on: master) }
         }
     }
 

@@ -227,7 +227,8 @@ extension TerminalWindowController {
                 else { return nil }
                 let anchor = container.views.contains { $0 === next } ? next : (tab.focusedPane ?? container.views.first!)
                 if tab !== self.selectedTab { self.select(tab) }
-                container.split(anchor, with: pane, toward: side)
+                // Nowhere to put it back: it ends, rather than run on unseen.
+                guard container.split(anchor, with: pane, toward: side) else { return nil }
                 self.window?.makeFirstResponder(pane)
                 self.updateDimming()
                 self.updateSidebar()
@@ -239,7 +240,11 @@ extension TerminalWindowController {
         container.remove(pane) { [weak self] in
             guard let self else { return }
             guard hadFocus else {
-                // Somewhere else had the focus; it stays there.
+                // Somewhere else had the focus; it stays there. Still the
+                // tab's terminal (a document beside it had the keyboard):
+                // splits, Insert Path and the document's closing go to the
+                // pane that takes its place, not to the one that's gone.
+                if tab.focusedPane === pane { tab.focusedPane = successor as? TerminalView ?? tab.panes.first }
                 self.updateDimming()
                 self.updateSidebar()
                 return
@@ -288,24 +293,36 @@ extension TerminalWindowController {
     }
 
     /// Put a parked pane back in its tab, beside the pane it stood by
-    /// (or the focused one, if that is gone).
-    func unpark(_ pane: TerminalView) {
+    /// (or the focused one, if that is gone). False when it stays parked.
+    @discardableResult
+    func unpark(_ pane: TerminalView) -> Bool {
         guard let tab = tabs.first(where: { $0.parked.contains { $0.pane === pane } }),
-              let entry = tab.parked.first(where: { $0.pane === pane }), let container = tab.container else { return }
+              let index = tab.parked.firstIndex(where: { $0.pane === pane }), let container = tab.container else { return false }
+        let entry = tab.parked[index]
         guard !pane.session.hasExited else {
             tab.parked.removeAll { $0.pane === pane }
             pane.isParked = false
-            return updateSidebar()
+            updateSidebar()
+            return false
         }
-        tab.parked.removeAll { $0.pane === pane }
+        tab.parked.remove(at: index)
         pane.isParked = false
         pane.isFloating = false
         syncFloats(of: tab)
         if tab !== selectedTab { select(tab) }
         if let zoomed = container.zoomed { container.toggleZoom(zoomed) }
-        let anchor = entry.anchor.flatMap { a in container.views.contains { $0 === a } ? a : nil }
-            ?? tab.focusedLeaf ?? container.views.first!
-        container.split(anchor, with: pane, toward: entry.side)
+        // One still in the split (`contains` lets a removal under way finish).
+        let anchor = [entry.anchor, tab.focusedLeaf].lazy.compactMap { $0 }.first { container.contains($0) }
+            ?? container.views.first!
+        guard container.split(anchor, with: pane, toward: entry.side) else {
+            // Nowhere to put it: parked as it was, its program running on,
+            // rather than out of every tab with nothing showing it.
+            tab.parked.insert(entry, at: min(index, tab.parked.count))
+            pane.isParked = true
+            syncFloats(of: tab)
+            updateSidebar()
+            return false
+        }
         tab.focusedPane = pane
         tab.focusedDocument = nil
         tab.noteFocus(pane)
@@ -313,5 +330,6 @@ extension TerminalWindowController {
         updateBroadcastBorders()
         updateDimming()
         updateSidebar()
+        return true
     }
 }

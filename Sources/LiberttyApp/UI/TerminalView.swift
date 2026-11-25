@@ -140,7 +140,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             insertFiles(urls)
         } else if let text = pasteboard.string(forType: .string) {
             // As a paste: text that may run commands asks first (it used to go nowhere).
-            if session.paste(text, allowUnsafe: false) == .needsConfirmation { confirmUnsafePaste(text) }
+            switch session.paste(text, allowUnsafe: false) {
+            case .needsConfirmation: confirmUnsafePaste(text)
+            case .pasted: session.hasUnsentTyping = true
+            case .nothing: break
+            }
         } else {
             return false
         }
@@ -154,8 +158,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     func insertFiles(_ urls: [URL]) {
         guard !isReadOnly, !urls.isEmpty else { return }
         if session.host != nil { uploadAndType(urls: urls) } else {
-            sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
+            typeUnsent(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
         }
+    }
+
+    /// Text typed at the program's input for you (files' paths): it waits
+    /// there unsent, as what you type does (`hasUnsentTyping`).
+    func typeUnsent(_ text: String) {
+        guard !isReadOnly else { return }
+        session.hasUnsentTyping = true
+        sendInput(text)
     }
 
     /// Take on new settings. The font size follows the config only when the
@@ -243,8 +255,17 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             blinkTimer?.invalidate()
             blinkTimer = nil
             renderer?.blinkOn = true
+            // A selection being dragged past its edge (another tab came
+            // forward mid-drag): its button's release won't come here, and
+            // the scrolling would go on growing it unseen.
+            stopAutoscroll()
+            extendingSelection = false
+            lastDrag = nil
             return
         }
+        // Back after a restart: its queue and draft, kept meanwhile.
+        PromptQueues.shared.restore(session)
+        updateQueueTag()
         let link = displayLink(target: self, selector: #selector(step(_:)))
         // ProMotion: ask for the panel's full rate; the system clamps it.
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -1165,6 +1186,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         }
         if hideMouseWhileTyping { NSCursor.setHiddenUntilMouseMoves(true) }
         restartBlink()
+        noteUnsentTyping(event)
         // Return (not composing): what's typed is sent — a prompt to an agent, say.
         if event.keyCode == 36, !hasMarkedText(), event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
             onSubmit?(self)
@@ -1186,6 +1208,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             // commits each syllable so; Japanese, typing on after a conversion).
             // Nothing committed: it only edited or cancelled the composition.
             if !committed.isEmpty, !isReadOnly {
+                session.hasUnsentTyping = true
                 committed.forEach(session.sendText)
                 broadcastPeers?().filter { !$0.isReadOnly }.forEach { peer in committed.forEach(peer.session.sendText) }
             }
@@ -1198,6 +1221,36 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         let text = committed.isEmpty ? Self.keyText(translation) : committed.joined()
         send(event, action: event.isARepeat ? GHOSTTY_KEY_ACTION_REPEAT : GHOSTTY_KEY_ACTION_PRESS, text: text,
              translationFlags: translation.modifierFlags)
+    }
+
+    /// What a key leaves at the program's input (`hasUnsentTyping`, which
+    /// holds the prompt queue). Before the input method has it: a Return
+    /// that confirms a composition sends nothing (what it commits is typed).
+    private func noteUnsentTyping(_ event: NSEvent) {
+        if let unsent = Self.unsentTyping(after: event, composing: hasMarkedText(),
+                                          answering: session.programStatus.headline?.state == .blocked) {
+            session.hasUnsentTyping = unsent
+        }
+    }
+
+    /// Whether text waits unsent at the program's input after `event`, nil
+    /// when the key changes nothing of it: text, until a plain Return sends
+    /// it or ⌃C or ⌃U clears the line. A Return confirming a composition
+    /// (`composing`), or with a modifier (Shift+Return, a new line in an
+    /// agent's box), sends nothing. Keys answering what the program asks
+    /// (`answering`: a permission, a choice) make no draft.
+    static func unsentTyping(after event: NSEvent, composing: Bool, answering: Bool) -> Bool? {
+        let mods = event.modifierFlags.intersection([.command, .control, .option])
+        if event.keyCode == 36 || event.keyCode == 76 {
+            guard !composing, event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return nil }
+            return false
+        } else if mods == .control, ["c", "u"].contains(event.charactersIgnoringModifiers?.lowercased()) {
+            return false
+        } else if !mods.contains(.command), !mods.contains(.control), !answering,
+                  let text = keyText(event), text.unicodeScalars.contains(where: { $0.value >= 0x20 && $0.value != 0x7F }) {
+            return true
+        }
+        return nil
     }
 
     /// What a key types for the encoder: its characters, a control
@@ -1221,17 +1274,31 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
 
     override func flagsChanged(with event: NSEvent) {
         modifiersChangedForLinks(event)
-        guard !isInMode, let key = ghosttyKeyForKeyCode[event.keyCode] else { return }
-        let flag: NSEvent.ModifierFlags = switch key {
-        case GHOSTTY_KEY_SHIFT_LEFT, GHOSTTY_KEY_SHIFT_RIGHT: .shift
-        case GHOSTTY_KEY_CONTROL_LEFT, GHOSTTY_KEY_CONTROL_RIGHT: .control
-        case GHOSTTY_KEY_ALT_LEFT, GHOSTTY_KEY_ALT_RIGHT: .option
-        case GHOSTTY_KEY_META_LEFT, GHOSTTY_KEY_META_RIGHT: .command
-        default: []
+        guard !isInMode, let key = ghosttyKeyForKeyCode[event.keyCode],
+              let action = Self.modifierAction(key, event.modifierFlags), !hasMarkedText() else { return }
+        send(event, action: action, text: nil)
+    }
+
+    /// Whether a modifier key's own event is its press or its release (nil:
+    /// not a modifier key). The key's own side decides, by the
+    /// device-dependent bits: with both Shift keys held, letting one go
+    /// leaves Shift on, and that's the released key's release. Flags without
+    /// those bits (made by a program, not a keyboard) go by the modifier.
+    static func modifierAction(_ key: GhosttyKey, _ flags: NSEvent.ModifierFlags) -> GhosttyKeyAction? {
+        let (flag, left, right): (NSEvent.ModifierFlags, Int32, Int32) = switch key {
+        case GHOSTTY_KEY_SHIFT_LEFT, GHOSTTY_KEY_SHIFT_RIGHT: (.shift, NX_DEVICELSHIFTKEYMASK, NX_DEVICERSHIFTKEYMASK)
+        case GHOSTTY_KEY_CONTROL_LEFT, GHOSTTY_KEY_CONTROL_RIGHT: (.control, NX_DEVICELCTLKEYMASK, NX_DEVICERCTLKEYMASK)
+        case GHOSTTY_KEY_ALT_LEFT, GHOSTTY_KEY_ALT_RIGHT: (.option, NX_DEVICELALTKEYMASK, NX_DEVICERALTKEYMASK)
+        case GHOSTTY_KEY_META_LEFT, GHOSTTY_KEY_META_RIGHT: (.command, NX_DEVICELCMDKEYMASK, NX_DEVICERCMDKEYMASK)
+        default: ([], 0, 0)
         }
-        guard !flag.isEmpty, !hasMarkedText() else { return }
-        let pressed = event.modifierFlags.contains(flag)
-        send(event, action: pressed ? GHOSTTY_KEY_ACTION_PRESS : GHOSTTY_KEY_ACTION_RELEASE, text: nil)
+        guard !flag.isEmpty else { return nil }
+        var pressed = flags.contains(flag)
+        if pressed, flags.rawValue & UInt(left | right) != 0 {
+            let isLeft = [GHOSTTY_KEY_SHIFT_LEFT, GHOSTTY_KEY_CONTROL_LEFT, GHOSTTY_KEY_ALT_LEFT, GHOSTTY_KEY_META_LEFT].contains(key)
+            pressed = flags.rawValue & UInt(isLeft ? left : right) != 0
+        }
+        return pressed ? GHOSTTY_KEY_ACTION_PRESS : GHOSTTY_KEY_ACTION_RELEASE
     }
 
     /// `translationFlags`: the modifiers the key's text was made with
@@ -1501,6 +1568,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     private var autoscrollTimer: Timer?
     private var autoscrollDirection = TerminalSession.Autoscroll.none
     private var lastDrag: NSEvent?
+
+    /// A selection being dragged past an edge is scrolling (the UI probe).
+    var isAutoscrolling: Bool { autoscrollTimer != nil }
 
     private func autoscroll(_ direction: TerminalSession.Autoscroll, _ event: NSEvent) {
         lastDrag = event
@@ -2160,7 +2230,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         case .text(let t): text = t
         case .paths(let paths):
             // Files' paths, or a pasted image's: one quoted word each, nothing to confirm.
-            if session.paste(paths, allowUnsafe: true) == .pasted { setNeedsRender() }
+            if session.paste(paths, allowUnsafe: true) == .pasted {
+                session.hasUnsentTyping = true
+                setNeedsRender()
+            }
             return
         case .nothing: return
         }
@@ -2168,6 +2241,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         case .needsConfirmation:
             confirmUnsafePaste(text)
         case .pasted:
+            session.hasUnsentTyping = true
             setNeedsRender()
         case .nothing:
             break
@@ -2185,7 +2259,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }
-            _ = self.session.paste(text, allowUnsafe: true)
+            if self.session.paste(text, allowUnsafe: true) == .pasted { self.session.hasUnsentTyping = true }
             self.setNeedsRender()
         }
     }
@@ -2291,6 +2365,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         } else {
             // Text not tied to a key event (e.g. emoji picker, dictation).
             if !isReadOnly {
+                session.hasUnsentTyping = true
                 session.sendText(text)
                 broadcastPeers?().filter { !$0.isReadOnly }.forEach { $0.session.sendText(text) }
             }

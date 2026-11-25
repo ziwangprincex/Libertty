@@ -189,9 +189,11 @@ final class ComposerView: NSView, CapsuleObstacle {
             queueList.addArrangedSubview(more)
         }
         pausedNote.isHidden = !queue.paused || queue.isEmpty
-        let why = queue.pauseReason == .agentExited
-            ? L10n.t("The queue is paused: the agent exited, and the next prompt would go to the shell. Resume")
-            : L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume")
+        let why = switch queue.pauseReason {
+        case .agentExited: L10n.t("The queue is paused: the agent exited, and the next prompt would go to the shell. Resume")
+        case .restarted: L10n.t("The queue is paused: Libertty restarted since these were queued. Resume")
+        case .notOnePaste: L10n.t("The queue is paused: the last prompt couldn't go as one paste. Resume")
+        }
         pausedNote.attributedTitle = NSAttributedString(
             string: why,
             attributes: [.font: Typeface.ui(11, .medium), .foregroundColor: NSColor.systemOrange])
@@ -268,7 +270,7 @@ final class ComposerView: NSView, CapsuleObstacle {
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn, let pane = self.pane else { return }
             _ = pane.session.paste(prompt, allowUnsafe: true)
-            if submit { PromptSender.pressReturn(in: pane.session) }
+            if submit { PromptSender.pressReturn(in: pane.session) } else { pane.session.hasUnsentTyping = true }
             self.sent()
         }
     }
@@ -286,6 +288,7 @@ final class ComposerView: NSView, CapsuleObstacle {
         // look, so the text stays here.
         guard !session.hasExited else { NSSound.beep(); return }
         PromptQueues.shared.enqueue(text, for: session)
+        textView.forgetTyping()
         textView.string = ""
         ComposerController.saveDraft(of: self)
         AccessibilityNews.announce(L10n.t("Queued"), from: self)
@@ -332,10 +335,15 @@ final class ComposerView: NSView, CapsuleObstacle {
             panel.setFrameTopLeftPoint(NSPoint(x: screenFrame.minX + 20, y: screenFrame.minY + panel.frame.height + 20))
         }
         window_ = panel
-        // Its pane closing (or leaving every window) takes it along.
+        // Its pane closing (or its window kept hidden for Undo) takes it
+        // along, its draft kept. Its tab in the background, or another
+        // workspace's, still has the pane: that's not out of every window.
         orphanCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self, self.pane?.window == nil else { return }
-            self.closeWindow()
+            guard let self else { return }
+            guard let pane = self.pane else { return self.closeWindow() }
+            guard PromptQueues.pane(of: pane.session)?.1 !== pane else { return }
+            ComposerController.saveDraft(of: self)
+            ComposerController.close(self, refocus: false)
         }
         layer?.cornerRadius = 0
         layer?.borderWidth = 0
@@ -411,7 +419,26 @@ final class ComposerTextView: NSTextView {
 
     override func didChangeText() {
         super.didChangeText()
-        if let composer, composer.window_ == nil, let pane = composer.pane { ComposerController.place(composer, in: pane) }
+        guard let composer else { return }
+        // Kept as it's written: the app quitting (or updating) with it open loses none of it.
+        ComposerController.saveDraft(of: composer)
+        if composer.window_ == nil, let pane = composer.pane { ComposerController.place(composer, in: pane) }
+    }
+
+    // What's typed goes on its window's undo stack, a terminal window's
+    // being the windows' close-undo stack (Edit ▸ Undo Close …): leaving the
+    // window (put away, sent, popped out or in, its tab in the background)
+    // takes it off, so no Undo Typing there acts on text that isn't there.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window { forgetTyping() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    /// Its typing off the undo stack: its text replaced (sent, queued, a
+    /// queued prompt brought back), or it leaving its window.
+    func forgetTyping() {
+        breakUndoCoalescing()
+        if let textStorage { undoManager?.removeAllActions(withTarget: textStorage) }
     }
 
     /// Files as their quoted paths; HTML or RTF (a page, a chat message) as
@@ -473,6 +500,7 @@ private final class QueueRow: NSView {
             let text = PromptQueues.shared.queue(of: session).items.first { $0.id == id }?.text ?? ""
             PromptQueues.shared.update(session) { $0.remove(id) }
             let view = composer.textView
+            view.forgetTyping()
             view.string = view.string.isEmpty ? text : view.string + "\n" + text
             view.window?.makeFirstResponder(view)
         }
@@ -565,10 +593,20 @@ enum ComposerController {
         objc_getAssociatedObject(pane, &composerKey) as? ComposerView
     }
 
+    /// The pane's composer where it shows: one left in no view (its window
+    /// gone from under it) is put away, its draft kept, for a new one to open.
+    private static func shown(of pane: TerminalView) -> ComposerView? {
+        guard let open = composer(of: pane) else { return nil }
+        guard open.superview == nil else { return open }
+        saveDraft(of: open)
+        close(open, refocus: false)
+        return nil
+    }
+
     /// ⌘⇧E: open the focused pane's composer (with its draft), or put it away.
     static func toggle(in pane: TerminalView?, queue: Bool = false) {
         guard let pane else { return NSSound.beep() }
-        if let open = composer(of: pane) {
+        if let open = shown(of: pane) {
             // Open but not where you type (you clicked the terminal), or open
             // for the other default: there it is, not gone.
             let window = open.window_ ?? pane.window
@@ -584,7 +622,7 @@ enum ComposerController {
 
     @discardableResult
     static func show(in pane: TerminalView, queue: Bool = false) -> ComposerView {
-        if let open = composer(of: pane) {
+        if let open = shown(of: pane) {
             open.queueByDefault = queue
             focus(open)
             return open
@@ -642,6 +680,20 @@ enum ComposerController {
         let key = ObjectIdentifier(session)
         let text = composer.textView.string
         if text.isEmpty { drafts[key] = nil } else { drafts[key] = ({ [weak session] in session }, text) }
+        PromptQueues.shared.keepSoon()
+    }
+
+    /// Every pane's draft, open or put away, for a restart (PromptsKept).
+    static var keptDrafts: [(session: TerminalSession, text: String)] {
+        drafts.values.compactMap { draft in draft.session().map { ($0, draft.text) } }
+    }
+
+    /// A draft kept from before a restart, for the pane back on its session
+    /// (one written since stays).
+    static func restoreDraft(_ text: String, for session: TerminalSession) {
+        let key = ObjectIdentifier(session)
+        guard drafts[key]?.session() !== session else { return }
+        drafts[key] = ({ [weak session] in session }, text)
     }
 
     /// What's in a pane's composer, open or put away.
@@ -664,6 +716,16 @@ enum ComposerController {
             pane.window?.makeFirstResponder(pane)
         }
     }
+
+    #if LIBERTTY_PROBES
+    /// The UI probe's restart: no composer open, no draft known.
+    static func forgetDraftsForProbe() {
+        for controller in PromptQueues.controllers {
+            for pane in controller.allPanes { composer(of: pane).map { close($0, refocus: false) } }
+        }
+        drafts.removeAll()
+    }
+    #endif
 
     /// A popped-out composer's window closing is the composer closing (its draft kept).
     static let windowDelegate = PanelDelegate()

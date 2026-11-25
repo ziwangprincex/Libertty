@@ -224,6 +224,25 @@ import Testing
     }
 }
 
+/// What VoiceOver reads of a pane: the rows in view, and the cursor among
+/// them, or none once it's scrolled out of view.
+@Suite @MainActor struct ViewportTextTests {
+    @Test func theCursorWhereItShows() throws {
+        let s = try TerminalSession(size: GridSize(cols: 20, rows: 4, widthPx: 0, heightPx: 0), config: Config())
+        s.show((1...10).map { "line\($0)" }.joined(separator: "\r\n") + "\r\n$ ab")
+        var (lines, cursor) = s.viewportText()
+        #expect(lines == ["line8", "line9", "line10", "$ ab"])
+        #expect(cursor?.row == 3 && cursor?.col == 4)
+        // One row back: the prompt's row, the cursor's, is below what shows.
+        s.scroll(rows: -1)
+        (lines, cursor) = s.viewportText()
+        #expect(lines == ["line7", "line8", "line9", "line10"])
+        #expect(cursor == nil)
+        s.scrollToBottom()
+        #expect(s.viewportText().cursor?.row == 3)
+    }
+}
+
 @Suite @MainActor struct HintTests {
     @Test func whatGetsLabeled() throws {
         let s = try TerminalSession(size: GridSize(cols: 100, rows: 4, widthPx: 0, heightPx: 0), config: Config())

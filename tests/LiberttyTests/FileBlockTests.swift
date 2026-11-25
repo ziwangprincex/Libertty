@@ -42,4 +42,27 @@ struct FileBlockTests {
         let tags = try URL(fileURLWithPath: file.path).resourceValues(forKeys: [.tagNamesKey]).tagNames
         #expect(tags == ["Red"])
     }
+
+    /// Renamed in the file tree: it writes the file where it is now — not a
+    /// conflict over a file gone from its old name — and its address is the
+    /// one opening the renamed file finds.
+    @MainActor @Test func aMovedFileIsWrittenWhereItIsNow() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fileblock-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("plan.board.md"), moved = dir.appendingPathComponent("sprint.board.md")
+        try Data("# Plan\n".utf8).write(to: file)
+        let address = Blocks.url("board", ["file": file.path])
+        guard let block = BoardBlock(url: address) else { Issue.record("no block"); return }
+        defer { block.close() }
+        let read = await call(block, "read", [:])
+        try FileManager.default.moveItem(at: file, to: moved)
+        block.moved(to: moved)
+        #expect(block.file == moved.standardizedFileURL && block.title == "sprint.board.md")
+        let written = await call(block, "write", ["text": "# Plan\n\n- [ ] one\n", "base": read["base"] as? String ?? ""])
+        #expect(written["written"] as? Bool == true)
+        #expect(try String(contentsOf: moved, encoding: .utf8) == "# Plan\n\n- [ ] one\n")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(Blocks.address(address, file: moved) == Blocks.address(forFile: moved))
+    }
 }

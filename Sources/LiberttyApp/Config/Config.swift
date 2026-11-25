@@ -354,12 +354,16 @@ struct Config: Equatable {
     /// a password (Otty's Auto Secure Input).
     var secureInputOnPassword = true
 
-    /// The effective key table, including the global-hotkey shorthands.
+    /// The effective key table, including the global-hotkey shorthands:
+    /// after the last `keybind = clear`, which clears keybind lines, not
+    /// settings of their own (Settings shows them set), and before the
+    /// lines after it, which can still unbind their keys.
     var keybindTable: Keybinds {
         var entries = keybinds
-        if !globalNewWindowHotkey.isEmpty { entries.insert("global:\(globalNewWindowHotkey)=new_window", at: 0) }
-        if !globalHotkey.isEmpty { entries.insert("global:\(globalHotkey)=toggle_visibility", at: 0) }
-        if !quickTerminalHotkey.isEmpty { entries.insert("global:\(quickTerminalHotkey)=toggle_quick_terminal", at: 0) }
+        let at = (entries.lastIndex { $0.trimmingCharacters(in: .whitespaces) == "clear" }).map { $0 + 1 } ?? 0
+        if !globalNewWindowHotkey.isEmpty { entries.insert("global:\(globalNewWindowHotkey)=new_window", at: at) }
+        if !globalHotkey.isEmpty { entries.insert("global:\(globalHotkey)=toggle_visibility", at: at) }
+        if !quickTerminalHotkey.isEmpty { entries.insert("global:\(quickTerminalHotkey)=toggle_quick_terminal", at: at) }
         return Keybinds(entries: entries)
     }
 
@@ -1352,8 +1356,7 @@ final class ConfigStore {
     static let shared = ConfigStore()
 
     static var directory: URL {
-        let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        let base = configHome(ProcessInfo.processInfo.environment)
         let current = base.appendingPathComponent("libertty")
         // Libertty was called Lumen: a folder of that name (with a config in
         // it) becomes Libertty's, once — moved, nothing rewritten. Should
@@ -1365,6 +1368,14 @@ final class ConfigStore {
             return earlier
         }
         return current
+    }
+
+    /// `$XDG_CONFIG_HOME`, else ~/.config. Empty or relative, it's ignored,
+    /// as the XDG spec says: relative, `+set` from a shell would write
+    /// ./libertty/config in whatever folder it was in.
+    static func configHome(_ environment: [String: String]) -> URL {
+        if let xdg = environment["XDG_CONFIG_HOME"], xdg.hasPrefix("/") { return URL(fileURLWithPath: xdg) }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
     }
 
     private(set) var config = Config()
@@ -1620,8 +1631,16 @@ final class ConfigStore {
                       !isGlobal else { return false }
                 return keys == old.map { [$0] } || keys == new.map { [$0] } || a == action
             }
-            if let old, Keybinds(entries: []).local.contains(where: { $0.trigger == old }) {
-                Self.append("keybind = \(old.configString)=unbind", to: &lines)
+            // Every key the action still has goes too: a default's second
+            // (⌘↩ and ⌃⌘F both toggle full screen) would stay the action's,
+            // shown in the menu and the recorder in place of the new one.
+            let left = Keybinds(entries: lines.compactMap { Self.key(of: $0) == "keybind" ? Self.value(of: $0) : nil })
+            var unbound = left.local.filter { $0.action == action }.map(\.trigger)
+            if let old, !unbound.contains(old), Keybinds(entries: []).local.contains(where: { $0.trigger == old }) {
+                unbound.append(old)
+            }
+            for trigger in unbound where trigger != new {
+                Self.append("keybind = \(trigger.configString)=unbind", to: &lines)
             }
             if let new { Self.append("keybind = \(new.configString)=\(action.configString)", to: &lines) }
         }
@@ -1647,7 +1666,10 @@ final class ConfigStore {
         }
         var lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
         change(&lines)
-        return write(lines.joined(separator: "\n"))
+        // In the file's own line endings (its first one's): CRLF and a lone
+        // CR stay what they were.
+        let ending = text.first(where: \.isNewline).map { ["\r\n", "\r"].contains($0) ? String($0) : "\n" } ?? "\n"
+        return write(lines.joined(separator: ending))
     }
 
     private static func append(_ line: String, to lines: inout [String]) {

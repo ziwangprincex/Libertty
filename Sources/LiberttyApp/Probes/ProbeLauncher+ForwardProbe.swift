@@ -109,6 +109,10 @@ extension ProbeLauncher {
             check("its page and query are kept", here.path == "/index.html" && here.query == "x=1")
             check("ssh was asked for it", asked().contains("-L 127.0.0.1:\(local):localhost:\(served)"))
             check("the forward answers", fetch(here)?.contains("dev-server-ok") == true)
+            // ssh's master would close a minute after the last window's
+            // session, forwards and all: a session of its own holds it up.
+            let keeper = host.keeperProcess
+            check("the connection is held up while it carries forwards", keeper.map { kill($0, 0) == 0 } == true)
 
             // The same link again: the forward it already holds.
             let again = try forwarder.rewrite(link, on: host)
@@ -154,6 +158,10 @@ extension ProbeLauncher {
             NotificationCenter.default.post(name: RemoteHost.statusChanged, object: host)
             check("it comes back on reconnect", wait(10) { PortForward.isListening(local) })
             check("…and answers again", fetch(here)?.contains("dev-server-ok") == true)
+            check("…and the new connection is held up instead", wait(5) {
+                host.keeperProcess.map { $0 != keeper } == true && keeper.map { kill($0, 0) != 0 } == true
+            })
+            let kept = host.keeperProcess
 
             // Closing takes the port back from the host's connection.
             check("closed", forwarder.close(id: "\(destination):L\(served)"))
@@ -165,6 +173,31 @@ extension ProbeLauncher {
             forwarder.closeAll(on: destination)
             check("every forward closed", forwarder.forwards(on: destination).isEmpty && forwarder.all.isEmpty)
             check("…and their ports are free", wait(5) { !PortForward.isListening(quiet) && !PortForward.isListening(mine) })
+            check("…and the connection is let go", host.keeperProcess == nil
+                && wait(5) { kept.map { kill($0, 0) != 0 } ?? false })
+
+            // A host slow to answer a forward (a `-R` waits for its far side)
+            // holds up only its own: another host's forward is made meanwhile.
+            let slow = RemoteHost.named(destination + "-slow")
+            _ = try slow.prepare()
+            let stall = dir.appendingPathComponent("stall")
+            try? slow.destination.write(to: stall, atomically: true, encoding: .utf8)
+            setenv("FAKE_SSH_STALL", stall.path, 1)
+            let slowDone = DispatchSemaphore(value: 0)
+            let slowPort = PortForward.freePort(preferring: 0) ?? 1
+            DispatchQueue.global().async {
+                _ = try? forwarder.share(local: slowPort, on: slow)
+                slowDone.signal()
+            }
+            _ = wait(5) { fm.fileExists(atPath: stall.path + ".started") }
+            let began = Date()
+            _ = try forwarder.open(remote: quiet, on: host)
+            check("a stalled host holds up no other host's forwards", Date().timeIntervalSince(began) < 3)
+            try? fm.removeItem(at: stall)
+            unsetenv("FAKE_SSH_STALL")
+            check("…and has its own once it answers", slowDone.wait(timeout: .now() + 10) == .success
+                && forwarder.forwards(on: slow.destination).contains { $0.local == slowPort })
+            forwarder.closeAll()
 
             stopServer()
             print(failed.isEmpty ? "forward-probe: all passed" : "forward-probe failed: \(failed)")

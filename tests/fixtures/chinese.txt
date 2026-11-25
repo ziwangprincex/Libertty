@@ -15,3 +15,9 @@ settings:mark
 settings:press:紧凑
 expect-config-change:sidebar-rows = compact
 shot:zh-settings.png
+# A tab's menu, where the tabs are listed, in Chinese too: Duplicate Tab is 复制标签.
+settings:close
+wait:0.3
+tab-menu:1:复制标签
+wait:0.8
+expect-tab-count:2

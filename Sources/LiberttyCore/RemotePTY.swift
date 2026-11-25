@@ -109,25 +109,46 @@ public final class RemotePTY: TerminalBackend {
     deinit { detach() }
 
     /// Start a new session in liberttyd.
-    public static func create(_ request: CreateRequest, address: DaemonAddress = .local, queue: DispatchQueue) throws -> RemotePTY {
-        // A liberttyd handing its sessions over to a newer one starts none
-        // (it would end with it): the newer one has the socket in a moment,
-        // and nothing answers in between — no reason to start another.
-        var tries = 0
+    ///
+    /// A liberttyd handing its sessions over to a newer one starts none (it
+    /// would end with it), and for a moment nothing answers: the newer one —
+    /// or, after a crash, the one its guardian starts — has the socket then,
+    /// and there's no reason to start another. Asked again until it does: here
+    /// for up to `seconds`; past that, `thenInBackground`, the session is
+    /// returned unmade and made from the background once one answers (its
+    /// output comes when it does), else the last refusal is thrown.
+    public static func create(_ request: CreateRequest, address: DaemonAddress = .local, queue: DispatchQueue,
+                              waiting seconds: Double = 10, thenInBackground: Bool = false) throws -> RemotePTY {
+        let deadline = Date().addingTimeInterval(seconds)
+        var replacing = false
         while true {
             do {
                 guard let c = address.connect() else { throw DaemonClientError.unavailable }
+                if !address.isRemote { DaemonClient.answered() }
                 let (pid, header) = try create(c, request)
                 let pty = RemotePTY(id: request.id, pid: pid, connection: c, address: address, queue: queue)
                 pty.took(header)
                 return pty
-            } catch DaemonClientError.refused(let why) where why == Wire.handingOver && tries < 100 {
-                tries += 1
-            } catch DaemonClientError.unavailable where tries > 0 && tries < 100 {
-                tries += 1
+            } catch DaemonClientError.refused(let why) where why == Wire.handingOver {
+                replacing = true
+                if Date() >= deadline {
+                    if thenInBackground { break }
+                    throw DaemonClientError.refused(why)
+                }
+            } catch DaemonClientError.unavailable where replacing || (!address.isRemote && DaemonClient.awaitsReplacement()) {
+                // (Nobody listens yet, but a liberttyd holds the lock: one
+                // handing over or recovering, not none at all.)
+                replacing = true
+                if Date() >= deadline {
+                    if thenInBackground { break }
+                    throw DaemonClientError.unavailable
+                }
             }
-            usleep(100_000)
+            usleep(50_000)
         }
+        let pty = RemotePTY(id: request.id, pid: 0, connection: nil, address: address, queue: queue)
+        pty.fallback = { request }
+        return pty
     }
 
     private static func create(_ c: Connection, _ request: CreateRequest) throws -> (pid_t, [String: Any]) {
@@ -341,6 +362,7 @@ public final class RemotePTY: TerminalBackend {
             stateLock.unlock()
             if gone { return false }
             guard let c = address.connect() else { continue }
+            if !remote { DaemonClient.answered() }
             c.setBufferSizes(1 << 21)
             let snapshot: Data
             let recovered: Bool
@@ -353,9 +375,18 @@ public final class RemotePTY: TerminalBackend {
                 if let mode { queue.async { [weak self] in self?.onInputModeChange?(mode) } }
                 took(header, tell: true)
             } catch DaemonClientError.refused {
-                // The session is gone. Restoring: start a fresh one in its place.
-                guard let request = pendingFallback?(), let fresh = address.connect(),
-                      let (pid, header) = try? Self.create(fresh, request) else { return false }
+                // The session is gone (restoring), or not made yet (`create`
+                // went on in the background): start it now.
+                guard let request = pendingFallback?() else { return false }
+                guard let fresh = address.connect() else { continue }
+                let pid: pid_t, header: [String: Any]
+                do {
+                    (pid, header) = try Self.create(fresh, request)
+                } catch DaemonClientError.refused(let why) where why != Wire.handingOver {
+                    return false
+                } catch {
+                    continue  // mid-takeover, or the link broke halfway: try again
+                }
                 self.pid = pid
                 took(header, tell: true)
                 stateLock.lock()
@@ -441,9 +472,10 @@ public final class RemotePTY: TerminalBackend {
         writeQueue.async { c?.send(.resize, payload) }
     }
 
-    /// Another machine's process table can't be asked from here.
+    /// Another machine's process table can't be asked from here (nor a
+    /// session's not made yet: no pid).
     public var hasForegroundProgram: Bool {
-        guard !address.isRemote else { return false }
+        guard !address.isRemote, pid > 0 else { return false }
         let pgid = libertty_proc_tty_pgid(pid)
         return pgid > 0 && pgid != pid
     }
@@ -532,6 +564,63 @@ public enum DaemonClient {
         return Welcome(version: json["version"] as? Int ?? 0, build: json["build"] as? String ?? "",
                        pid: pid_t(clamping: json["pid"] as? Int ?? 0), features: json["features"] as? [String] ?? [],
                        session: SecuritySession(json: json["session"]))
+    }
+
+    /// Whether nothing answers on this Mac's `socket` because liberttyd is being
+    /// replaced (a takeover) or recovered after a crash, rather than not
+    /// running at all: its lock is held all the while, as it's held only
+    /// while there's one (see DaemonServer.main). Looked at by taking it,
+    /// shared, and letting go at once.
+    public static func isBeingReplaced(socket path: String = Wire.socketPath) -> Bool {
+        let fd = open(path + ".lock", O_RDONLY | O_CLOEXEC)
+        guard fd >= 0 else { return false }
+        defer { sysClose(fd) }
+        guard flock(fd, LOCK_SH | LOCK_NB) == 0 else { return errno == EWOULDBLOCK }
+        flock(fd, LOCK_UN)
+        return false
+    }
+
+    /// How long a replacement takes at most, from when nothing first
+    /// answered while the lock was held: as long as a pane waits for this
+    /// Mac's liberttyd to answer again (RemotePTY's `redial`).
+    public static let replacementLimit: Double = 10
+
+    /// Whether a new session should wait for the liberttyd being replaced
+    /// (`isBeingReplaced`): not once that has gone on past
+    /// `replacementLimit` with nothing answering. Then it isn't one — a
+    /// guardian that wouldn't go holds the lock, or the socket's file was
+    /// deleted while liberttyd runs — and a new session goes on as when
+    /// none runs (starting one, or a shell of its own) instead of waiting.
+    public static func awaitsReplacement(socket path: String = Wire.socketPath,
+                                         now: Double = Date().timeIntervalSince1970) -> Bool {
+        guard isBeingReplaced(socket: path) else {
+            Silence.shared.end(path)
+            return false
+        }
+        return now - Silence.shared.began(path, now) < replacementLimit
+    }
+
+    /// Something answered on `socket`: a replacement seen there is over.
+    public static func answered(socket path: String = Wire.socketPath) {
+        Silence.shared.end(path)
+    }
+
+    /// Since when nothing has answered on each socket while its lock was held.
+    private final class Silence: @unchecked Sendable {
+        static let shared = Silence()
+        private let lock = NSLock()
+        private var since: [String: Double] = [:]
+
+        /// When it began: `now`, if it wasn't seen before.
+        func began(_ path: String, _ now: Double) -> Double {
+            lock.withLock {
+                if let began = since[path] { return began }
+                since[path] = now
+                return now
+            }
+        }
+
+        func end(_ path: String) { lock.withLock { since[path] = nil } }
     }
 
     /// One request, one result (list, capture, send, kill by id, shutdown).

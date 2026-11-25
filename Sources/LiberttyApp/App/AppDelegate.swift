@@ -99,8 +99,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // `libertty +open` when Libertty wasn't running: its requests ride on the
         // launch arguments (a notification would arrive before anyone listens).
         let opens = Self.launchOpenRequests()
-        if !openedDocument && controllers.isEmpty && !opens.contains(where: { $0["split"] != "1" }) {
+        // `libertty +new-window`/`+new-tab` when Libertty wasn't running: that
+        // window (or tab) after the saved ones, in place of the usual first one.
+        let asked = CLI.newWindowRequest(launchArguments: CommandLine.arguments)
+        if !openedDocument && controllers.isEmpty && asked == nil && !opens.contains(where: { $0["split"] != "1" }) {
             open(tabbedInto: nil, command: launch.command, cols: launch.cols, rows: launch.rows)
+        }
+        if let asked {
+            open(tabbedInto: asked["tab"] == "1" ? frontController?.window : nil, command: asked["command"],
+                 workingDirectory: asked["cwd"])
         }
         opens.forEach(handleOpen)
         if !oneShot {
@@ -122,8 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         // Launching is an explicit request to use Libertty; started from a shell,
         // cooperative activation would leave the window behind (or in Stage
-        // Manager's strip).
-        activate()
+        // Manager's strip). Not a restart into an update while you were in
+        // another app: it opens behind that one, and stays there.
+        if !CommandLine.arguments.contains(Updater.relaunchedInBackground) { activate() }
     }
 
     /// The layout to bring back: the file, unless this Mac's liberttyd holds
@@ -230,10 +238,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             self?.forgetForwards(of: c)
         }
         // Hidden for undo: not a window to save or count; back on undo.
-        controller.onHide = { [weak self] c in self?.controllers.removeAll { $0 === c } }
+        controller.onHide = { [weak self] c in
+            self?.controllers.removeAll { $0 === c }
+            self?.updateDockBadge()
+        }
         controller.onUnhide = { [weak self] c in
             guard let self, !self.controllers.contains(where: { $0 === c }) else { return }
             self.controllers.append(c)
+            self.updateDockBadge()
         }
         controller.onAttentionChange = { [weak self] in self?.updateDockBadge() }
         controller.onLayoutChange = { [weak self] in self?.saveSoon() }
@@ -259,6 +271,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// Bring the pane with this id forward, in whichever window has it —
     /// the Quick Terminal's too (it's no window of the list), brought down for it.
     func reveal(paneID: String) -> Bool {
+        // The update's "is ready" notification names no pane: it offers the update.
+        if paneID == UpdateController.readyNotice {
+            activate()
+            MainActor.assumeIsolated { UpdateController.shared.showReady() }
+            return true
+        }
         if !controllers.contains(where: { $0.reveal(paneID: paneID) }) {
             guard let quick = QuickTerminal.shared.windowController, quick.pane(showing: paneID) != nil else { return false }
             QuickTerminal.shared.show()
@@ -269,9 +287,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     /// The Dock icon counts panes whose programs are in a state it counts
-    /// (`program-status-dock-badge`; by default, waiting for you).
-    private func updateDockBadge() {
-        let n = controllers.reduce(0) { $0 + $1.attentionCount }
+    /// (`program-status-dock-badge`; by default, waiting for you) — the
+    /// Quick Terminal's too, and a session two windows show once.
+    func updateDockBadge() {
+        let n = TabMute.badgeCount(allControllers.flatMap(\.badgePanes), counting: ConfigStore.shared.config.programStatusDockBadge)
         NSApp.dockTile.badgeLabel = n > 0 ? String(n) : nil
         updateKeepAwake()
         MainActor.assumeIsolated { MenuBarIcon.shared.update(waiting: n) }

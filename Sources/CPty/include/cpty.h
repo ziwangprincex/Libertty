@@ -43,6 +43,10 @@ void libertty_proc_cwd(pid_t pid, char *out, int cap);
 /// (works without the pty descriptor, e.g. for a session liberttyd holds).
 pid_t libertty_proc_tty_pgid(pid_t pid);
 
+/// Whether the process is still there and not a zombie (1), or gone (0).
+/// When it can't be told, 1.
+int libertty_proc_running(pid_t pid);
+
 /// TCP ports the process is listening on. Returns how many were written.
 int libertty_proc_listening_ports(pid_t pid, uint16_t *out, int cap);
 
@@ -137,6 +141,11 @@ pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const 
 /// (the guardian: liberttyd's lock, held).
 pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
                                     int responsible, int in_fd, int pass_fd);
+
+/// Wait for the child `pid` to end, without reaping it: until it's reaped
+/// (waitpid), its pid is still its own and can't be another process's. 0,
+/// or -1 with errno (ECHILD: not a child, or reaped already).
+int libertty_wait_exited(pid_t pid);
 
 /// A connected pair of Unix stream sockets (close-on-exec, no SIGPIPE).
 int libertty_socketpair(int fds[2]);

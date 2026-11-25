@@ -12,6 +12,7 @@ RUN=$(gh run list --workflow ci.yml --commit $COMMIT --json databaseId,conclusio
   -q 'map(select(.status == "completed" and .conclusion == "success")) | first | .databaseId // empty')
 [[ -n $RUN ]] || { echo "no successful CI run for $COMMIT yet (gh run list --workflow ci.yml)"; exit 1; }
 TMP=$(mktemp -d)
+trap 'rm -rf $TMP' EXIT
 gh run download $RUN -n liberttyd-linux -D $TMP
 want=$(scripts/daemon-fingerprint.sh $COMMIT)
 [[ $(cat $TMP/liberttyd-linux.source) == $want ]] || { echo "the artifact was built from other sources ($(cat $TMP/liberttyd-linux.source), not $want)"; exit 1; }

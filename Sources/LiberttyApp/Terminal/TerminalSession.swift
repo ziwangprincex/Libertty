@@ -77,6 +77,10 @@ final class TerminalSession {
     let programStatus = ProgramStatusStore()
     /// What its programs asked to show (SurfaceProtocol), and its commands' lenses.
     let surfaces = SurfaceStore()
+    /// Text was typed (or pasted) into the pane since Return last went, and
+    /// may wait unsent at its program's prompt: a queued prompt pasted now
+    /// would go with it (PromptQueue). Main thread.
+    var hasUnsentTyping = false
     private(set) var title = ""
     /// The title was set while a command ran (OSC 133): a program's. Once
     /// the shell's prompt is back it's that program's leftover (OMP's
@@ -320,12 +324,15 @@ final class TerminalSession {
                                         environment: environment, workingDirectory: startDirectory,
                                         size: size, scrollback: ConfigStore.shared.config.scrollbackLimit)
             do {
+                // On the main thread: a liberttyd being replaced is waited for
+                // a moment only, then the session is made in the background
+                // as soon as the newer one answers.
                 let remote: RemotePTY
                 do {
-                    remote = try RemotePTY.create(request, queue: io)
+                    remote = try RemotePTY.create(request, queue: io, waiting: 0.3, thenInBackground: true)
                 } catch DaemonClientError.unavailable where Persistence.restart() {
                     // It had gone (it exits when idle; it may have crashed): once more.
-                    remote = try RemotePTY.create(request, queue: io)
+                    remote = try RemotePTY.create(request, queue: io, waiting: 0.3, thenInBackground: true)
                 }
                 persistentID = id
                 connect(remote)
@@ -438,8 +445,9 @@ final class TerminalSession {
     /// (count, time of the latest) output parsed, for `--latency-trace`.
     var outputMark: (count: UInt64, time: CFTimeInterval) { lock.withLock { (outputCount, lastOutputTime) } }
 
-    /// The shell (or command) process, for the inspector's process list.
-    var shellPID: pid_t? { host == nil ? pty?.pid : nil }
+    /// The shell (or command) process, for the inspector's process list
+    /// (none while liberttyd hasn't made the session yet).
+    var shellPID: pid_t? { host == nil ? pty.flatMap { $0.pid > 0 ? $0.pid : nil } : nil }
 
     /// What its programs listen on, as liberttyd's scan found it (a host's
     /// too, which this Mac can't look at itself); nil when no liberttyd
@@ -2268,8 +2276,9 @@ extension TerminalSession {
 
 extension TerminalSession {
     /// The viewport as text, one string per row (trailing blanks trimmed),
-    /// and the cursor's cell: what VoiceOver reads. Computed on demand.
-    func viewportText() -> (lines: [String], cursor: (row: Int, col: Int)) {
+    /// and the cursor's cell in it, nil when it's out of view (scrolled
+    /// back): what VoiceOver reads. Computed on demand.
+    func viewportText() -> (lines: [String], cursor: (row: Int, col: Int)?) {
         lock.withLock {
             let cols = Int(size.cols), rows = Int(size.rows)
             var lines: [String] = []
@@ -2278,13 +2287,18 @@ extension TerminalSession {
             var cx: UInt16 = 0, cy: UInt16 = 0
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_X, &cx)
             _ = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &cy)
+            // The cursor's row is the active area's (the screen at the
+            // bottom); scrolled back, the viewport is higher up, by this much.
+            let cursorRow = ScreenCells.screenRow(terminal, GHOSTTY_POINT_TAG_ACTIVE, y: Int(cy))
+                .flatMap { row in ScreenCells.screenRow(terminal, GHOSTTY_POINT_TAG_VIEWPORT, y: 0).map { row - $0 } }
+                .flatMap { (0..<rows).contains($0) ? $0 : nil }
             // Where the cursor is in its line's text (UTF-16, as VoiceOver
             // counts): a wide character is two cells but one character.
             var cursorOffset = Int(cx)
             for y in 0..<rows {
                 var line = ""
                 for x in 0..<cols {
-                    if y == Int(cy), x == Int(cx) { cursorOffset = (line as NSString).length }
+                    if y == cursorRow, x == Int(cx) { cursorOffset = (line as NSString).length }
                     var point = GhosttyPoint()
                     point.tag = GHOSTTY_POINT_TAG_VIEWPORT
                     point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
@@ -2304,7 +2318,7 @@ extension TerminalSession {
                 while line.hasSuffix(" ") { line.removeLast() }
                 lines.append(line)
             }
-            return (lines, (Int(cy), cursorOffset))
+            return (lines, cursorRow.map { ($0, cursorOffset) })
         }
     }
 }
@@ -2419,6 +2433,44 @@ extension TerminalSession {
         var rows = text.split(separator: "\n", omittingEmptySubsequences: false)
         while rows.last?.isEmpty == true { rows.removeLast() }
         return rows.isEmpty ? "" : rows.joined(separator: "\n") + "\n"
+    }
+
+    /// The screen's rows as `screenRows` has them, faint text (SGR 2) left
+    /// out: what an agent's input box holds of what was typed, its
+    /// placeholder (Claude Code's "Try …") apart (AgentScreen.typedInput).
+    func screenRowsWithoutFaintText() -> String {
+        lock.withLock {
+            let cols = Int(size.cols), rows = Int(size.rows)
+            var scalars = [UInt32](repeating: 0, count: 16)
+            var lines: [String] = []
+            for y in 0..<rows {
+                var line = ""
+                for x in 0..<cols {
+                    var point = GhosttyPoint()
+                    point.tag = GHOSTTY_POINT_TAG_ACTIVE
+                    point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
+                    var ref = GhosttyGridRef()
+                    guard ghostty_terminal_grid_ref(terminal, point, &ref) == GHOSTTY_SUCCESS else { continue }
+                    var raw: GhosttyCell = 0
+                    var wide = GHOSTTY_CELL_WIDE_NARROW
+                    if ghostty_grid_ref_cell(&ref, &raw) == GHOSTTY_SUCCESS { _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide) }
+                    if wide == GHOSTTY_CELL_WIDE_SPACER_TAIL || wide == GHOSTTY_CELL_WIDE_SPACER_HEAD { continue }
+                    var style = GhosttyStyle()
+                    var n = 0
+                    if ghostty_grid_ref_style(&ref, &style) == GHOSTTY_SUCCESS, style.faint {
+                        line.append(" ")
+                    } else if ghostty_grid_ref_graphemes(&ref, &scalars, scalars.count, &n) == GHOSTTY_SUCCESS, n > 0 {
+                        line.unicodeScalars.append(contentsOf: scalars.prefix(n).compactMap(Unicode.Scalar.init))
+                    } else {
+                        line.append(" ")
+                    }
+                }
+                while line.hasSuffix(" ") { line.removeLast() }
+                lines.append(line)
+            }
+            while lines.last?.isEmpty == true { lines.removeLast() }
+            return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
+        }
     }
 
     /// The last OSC 9;4 progress as the agents' rules read it, after "9;".

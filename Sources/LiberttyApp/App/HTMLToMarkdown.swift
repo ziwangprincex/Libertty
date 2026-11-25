@@ -57,10 +57,44 @@ enum HTMLToMarkdown {
         /// A block starts on a fresh line, a blank one before it.
         private mutating func block() {
             if text.isEmpty { text = linePrefix; return }
-            let trimmed = text.replacingOccurrences(of: "[ >]+$", with: "", options: .regularExpression)
-            if trimmed.hasSuffix("\n") || trimmed.isEmpty { text = trimmed + linePrefix; return }
-            text = trimmed + "\n\n" + linePrefix
+            trimQuoteMarksAtEnd()
+            if text.hasSuffix("\n") || text.isEmpty { text += linePrefix; return }
+            text += "\n\n" + linePrefix
         }
+
+        /// The spaces and quote marks at the end taken off, as `[ >]+$`
+        /// would (at the very end, or before a line break that ends the
+        /// text), in place: that expression run over the whole text at
+        /// every block made a long page's paste take seconds.
+        private mutating func trimQuoteMarksAtEnd() {
+            if let trailing = Self.quoteMarksAtEnd(of: text) { text.unicodeScalars.removeSubrange(trailing) }
+        }
+
+        /// (Found apart from the removal: a copy of the text alive as it's
+        /// changed would have it copied whole.)
+        private static func quoteMarksAtEnd(of text: String) -> Range<String.Index>? {
+            let scalars = text.unicodeScalars
+            var end = scalars.endIndex
+            if end > scalars.startIndex {
+                let last = scalars.index(before: end)
+                if lineBreaks.contains(scalars[last]) {
+                    end = last
+                    if scalars[last] == "\n", last > scalars.startIndex, scalars[scalars.index(before: last)] == "\r" {
+                        end = scalars.index(before: last)
+                    }
+                }
+            }
+            var start = end
+            while start > scalars.startIndex {
+                let i = scalars.index(before: start)
+                guard scalars[i] == " " || scalars[i] == ">" else { break }
+                start = i
+            }
+            return start < end ? start..<end : nil
+        }
+
+        /// What a regular expression's `$` takes for the end of a line.
+        private static let lineBreaks: Set<Unicode.Scalar> = ["\n", "\u{0B}", "\u{0C}", "\r", "\u{85}", "\u{2028}", "\u{2029}"]
 
         private mutating func write(_ s: String) { text += s }
 

@@ -12,6 +12,8 @@ type:printf '\033]2;LOOKER\a'
 key:enter
 wait:3
 expect-news:1:RINGER
+# VoiceOver hears it too.
+expect-row-said:RINGER, needs a look
 tab:1
 wait:0.5
 expect-news:0

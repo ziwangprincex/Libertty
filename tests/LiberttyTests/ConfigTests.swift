@@ -23,6 +23,23 @@ struct ConfigTests {
         #expect(c.fontSize == Config().fontSize)
     }
 
+    /// `keybind = clear` clears keybind lines: the keys set as settings of
+    /// their own (global-hotkey and the like) stay, as Settings shows them;
+    /// a keybind after it can still unbind one.
+    @Test func clearKeepsTheGlobalHotkeys() {
+        var c = Config()
+        for (key, value) in [("global-hotkey", "ctrl+alt+space"), ("quick-terminal-hotkey", "ctrl+alt+grave_accent"),
+                             ("keybind", "cmd+b=new_tab"), ("keybind", "clear"), ("keybind", "cmd+j=new_window")] {
+            #expect(c.set(key, value) == nil, "\(key) = \(value)")
+        }
+        let table = c.keybindTable
+        #expect(table.global.map(\.action.configString).sorted() == ["new_window", "toggle_quick_terminal", "toggle_visibility"])
+        #expect(table.trigger(for: .newWindow) == Trigger("cmd+j"))
+        #expect(table.trigger(for: .newTab) == nil)
+        #expect(c.set("keybind", "global:ctrl+alt+t=unbind") == nil)
+        #expect(!c.keybindTable.global.contains { $0.action == .newWindow })
+    }
+
     @Test(arguments: [("font-size", "abc"), ("cursor-style", "triangle"), ("minimum-contrast", "x"),
                       ("adjust-cell-height", "tall"), ("accent-color", "blurple"), ("pane-style", "roomy"),
                       ("web-access", "everywhere"), ("theme", "No Such Theme At All"),
@@ -236,6 +253,60 @@ struct ConfigFileTests {
             """)
         #expect(store.savedConfig.palette.count == 3)
         #expect(store.savedConfig.keybinds == ["cmd+j=new_window", "cmd+b=close_tab"])
+    }
+
+    /// A shortcut recorded for an action with two keys by default (⌘↩ and
+    /// ⌃⌘F for full screen) is its only key: the other default once stayed,
+    /// shown in the menu and the recorder, and Delete took two presses.
+    @Test func aRecordedShortcutIsTheActionsOnlyKey() throws {
+        let (store, file) = try store("font-size = 13\n")
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let shiftF = try #require(Trigger("cmd+shift+f"))
+        store.rebind(.toggleFullscreen, from: store.keybinds.trigger(for: .toggleFullscreen), to: shiftF)
+        #expect(store.keybinds.trigger(for: .toggleFullscreen) == shiftF)
+        #expect(store.keybinds.local.filter { $0.action == .toggleFullscreen }.map(\.trigger) == [shiftF])
+        // Recorded again: still one key, and the file a line for each.
+        let altG = try #require(Trigger("cmd+alt+g"))
+        store.rebind(.toggleFullscreen, from: store.keybinds.trigger(for: .toggleFullscreen), to: altG)
+        #expect(store.keybinds.local.filter { $0.action == .toggleFullscreen }.map(\.trigger) == [altG])
+        #expect(try String(contentsOf: file, encoding: .utf8) == """
+            font-size = 13
+            keybind = cmd+enter=unbind
+            keybind = ctrl+cmd+f=unbind
+            keybind = alt+cmd+g=toggle_fullscreen
+
+            """)
+        // Delete, once: no key left.
+        store.rebind(.previousTab, from: store.keybinds.trigger(for: .previousTab), to: nil)
+        #expect(store.keybinds.trigger(for: .previousTab) == nil)
+        // A default's own key recorded keeps only that one.
+        let tab = try #require(Trigger("ctrl+tab"))
+        store.rebind(.nextTab, from: store.keybinds.trigger(for: .nextTab), to: tab)
+        #expect(store.keybinds.local.filter { $0.action == .nextTab }.map(\.trigger) == [tab])
+    }
+
+    /// A file with Windows' line endings, or old Mac OS's, keeps them when
+    /// Settings writes a line (every one became LF).
+    @Test func aFileKeepsItsLineEndings() throws {
+        for ending in ["\r\n", "\r", "\n"] {
+            let (store, file) = try store(["# mine", "font-size = 13", "tab-bar = left", ""].joined(separator: ending))
+            defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+            store.set("font-size", "14")
+            store.add("keybind", "cmd+b=new_tab")
+            #expect(try String(contentsOf: file, encoding: .utf8)
+                == ["# mine", "font-size = 14", "tab-bar = left", "keybind = cmd+b=new_tab", ""].joined(separator: ending),
+                "\(ending.debugDescription)")
+            #expect(store.savedConfig.fontSize == 14 && store.savedConfig.keybinds == ["cmd+b=new_tab"])
+        }
+    }
+
+    /// An empty or relative XDG_CONFIG_HOME is no config folder: ~/.config is.
+    @Test func anEmptyOrRelativeConfigHomeIsIgnored() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        #expect(ConfigStore.configHome([:]) == home)
+        #expect(ConfigStore.configHome(["XDG_CONFIG_HOME": ""]) == home)
+        #expect(ConfigStore.configHome(["XDG_CONFIG_HOME": "dotfiles/config"]) == home)
+        #expect(ConfigStore.configHome(["XDG_CONFIG_HOME": "/tmp/probe-config"]).path == "/tmp/probe-config")
     }
 
     /// A config kept with your dotfiles, linked into ~/.config/libertty: a

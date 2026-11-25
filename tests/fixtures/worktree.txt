@@ -72,3 +72,27 @@ key:enter
 wait:5.0
 expect:DONE2-0
 expect-shell:git -C @REPO@ worktree list | grep -c feat-z ==> 0
+# The window's last tab, in a worktree: closing it asks about the worktree
+# once, not again for the window it takes along; kept, the window closes
+# (Edit ▸ Undo brings it back).
+action:new_tab_in_worktree
+wait:0.5
+sheet-type:feat-w
+sheet:Create
+wait:1.5
+expect-tab-count:2
+tab:1
+action:close_tab
+wait:0.5
+expect-tab-count:1
+action:close_tab
+wait:1.0
+expect-sheet:yes
+sheet:Keep Worktree
+wait:1.0
+expect-sheet:no
+expect-windows:0
+undo:go
+wait:0.6
+expect-windows:1
+expect-shell:git -C @REPO@ worktree remove --force @REPO@/.libertty/worktrees/feat-w && echo GONE ==> GONE

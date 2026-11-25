@@ -348,6 +348,8 @@
   });
   block.on("save", async ({ id }) => { const ok = await doc.save(); call("saveDone", { ok, id }); });
   block.on("fileChanged", () => doc.external().catch(() => {}));
+  // Renamed or moved in the file tree: the same file, by its new name.
+  block.on("fileMoved", (f) => clear(title, f.name));
 
   window.libertty_notebook = { get nb() { return nb; }, get kernel() { return kernel; }, run, runAll, save: () => doc.save() };
   doc.load().catch((e) => clear(cellsEl, h("div.empty", "Couldn't read the notebook: " + String(e.message || e))));

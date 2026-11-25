@@ -127,10 +127,10 @@ extension TerminalView {
             switch outcome {
             case .sent(let paths):
                 guard !paths.isEmpty else { return }
-                self.sendInput(paths.map(ShellQuote.quote).joined(separator: " ") + " ")
+                self.typeUnsent(paths.map(ShellQuote.quote).joined(separator: " ") + " ")
             case .unsupported:
                 if !urls.isEmpty {
-                    self.sendInput(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
+                    self.typeUnsent(urls.map { ShellQuote.quote($0.path) }.joined(separator: " ") + " ")
                 } else {
                     self.uploadFailed(L10n.t("The host's liberttyd is older and takes no files. Connect to it again to update it."))
                 }

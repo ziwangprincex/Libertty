@@ -84,6 +84,15 @@ final class SurfaceStore {
     private var outputStart: GhosttyTrackedGridRef?
     private var outputEnd: GhosttyTrackedGridRef?
 
+    // Its session gone (the pane closed): the rows went with the terminal,
+    // but each tracked reference is still allocated, and freeing one after
+    // its terminal is allowed.
+    deinit {
+        var refs = surfaces.compactMap(\.anchor) + lenses.compactMap(\.anchor) + [outputStart, outputEnd].compactMap { $0 }
+        for case .command(let item) in pending + deferred { refs += [item.anchor].compactMap { $0 } }
+        refs.forEach(ghostty_tracked_grid_ref_free)
+    }
+
     /// The terminal reports sequences it doesn't know to us (only ours act).
     static func install(on terminal: GhosttyTerminal) {
         var max = SurfaceProtocol.maxSequenceBytes

@@ -439,6 +439,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     func adoptAll(_ tab: TerminalTab) {
         // A card made by another window acts on that one: syncCard makes ours.
         tab.container?.hideCard()
+        // So do its floating panes' bars (Minimize, Put in the Split, Close,
+        // the title): made again, for this window.
+        if let container = tab.container {
+            container.floats.forEach(container.removeFloat)
+            syncFloats(of: tab)
+        }
         tab.everyPane.forEach(adopt)
         tab.document.map(adopt)
         tab.documentPanes.forEach(adopt)
@@ -706,6 +712,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     var onUnhide: ((TerminalWindowController) -> Void)?
     /// Closed, and hidden a while for Undo: its panes take nothing meanwhile.
     var isHiddenForUndo = false
+    /// Closed for good (windowWillClose ran): Undo Close Window can't bring it back.
+    var closedForGood = false
 
     static let newTabItem = NSToolbarItem.Identifier("libertty.newTab")
     static let splitRightItem = NSToolbarItem.Identifier("libertty.splitRight")

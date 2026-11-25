@@ -134,7 +134,7 @@ libertty +diff --turn                      # agent 上一轮改了什么
 libertty +migrate-prompt --from tmux       # 生成让 agent 迁移快捷键的 prompt
 ```
 
-会话相关的命令都支持 `--host HOST`。`$LIBERTTY_SESSION` 是当前 pane 的会话 ID。
+会话相关的命令都支持 `--host HOST`，要写在 `-e` 或 `--` 之前（之后的参数都属于要运行的命令）。`$LIBERTTY_SESSION` 是当前 pane 的会话 ID。
 
 ## 构建
 

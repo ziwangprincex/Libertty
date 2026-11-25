@@ -52,8 +52,15 @@ enum TabActivity: String, CaseIterable {
         }
     }
 
-    /// As the filter's placeholder says it: "Filter waiting tabs".
-    var word: String { self == .attention ? "finished" : rawValue }
+    /// The filter's placeholder while these tabs show: "Filter waiting tabs".
+    var placeholder: String {
+        switch self {
+        case .all: return L10n.t("Filter tabs")
+        case .working: return L10n.t("Filter working tabs")
+        case .waiting: return L10n.t("Filter waiting tabs")
+        case .attention: return L10n.t("Filter finished tabs")
+        }
+    }
 
     func includes(_ tab: SidebarTabInfo) -> Bool {
         switch self {
@@ -97,6 +104,19 @@ extension SidebarTabInfo {
     /// The dot of a tab you marked unread shows whatever its badge says.
     var showsNews: Bool {
         news == .unread || news == .attention && StatusBadge.look(status: status, progress: progress, programs: !tiles.isEmpty) == .none
+    }
+
+    /// What VoiceOver says of a tab, in the strip or the sidebar: its name,
+    /// then what its glyphs and marks show ("server, Waiting for you, 3
+    /// panes, needs a look, muted").
+    var spoken: String {
+        var words = [title]
+        if let status { words.append(L10n.t(TerminalWindowController.label(for: status))) }
+        if let percent = progress?.percent { words.append("\(percent)%") }
+        if paneCount > 1 { words.append(L10n.t("%d panes").replacingOccurrences(of: "%d", with: String(paneCount))) }
+        if showsNews { words.append(L10n.t(news == .unread ? "marked unread" : "needs a look")) }
+        if muted { words.append(L10n.t("muted")) }
+        return words.joined(separator: ", ")
     }
 }
 
@@ -288,7 +308,9 @@ final class SidebarViewController: NSViewController {
         tabsTable.backgroundColor = .clear
         tabsTable.style = .plain
         tabsTable.rowHeight = Layout.rowHeight
-        tabsTable.intercellSpacing = NSSize(width: 0, height: Self.rowSpacing)
+        // The space between rows is in each row's height (`rowSpacing`): a
+        // table's own spacing would come with the rows folded away too.
+        tabsTable.intercellSpacing = .zero
         tabsTable.selectionHighlightStyle = .regular
         tabsTable.addTableColumn(NSTableColumn(identifier: .init("tab")))
         tabsTable.dataSource = self
@@ -346,7 +368,11 @@ final class SidebarViewController: NSViewController {
         filter.onChange = { [weak self] text in self?.filterTabs(text) }
         filter.onSubmit = { [weak self] in self?.selectFirstMatch() }
         filter.onActivity = { [weak self] activity in self?.show(activity: activity) }
-        filter.onEscape = { [weak self] in self?.showFilter(false) }
+        // Esc in the empty field closes it, and the keyboard goes back to the terminal.
+        filter.onEscape = { [weak self] in
+            self?.showFilter(false)
+            self?.controller?.focusTerminal()
+        }
 
         // The top row (the traffic lights' line): the window's buttons
         // while the sidebar is on the left (`setChrome`); Rex's.
@@ -436,6 +462,8 @@ final class SidebarViewController: NSViewController {
             NSLayoutConstraint.deactivate(filesBelowTabs + [tabsCapAlone, tabsCapWithFiles])
             NSLayoutConstraint.activate(filesAlone)
             finishRename()
+            // The tabs it filtered aren't listed here any more (they're along the top).
+            if !filter.isHidden { showFilter(false) }
         }
     }
 
@@ -482,12 +510,24 @@ final class SidebarViewController: NSViewController {
 
     @objc private func toggleFilter(_ sender: Any?) { showFilter(filter.isHidden) }
 
-    /// The field takes the foot's place while the tabs are filtered.
-    private func showFilter(_ on: Bool) {
+    /// The field takes the foot's place while the tabs are filtered; it's
+    /// where a filter on says so. Closed, it filters nothing any more: no
+    /// tab stays hidden by a filter nothing shows.
+    private func showFilter(_ on: Bool, focus: Bool = true) {
         filter.isHidden = !on
         foot.isHidden = on || !tabsShown
-        if on { filter.focus() } else { filter.clear() }
+        shownForActivity = false
+        if on {
+            if focus { filter.focus() }
+        } else {
+            filter.clear()
+            show(activity: .all)
+        }
     }
+
+    /// The field came up only to say which tabs show (show_tabs, from a
+    /// key or the palette): it goes again with that filter.
+    private var shownForActivity = false
 
     @objc private func newWorkspace(_ sender: Any?) { _ = ActionDispatcher.perform(.newWorkspace, controller: controller) }
     @objc private func connectToHost(_ sender: Any?) { _ = ActionDispatcher.perform(.connectToHost, controller: controller) }
@@ -509,6 +549,7 @@ final class SidebarViewController: NSViewController {
         // Rex names the session; Libertty's sets of tabs are workspaces.
         tabsTitle?.stringValue = name
     }
+    /// The space under each row that shows (none under one filtered out).
     private static let rowSpacing: CGFloat = 2
 
     // MARK: Filter
@@ -563,6 +604,24 @@ final class SidebarViewController: NSViewController {
                   let off = cell.newsOffCenter else { return nil }
             return (tabs[i].title, off)
         }
+    }
+
+    /// What VoiceOver hears of each tab's row that shows (`--ui-probe`).
+    var shownSaid: [String] {
+        view.window?.contentView?.layoutSubtreeIfNeeded()
+        return tabs.indices.compactMap { i in
+            guard shows(row: i), let r = tableRow(ofTab: i),
+                  let cell = tabsTable.view(atColumn: 0, row: r, makeIfNecessary: false) as? TabCell else { return nil }
+            return cell.accessibilityLabel()
+        }
+    }
+
+    /// The blank space in the list beyond its rows that show, in points:
+    /// what the rows filtered out still take (`--ui-probe`).
+    var blankInTabs: CGFloat {
+        view.window?.contentView?.layoutSubtreeIfNeeded()
+        let shown = rows.indices.filter(shows(tableRow:)).reduce(0) { $0 + tabsTable.rect(ofRow: $1).height }
+        return tabsScroll.frame.height - shown
     }
 
     /// The tabs whose row shows the muted glyph, each with what VoiceOver
@@ -682,6 +741,14 @@ final class SidebarViewController: NSViewController {
         guard activity != self.activity else { return }
         self.activity = activity
         filter.show(activity: activity)
+        // The field (its button, its placeholder) is what says a filter is
+        // on: it comes up for one set from elsewhere, without the keyboard.
+        if activity != .all, filter.isHidden {
+            showFilter(true, focus: false)
+            shownForActivity = true
+        } else if activity == .all, shownForActivity, filterText.isEmpty {
+            showFilter(false)
+        }
         refilter()
     }
 
@@ -712,7 +779,7 @@ final class SidebarViewController: NSViewController {
         let shown = tabs.filter(matches).count
         let folded = tabs.count - shown
         tabsHeight.constant = rows.indices.reduce(2) { height, r in
-            height + (shows(tableRow: r) ? self.height(of: rows[r]) : Self.foldedRowHeight) + Self.rowSpacing
+            height + (shows(tableRow: r) ? self.height(of: rows[r]) + Self.rowSpacing : Self.foldedRowHeight)
         }
         // How many, and how many of them show while filtered: "1/4".
         tabCount.stringValue = folded > 0 ? "\(shown)/\(tabs.count)" : String(tabs.count)
@@ -874,8 +941,14 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func tabClicked(_ sender: Any?) {
+        // A click that picked another row picked its tab already, and that
+        // may have taken rows away (the tab left showing under a folded
+        // header): the row clicked is then another tab's. Only a click on
+        // the row selected (the tab in front, again) is acted on here.
+        let row = tabsTable.clickedRow
+        guard tabsTable.selectedRow < 0 || row == tabsTable.selectedRow else { return }
         // (A header's and a session's rows take their own clicks.)
-        if let i = tab(atTableRow: tabsTable.clickedRow) { controller?.selectTab(at: i) }
+        if let i = tab(atTableRow: row) { controller?.selectTab(at: i) }
     }
 
     private func tabMenu() -> NSMenu {
@@ -886,20 +959,20 @@ final class SidebarViewController: NSViewController {
     }
 
     private func addTabItems(to menu: NSMenu) {
-        menu.addItem(withTitle: "Rename Tab…", action: #selector(renameTab(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Reset Name", action: #selector(resetTabName(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Duplicate Tab", action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Fork Conversation", action: #selector(forkConversation(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Rename Tab…"), action: #selector(renameTab(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Reset Name"), action: #selector(resetTabName(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Duplicate Tab"), action: #selector(duplicateTab(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Fork Conversation"), action: #selector(forkConversation(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: TabMute.title(muted: menuTab?.muted == true), action: #selector(toggleMute(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: TabNews.markTitle(unread: menuTab?.unread == true), action: #selector(toggleUnread(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Move Up", action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Move Down", action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Move to New Window", action: #selector(moveTabToNewWindow(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Move Up"), action: #selector(moveTabUp(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Move Down"), action: #selector(moveTabDown(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Move to New Window"), action: #selector(moveTabToNewWindow(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: L10n.t("Merge into Current Tab"), action: #selector(mergeIntoCurrentTab(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Close Other Tabs", action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Close Tab"), action: #selector(closeTab(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.t("Close Other Tabs"), action: #selector(closeOtherTabs(_:)), keyEquivalent: "").target = self
     }
 
     /// A header's menu: fold or unfold it, a tab there, and how to group.
@@ -1231,7 +1304,9 @@ extension SidebarViewController: NSMenuDelegate {
             addGroupingItems(to: grouping)
             menu.addItem(withTitle: L10n.t("Group Tabs"), action: nil, keyEquivalent: "").submenu = grouping
         case nil:
-            addTabItems(to: menu)
+            // Below the rows: no tab to rename, duplicate or close; how
+            // the tabs are grouped.
+            addGroupingItems(to: menu)
         }
     }
 }
@@ -1298,7 +1373,7 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         guard rows.indices.contains(row) else { return rowHeight }
-        return shows(tableRow: row) ? height(of: rows[row]) : Self.foldedRowHeight
+        return shows(tableRow: row) ? height(of: rows[row]) + Self.rowSpacing : Self.foldedRowHeight
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { TabRowView() }
@@ -1598,7 +1673,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         panes = tab.panes
         paneCount.isHidden = tab.paneCount < 2
         paneCount.title = tab.zoomed ? "\(tab.paneCount) zoomed" : String(tab.paneCount)
-        paneCount.setAccessibilityLabel(panesText)
+        paneCount.setAccessibleLabel(panesText)
         // The second line.
         subtitle.stringValue = tab.subtitle
         subtitle.isHidden = !Self.twoLines || tab.subtitle.isEmpty
@@ -1625,6 +1700,9 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         dot.isHidden = look == .none
         tiles.isHidden = look != .none
         toolTip = tab.status.map { TerminalWindowController.label(for: $0) }
+        // What the row's glyphs show, said too: its badge's state, its news
+        // (neither is words VoiceOver could read), as the strip's tabs say it.
+        setAccessibilityLabel(tab.spoken)
     }
 
     /// `programs`: the tab has programs to show (their logos or glyphs): a
@@ -1880,7 +1958,8 @@ private final class GroupHeaderCell: NSTableCellView {
     }
     override func mouseUp(with event: NSEvent) {
         guard !event.modifierFlags.contains(.control) else { return super.mouseUp(with: event) }
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onToggle?() }
+        // (A double click's second half: the first folded it already.)
+        if event.clickCount <= 1, bounds.contains(convert(event.locationInWindow, from: nil)) { onToggle?() }
     }
 
     func configure(_ group: SidebarGroup, byHost: Bool, folded: Bool, canAdd: Bool) {
@@ -2796,11 +2875,10 @@ final class TabFilterField: NSView, NSTextFieldDelegate {
         self.activity = activity
         let filtering = activity != .all
         let symbol = filtering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
-        activityButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Show Tabs")
+        activityButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: L10n.t("Show Tabs"))
         activityButton.contentTintColor = filtering ? .labelColor : .tertiaryLabelColor
-        activityButton.toolTip = filtering ? "Showing: \(activity.title)" : "Show Tabs by Activity"
-        let placeholder = filtering ? "Filter \(activity.word) tabs" : L10n.t("Filter tabs")
-        field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+        activityButton.toolTip = filtering ? String(format: L10n.t("Showing: %@"), activity.title) : L10n.t("Show Tabs by Activity")
+        field.placeholderAttributedString = NSAttributedString(string: activity.placeholder, attributes: [
             .font: Typeface.row, .foregroundColor: NSColor.tertiaryLabelColor,
         ])
     }

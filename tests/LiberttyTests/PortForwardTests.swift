@@ -93,6 +93,15 @@ import Testing
         // The host's own loopback, however it was spelled.
         #expect(PortForward.target("127.0.0.1:9000")?.remoteHost == "127.0.0.1")
         #expect(PortForward.target("0.0.0.0:9000")?.remoteHost == "localhost")
+        // An IPv6 address typed in brackets is named without them: ssh is
+        // given them once, not `[[::1]]`.
+        let six = try #require(PortForward.target("[::1]:5173"))
+        #expect(six.remote == 5173 && six.remoteHost == "::1")
+        #expect(PortForward(destination: "devbox", direction: .open, local: 5173, remote: six.remote,
+                            remoteHost: six.remoteHost).specification == "127.0.0.1:5173:[::1]:5173")
+        #expect(PortForward.target("[fd00::5]:22")?.remoteHost == "fd00::5")
+        #expect(PortForward.target("[::1:5173") == nil)
+        #expect(PortForward.target("[]:5173") == nil)
         // A URL keeps its path, and its port is the one to carry.
         let url = try #require(PortForward.target("http://localhost:5173/app?x=1"))
         #expect(url.remote == 5173 && url.remoteHost == "localhost")
@@ -136,6 +145,19 @@ import Testing
                 == options + ["-O", "forward", "-L", "127.0.0.1:49231:localhost:5173", "me@devbox"])
         #expect(PortForward.controlArguments(for: forward, cancel: true, options: options)
                 == options + ["-O", "cancel", "-L", "127.0.0.1:49231:localhost:5173", "me@devbox"])
+    }
+
+    /// The session that holds the shared connection up while it carries
+    /// forwards only ever uses the master: one gone a moment before doesn't
+    /// make it log in as a new master, holding none of them. ssh takes the
+    /// first value it's given, so it comes before the connection's own.
+    @Test func theKeeperNeverBecomesAMaster() {
+        let options = ["-T", "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/ssh-abc"]
+        let argv = RemoteHost.keeperArguments(options: options, destination: "me@devbox")
+        let first = argv.firstIndex { $0.hasPrefix("ControlMaster=") }
+        #expect(first.map { argv[$0] } == "ControlMaster=no")
+        #expect(argv.suffix(2) == ["me@devbox", "cat > /dev/null"])
+        #expect(argv.contains("BatchMode=yes"))
     }
 
     // MARK: How one is named and described

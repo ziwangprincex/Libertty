@@ -183,8 +183,17 @@ final class UpdateController: NSObject {
     private func announceReady(_ release: Updater.Release) {
         Notifier.shared.post(title: "Libertty \(release.version) is ready",
                              body: "Choose Libertty ▸ Restart to Update when it suits you; nothing you're running stops.",
-                             pane: "libertty.update")
+                             pane: Self.readyNotice)
         NotificationCenter.default.post(name: Self.readyChanged, object: nil)
+    }
+
+    /// The pane the "is ready" notification names: clicked (or its row in
+    /// Activity), it offers the update, as Restart to Update does.
+    nonisolated static let readyNotice = "libertty.update"
+
+    func showReady() {
+        guard let ready, !busy else { return }
+        offer(ready.release, automatic: false)
     }
 
     static let readyChanged = Notification.Name("LiberttyUpdateReady")

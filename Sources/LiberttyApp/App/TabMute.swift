@@ -18,10 +18,11 @@ enum TabMute {
 
     /// How many panes the Dock badge and the menu bar's icon count: those
     /// whose program is in a state they count (`program-status-dock-badge`),
-    /// in tabs that aren't muted.
-    static func badgeCount(_ panes: [(status: ProgramStatusStore, muted: Bool)],
+    /// in tabs that aren't muted — each session once (by its pane's `id`),
+    /// though two windows show it, as its notification is once.
+    static func badgeCount(_ panes: [(id: String, status: ProgramStatusStore, muted: Bool)],
                            counting states: Set<ProgramStatusStore.State>) -> Int {
-        panes.filter { !$0.muted && $0.status.headline(among: states) != nil }.count
+        Set(panes.filter { !$0.muted && $0.status.headline(among: states) != nil }.map(\.id)).count
     }
 
     /// The tab menus' item and the palette's command: what choosing it does now.

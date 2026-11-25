@@ -368,9 +368,23 @@ expect floating-pane 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-c
 # Minimized floating panes as capsules: named, clicked back with the keyboard, moved by the setting and by a drag, closed undoably.
 expect floating-capsules 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/floating-capsules.txt)" $OUT --persist
+# A tab moved to another window takes its floating panes along: their buttons act there.
+expect floating-moved 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/floating-moved.txt)" $OUT --persist
 # Undo Close from another workspace brings the pane back there; where it can't come back, its program ends, not runs on unseen.
 expect close-undo-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-undo-elsewhere.txt)" $OUT --persist
+# The window's last pane closing asks once and closes the window; Undo can't bring back one closed for good since.
+mkdir -p $PRIVATE/undo-config/libertty
+print 'undo-timeout = 30s' > $PRIVATE/undo-config/libertty/config
+expect close-once 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/undo-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-once.txt)" $OUT
+# The palette's sessions no window shows, asked of liberttyd off the main thread.
+expect palette-sessions 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@BIN@|$LIBERTTY|g" $ROOT/tests/fixtures/palette-sessions.txt)" $OUT --persist
+# A tab opened while liberttyd is being replaced: the window waits a moment at most, and the session is the new liberttyd's.
+expect liberttyd-replacing 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/liberttyd-replacing.txt)" $OUT --persist
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist
@@ -447,6 +461,12 @@ printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/picker-config/libertty
 printf 'background = #112233\n' > $PRIVATE/picker-config/libertty/themes/probe-theme
 expect settings-picker 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/picker-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/picker-config/libertty|g" $ROOT/tests/fixtures/settings-picker.txt)" $OUT
+# The palette's themes start at the one in use (a light/dark pair's half), trying nothing out.
+mkdir -p $PRIVATE/palette-themes-config/libertty/themes
+printf 'theme = light:probe-theme,dark:Libertty Dark\n' > $PRIVATE/palette-themes-config/libertty/config
+printf 'background = #112233\n' > $PRIVATE/palette-themes-config/libertty/themes/probe-theme
+expect palette-themes 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/palette-themes-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/palette-themes.txt)" $OUT
 # Setting actions on a key (toggle_setting, increase_setting…): the config
 # file changed in place, the windows following, and a switch's own command
 # in the palette once a search asks for it.
@@ -537,12 +557,17 @@ expect prompt-queue 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-co
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/prompt-queue.txt)" $OUT
 expect prompt-queue-closed 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-closed.txt)" $OUT
+expect prompt-queue-draft 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-draft.txt)" $OUT
 expect composer 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/composer.txt)" $OUT
 expect composer-exited 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/composer-exited.txt)" $OUT --persist
 expect prompt-queue-cli 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-cli.txt)" $OUT --persist
+# Queues and drafts come back with their panes after a restart, the queue paused.
+expect prompt-queue-restart 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-restart.txt)" $OUT --persist
 # Fork Conversation: the panes run cat, so the agents' fork commands are only shown.
 mkdir -p $PRIVATE/fork-config/libertty
 print 'command = cat' > $PRIVATE/fork-config/libertty/config
@@ -582,6 +607,9 @@ ln -s target.txt $ED/linked.txt
 printf 'start\n' > $ED/wq.txt
 { print '[Far](#far-below) [Café](#café)\n'; for i in {1..200}; print "line $i\n"; print '## Far below\n\n## Café\n'; for i in {1..60}; print "more $i\n" } > $ED/toc.md
 expect editor 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@DIR@|$ED|g" $ROOT/tests/fixtures/editor.txt)" $OUT
+# A file open in the editor or as a page that grows past 5 MB: no longer read at each change, and it says so.
+expect document-grows 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/document-grows|g" $ROOT/tests/fixtures/document-grows.txt)" $OUT
 # The Git block: stage a hunk, commit, history, a branch, a stash — through its page.
 GB=$PRIVATE/gitblock
 mkdir -p $GB
@@ -738,6 +766,9 @@ SITE_PID=$!
 # Up before a page asks it (a slow start is the server's, not the browser's).
 for i in {1..100}; do curl -sf -o /dev/null --max-time 1 http://127.0.0.1:$PORT/index.html && break; sleep 0.1; done
 expect browser 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@SITE@|http://127.0.0.1:$PORT|g" $ROOT/tests/fixtures/browser.txt)" $OUT
+# A page's confirm(), prompt() and alert() as sheets naming its host; its file input gets what's picked.
+expect browser-dialogs 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config $LIBERTTY --ui-probe \
+  "$(sed -e "s|@SITE@|http://127.0.0.1:$PORT|g" -e "s|@HOST@|127.0.0.1:$PORT|g" -e "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/browser-dialogs.txt)" $OUT
 mkdir -p $PRIVATE/browser-config/libertty
 print 'browser-automation = true' > $PRIVATE/browser-config/libertty/config
 settle
@@ -753,6 +784,9 @@ expect workspaces 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests
 # Panes: zoomed navigation, Redo of a close, two siblings ending at once.
 expect splits 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/splits.txt)" $OUT
+# A pane ending beside a document with the keyboard: the tab's terminal is the pane left.
+expect closed-beside-document 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/closed-beside-document.txt)" $OUT
 # Broadcast Input skips a read-only pane: keys, and text an input method commits.
 expect broadcast-readonly 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/broadcast-readonly.txt)" $OUT
@@ -785,6 +819,9 @@ expect key-hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/key-hints-c
 # Copy mode: a cursor of its own through the screen and the scrollback, selecting and copying; no key reaches the program.
 expect copy-mode 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/copy-mode.txt)" $OUT
+# A selection dragged past the pane's edge stops scrolling when another tab comes forward mid-drag.
+expect selection-drag-away 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/selection-drag-away.txt)" $OUT
 # Hint mode: labels on the links, paths, hashes and addresses on screen; a label opens or copies one.
 expect hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/hints.txt)" $OUT

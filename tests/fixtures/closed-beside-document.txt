@@ -1,0 +1,32 @@
+# A pane's program ending while a document beside it has the keyboard:
+# the tab's terminal is the pane left, not the one gone. Closing the
+# document gives that pane the keyboard, and a split splits it (both went
+# to the closed pane before: nothing had the keyboard, and nothing split).
+type:echo LEFT-PANE
+key:enter
+wait:0.4
+key:cmd+d
+wait:0.8
+expect-panes:2
+type:sleep 3; exit
+key:enter
+wait:0.3
+open-split:@ROOT@/tests/fixtures/markdown.md
+wait:0.5
+expect-panes:3
+expect-focus:0
+# The pane beside the document ends.
+wait:4.0
+expect-panes:2
+action:close_surface
+wait:0.6
+expect-panes:1
+expect-focus:1
+action:new_split:right
+wait:0.8
+expect-panes:2
+expect-focus:2
+type:echo AFTER-$((40+2))
+key:enter
+wait:0.5
+expect:AFTER-42

@@ -1,0 +1,12 @@
+# A selection dragged past the pane's top scrolls back as it grows. Another
+# tab coming forward before the button is let go (its release never reaches
+# the pane) stops that, rather than growing the hidden pane's selection on.
+type:seq 1 300
+key:enter
+wait:1.0
+drag-select:up
+wait:0.3
+expect-autoscroll:1
+tab:new
+wait:0.3
+expect-autoscroll:0

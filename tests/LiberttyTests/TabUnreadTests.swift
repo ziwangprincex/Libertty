@@ -38,6 +38,19 @@ struct TabUnreadTests {
         #expect(!TabActivity.waiting.includes(tab))
     }
 
+    /// VoiceOver hears what a tab's glyphs show: its state, its news.
+    @Test func saidWithItsStateAndNews() {
+        var tab = SidebarTabInfo(title: "server", status: .blocked, paneCount: 3)
+        #expect(tab.spoken == "server, " + L10n.t("Waiting for you") + ", " + L10n.t("%d panes").replacingOccurrences(of: "%d", with: "3"))
+        tab.status = nil
+        tab.paneCount = 1
+        tab.news = .attention
+        #expect(tab.spoken == "server, " + L10n.t("needs a look"))
+        tab.news = .unread
+        tab.muted = true
+        #expect(tab.spoken == "server, " + L10n.t("marked unread") + ", " + L10n.t("muted"))
+    }
+
     /// Saved with the window; a layout saved before there was marking has none.
     @Test func savedWithTheWindow() throws {
         var tab = SavedTab(panes: SavedPane(session: "s1"))

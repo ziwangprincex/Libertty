@@ -37,11 +37,13 @@ struct SettingShape {
         return probe.set(key, "true") == nil && probe.set(key, "false") == nil
     }
 
-    /// Whether the switch is on now: it is unless its value is the off one,
-    /// as the Settings window reads it.
+    /// Whether the switch is on now: it is unless its value is the off one
+    /// — or none, a setting that's unset (palette-generate: the theme's
+    /// choice) — as the Settings window reads it.
     func isOn(_ value: String) -> Bool {
         guard let onOff else { return false }
-        return SettingsModel.normalized(key, value) != SettingsModel.normalized(key, onOff.off)
+        let now = SettingsModel.normalized(key, value)
+        return now != SettingsModel.normalized(key, onOff.off) && !now.isEmpty
     }
 }
 

@@ -35,6 +35,8 @@ import LiberttyCore
 ///                         (`=TEXT`: are exactly TEXT)
 ///   expect-tab-count:N    the window (its workspace in front) has N tabs
 ///   expect-shown:N[:TEXT] the sidebar's filters leave N rows showing (each containing TEXT)
+///   expect-tabs-packed:go the sidebar's list is as tall as its rows that show: none filtered out leaves a blank
+///   expect-row-said:TEXT  VoiceOver reads a sidebar tab's row as TEXT (its name, state, news…; contains)
 ///   action-now:A          an action, not waiting for what it starts (shots of an animation)
 ///   expect-unmoved:here   the focused pane is where it was on the screen at the last one, same size
 ///   expect-regrids:N      the focused pane changed its grid N times since the last expect-regrids
@@ -51,6 +53,12 @@ import LiberttyCore
 ///   expect-panes:N        the tab in front has N panes in its split
 ///   focus-event:in|out    the focused pane gains or loses the keyboard, as its program hears it
 ///   expect-searching:N    N panes of the tab in front (parked ones too) have a search open
+///   restart-prompts:go    the queues and composer drafts as the app's next launch finds them (liberttyd
+///                         keeping the panes: --persist): kept as quitting keeps them, forgotten, and the
+///                         focused pane coming back (into its window) takes its own back
+///   drag-select:up|down   press in the focused pane and drag past its top (bottom) edge, the button
+///                         held: the selection scrolls as it grows
+///   expect-autoscroll:N   N panes of the window (every tab) are scrolling a selection being dragged
 ///   expect-no-open-animation:go  the window appears as it is (no zoom: its text would seem to change size)
 ///   expect-resize-frames:N the focused pane drew N frames inside a resize since the last of these
 ///   expect-pinned:go      every pane's drawable is its view's size and pinned top-left, also once AppKit sets its gravity again
@@ -75,6 +83,7 @@ import LiberttyCore
 ///   (shot: takes the Settings window as NAME-settings.png while it's open)
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
+///   open-split:PATH       show a file beside the focused terminal (Open in Split), the keyboard in it
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
 ///   editor-insert:TEXT    put TEXT at the editor's cursor (`type:` sends real keys)
 ///   editor-save:go        File ▸ Save
@@ -116,6 +125,7 @@ import LiberttyCore
 ///   insert-files:PATH|PATH  Attach Files… (insert_file) with these picked, the open panel apart;
 ///                         insert-photos: Attach from Photos… with them as Photos would give them;
 ///                         -refused (insert-files-refused:…) when the action shouldn't run (read-only)
+///   pick-files:PATH|PATH  the next open panel a web page asks for (`<input type=file>`) picks these, the panel apart
 ///   browser:ARGS ==> TEXT  what `libertty +browser ARGS` does here (ARGS split as a shell does); what
 ///                         it prints contains TEXT (`!TEXT`: it failed, saying TEXT). Without ` ==> `, just do it.
 ///   bar:TEXT              type TEXT in the browser's address bar and press Return
@@ -129,9 +139,11 @@ import LiberttyCore
 ///   tab-menu-not:N:TITLE that menu doesn't offer TITLE (it's not there, hidden or greyed out)
 ///   action:ACTION        perform a keybind action (`libertty +list-actions`), e.g. move_surface_to_new_tab;
 ///                        ACTION,ACTION… performs them one right after the other (a key pressed twice)
-///   expect-windows:N     the probe has N windows (Move … to New Window opens them, off screen)
+///   expect-windows:N     the probe has N windows showing (Move … to New Window opens them, off screen;
+///                        its own is one until it closes, or hides for Undo Close Window)
 ///   expect-other:TEXT    a sidebar row of the newest other window contains TEXT, or its panes' text does
 ///   take-tab:N           tab N of the newest other window moves back here, at the end (as dropped on the sidebar)
+///   other-click:LABEL    click:LABEL in the newest other window
 ///   expect-subtitle:TEXT the window's subtitle (the most urgent program state) contains TEXT
 ///   hover:N              the pointer comes onto pane N of the tab in front (reading order)
 ///   expect-focus:N       pane N of the tab in front has the keyboard
@@ -467,6 +479,18 @@ enum UIProbe {
                         // A block's address opens as itself (`open:libertty-block://screen?own=1`).
                         let url = path.hasPrefix(Blocks.scheme + "://") ? URL(string: path)! : URL(fileURLWithPath: path)
                         controller.openDocument(url, line: line, edit: edit ? true : nil)
+                        pump(0.4)
+                    case .openSplit(let path):
+                        controller.openDocumentInSplit(URL(fileURLWithPath: path))
+                        pump(0.6)
+                    case .otherClick(let label):
+                        guard let other = others.last(where: { $0.window?.isVisible == true })?.window,
+                              let center = reachable(label, in: other) else {
+                            print("FAIL  ui-probe other-click: no \(label) in another window")
+                            failures += 1
+                            break
+                        }
+                        click(x: center.x, y: center.y, in: other)
                         pump(0.4)
                     case .editorWait:
                         let deadline = Date().addingTimeInterval(10)
@@ -992,6 +1016,38 @@ enum UIProbe {
                             print("FAIL  ui-probe window: it animates as it opens (\(window.animationBehavior.rawValue))")
                             failures += 1
                         }
+                    case .dragSelect(let toward):
+                        // Real events at the pane: the press in its middle, the drag past its edge.
+                        let pane = controller.focusedTerminal
+                        func event(_ type: NSEvent.EventType, _ y: CGFloat) -> NSEvent? {
+                            NSEvent.mouseEvent(with: type, location: pane.convert(NSPoint(x: pane.bounds.midX, y: y), to: nil),
+                                               modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                        }
+                        let past = toward == "down" ? pane.bounds.height + 30 : -30
+                        if let down = event(.leftMouseDown, pane.bounds.midY), let drag = event(.leftMouseDragged, past) {
+                            pane.mouseDown(with: down)
+                            pane.mouseDragged(with: drag)
+                        }
+                        pump(0.2)
+                    case .restartPrompts:
+                        PromptQueues.shared.restartForProbe()
+                        let pane = controller.focusedTerminal
+                        pane.updateQueueTag()
+                        // Into its window again, as a pane of the next launch comes.
+                        let holder = pane.superview, frame = pane.frame
+                        let focused = window.firstResponder === pane
+                        pane.removeFromSuperview()
+                        holder?.addSubview(pane)
+                        pane.frame = frame
+                        if focused { window.makeFirstResponder(pane) }
+                        pump(0.3)
+                    case .expectAutoscroll(let n):
+                        let count = controller.allPanes.filter(\.isAutoscrolling).count
+                        if count == n { print("ok    ui-probe \(n) panes autoscrolling") } else {
+                            print("FAIL  ui-probe autoscroll: \(count) panes, not \(n)")
+                            failures += 1
+                        }
                     case .expectSearching(let n):
                         let count = controller.selectedTab.everyPane.filter { $0.session.searchResult.active }.count
                         if count == n { print("ok    ui-probe \(n) panes searching") } else {
@@ -1479,6 +1535,9 @@ enum UIProbe {
                         controller.updateSidebar()
                         pump(0.3)
                         print("ok    ui-probe pretend-host: \(destination)")
+                    case .pickFiles(let paths):
+                        ProbePick.files = paths.map { URL(fileURLWithPath: $0) }
+                        print("ok    ui-probe pick-files (\(paths.count)) for the next page that asks")
                     case .insertFiles(let paths, let photos, let refused):
                         // Through the action, as the menu runs it: only the
                         // panel's part is the probe's.
@@ -1751,7 +1810,7 @@ enum UIProbe {
                         }
                         pump(0.6)  // a pane slides out of its split
                     case .expectWindows(let n):
-                        let count = 1 + others.filter { $0.window?.isVisible == true }.count
+                        let count = (window.isVisible ? 1 : 0) + others.filter { $0.window?.isVisible == true }.count
                         if count == n {
                             print("ok    ui-probe \(n) windows")
                         } else {
@@ -1780,6 +1839,23 @@ enum UIProbe {
                         }
                         controller.take(tab, from: other, at: controller.tabs.count)
                         pump(0.4)
+                    case .expectTabsPacked:
+                        // (The list's 2 points of margin aside.)
+                        let blank = controller.sidebar.blankInTabs
+                        if blank <= 3 {
+                            print("ok    ui-probe sidebar's list: no blank between or under its rows")
+                        } else {
+                            print("FAIL  ui-probe sidebar's list: \(blank) points of it blank, the rows it shows \(controller.shownSidebarRows.count)")
+                            failures += 1
+                        }
+                    case .expectRowSaid(let text):
+                        let said = controller.sidebar.shownSaid
+                        if said.contains(where: { $0.contains(text) }) {
+                            print("ok    ui-probe a sidebar row is read as \(text)")
+                        } else {
+                            print("FAIL  ui-probe sidebar rows are read as \(said), none as \(text)")
+                            failures += 1
+                        }
                     case .expectShown(let n, let text):
                         let shown = controller.shownSidebarRows
                         if shown.count == n, text.isEmpty || shown.allSatisfy({ $0.contains(text) }) {
@@ -2231,6 +2307,8 @@ enum UIProbe {
         /// Attach Files… (or Attach from Photos…) with these picked, the
         /// picker apart: typed into the pane with the keyboard, or refused.
         case insertFiles([String], photos: Bool, refused: Bool)
+        /// A web page's next file picker: these, the panel apart.
+        case pickFiles([String])
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
@@ -2238,8 +2316,8 @@ enum UIProbe {
         case expectAtBottom(Bool)
         case hint(String, copy: Bool), expectKeyHints(String), clickText(String)
         case expectStripAt(String), tabMenu(Int, String, choose: Bool)
-        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
-        case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
+        case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), dragSelect(String), expectAutoscroll(Int), restartPrompts, expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
+        case open(String, line: Int?, edit: Bool), openSplit(String), otherClick(String), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
         case quickLookClick(String), expectQuickLook(String), expectDiagrams(Int)
@@ -2247,6 +2325,7 @@ enum UIProbe {
         /// many show, a row of a session not open here (or none), a click on
         /// the row showing TEXT.
         case expectGroup(String), expectGroupCount(Int), expectElsewhere(String, Bool), clickRow(String)
+        case expectTabsPacked, expectRowSaid(String)
         case treeSelect(String), treeMenu(String), treeRename(String, String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
         case appleScript(String, String?)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
@@ -2352,6 +2431,8 @@ enum UIProbe {
             case "expect-shown":
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 steps.append(.expectShown(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
+            case "expect-tabs-packed": steps.append(.expectTabsPacked)
+            case "expect-row-said": steps.append(.expectRowSaid(arg))
             case "action": steps.append(.action(arg))
             case "action-now": steps.append(.actionNow(arg))
             case "expect-regrids": steps.append(.expectRegrids(Int(arg) ?? -1))
@@ -2412,6 +2493,7 @@ enum UIProbe {
             case "insert-files", "insert-photos", "insert-files-refused", "insert-photos-refused":
                 steps.append(.insertFiles(arg.split(separator: "|").map(String.init), photos: verb.hasPrefix("insert-photos"),
                                           refused: verb.hasSuffix("-refused")))
+            case "pick-files": steps.append(.pickFiles(arg.split(separator: "|").map(String.init)))
             case "glide-resize":
                 // `glide-resize:N:WIDTH`: select tab N, and while the sidebar's
                 // card is still gliding there (motion:on), make the sidebar WIDTH wide.
@@ -2463,6 +2545,9 @@ enum UIProbe {
             case "conversation": steps.append(.conversation(arg))
             case "focus-event": steps.append(.focusEvent(arg == "in"))
             case "expect-searching": steps.append(.expectSearching(Int(arg) ?? -1))
+            case "drag-select": steps.append(.dragSelect(arg))
+            case "restart-prompts": steps.append(.restartPrompts)
+            case "expect-autoscroll": steps.append(.expectAutoscroll(Int(arg) ?? -1))
             case "expect-no-open-animation": steps.append(.expectNoOpenAnimation)
             case "expect-resize-frames": steps.append(.expectResizeFrames(Int(arg) ?? -1))
             case "expect-pinned": steps.append(.expectPinned)
@@ -2485,6 +2570,8 @@ enum UIProbe {
                     path = String(arg[..<colon])
                 }
                 steps.append(.open(path, line: line, edit: verb == "edit"))
+            case "open-split": steps.append(.openSplit(arg))
+            case "other-click": steps.append(.otherClick(arg))
             case "editor-wait": steps.append(.editorWait)
             case "editor-js": steps.append(.editorJS(arg))
             case "editor-insert": steps.append(.editorInsert(arg))

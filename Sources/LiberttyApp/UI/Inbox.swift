@@ -110,6 +110,13 @@ final class InboxViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
     }
 
+    // (A block's observer stays registered until removed: one more for
+    // every window that ever showed its Activity.)
+    deinit {
+        observer.map(NotificationCenter.default.removeObserver)
+        refresh?.invalidate()
+    }
+
     override func viewWillAppear() {
         super.viewWillAppear()
         reload(force: true)  // the times ("5 min ago") as of now

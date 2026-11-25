@@ -11,6 +11,9 @@ final class NetworkCost: @unchecked Sendable {
         case lowData = "low-data"
         /// A phone's hotspot, or another link macOS marks as expensive.
         case hotspot
+        /// No network at all (offline): not one that costs nothing, so a
+        /// download waiting for one waits on.
+        case offline
     }
 
     static let shared = NetworkCost()
@@ -26,7 +29,7 @@ final class NetworkCost: @unchecked Sendable {
     private init() {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
-            let now = Self.kind(constrained: path.isConstrained, expensive: path.isExpensive)
+            let now = Self.kind(satisfied: path.status == .satisfied, constrained: path.isConstrained, expensive: path.isExpensive)
             let changed = self.lock.withLock { () -> Bool in
                 defer { self.kind = now }
                 return self.kind != now
@@ -42,7 +45,7 @@ final class NetworkCost: @unchecked Sendable {
     var current: Kind { forced ?? lock.withLock { kind } }
 
     /// Low Data Mode first: it's the user's own say, a hotspot only macOS's guess.
-    static func kind(constrained: Bool, expensive: Bool) -> Kind {
-        constrained ? .lowData : expensive ? .hotspot : .free
+    static func kind(satisfied: Bool = true, constrained: Bool, expensive: Bool) -> Kind {
+        !satisfied ? .offline : constrained ? .lowData : expensive ? .hotspot : .free
     }
 }
