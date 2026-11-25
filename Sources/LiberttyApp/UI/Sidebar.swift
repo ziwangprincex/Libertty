@@ -462,6 +462,8 @@ final class SidebarViewController: NSViewController {
             NSLayoutConstraint.deactivate(filesBelowTabs + [tabsCapAlone, tabsCapWithFiles])
             NSLayoutConstraint.activate(filesAlone)
             finishRename()
+            // The tabs it filtered aren't listed here any more (they're along the top).
+            if !filter.isHidden { showFilter(false) }
         }
     }
 
