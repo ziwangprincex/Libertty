@@ -368,7 +368,7 @@ expect floating-pane 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-c
 # Minimized floating panes as capsules: named, clicked back with the keyboard, moved by the setting and by a drag, closed undoably.
 expect floating-capsules 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/floating-capsules.txt)" $OUT --persist
-# Undo Close where it can't come back (a pane closed in another workspace): its program ends, not runs on unseen.
+# Undo Close from another workspace brings the pane back there; where it can't come back, its program ends, not runs on unseen.
 expect close-undo-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-undo-elsewhere.txt)" $OUT --persist
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.

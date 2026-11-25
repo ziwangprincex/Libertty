@@ -32,9 +32,9 @@ final class CloseUndo {
             guard let self else { return }
             entry.work?.cancel()
             self.pending.removeAll { $0 === entry }
-            // It can't come back (its tab is in another workspace, its
-            // window is minimized or gone): its timer is cancelled and
-            // nothing else holds it, so what it kept running ends now.
+            // It can't come back (its tab or its window has gone): its
+            // timer is cancelled and nothing else holds it, so what it
+            // kept running ends now.
             guard let reclose = restore() else { return entry.expire() }
             guard redoable else { return }
             // Redo closes it again, which registers a fresh undo. The

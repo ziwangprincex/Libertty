@@ -1,6 +1,8 @@
-# Undo Close where what closed can't come back (in liberttyd: --persist).
-# A pane closed in one workspace, Undo pressed from another: its program
-# ends then, not runs on in liberttyd where no window shows it.
+# Undo Close brings back what closed wherever it was (in liberttyd: --persist).
+# A pane closed in one workspace, Undo pressed from another: its workspace
+# comes forward and the pane is back in its tab. Where it can't come back
+# (its tab gone to another window meanwhile), its program ends then, not
+# runs on in liberttyd where no window shows it.
 workspace:new:Temp
 expect-workspace:=Default [Temp]
 key:cmd+d
@@ -16,6 +18,23 @@ expect-panes:1
 expect-shell:pgrep -f 'sleep 3133[7]' >/dev/null && echo STILL-RUNNING ==> STILL-RUNNING
 workspace:1
 expect-workspace:=[Default] Temp
+undo:go
+wait:1.0
+expect-workspace:=Default [Temp]
+expect-panes:2
+expect-focus:2
+expect-shell:pgrep -f 'sleep 3133[7]' >/dev/null && echo STILL-RUNNING ==> STILL-RUNNING
+# Closed again, and its tab moved to a window of its own before Undo.
+action:close_surface
+wait:0.6
+sheet:Close
+wait:0.8
+expect-panes:1
+tab:new
+wait:0.5
+tab:1
+action:move_tab_to_new_window
+expect-windows:2
 undo:go
 wait:1.0
 expect-shell:pgrep -f 'sleep 3133[7]' >/dev/null || echo ENDED ==> ENDED

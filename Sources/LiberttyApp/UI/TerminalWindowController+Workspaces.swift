@@ -145,7 +145,7 @@ extension TerminalWindowController {
         }
         guard undoable, CloseUndo.shared.enabled, panes.contains(where: { !$0.session.hasExited }) else { return end() }
         CloseUndo.shared.closed("Close Workspace", restore: { [weak self] in
-            guard let self, self.window?.isVisible == true, panes.contains(where: { !$0.session.hasExited }) else { return nil }
+            guard let self, panes.contains(where: { !$0.session.hasExited }), self.canTakeBack() else { return nil }
             self.syncActiveWorkspace()
             self.workspaces.insert(gone, at: min(index, self.workspaces.count))
             if index <= self.activeWorkspace { self.activeWorkspace += 1 }

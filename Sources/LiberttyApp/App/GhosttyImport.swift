@@ -181,23 +181,34 @@ enum GhosttyImport {
             fflush(stdout)
             guard let answer = readLine(), ["y", "yes"].contains(answer.lowercased()) else { print("Nothing changed."); return 1 }
         }
+        let result = write(plan, from: files, into: store)
+        result.said.dropLast().forEach { print($0) }
+        if result.ok { print(result.said.last ?? "") } else { fail(result.said.last ?? "") }
+        return result.ok ? 0 : 1
+    }
+
+    /// Add `plan`'s lines from `files` to Libertty's config, a copy of the
+    /// file as it was kept beside it: +import-ghostty once asked, and the
+    /// app's own Import button (Settings, Welcome), which isn't a program
+    /// driving Libertty, whatever remote-control says. What happened, a line
+    /// each; the last says how it ended.
+    static func write(_ plan: Plan, from files: [URL], into store: ConfigStore) -> (ok: Bool, said: [String]) {
+        let shown = { (url: URL) in (url.path as NSString).abbreviatingWithTildeInPath }
+        var said: [String] = []
         // The file as it was, beside it (what a link names, not the link:
         // a copy of that would follow the import).
         if FileManager.default.fileExists(atPath: store.url.path) {
             let backup = store.url.deletingLastPathComponent()
                 .appendingPathComponent("config.before-ghostty-import-\(Int(Date().timeIntervalSince1970))")
             do { try FileManager.default.copyItem(at: store.url.resolvingSymlinksInPath(), to: backup) } catch {
-                fail("couldn't keep a copy of the config: \(error.localizedDescription)")
-                return 1
+                return (false, ["couldn't keep a copy of the config: \(error.localizedDescription)"])
             }
-            print("The config as it was: \(shown(backup))")
+            said.append("The config as it was: \(shown(backup))")
         }
         let date = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withFullDate])
         guard store.appendBlock(["# From Ghostty (\(files.map(shown).joined(separator: ", "))), \(date)"] + plan.lines) else {
-            fail("couldn't write \(shown(store.url)); nothing changed")
-            return 1
+            return (false, said + ["couldn't write \(shown(store.url)); nothing changed"])
         }
-        print("Added. A running Libertty applies it now.")
-        return 0
+        return (true, said + ["Added. A running Libertty applies it now."])
     }
 }

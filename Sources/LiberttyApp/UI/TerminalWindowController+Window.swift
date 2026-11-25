@@ -28,6 +28,25 @@ extension TerminalWindowController {
 
     /// Close Window (close_window): the window and all its tabs.
     func closeWindowAndTabs() { window?.performClose(nil) }
+
+    /// Undo Close: this window can take back what it closed — brought up
+    /// first if it's in the Dock. Not once it has gone (closed for good, or
+    /// hidden for its own Undo Close).
+    func canTakeBack() -> Bool {
+        guard window?.isVisible == true || window?.isMiniaturized == true, !isHiddenForUndo else { return false }
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
+        return true
+    }
+
+    /// Undo Close Pane: `tab` in front to take its pane back — its workspace
+    /// first if that isn't the one shown. False once the tab has gone.
+    func takeBack(_ tab: TerminalTab) -> Bool {
+        guard canTakeBack() else { return false }
+        if !tabs.contains(where: { $0 === tab }), let i = workspaces.firstIndex(where: { $0.tabs.contains { $0 === tab } }) {
+            switchWorkspace(to: i)
+        }
+        return tabs.contains { $0 === tab }
+    }
     var hasRunningPrograms: Bool { allPanes.contains { $0.session.hasForegroundProgram } }
     /// Running programs that quitting would end even with persistence: those
     /// in panes liberttyd doesn't hold (it was slow to start, or refused one).

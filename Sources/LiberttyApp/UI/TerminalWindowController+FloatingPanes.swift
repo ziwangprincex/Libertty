@@ -109,7 +109,7 @@ extension TerminalWindowController {
         if hadKeyboard, tab === selectedTab, let split = tab.focusedPane { window?.makeFirstResponder(split) }
         if undoable, !pane.session.hasExited, CloseUndo.shared.enabled {
             CloseUndo.shared.closed("Close Pane", restore: { [weak self, weak tab] in
-                guard let self, let tab, self.tabs.contains(where: { $0 === tab }), !pane.session.hasExited else { return nil }
+                guard let self, let tab, !pane.session.hasExited, self.takeBack(tab) else { return nil }
                 if tab !== self.selectedTab { self.select(tab) }
                 tab.parked.append(entry)
                 self.syncFloats(of: tab)

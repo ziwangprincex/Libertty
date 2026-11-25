@@ -634,9 +634,13 @@ final class SettingsModel: ObservableObject {
             alert.addButton(withTitle: "Cancel")
             let go = { (response: NSApplication.ModalResponse) in
                 guard response == .alertFirstButtonReturn else { return }
-                Self.runCLI(["+import-ghostty", "--yes"]) { _, output in
-                    self.ghosttyReport = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n").last ?? ""
-                }
+                // Here, not through +import-ghostty: the button is yours, not
+                // a program's (with remote-control = false, that command is refused).
+                let files = GhosttyImport.ghosttyFiles
+                let store = ConfigStore.shared
+                let plan = GhosttyImport.plan(GhosttyImport.entries(of: files), libertty: store.fileEntries)
+                guard !plan.lines.isEmpty else { return }
+                self.ghosttyReport = GhosttyImport.write(plan, from: files, into: store).said.last ?? ""
             }
             if let window { alert.beginSheetModal(for: window) { r in MainActor.assumeIsolated { go(r) } } } else { go(alert.runModal()) }
         }

@@ -351,8 +351,8 @@ extension TerminalWindowController {
             return
         }
         CloseUndo.shared.closed("Close Tab", restore: { [weak self] in
-            guard let self, self.window?.isVisible == true,
-                  tab.document != nil || tab.everyPane.contains(where: { !$0.session.hasExited }) else { return nil }
+            guard let self, tab.document != nil || tab.everyPane.contains(where: { !$0.session.hasExited }),
+                  self.canTakeBack() else { return nil }
             // Back in the workspace it was closed in, if that's still here.
             if let w = self.workspaces.firstIndex(where: { $0.id == home }) { self.switchWorkspace(to: w) }
             self.tabs.insert(tab, at: min(i, self.tabs.count))

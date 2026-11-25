@@ -223,8 +223,8 @@ extension TerminalWindowController {
         } else if undoable, !pane.session.hasExited, CloseUndo.shared.enabled, let next {
             let side = side(of: next)
             CloseUndo.shared.closed("Close Pane", restore: { [weak self, weak tab] in
-                guard let self, let tab, self.tabs.contains(where: { $0 === tab }), let container = tab.container,
-                      !pane.session.hasExited else { return nil }
+                guard let self, let tab, !pane.session.hasExited, self.takeBack(tab), let container = tab.container
+                else { return nil }
                 let anchor = container.views.contains { $0 === next } ? next : (tab.focusedPane ?? container.views.first!)
                 if tab !== self.selectedTab { self.select(tab) }
                 container.split(anchor, with: pane, toward: side)
