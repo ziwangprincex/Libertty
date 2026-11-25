@@ -224,4 +224,22 @@ struct ConfigFileTests {
         #expect(store.savedConfig.palette.count == 3)
         #expect(store.savedConfig.keybinds == ["cmd+j=new_window", "cmd+b=close_tab"])
     }
+
+    /// A config kept with your dotfiles, linked into ~/.config/libertty: a
+    /// change in Settings is written there, and the link stays a link.
+    @Test func aLinkedConfigStaysLinked() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("config-\(UUID().uuidString)")
+        let dotfiles = dir.appendingPathComponent("dotfiles"), folder = dir.appendingPathComponent("libertty")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for d in [dotfiles, folder] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
+        let real = dotfiles.appendingPathComponent("libertty.conf"), link = folder.appendingPathComponent("config")
+        try "font-size = 13\n".write(to: real, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "../dotfiles/libertty.conf")
+        let store = ConfigStore(url: link, watch: false)
+        store.set("font-size", "14")
+        store.add("palette", "1=#ff5555")
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == "../dotfiles/libertty.conf")
+        #expect(try String(contentsOf: real, encoding: .utf8) == "font-size = 14\npalette = 1=#ff5555\n")
+        #expect(store.savedConfig.fontSize == 14)
+    }
 }

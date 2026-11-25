@@ -181,11 +181,12 @@ enum GhosttyImport {
             fflush(stdout)
             guard let answer = readLine(), ["y", "yes"].contains(answer.lowercased()) else { print("Nothing changed."); return 1 }
         }
-        // The file as it was, beside it.
+        // The file as it was, beside it (what a link names, not the link:
+        // a copy of that would follow the import).
         if FileManager.default.fileExists(atPath: store.url.path) {
             let backup = store.url.deletingLastPathComponent()
                 .appendingPathComponent("config.before-ghostty-import-\(Int(Date().timeIntervalSince1970))")
-            do { try FileManager.default.copyItem(at: store.url, to: backup) } catch {
+            do { try FileManager.default.copyItem(at: store.url.resolvingSymlinksInPath(), to: backup) } catch {
                 fail("couldn't keep a copy of the config: \(error.localizedDescription)")
                 return 1
             }

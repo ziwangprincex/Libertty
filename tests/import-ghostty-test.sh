@@ -72,4 +72,17 @@ grep -qx 'keybind = ctrl+a>n=new_window' $f && ok "a key sequence added" || bad 
   || bad "palette: $(grep palette $f)"
 $L +validate-config > /dev/null && ok "the result validates" || bad "invalid result"
 
+# A config linked from dotfiles: the import goes into the file it names, the
+# link stays, and the copy kept is the file as it was, not another link.
+mkdir -p $T/dot $T/cfg3/libertty
+print -r -- 'font-size = 13' > $T/dot/libertty.conf
+ln -s ../../dot/libertty.conf $T/cfg3/libertty/config
+export XDG_CONFIG_HOME=$T/cfg3
+$L +import-ghostty --from $T/ghostty/config.ghostty --yes > /dev/null
+backup=$(ls $T/cfg3/libertty/config.before-ghostty-import-* 2> /dev/null | head -1)
+[[ -L $T/cfg3/libertty/config ]] && grep -qx 'window-padding-x = 12' $T/dot/libertty.conf \
+  && [[ -n $backup && ! -L $backup ]] && [[ $(cat $backup) == 'font-size = 13' ]] \
+  && ok "a linked config: written through the link, the copy the file as it was" \
+  || bad "linked config: $(ls -l $T/cfg3/libertty) $(cat $T/dot/libertty.conf)"
+
 (( fails == 0 )) && echo "import-ghostty: all passed"

@@ -1669,8 +1669,11 @@ final class ConfigStore {
 
     @discardableResult
     private func write(_ text: String) -> Bool {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let written = (try? text.write(to: url, atomically: true, encoding: .utf8)) != nil
+        // A link (a config kept with your dotfiles): the file it names. A new
+        // file written in place of the link would cut it.
+        let target = url.resolvingSymlinksInPath()
+        try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let written = (try? text.write(to: target, atomically: true, encoding: .utf8)) != nil
         reload()
         return written
     }
