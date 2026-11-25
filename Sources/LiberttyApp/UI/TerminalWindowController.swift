@@ -704,6 +704,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     /// The window was hidden for undo / brought back (the app keeps its list).
     var onHide: ((TerminalWindowController) -> Void)?
     var onUnhide: ((TerminalWindowController) -> Void)?
+    /// Closed, and hidden a while for Undo: its panes take nothing meanwhile.
+    var isHiddenForUndo = false
 
     static let newTabItem = NSToolbarItem.Identifier("libertty.newTab")
     static let splitRightItem = NSToolbarItem.Identifier("libertty.splitRight")

@@ -181,6 +181,7 @@ extension TerminalWindowController {
             return !skipCloseConfirmation
         }
         sender.orderOut(nil)
+        isHiddenForUndo = true
         onHide?(self)
         // Strong: while it can come back, nothing else keeps this controller alive.
         CloseUndo.shared.closed("Close Window", restore: { [self] in
@@ -188,6 +189,7 @@ extension TerminalWindowController {
             // Back as it was: its next close asks as any close does.
             self.skipCloseConfirmation = false
             self.worktreesOnClose = nil
+            self.isHiddenForUndo = false
             self.onUnhide?(self)
             window.makeKeyAndOrderFront(nil)
             // Redo closes it again, the usual way; it doesn't keep the window alive.

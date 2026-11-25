@@ -57,9 +57,10 @@ extension TerminalView {
 
 extension PromptQueues {
     /// The windows that may show a session: every terminal window, the
-    /// quick terminal's included.
+    /// quick terminal's included — not one closed and kept hidden a while
+    /// for Undo (its sessions end when that's over).
     static var controllers: [TerminalWindowController] {
-        var all = NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }
+        var all = NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }.filter { !$0.isHiddenForUndo }
         if let quick = QuickTerminal.shared.windowController, !all.contains(where: { $0 === quick }) { all.append(quick) }
         return all
     }

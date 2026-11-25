@@ -532,6 +532,8 @@ mkdir -p $PRIVATE/queue
 cc -o $PRIVATE/queue/claude $ROOT/tests/fixtures/fake-agent-queue.c
 expect prompt-queue 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/prompt-queue.txt)" $OUT
+expect prompt-queue-closed 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/prompt-queue-closed.txt)" $OUT
 expect composer 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@DIR@|$PRIVATE/queue|g" $ROOT/tests/fixtures/composer.txt)" $OUT
 expect composer-exited 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
