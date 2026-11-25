@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.8
+
+> The rest of the bug hunt: windows, the palette and the sidebar, Settings, hosts and forwards, the composer and the prompt queue, documents and the browser — and the prompt queue and composer drafts now survive a restart.
+
+- **Prompt queue and composer**
+  - Queued prompts and composer drafts come back with their panes after Libertty restarts (a quit, an update): kept privately in Libertty's data folder, the queue paused until you resume it.
+  - The queue holds while something you typed waits unsent in the pane (a draft in Claude Code's box, a half-written command), however long; an input method's Return or a new line doesn't count as sending. Where the screen can't tell, it holds while you type, and its tag says why it waits.
+  - A popped-out composer stays open while its tab is in the background; its typing no longer lingers on Edit ▸ Undo; a long web page pasted into it converts at once.
+- **Windows and tabs**
+  - Closing the window's last pane or tab asks once and closes it (it could ask twice and stay open); Undo Close Window can't bring back one that has closed for good meanwhile.
+  - A pane closed while a document beside it had the keyboard no longer leaves the tab pointing at it (⌘D did nothing, a parked pane could vanish); a tab moved to another window brings its floating panes' buttons along.
+  - The Quick Terminal closes with ⌘W, Close Tab and Close Window.
+  - A restart into an update while you work in another app stays behind it.
+  - The Dock badge and the menu bar's count follow Undo Close, count the Quick Terminal, and count a session shown in two windows once.
+- **Command palette and sidebar**
+  - The palette opens at once whatever liberttyd is doing; its Themes chip and Change Theme… start on the theme in use and try nothing out until you move.
+  - The sidebar's activity filter shows itself when it's on and goes when its field closes; filtered-out tabs leave no gaps; a click in a grouped sidebar picks the tab clicked.
+  - A tab's menu is in the interface's language; VoiceOver reads a sidebar row's state and news.
+- **Settings and themes**
+  - A shortcut recorded for an action with two default keys (Full Screen, Previous/Next Tab…) is its only key; keys registered from any app pause while a recorder listens; `keybind = clear` leaves the global hotkeys working.
+  - Themes ▸ Import keeps every color; deleting a theme resets only the half that used it; the Themes page's extended-palette switch and Import show in Chinese too.
+  - The config file keeps its CRLF line endings; an empty or relative `XDG_CONFIG_HOME` is ignored.
+- **Hosts and forwards**
+  - A host rebuilt or with Libertty's files gone is set up again on Retry instead of reconnecting forever.
+  - A forward made with no window on its host stays up until closed; a stalled host holds up only its own forwards; `[::1]:5173` works.
+  - A new tab opened while liberttyd is being replaced (an update) waits a moment instead of falling back to a shell that won't outlive the app; liberttyd's lock passes from the old one to the new one and its guardian shares it, so neither an update nor a crash can lose sessions to a liberttyd started at the wrong moment.
+  - `libertty` takes `--host` only before `-e` or `--` (`+split -e vite --host 0.0.0.0` runs vite with its own flag); `+new-window` and `+new-tab` with Libertty not running start it as usual.
+- **Documents and the browser**
+  - A board, drawing or notebook follows its file when the file tree renames or moves it.
+  - Browser pages get `alert()`, `confirm()` and `prompt()` as sheets, and file inputs open a panel to choose what to upload.
+  - Undoing a file tree change that can't be done says so and where the item is; a file that grows past 5 MB while open stops being read whole at each change.
+- Inside: new fixtures `palette-themes`, `palette-sessions`, `closed-beside-document`, `floating-moved`, `close-once`, `prompt-queue-draft`, `prompt-queue-restart`, `selection-drag-away`, `browser-dialogs`, `document-grows`, `liberttyd-replacing`; `--ui-probe` gains `tree-rename`, `open-split`, `other-click`, `pick-files`, `drag-select`, `expect-tabs-packed`, `expect-row-said` and more.
+
 ## 0.7.7
 
 > A bug hunt through the whole app: the security holes, crashes and ways to lose work it found are closed — from remote-control and the config file to liberttyd on shared Linux hosts, completions, the prompt queue, documents and undo.
