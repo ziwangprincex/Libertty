@@ -220,6 +220,16 @@ pid_t libertty_proc_tty_pgid(pid_t pid) {
     return (pid_t)info.e_tpgid;
 }
 
+int libertty_proc_running(pid_t pid) {
+    if (pid <= 0) return 0;
+    // sysctl sees a zombie too (libproc doesn't), and tells it apart.
+    struct kinfo_proc kp;
+    size_t length = sizeof kp;
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)pid };
+    if (sysctl(mib, 4, &kp, &length, NULL, 0) != 0) return 1;  // can't tell: say it runs
+    return length > 0 && kp.kp_proc.p_stat != SZOMB;
+}
+
 #else
 // Linux (liberttyd on a remote host): /proc. Only what liberttyd needs is real;
 // the inspector's facts belong to the app, which runs on a Mac.
@@ -381,6 +391,20 @@ pid_t libertty_proc_tty_pgid(pid_t pid) {
     int ppid, pgrp, session, tty, tpgid;
     if (sscanf(p + 1, " %c %d %d %d %d %d", &state, &ppid, &pgrp, &session, &tty, &tpgid) != 6) return -1;
     return (pid_t)tpgid;
+}
+
+int libertty_proc_running(pid_t pid) {
+    if (pid <= 0) return 0;
+    char path[64], buf[1024];
+    snprintf(path, sizeof path, "/proc/%d/stat", (int)pid);
+    FILE *f = fopen(path, "r");
+    if (!f) return errno != ENOENT;  // gone, or (no /proc to ask) can't tell: say it runs
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    char *p = strrchr(buf, ')');  // comm may hold spaces and parentheses
+    if (!p || p[1] != ' ') return 1;
+    return p[2] != 'Z' && p[2] != 'X';  // a zombie, or dead
 }
 int libertty_host_cpu(uint64_t *busy, uint64_t *idle) { (void)busy; (void)idle; return 0; }
 int libertty_proc_started(pid_t pid, int64_t *seconds, int64_t *microseconds) {

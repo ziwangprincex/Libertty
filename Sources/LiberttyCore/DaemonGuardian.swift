@@ -25,6 +25,11 @@ import Foundation
 ///
 /// liberttyd stands it down before it exits on purpose (`+daemon stop`, a
 /// takeover, SIGTERM): then the sessions end with it, or a newer one has them.
+///
+/// It shares liberttyd's lock (`--locked`, descriptor 3), so the lock is
+/// never free when liberttyd crashes: a liberttyd started before the new one
+/// (a host's windows reconnecting, a new tab) can't take it and serve
+/// without the sessions, leaving the new one to give up and end them all.
 enum DaemonGuardian {
     /// What it holds of a session: the takeover header (DaemonSession's
     /// `guardianCopy`), kept up to date, and its pty master.
@@ -39,18 +44,21 @@ enum DaemonGuardian {
     static let maxRecoveries = 3
     static let crashWindow: Double = 60
 
-    /// `liberttyd --guardian`: liberttyd is on stdin.
-    static func main() -> Never {
+    /// `liberttyd --guardian`: liberttyd is on stdin; `locked`, its lock on 3.
+    static func main(locked: Bool) -> Never {
         signal(SIGPIPE, SIG_IGN)
         signal(SIGHUP, SIG_IGN)
+        let lock: Int32 = locked && fcntl(3, F_SETFD, FD_CLOEXEC) == 0 ? 3 : -1
         let link = Connection(fd: STDIN_FILENO)
         var held: [String: Held] = [:]
         var socket = Wire.socketPath
+        var liberttyd: pid_t = 0
         var standingDown = false
         loop: while let frame = link.receive() {
             switch frame.kind {
             case .hello:
                 if let path = frame.json["socket"] as? String, !path.isEmpty { socket = path }
+                liberttyd = pid_t(clamping: frame.json["pid"] as? Int ?? 0)
                 link.send(.welcome, json: ["version": Wire.version, "pid": Int(getpid())])
             case .keep:
                 let header = frame.json
@@ -71,28 +79,49 @@ enum DaemonGuardian {
                 continue
             }
         }
-        guard !standingDown, !held.isEmpty else { exit(0) }
-        recover(held.values.sorted { $0.created < $1.created }, socket: socket)
+        guard !standingDown, !held.isEmpty else {
+            // Our share of the lock first: liberttyd waits for us to go
+            // before it does, and the lock must be free once it has.
+            if lock >= 0 { sysClose(lock) }
+            exit(0)
+        }
+        recover(held.values.sorted { $0.created < $1.created }, socket: socket, lock: lock, liberttyd: liberttyd)
     }
 
-    /// liberttyd hung up without standing down: start another for its sessions.
-    private static func recover(_ sessions: [Held], socket: String) -> Never {
-        // Gone, or did it only hang up on us? Its lock says: it lets go of it
-        // as it goes (maybe a moment after the socket, maybe later while the
-        // system writes its crash report). Once we have it we keep it, for
-        // the liberttyd we start to have (`--locked`): one started meanwhile
-        // (a host's windows reconnecting, a new tab) can't take it between
-        // the two of us, and serve without these sessions.
-        let lockFD = open(socket + ".lock", O_RDWR | O_CLOEXEC)
+    /// liberttyd (`pid`) hung up without standing down: start another for its
+    /// sessions. `shared`: its lock, held with it, or -1.
+    private static func recover(_ sessions: [Held], socket: String, lock shared: Int32, liberttyd: pid_t) -> Never {
+        // Gone, or did it only hang up on us? Its process says (it may linger
+        // while the system writes its crash report). We keep the lock we've
+        // held with it all along for the liberttyd we start (`--locked`).
+        var lockFD: Int32 = -1
         var locked = false
-        if lockFD >= 0 {
+        if shared >= 0, liberttyd > 0, DaemonServer.holdsLock(shared, of: socket) {
+            var gone = false
             for _ in 0..<1000 {
-                if flock(lockFD, LOCK_EX | LOCK_NB) == 0 { locked = true; break }
+                if libertty_proc_running(liberttyd) == 0 { gone = true; break }
                 usleep(10_000)
             }
-            guard locked else {
+            guard gone else {
                 log("liberttyd hung up but still runs: it keeps its \(sessions.count) sessions")
                 exit(0)
+            }
+            lockFD = shared
+            locked = true
+        } else {
+            // (Started by a liberttyd from before it shared its lock.) Its lock
+            // says: it lets go of it as it goes. Once we have it we keep it.
+            if shared >= 0 { sysClose(shared) }
+            lockFD = open(socket + ".lock", O_RDWR | O_CLOEXEC)
+            if lockFD >= 0 {
+                for _ in 0..<1000 {
+                    if flock(lockFD, LOCK_EX | LOCK_NB) == 0 { locked = true; break }
+                    usleep(10_000)
+                }
+                guard locked else {
+                    log("liberttyd hung up but still runs: it keeps its \(sessions.count) sessions")
+                    exit(0)
+                }
             }
         }
         var env = ProcessInfo.processInfo.environment
@@ -187,6 +216,10 @@ final class GuardianLink: @unchecked Sendable {
     private let queue = DispatchQueue(label: "liberttyd.guardian", qos: .utility)
     // On `queue`:
     private var connection: Connection?
+    /// The guardian's process while `connection` is its, until it's reaped.
+    private var guardianPID: pid_t = 0
+    /// liberttyd's lock (its descriptor), which each guardian shares.
+    private var lock: Int32 = -1
     private var stoodDown = false
     private var lastStart: Double?
     /// A guardian that's gone is started again after this long at the soonest.
@@ -222,13 +255,23 @@ final class GuardianLink: @unchecked Sendable {
         }
     }
 
+    /// liberttyd holds its lock through `fd` (before any session is
+    /// guarded): each guardian holds it too.
+    func share(lock fd: Int32) {
+        queue.sync { lock = fd }
+    }
+
     /// liberttyd exits on purpose: the guardian lets every session go (they end
-    /// with liberttyd, or a newer one has them). Before the exit; it waits.
+    /// with liberttyd, or a newer one has them). Before the exit; it waits,
+    /// for the guardian to be gone too: with its share of the lock, which a
+    /// liberttyd started the moment we exit must find free.
     func standDown() {
         queue.sync {
             stoodDown = true
             guard let connection else { return }
             connection.send(.standDown)
+            connection.setReceiveTimeout(2)
+            _ = connection.receive()
             connection.close()
             self.connection = nil
         }
@@ -242,14 +285,16 @@ final class GuardianLink: @unchecked Sendable {
         if let lastStart, now - lastStart < Self.restartAfter { return }
         lastStart = now
         // It needn't answer for anything to macOS: it runs no programs.
-        guard let (c, pid) = DaemonGuardian.spawn(["liberttyd", "--guardian"], env: ProcessInfo.processInfo.environment,
-                                                  responsible: false) else { return retryLater() }
+        guard let (c, pid) = DaemonGuardian.spawn(["liberttyd", "--guardian"] + (lock >= 0 ? ["--locked"] : []),
+                                                  env: ProcessInfo.processInfo.environment,
+                                                  responsible: false, passing: lock) else { return retryLater() }
         // Reaped, and its going noticed (it says nothing on its own).
         let thread = Thread { [weak self] in
             var status: Int32 = 0
             while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
             self?.queue.async { [weak self] in
                 guard let self, self.connection === c else { return }
+                self.guardianPID = 0
                 self.lost(c)
             }
         }
@@ -265,6 +310,7 @@ final class GuardianLink: @unchecked Sendable {
         }
         c.setReceiveTimeout(10)
         connection = c
+        guardianPID = pid
         var kept = 0
         for s in all {
             guard let (header, fd) = s.guardianCopy() else { continue }
@@ -289,6 +335,10 @@ final class GuardianLink: @unchecked Sendable {
         c.close()
         guard connection === c else { return }
         connection = nil
+        // One that stopped answering is ended: holding our lock with us, it
+        // would recover the sessions beside the next one should we crash.
+        if guardianPID > 0 { kill(guardianPID, SIGKILL) }
+        guardianPID = 0
         DaemonServer.log("lost its guardian; sessions go unguarded until another starts")
         retryLater()
     }
