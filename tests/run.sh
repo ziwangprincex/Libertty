@@ -785,6 +785,9 @@ expect key-hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/key-hints-c
 # Copy mode: a cursor of its own through the screen and the scrollback, selecting and copying; no key reaches the program.
 expect copy-mode 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/copy-mode.txt)" $OUT
+# A selection dragged past the pane's edge stops scrolling when another tab comes forward mid-drag.
+expect selection-drag-away 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/selection-drag-away.txt)" $OUT
 # Hint mode: labels on the links, paths, hashes and addresses on screen; a label opens or copies one.
 expect hints 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/hints.txt)" $OUT

@@ -243,6 +243,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             blinkTimer?.invalidate()
             blinkTimer = nil
             renderer?.blinkOn = true
+            // A selection being dragged past its edge (another tab came
+            // forward mid-drag): its button's release won't come here, and
+            // the scrolling would go on growing it unseen.
+            stopAutoscroll()
+            extendingSelection = false
+            lastDrag = nil
             return
         }
         let link = displayLink(target: self, selector: #selector(step(_:)))
@@ -1501,6 +1507,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     private var autoscrollTimer: Timer?
     private var autoscrollDirection = TerminalSession.Autoscroll.none
     private var lastDrag: NSEvent?
+
+    /// A selection being dragged past an edge is scrolling (the UI probe).
+    var isAutoscrolling: Bool { autoscrollTimer != nil }
 
     private func autoscroll(_ direction: TerminalSession.Autoscroll, _ event: NSEvent) {
         lastDrag = event
