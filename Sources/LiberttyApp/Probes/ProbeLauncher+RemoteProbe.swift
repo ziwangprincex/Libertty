@@ -139,6 +139,31 @@ extension ProbeLauncher {
             }
             try? FileManager.default.removeItem(at: drop)
             shell.terminate()
+
+            // The host rebuilt under the same name (or ~/.libertty deleted):
+            // what Libertty set up there is gone, its liberttyd with it. A
+            // window connecting sets it up again, rather than redial a
+            // liberttyd that isn't there for good.
+            _ = DaemonClient.request(.shutdown, address: host.address)
+            _ = host.run("rm -rf " + RemoteHost.quote(info.liberttyHome + "/bin") + " " + RemoteHost.quote(info.liberttyHome + "/VERSION"))
+            let rebuilt = try TerminalSession(size: size)
+            rebuilt.start(on: host, workingDirectory: "/tmp", command: "echo rebuilt-ok; sleep 60")
+            check("set up again once the host lost it", wait(20) { rebuilt.linkUp && rebuilt.scrollbackText().contains("rebuilt-ok") })
+            rebuilt.terminate()
+            if fake != nil {
+                // Set up again, and its liberttyd still can't run: said, and
+                // the window waits for Retry.
+                setenv("FAKE_SSH_NO_BRIDGE", "1", 1)
+                let broken = try TerminalSession(size: size)
+                broken.start(on: host, workingDirectory: "/tmp", command: "echo retried-ok; sleep 60")
+                check("a helper that still can't run is said", wait(20) {
+                    host.needsUser && ((host.lastError as? LocalizedError)?.errorDescription ?? "").contains("status 127")
+                })
+                unsetenv("FAKE_SSH_NO_BRIDGE")
+                host.retry()
+                check("…and Retry connects", wait(20) { broken.linkUp && broken.scrollbackText().contains("retried-ok") })
+                broken.terminate()
+            }
             print(failed.isEmpty ? "remote-probe: all passed" : "remote-probe failed: \(failed)")
             exit(failed.isEmpty ? 0 : 1)
         } catch {

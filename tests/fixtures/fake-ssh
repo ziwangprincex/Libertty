@@ -112,5 +112,10 @@ export LIBERTTY_HOME="$FAKE_SSH_HOME" LIBERTTY_DAEMON_SOCKET="$FAKE_SSH_SOCKET" 
   LIBERTTY_TERMINFO_DIR="$FAKE_SSH_TERMINFO"
 # $FAKE_SSH_COMMANDS: every command run there, a line each, for the checks to count.
 [ -n "$FAKE_SSH_COMMANDS" ] && printf '%s\n' "$*" >> "$FAKE_SSH_COMMANDS"
+# While $FAKE_SSH_NO_BRIDGE is set, the shell there can't run `liberttyd
+# --bridge` (as on a host where it's gone), though it was set up a moment ago.
+case "$*" in
+  *--bridge*) if [ -n "$FAKE_SSH_NO_BRIDGE" ]; then echo "sh: 1: liberttyd: not found" >&2; exit 127; fi ;;
+esac
 unset LIBERTTY_ASKPASS SSH_ASKPASS SSH_ASKPASS_REQUIRE LIBERTTY_STATE_FILE FAKE_SSH_DOWN FAKE_SSH_FAIL
 exec /bin/sh -c "$*"

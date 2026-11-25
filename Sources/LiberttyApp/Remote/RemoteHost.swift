@@ -69,6 +69,18 @@ final class RemoteHost: @unchecked Sendable {
 
     private let stateLock = NSLock()
     private var prepared: Info?
+    /// What `prepared` says may be out of date (the user tried again, or a
+    /// connection found no liberttyd where it said): the next connection
+    /// sets the host up again first. Until then `info` still answers.
+    private var setUpAgain = false
+    /// Each setup counted: a connection knows the one it was made with.
+    private var setUps = 0
+    /// The next setup is made because a connection's liberttyd failed there
+    /// or the user tried again (`checking`), and the last such setup, with
+    /// when (`checked`): a connection made with it failing the same way
+    /// soon after is said, not set up again for good.
+    private var checking = false
+    private var checked: (setUp: Int, at: Date)?
     private var lastFailure: (time: Date, error: Error)?
     /// The last try failed in a way only the user can fix (a refused
     /// password, a changed host key): no automatic retries until `retry()`.
@@ -256,6 +268,7 @@ final class RemoteHost: @unchecked Sendable {
     private func dial(login: Bool = true) -> Connection? {
         let ready = login ? ensurePrepared().flatMap { ensureMaster() ? $0 : nil } : info.flatMap { masterIsUp ? $0 : nil }
         guard let info = ready else { return nil }
+        let made = stateLock.withLock { setUps }
         var fds: [Int32] = [-1, -1]
         guard libertty_socketpair(&fds) == 0 else { return nil }
         // (Batch mode: should the shared link go down meanwhile, ssh fails
@@ -280,6 +293,12 @@ final class RemoteHost: @unchecked Sendable {
             waitpid(pid, &status, 0)
             source.cancel()
             self?.forget(source)
+            // ssh ends with the status of the command there, or 255 for its
+            // own failure (the link down): 1 to 127 is liberttyd failing
+            // there (127: the host's shell can't find it). Above that, a
+            // signal ended it, which says nothing about what's installed.
+            let code = status & 0x7f == 0 ? (status >> 8) & 0xff : 0
+            if (1...127).contains(code) { self?.helperFailed(status: code, setUp: made) }
         }
         stateLock.withLock { reapers.append(source) }
         source.resume()
@@ -297,7 +316,7 @@ final class RemoteHost: @unchecked Sendable {
     private func ensurePrepared() -> Info? {
         prepareLock.lock()
         defer { prepareLock.unlock() }
-        if let info { return info }
+        if let info = stateLock.withLock({ setUpAgain ? nil : prepared }) { return info }
         let (last, waiting) = stateLock.withLock { (lastFailure, waitingForUser) }
         if waiting { return nil }
         // While the host is down, don't try every quarter second.
@@ -313,8 +332,31 @@ final class RemoteHost: @unchecked Sendable {
             // Whatever they fixed may be the agent (opening 1Password, say):
             // its socket is looked for again.
             resolvedOptions = nil
+            // Or the host itself (rebuilt under the same name: a new host
+            // key, and nothing of what Libertty installed there): it's set
+            // up again from the start.
+            setUpAgain = true
+            checking = true
         }
         statusChanged()
+    }
+
+    /// A connection's liberttyd failed there (`status`: 127, the host's
+    /// shell can't find it — ~/.libertty deleted; 1, it couldn't start):
+    /// the next connection sets the host up again first, which installs
+    /// what's missing. Failing so again within a minute of that, it's said,
+    /// and the windows wait for Retry instead of redialing a liberttyd that
+    /// isn't there for good.
+    private func helperFailed(status: Int32, setUp: Int) {
+        let stuck: Bool = stateLock.withLock {
+            // Made with a setup since replaced, or being made again: nothing new.
+            guard setUp == setUps, !setUpAgain else { return false }
+            setUpAgain = true
+            if let checked, checked.setUp == setUp, Date().timeIntervalSince(checked.at) < 60 { return true }
+            checking = true
+            return false
+        }
+        if stuck { fail(Failure.install("liberttyd there ended before it answered (status \(status))")) }
     }
 
     private func fail(_ error: Error) {
@@ -352,6 +394,10 @@ final class RemoteHost: @unchecked Sendable {
             let info = try setUp(progress: progress)
             stateLock.withLock {
                 prepared = info
+                setUpAgain = false
+                setUps += 1
+                checked = checking ? (setUps, Date()) : nil
+                checking = false
                 lastFailure = nil
                 fullErrors = ""
             }
@@ -361,10 +407,6 @@ final class RemoteHost: @unchecked Sendable {
             throw error
         }
     }
-
-    /// Set up again from the start next time (the link failed in a way
-    /// that may mean the host changed).
-    func reset() { stateLock.withLock { prepared = nil } }
 
     private func setUp(progress: (String) -> Void) throws -> Info {
         progress("Connecting to \(destination)…")
