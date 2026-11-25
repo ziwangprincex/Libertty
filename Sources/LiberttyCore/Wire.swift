@@ -41,7 +41,7 @@ public enum Wire {
         case capture = 9      // {id, scrollback, format?: plain|ansi|html} → result {text, format}
         case send = 10        // {id, text}: type into a session
         case configure = 11   // {scrollback}
-        case takeover = 12    // a newer liberttyd asks for every session
+        case takeover = 12    // {lock?}: a newer liberttyd asks for every session (and the lock: see `lock`)
         case shutdown = 13    // {ifIdle?}: end every session and exit; with ifIdle only when there are
                               // none (else → result {ok: false, sessions})
         case ack = 14         // takeover lockstep: frame parsed, send the descriptor
@@ -92,6 +92,9 @@ public enum Wire {
         case ptySize = 112    // {cols, rows}: the size its program has now, as the last window to resize set it
         case ports = 113      // SessionPorts: what the session's programs listen on, as liberttyd's scan found
                               // it (only when it changed, and when a window attaches to a session with some)
+        case lock = 114       // takeover, asked for with `takeover` {lock: true}: before the first `handoff`, the
+                              // older liberttyd's lock — `ack`, then its descriptor by SCM_RIGHTS — held by both
+                              // from then on, by the newer one alone once the older exits
     }
 
     public static let maxFrame = 256 << 20

@@ -324,12 +324,15 @@ final class TerminalSession {
                                         environment: environment, workingDirectory: startDirectory,
                                         size: size, scrollback: ConfigStore.shared.config.scrollbackLimit)
             do {
+                // On the main thread: a liberttyd being replaced is waited for
+                // a moment only, then the session is made in the background
+                // as soon as the newer one answers.
                 let remote: RemotePTY
                 do {
-                    remote = try RemotePTY.create(request, queue: io)
+                    remote = try RemotePTY.create(request, queue: io, waiting: 0.3, thenInBackground: true)
                 } catch DaemonClientError.unavailable where Persistence.restart() {
                     // It had gone (it exits when idle; it may have crashed): once more.
-                    remote = try RemotePTY.create(request, queue: io)
+                    remote = try RemotePTY.create(request, queue: io, waiting: 0.3, thenInBackground: true)
                 }
                 persistentID = id
                 connect(remote)
@@ -442,8 +445,9 @@ final class TerminalSession {
     /// (count, time of the latest) output parsed, for `--latency-trace`.
     var outputMark: (count: UInt64, time: CFTimeInterval) { lock.withLock { (outputCount, lastOutputTime) } }
 
-    /// The shell (or command) process, for the inspector's process list.
-    var shellPID: pid_t? { host == nil ? pty?.pid : nil }
+    /// The shell (or command) process, for the inspector's process list
+    /// (none while liberttyd hasn't made the session yet).
+    var shellPID: pid_t? { host == nil ? pty.flatMap { $0.pid > 0 ? $0.pid : nil } : nil }
 
     /// What its programs listen on, as liberttyd's scan found it (a host's
     /// too, which this Mac can't look at itself); nil when no liberttyd

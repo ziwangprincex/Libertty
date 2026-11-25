@@ -26,7 +26,28 @@ extension ProbeLauncher {
             if !ok { failed.append(name) }
         }
         do {
+            // Set up twice at once (Connect to Host… while a window
+            // reconnects): the second waits for the first and finds the
+            // helper installed. Counted under fake-ssh, which notes what it
+            // runs there, from a home with no helper yet.
+            let fake = ProcessInfo.processInfo.environment["FAKE_SSH_HOME"]
+            let commands = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-remote-probe-\(getpid()).txt")
+            if let fake {
+                try? FileManager.default.removeItem(atPath: fake + "/VERSION")
+                setenv("FAKE_SSH_COMMANDS", commands.path, 1)
+            }
+            let together = DispatchGroup()
+            DispatchQueue.global().async(group: together) { _ = try? host.prepare() }
             let info = try host.prepare { print("progress: \($0)") }
+            together.wait()
+            if let fake {
+                let ran = (try? String(contentsOf: commands, encoding: .utf8)) ?? ""
+                let installs = ran.split(separator: "\n").filter { $0.contains("tar xzf") }.count
+                check("set up twice at once, installed once", installs == 1
+                    && !FileManager.default.fileExists(atPath: fake + "/bin/bin"))
+                unsetenv("FAKE_SSH_COMMANDS")
+                try? FileManager.default.removeItem(at: commands)
+            }
             print("host: \(info.os) \(info.arch) terminfo=\(info.terminfo) shell=\((info.shell as NSString).lastPathComponent)")
             let size = GridSize(cols: 60, rows: 12, widthPx: 600, heightPx: 240)
             let session = try TerminalSession(size: size)
@@ -118,6 +139,31 @@ extension ProbeLauncher {
             }
             try? FileManager.default.removeItem(at: drop)
             shell.terminate()
+
+            // The host rebuilt under the same name (or ~/.libertty deleted):
+            // what Libertty set up there is gone, its liberttyd with it. A
+            // window connecting sets it up again, rather than redial a
+            // liberttyd that isn't there for good.
+            _ = DaemonClient.request(.shutdown, address: host.address)
+            _ = host.run("rm -rf " + RemoteHost.quote(info.liberttyHome + "/bin") + " " + RemoteHost.quote(info.liberttyHome + "/VERSION"))
+            let rebuilt = try TerminalSession(size: size)
+            rebuilt.start(on: host, workingDirectory: "/tmp", command: "echo rebuilt-ok; sleep 60")
+            check("set up again once the host lost it", wait(20) { rebuilt.linkUp && rebuilt.scrollbackText().contains("rebuilt-ok") })
+            rebuilt.terminate()
+            if fake != nil {
+                // Set up again, and its liberttyd still can't run: said, and
+                // the window waits for Retry.
+                setenv("FAKE_SSH_NO_BRIDGE", "1", 1)
+                let broken = try TerminalSession(size: size)
+                broken.start(on: host, workingDirectory: "/tmp", command: "echo retried-ok; sleep 60")
+                check("a helper that still can't run is said", wait(20) {
+                    host.needsUser && ((host.lastError as? LocalizedError)?.errorDescription ?? "").contains("status 127")
+                })
+                unsetenv("FAKE_SSH_NO_BRIDGE")
+                host.retry()
+                check("…and Retry connects", wait(20) { broken.linkUp && broken.scrollbackText().contains("retried-ok") })
+                broken.terminate()
+            }
             print(failed.isEmpty ? "remote-probe: all passed" : "remote-probe failed: \(failed)")
             exit(failed.isEmpty ? 0 : 1)
         } catch {

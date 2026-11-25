@@ -43,6 +43,10 @@ void libertty_proc_cwd(pid_t pid, char *out, int cap);
 /// (works without the pty descriptor, e.g. for a session liberttyd holds).
 pid_t libertty_proc_tty_pgid(pid_t pid);
 
+/// Whether the process is still there and not a zombie (1), or gone (0).
+/// When it can't be told, 1.
+int libertty_proc_running(pid_t pid);
+
 /// TCP ports the process is listening on. Returns how many were written.
 int libertty_proc_listening_ports(pid_t pid, uint16_t *out, int cap);
 

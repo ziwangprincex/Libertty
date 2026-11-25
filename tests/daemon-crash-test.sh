@@ -12,6 +12,8 @@
   || { echo "set a private LIBERTTY_DAEMON_SOCKET and LIBERTTY_DATA_DIR (tests/run.sh does)"; exit 2; }
 set -u
 L=$1
+T=$(mktemp -d)
+trap 'rm -rf $T' EXIT
 fails=0
 ok() { echo "ok    $1"; }
 bad() { echo "FAIL  $1"; (( fails++ )); }
@@ -28,13 +30,19 @@ $L +wait $ID --until prompt --timeout 5
 SH=$(shell $ID)
 grep -q "guardian liberttyd\[[0-9]*\] holds" $LIBERTTY_DAEMON_LOG && ok "a guardian holds the session" || bad "no guardian: $(tail -3 $LIBERTTY_DAEMON_LOG)"
 
-# A crash: the same shell, in a new liberttyd. Its guardian takes the lock
-# as it sees the old one gone and hands it to the new one, held: a liberttyd
-# started meanwhile (a host's windows reconnecting, a new tab) can't take it
-# in between, and serve without the session.
+# A crash: the same shell, in a new liberttyd. Its guardian holds the lock
+# with it all along and hands it to the new one, held: a liberttyd started
+# meanwhile (a host's windows reconnecting, a new tab) can't take it in
+# between, and serve without the session. (Watched by taking it at once, as
+# one would.)
 old=$(pid)
+python3 -I ${0:A:h}/fixtures/lock-watch.py $LIBERTTY_DAEMON_SOCKET.lock 3 > $T/free &
+watch=$!
+sleep 0.2
 kill -SEGV $old
 replaced $old && ok "after a crash, a new liberttyd: $old → $(pid)" || bad "after a crash: no new liberttyd"
+wait $watch
+[[ $(cat $T/free) == 0 ]] && ok "its lock never free in between" || bad "its lock was free $(cat $T/free) times"
 new=$(pid)
 [[ $(ps -o command= -p $new) == *"--recover --locked"* ]] && lsof -a -p $new -d 3 -Fn 2> /dev/null | grep -qx "n${LIBERTTY_DAEMON_SOCKET:A}.lock" \
   && ok "it holds the lock its guardian handed it" || bad "the lock: $(ps -o command= -p $new); $(lsof -a -p $new -d 3 -Fn 2> /dev/null)"

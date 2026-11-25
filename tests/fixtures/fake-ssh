@@ -77,6 +77,17 @@ if [ "$control" = forward ] || [ "$control" = cancel ]; then
     echo "Warning: remote port forwarding failed for listen port $remote_port" >&2
     exit 255
   fi
+  # $FAKE_SSH_STALL names a file: while it's there, the host named in it is
+  # slow to answer a forward (as one waiting on its far side would be), for
+  # up to 6 s; $FAKE_SSH_STALL.started says it began.
+  if [ -n "$FAKE_SSH_STALL" ] && [ -e "$FAKE_SSH_STALL" ] && [ "$(cat "$FAKE_SSH_STALL")" = "$host" ]; then
+    touch "$FAKE_SSH_STALL.started"
+    i=0
+    while [ -e "$FAKE_SSH_STALL" ] && [ $i -lt 120 ]; do
+      sleep 0.05
+      i=$((i + 1))
+    done
+  fi
   ready="$FAKE_SSH_FORWARDS.ready.$$"
   rm -f "$ready"
   python3 -I "$(dirname "$0")/fake-ssh-relay.py" "$local_port" "$remote_port" "$ready" \
@@ -99,5 +110,12 @@ fi
 
 export LIBERTTY_HOME="$FAKE_SSH_HOME" LIBERTTY_DAEMON_SOCKET="$FAKE_SSH_SOCKET" LIBERTTY_DAEMON_LOG="$FAKE_SSH_LOG" \
   LIBERTTY_TERMINFO_DIR="$FAKE_SSH_TERMINFO"
+# $FAKE_SSH_COMMANDS: every command run there, a line each, for the checks to count.
+[ -n "$FAKE_SSH_COMMANDS" ] && printf '%s\n' "$*" >> "$FAKE_SSH_COMMANDS"
+# While $FAKE_SSH_NO_BRIDGE is set, the shell there can't run `liberttyd
+# --bridge` (as on a host where it's gone), though it was set up a moment ago.
+case "$*" in
+  *--bridge*) if [ -n "$FAKE_SSH_NO_BRIDGE" ]; then echo "sh: 1: liberttyd: not found" >&2; exit 127; fi ;;
+esac
 unset LIBERTTY_ASKPASS SSH_ASKPASS SSH_ASKPASS_REQUIRE LIBERTTY_STATE_FILE FAKE_SSH_DOWN FAKE_SSH_FAIL
 exec /bin/sh -c "$*"

@@ -64,20 +64,27 @@ public final class DaemonServer {
             exit(libertty_bridge(STDIN_FILENO, STDOUT_FILENO, fd) == 0 ? 0 : 1)
         }
         // Started by liberttyd to keep its sessions' ptys open should it go (DaemonGuardian).
-        if arguments.contains("--guardian") { DaemonGuardian.main() }
+        if arguments.contains("--guardian") { DaemonGuardian.main(locked: arguments.contains("--locked")) }
         let path = Wire.socketPath
         if let problem = Wire.prepareDirectory(for: path) {
             log(problem)
             exit(1)
         }
         let server = DaemonServer(path: path)
-        // One liberttyd per socket: whoever holds the lock owns the path.
+        // One liberttyd per socket: whoever holds the lock owns the path. It's
+        // never free while there are sessions: a newer liberttyd taking them
+        // over gets it with them, and a guardian holds it with liberttyd.
         let lockFD = open(path + ".lock", O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         if arguments.contains("--takeover") {
+            // The old liberttyd hands its lock over before its sessions; one
+            // from before it did lets go of it as it exits.
             server.takeOver()
-            // The old liberttyd releases the lock as it exits.
             var tries = 0
-            while flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+            while server.lockDescriptor < 0 {
+                if flock(lockFD, LOCK_EX | LOCK_NB) == 0 {
+                    server.holdLock(lockFD)
+                    break
+                }
                 tries += 1
                 if tries > 500 { log("takeover: the old liberttyd still holds the lock"); exit(1) }
                 usleep(10_000)
@@ -85,30 +92,58 @@ public final class DaemonServer {
         } else if arguments.contains("--recover") {
             // Started by the guardian of a liberttyd that went away: the lock
             // first, then the sessions, from the guardian on stdin. The
-            // guardian took the lock when it saw that one gone and hands it
-            // on, held (descriptor 3, `--locked`), so no liberttyd started
-            // meanwhile can have it. Else (an older guardian) it may have
-            // to wait for it.
-            var held = false
-            if arguments.contains("--locked") {
-                var passed = stat(), lock = stat()
-                held = fstat(3, &passed) == 0 && fstat(lockFD, &lock) == 0 && passed.st_dev == lock.st_dev
-                    && passed.st_ino == lock.st_ino && flock(3, LOCK_EX | LOCK_NB) == 0
-                // (None of the programs it starts may hold it once it's gone.)
-                if held { _ = fcntl(3, F_SETFD, FD_CLOEXEC) }
-            }
+            // guardian held the lock with that one and hands it on, held
+            // (descriptor 3, `--locked`), so no liberttyd started meanwhile
+            // can have it. Else (an older guardian) it may have to wait for it.
+            if arguments.contains("--locked"), holdsLock(3, of: path) { server.holdLock(3) }
             var tries = 0
-            while !held, flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+            while server.lockDescriptor < 0 {
+                if flock(lockFD, LOCK_EX | LOCK_NB) == 0 {
+                    server.holdLock(lockFD)
+                    break
+                }
                 tries += 1
                 if tries > 500 { log("recover: another liberttyd serves \(path)"); exit(1) }
                 usleep(10_000)
             }
             server.recover()
-        } else if flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
-            log("another liberttyd serves \(path)")
-            exit(0)
+        } else {
+            // (A few tries, over a few milliseconds: an app looking whether
+            // one is being replaced holds it, shared, for an instant.)
+            var taken = false
+            for _ in 0..<5 where !taken {
+                taken = flock(lockFD, LOCK_EX | LOCK_NB) == 0
+                if !taken { usleep(2_000) }
+            }
+            guard taken else {
+                log("another liberttyd serves \(path)")
+                exit(0)
+            }
+            server.holdLock(lockFD)
         }
         server.serve()
+    }
+
+    /// Whether `fd` is `path`'s lock, held through it: one passed on by an
+    /// older liberttyd or by a guardian, whose hold we now share (a flock
+    /// belongs to the open file, not to a process). Close-on-exec from then
+    /// on: none of the programs it starts may hold it once it's gone.
+    static func holdsLock(_ fd: Int32, of path: String) -> Bool {
+        var passed = stat(), lock = stat()
+        guard fstat(fd, &passed) == 0, stat(path + ".lock", &lock) == 0, passed.st_dev == lock.st_dev,
+              passed.st_ino == lock.st_ino, flock(fd, LOCK_EX | LOCK_NB) == 0 else { return false }
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        return true
+    }
+
+    /// The descriptor it holds its socket's lock through (-1 until it does).
+    private(set) var lockDescriptor: Int32 = -1
+
+    /// It holds the lock through `fd`: handed on to a newer liberttyd that
+    /// takes over, and shared with each guardian.
+    private func holdLock(_ fd: Int32) {
+        lockDescriptor = fd
+        GuardianLink.shared.share(lock: fd)
     }
 
     /// Identifies this liberttyd's build: the executable's size and modification
@@ -562,7 +597,7 @@ public final class DaemonServer {
                 let body = pick?.data ?? Data()
                 _ = body.withUnsafeBytes { connection.send(.result, header: ["client": pick?.client ?? ""], body: $0) }
             case .takeover:
-                handOver(to: connection)
+                handOver(to: connection, passingLock: frame.json["lock"] as? Bool == true)
             case .restore:
                 // The window's screen, for a session that lost ours in a crash.
                 bound?.restore(frame.payload, from: connection)
@@ -638,7 +673,8 @@ public final class DaemonServer {
     }
 
     /// Old side: give every session to the newer liberttyd on `connection`, then exit.
-    private func handOver(to connection: Connection) {
+    /// `passingLock`: it asked for our lock too.
+    private func handOver(to connection: Connection, passingLock: Bool) {
         lock.lock()
         handingOver = true
         exitTimer?.cancel()
@@ -650,6 +686,16 @@ public final class DaemonServer {
         stopListening()
         Self.log("handing \(all.count) sessions over")
         connection.setReceiveTimeout(10)
+        // Our lock first: from now on the newer one holds it with us, and
+        // alone once we exit. No liberttyd started in between can take it,
+        // and serve without these sessions while the newer one ends with them.
+        if passingLock, lockDescriptor >= 0 {
+            guard connection.send(.lock), let ack = connection.receive(), ack.kind == .ack,
+                  connection.sendDescriptor(lockDescriptor) else {
+                Self.log("takeover broke off before the sessions")
+                exit(1)
+            }
+        }
         var handed = 0
         for s in all {
             guard let (fd, header, snapshot) = s.release() else { continue }
@@ -676,7 +722,7 @@ public final class DaemonServer {
     /// New side: take every session from the liberttyd currently on the socket.
     private func takeOver() {
         guard let old = Connection.connect(to: path) else { return }
-        let (adopted, oldPID) = takeSessions(from: old)
+        let (adopted, oldPID) = takeSessions(from: old, askingForLock: true)
         Self.log("took over \(adopted) sessions from liberttyd[\(oldPID)]")
         // The old one unlinks nothing; wait for it to be gone before binding.
         for _ in 0..<200 where oldPID > 0 && kill(pid_t(oldPID), 0) == 0 { usleep(10_000) }
@@ -693,20 +739,31 @@ public final class DaemonServer {
             sysClose(null)
         }
         guard fd >= 0 else { return }
-        let (adopted, guardian) = takeSessions(from: Connection(fd: fd))
+        let (adopted, guardian) = takeSessions(from: Connection(fd: fd), askingForLock: false)
         Self.log("recovered \(adopted) sessions from guardian liberttyd[\(guardian)]; their screens come back from the windows")
     }
 
     /// Ask whoever is on `old` for every session, as a takeover's new side:
-    /// how many were taken, and the pid it said it was.
-    private func takeSessions(from old: Connection) -> (Int, Int) {
+    /// how many were taken, and the pid it said it was. `askingForLock`: its
+    /// lock as well (an older liberttyd's that doesn't hand it over lets go
+    /// of it as it exits).
+    private func takeSessions(from old: Connection, askingForLock: Bool) -> (Int, Int) {
         old.setReceiveTimeout(15)
         old.send(.hello, json: ["version": Wire.version])
         guard let welcome = old.receive(), welcome.kind == .welcome else { return (0, 0) }
         let oldPID = welcome.json["pid"] as? Int ?? 0
-        old.send(.takeover)
+        old.send(.takeover, json: askingForLock ? ["lock": true] : [:])
         var adopted = 0
         while let frame = old.receive() {
+            if frame.kind == .lock {
+                // Before its sessions, so the guardian they get shares it.
+                guard !old.hasBufferedBytes, old.send(.ack), let fd = old.receiveDescriptor() else {
+                    Self.log("takeover: lost the descriptor stream")
+                    break
+                }
+                if lockDescriptor < 0, Self.holdsLock(fd, of: path) { holdLock(fd) } else { sysClose(fd) }
+                continue
+            }
             if frame.kind == .result {
                 // The windows' layouts come along with the sessions.
                 if let kept = frame.json["layouts"] as? [[String: Any]] {
@@ -1465,10 +1522,13 @@ final class DaemonSession {
         let work = DispatchWorkItem { [weak self] in self?.resyncScreen() }
         resync = work
         queue.asyncAfter(deadline: .now() + Self.resyncDelay, execute: work)
-        lock.unlock()
+        // The program's and the guardian's too, still under the lock: two
+        // windows resizing at once mustn't leave the program at one size and
+        // our copy at the other. (An ioctl and a message queued: neither waits.)
         pty.resize(newSize)
         GuardianLink.shared.update(id, ["cols": Int(newSize.cols), "rows": Int(newSize.rows),
                                         "widthPx": Int(newSize.widthPx), "heightPx": Int(newSize.heightPx)])
+        lock.unlock()
     }
 
     /// How long after the last resize the screen is sent again (GoRex's

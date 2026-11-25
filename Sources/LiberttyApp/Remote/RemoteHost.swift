@@ -69,6 +69,18 @@ final class RemoteHost: @unchecked Sendable {
 
     private let stateLock = NSLock()
     private var prepared: Info?
+    /// What `prepared` says may be out of date (the user tried again, or a
+    /// connection found no liberttyd where it said): the next connection
+    /// sets the host up again first. Until then `info` still answers.
+    private var setUpAgain = false
+    /// Each setup counted: a connection knows the one it was made with.
+    private var setUps = 0
+    /// The next setup is made because a connection's liberttyd failed there
+    /// or the user tried again (`checking`), and the last such setup, with
+    /// when (`checked`): a connection made with it failing the same way
+    /// soon after is said, not set up again for good.
+    private var checking = false
+    private var checked: (setUp: Int, at: Date)?
     private var lastFailure: (time: Date, error: Error)?
     /// The last try failed in a way only the user can fix (a refused
     /// password, a changed host key): no automatic retries until `retry()`.
@@ -256,6 +268,7 @@ final class RemoteHost: @unchecked Sendable {
     private func dial(login: Bool = true) -> Connection? {
         let ready = login ? ensurePrepared().flatMap { ensureMaster() ? $0 : nil } : info.flatMap { masterIsUp ? $0 : nil }
         guard let info = ready else { return nil }
+        let made = stateLock.withLock { setUps }
         var fds: [Int32] = [-1, -1]
         guard libertty_socketpair(&fds) == 0 else { return nil }
         // (Batch mode: should the shared link go down meanwhile, ssh fails
@@ -280,6 +293,13 @@ final class RemoteHost: @unchecked Sendable {
             waitpid(pid, &status, 0)
             source.cancel()
             self?.forget(source)
+            // ssh ends with the status of the command there, or 255 for its
+            // own failure (the link down). 127 and 126 are the host's shell
+            // finding no liberttyd to run there, or one it can't run; any
+            // other is liberttyd's own, which tries again (1: it couldn't
+            // start one, a moment while another takes over or recovers).
+            let code = status & 0x7f == 0 ? (status >> 8) & 0xff : 0
+            if code == 126 || code == 127 { self?.helperFailed(status: code, setUp: made) }
         }
         stateLock.withLock { reapers.append(source) }
         source.resume()
@@ -289,6 +309,69 @@ final class RemoteHost: @unchecked Sendable {
     private var reapers: [DispatchSourceProcess] = []
     private func forget(_ source: DispatchSourceProcess) { stateLock.withLock { reapers.removeAll { $0 === source } } }
 
+    // MARK: Holding the shared connection up
+
+    /// A session over the shared connection that does nothing (`cat`, reading
+    /// our end of a socket until we close it), held while the host has port
+    /// forwards: ssh's master counts sessions, not forwards, as what it's
+    /// there for, and with no window's session on it, it would exit
+    /// ControlPersist seconds after the last forward was made, every
+    /// forward with it. `master`: the master it holds (`masterProcess`).
+    private var keeper: (pid: pid_t, input: Int32, master: Int32)?
+    /// The session holding the connection up, if any (for the probes).
+    var keeperProcess: pid_t? { stateLock.withLock { keeper?.pid } }
+
+    /// Hold the shared connection up — the master whose process is `master`
+    /// (`RemoteHost.master`) — or, nil, let it go. One already held is left
+    /// as it is; a new master (the link came back) is held instead. Never
+    /// logs in: it's asked of a master that's up. Blocking, briefly.
+    func keepConnection(on master: Int32?) {
+        let (held, stale): (Bool, Int32?) = stateLock.withLock {
+            if let master, let keeper, keeper.master == master { return (true, nil) }
+            defer { keeper = nil }
+            return (false, keeper?.input)
+        }
+        guard !held else { return }
+        // Its end of the socket closed: `cat` there reads the end, and the
+        // session ends (its reaper finds it isn't the keeper any more).
+        if let stale { close(stale) }
+        guard let master else { return }
+        var fds: [Int32] = [-1, -1]
+        guard libertty_socketpair(&fds) == 0 else { return }
+        let argv = ["ssh"] + options + ["-o", "BatchMode=yes", destination, "cat > /dev/null"]
+        var cargv = argv.map { strdup($0) } + [nil]
+        var cenv = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer {
+            cargv.forEach { free($0) }
+            cenv.forEach { free($0) }
+        }
+        let pid = libertty_spawn_io(ssh, &cargv, &cenv, fds[1], -1, -1)
+        close(fds[1])
+        guard pid > 0 else {
+            close(fds[0])
+            return
+        }
+        stateLock.withLock { keeper = (pid, fds[0], master) }
+        // Ended by us, or with its master (the link dropped): held again
+        // once the link is back and its forwards are (PortForwarder).
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global())
+        source.setEventHandler { [weak self] in
+            var status: Int32 = 0
+            waitpid(pid, &status, 0)
+            source.cancel()
+            guard let self else { return }
+            self.forget(source)
+            let input: Int32? = self.stateLock.withLock {
+                guard let keeper = self.keeper, keeper.pid == pid else { return nil }
+                self.keeper = nil
+                return keeper.input
+            }
+            if let input { close(input) }
+        }
+        stateLock.withLock { reapers.append(source) }
+        source.resume()
+    }
+
     /// For a single remote shell word (remote shells all take single quotes).
     static func quote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
@@ -297,12 +380,12 @@ final class RemoteHost: @unchecked Sendable {
     private func ensurePrepared() -> Info? {
         prepareLock.lock()
         defer { prepareLock.unlock() }
-        if let info { return info }
+        if let info = stateLock.withLock({ setUpAgain ? nil : prepared }) { return info }
         let (last, waiting) = stateLock.withLock { (lastFailure, waitingForUser) }
         if waiting { return nil }
         // While the host is down, don't try every quarter second.
         if let last, Date().timeIntervalSince(last.time) < 3 { return nil }
-        return try? prepare()
+        return try? prepareHeld()
     }
 
     /// The user asked to try again (after fixing what was wrong).
@@ -313,8 +396,30 @@ final class RemoteHost: @unchecked Sendable {
             // Whatever they fixed may be the agent (opening 1Password, say):
             // its socket is looked for again.
             resolvedOptions = nil
+            // Or the host itself (rebuilt under the same name: a new host
+            // key, and nothing of what Libertty installed there): it's set
+            // up again from the start.
+            setUpAgain = true
+            checking = true
         }
         statusChanged()
+    }
+
+    /// A connection found no liberttyd it could run there (`status` 127 or
+    /// 126: ~/.libertty deleted, say): the next connection sets the host up
+    /// again first, which installs what's missing. Failing so again within
+    /// a minute of that, it's said, and the windows wait for Retry instead
+    /// of redialing a liberttyd that isn't there for good.
+    private func helperFailed(status: Int32, setUp: Int) {
+        let stuck: Bool = stateLock.withLock {
+            // Made with a setup since replaced, or being made again: nothing new.
+            guard setUp == setUps, !setUpAgain else { return false }
+            setUpAgain = true
+            if let checked, checked.setUp == setUp, Date().timeIntervalSince(checked.at) < 60 { return true }
+            checking = true
+            return false
+        }
+        if stuck { fail(Failure.install("liberttyd there ended before it answered (status \(status))")) }
     }
 
     private func fail(_ error: Error) {
@@ -330,8 +435,17 @@ final class RemoteHost: @unchecked Sendable {
 
     /// Reach the host, install or update Libertty's helper there if needed, and
     /// make sure its liberttyd runs (blocking; not on the main thread).
+    /// After a setup already under way (a window reconnecting meanwhile),
+    /// never beside it: one password prompt at a time, one install.
     @discardableResult
     func prepare(progress: (String) -> Void = { _ in }) throws -> Info {
+        prepareLock.lock()
+        defer { prepareLock.unlock() }
+        return try prepareHeld(progress: progress)
+    }
+
+    /// `prepare`, under `prepareLock`.
+    private func prepareHeld(progress: (String) -> Void = { _ in }) throws -> Info {
         resolveHostOptions()
         stateLock.withLock { connecting = true }
         statusChanged()
@@ -343,6 +457,10 @@ final class RemoteHost: @unchecked Sendable {
             let info = try setUp(progress: progress)
             stateLock.withLock {
                 prepared = info
+                setUpAgain = false
+                setUps += 1
+                checked = checking ? (setUps, Date()) : nil
+                checking = false
                 lastFailure = nil
                 fullErrors = ""
             }
@@ -352,10 +470,6 @@ final class RemoteHost: @unchecked Sendable {
             throw error
         }
     }
-
-    /// Set up again from the start next time (the link failed in a way
-    /// that may mean the host changed).
-    func reset() { stateLock.withLock { prepared = nil } }
 
     private func setUp(progress: (String) -> Void) throws -> Info {
         progress("Connecting to \(destination)…")

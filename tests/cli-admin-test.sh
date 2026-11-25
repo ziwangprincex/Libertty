@@ -96,13 +96,21 @@ $L +daemon stop --if-idle > $T/out 2>&1; r=$?
   || bad "stop --if-idle: $r $(cat $T/out)"
 
 # restart: another liberttyd, the same session, its shell still the one it was.
+# Its lock is never free in between: a liberttyd started then (a new tab, a
+# host's windows reconnecting) would take it, serve without the session, and
+# the newer one end with it. (Watched by taking it at once, as one would.)
 $L +send $ID 'export MARK=kept-across\n'
 $L +wait $ID --until prompt --timeout 5
 old=$(field pid)
+python3 -I ${0:A:h}/fixtures/lock-watch.py $LIBERTTY_DAEMON_SOCKET.lock 3 > $T/free &
+watch=$!
+sleep 0.2
 $L +daemon restart > $T/out 2>&1; r=$?
 new=$(field pid)
+wait $watch
 (( r == 0 )) && grep -q "1 session kept" $T/out && [[ -n $new && $new != $old ]] && ok "restart: liberttyd $old → $new" \
   || bad "restart: $r $(cat $T/out) ($old → $new)"
+[[ $(cat $T/free) == 0 ]] && ok "restart: its lock never free in between" || bad "restart: its lock was free $(cat $T/free) times"
 $L +send $ID 'echo MARK-IS-$MARK\n'
 $L +wait $ID --until prompt --timeout 5
 $L +capture $ID | grep -q "MARK-IS-kept-across" && ok "restart: the shell kept running" || bad "restart: the shell's gone"

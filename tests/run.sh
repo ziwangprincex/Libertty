@@ -382,6 +382,9 @@ expect close-once 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/undo-confi
 # The palette's sessions no window shows, asked of liberttyd off the main thread.
 expect palette-sessions 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(sed "s|@BIN@|$LIBERTTY|g" $ROOT/tests/fixtures/palette-sessions.txt)" $OUT --persist
+# A tab opened while liberttyd is being replaced: the window waits a moment at most, and the session is the new liberttyd's.
+expect liberttyd-replacing 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/liberttyd-replacing.txt)" $OUT --persist
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist

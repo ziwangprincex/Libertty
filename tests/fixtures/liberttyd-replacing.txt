@@ -1,0 +1,13 @@
+# A tab opened while liberttyd is being replaced (in liberttyd: --persist):
+# nothing listens on its socket for a moment, its lock is held (see
+# liberttyd-replacing.sh). The window isn't held up for it, and the tab's
+# session is made in the new liberttyd once it answers, not in a shell of
+# the window's own (which has no $LIBERTTY_SESSION).
+wait:1
+shell:sh @ROOT@/tests/fixtures/liberttyd-replacing.sh
+tab:new
+wait:4
+type:test -n "$LIBERTTY_SESSION" && echo made-in-$((6*7))
+key:enter
+wait:1
+expect:made-in-42
