@@ -1077,5 +1077,10 @@
   "The diff is cut short: it's over %@ MB. `git diff` in a terminal shows all of it.": "这份 diff 超过 %@ MB，只显示了前面一部分。在终端里运行 `git diff` 可看完整内容。",
   "Couldn't undo %@": "无法撤销“%@”",
   "“%@” is still in %@.": "“%@”仍在 %@ 中。",
-  "Show in Finder": "在访达中显示"
+  "Show in Finder": "在访达中显示",
+  "%@ says": "%@ 显示",
+  "This page says": "此网页显示",
+  "Upload": "上传",
+  "Choose files to upload to %@.": "选择要上传到 %@ 的文件。",
+  "Choose a file to upload to %@.": "选择要上传到 %@ 的文件。"
 }

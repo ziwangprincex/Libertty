@@ -1284,6 +1284,80 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         }
     }
 
+    // MARK: A web page's dialogs and file picker
+
+    /// A web page's `<input type=file>` (attaching a file to an issue): an
+    /// open panel on the window, taking several files or a folder when the
+    /// input does. A document's or a block's page gets none.
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        #if LIBERTTY_PROBES
+        if kind == .web, let picked = ProbePick.files {
+            ProbePick.files = nil
+            return completionHandler(picked)
+        }
+        #endif
+        // Never during a probe (an off-screen window, the user's files); nor
+        // over another sheet, where it would wait out of sight.
+        guard kind == .web, !Probe.running, let window, window.attachedSheet == nil else { return completionHandler(nil) }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.prompt = L10n.t("Upload")
+        if let asker = Self.asker(frame) {
+            let message = parameters.allowsMultipleSelection ? "Choose files to upload to %@." : "Choose a file to upload to %@."
+            panel.message = String(format: L10n.t(message), asker)
+        }
+        panel.beginSheetModal(for: window) { response in completionHandler(response == .OK ? panel.urls : nil) }
+    }
+
+    /// A web page's alert(), confirm() and prompt(): a sheet on the window
+    /// saying whose page asks (a dev server's "Delete it?" waits for the
+    /// answer). A page not in front, or asking over another sheet, gets
+    /// the answer of a dismissed one.
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+        pageDialog(frame, message, cancels: false) { _ in completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        pageDialog(frame, message, cancels: true) { completionHandler($0) }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        let field = NSTextField(string: defaultText ?? "")
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+        pageDialog(frame, prompt, cancels: true, field: field) { completionHandler($0 ? field.stringValue : nil) }
+    }
+
+    /// `message` from the page in `frame`, OK (and Cancel) to answer it; `done(true)` for OK.
+    private func pageDialog(_ frame: WKFrameInfo, _ message: String, cancels: Bool, field: NSTextField? = nil,
+                            done: @escaping (Bool) -> Void) {
+        guard kind == .web, let window, window.attachedSheet == nil else { return done(false) }
+        let alert = NSAlert()
+        alert.messageText = Self.asker(frame).map { String(format: L10n.t("%@ says"), $0) } ?? L10n.t("This page says")
+        // (A page's words, as long as it likes: cut where a sheet still fits.)
+        alert.informativeText = String(message.prefix(2000))
+        alert.addButton(withTitle: L10n.t("OK"))
+        if cancels { alert.addCancelButton() }
+        if let field {
+            alert.accessoryView = field
+            alert.window.initialFirstResponder = field
+        }
+        alert.beginSheetModal(for: window) { done($0 == .alertFirstButtonReturn) }
+    }
+
+    /// Who a page's dialog comes from: its frame's host (and port), which a
+    /// page can't pretend to be another's; nil for one without (data:).
+    private static func asker(_ frame: WKFrameInfo) -> String? {
+        let origin = frame.securityOrigin
+        guard !origin.host.isEmpty else { return nil }
+        return origin.host + (origin.port > 0 ? ":\(origin.port)" : "")
+    }
+
     // MARK: Find and zoom
 
     /// The editor finds with its own panel (it draws only the lines in view,

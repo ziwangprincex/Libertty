@@ -738,6 +738,9 @@ SITE_PID=$!
 # Up before a page asks it (a slow start is the server's, not the browser's).
 for i in {1..100}; do curl -sf -o /dev/null --max-time 1 http://127.0.0.1:$PORT/index.html && break; sleep 0.1; done
 expect browser 'ui-probe: all passed' $LIBERTTY --ui-probe "$(sed "s|@SITE@|http://127.0.0.1:$PORT|g" $ROOT/tests/fixtures/browser.txt)" $OUT
+# A page's confirm(), prompt() and alert() as sheets naming its host; its file input gets what's picked.
+expect browser-dialogs 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config $LIBERTTY --ui-probe \
+  "$(sed -e "s|@SITE@|http://127.0.0.1:$PORT|g" -e "s|@HOST@|127.0.0.1:$PORT|g" -e "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/browser-dialogs.txt)" $OUT
 mkdir -p $PRIVATE/browser-config/libertty
 print 'browser-automation = true' > $PRIVATE/browser-config/libertty/config
 settle

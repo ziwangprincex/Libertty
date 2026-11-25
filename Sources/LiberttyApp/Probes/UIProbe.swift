@@ -116,6 +116,7 @@ import LiberttyCore
 ///   insert-files:PATH|PATH  Attach Files… (insert_file) with these picked, the open panel apart;
 ///                         insert-photos: Attach from Photos… with them as Photos would give them;
 ///                         -refused (insert-files-refused:…) when the action shouldn't run (read-only)
+///   pick-files:PATH|PATH  the next open panel a web page asks for (`<input type=file>`) picks these, the panel apart
 ///   browser:ARGS ==> TEXT  what `libertty +browser ARGS` does here (ARGS split as a shell does); what
 ///                         it prints contains TEXT (`!TEXT`: it failed, saying TEXT). Without ` ==> `, just do it.
 ///   bar:TEXT              type TEXT in the browser's address bar and press Return
@@ -1473,6 +1474,9 @@ enum UIProbe {
                         controller.updateSidebar()
                         pump(0.3)
                         print("ok    ui-probe pretend-host: \(destination)")
+                    case .pickFiles(let paths):
+                        ProbePick.files = paths.map { URL(fileURLWithPath: $0) }
+                        print("ok    ui-probe pick-files (\(paths.count)) for the next page that asks")
                     case .insertFiles(let paths, let photos, let refused):
                         // Through the action, as the menu runs it: only the
                         // panel's part is the probe's.
@@ -2225,6 +2229,8 @@ enum UIProbe {
         /// Attach Files… (or Attach from Photos…) with these picked, the
         /// picker apart: typed into the pane with the keyboard, or refused.
         case insertFiles([String], photos: Bool, refused: Bool)
+        /// A web page's next file picker: these, the panel apart.
+        case pickFiles([String])
         case hover(Int), expectFocus(Int), caretAsk, expectCaretTold, move(CGFloat, CGFloat)
         case headerPointer(Bool), expectHeaderButtons(String), expectPendingKeys(String), expectLinkPreview(String), expectNameTag(String)
         case expectMode(String), expectCopyCursor(String), expectClipboard(String), expectSelection(String), expectHint(String)
@@ -2406,6 +2412,7 @@ enum UIProbe {
             case "insert-files", "insert-photos", "insert-files-refused", "insert-photos-refused":
                 steps.append(.insertFiles(arg.split(separator: "|").map(String.init), photos: verb.hasPrefix("insert-photos"),
                                           refused: verb.hasSuffix("-refused")))
+            case "pick-files": steps.append(.pickFiles(arg.split(separator: "|").map(String.init)))
             case "glide-resize":
                 // `glide-resize:N:WIDTH`: select tab N, and while the sidebar's
                 // card is still gliding there (motion:on), make the sidebar WIDTH wide.

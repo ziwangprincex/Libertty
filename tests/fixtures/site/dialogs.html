@@ -1,0 +1,18 @@
+<!doctype html><html><head><title>Probe Dialogs</title></head>
+<body><h1>Dialogs</h1>
+<button id="delete">Delete</button>
+<button id="rename">Rename</button>
+<button id="hello">Hello</button>
+<input id="file" type="file" multiple>
+<p id="out">Nothing yet</p>
+<script>
+const say = (s) => document.getElementById('out').textContent = s;
+document.getElementById('delete').addEventListener('click', () => say(confirm('Delete the draft?') ? 'deleted' : 'kept'));
+document.getElementById('rename').addEventListener('click', () => {
+  const name = prompt('A new name?', 'draft');
+  say(name === null ? 'no name' : 'named ' + name);
+});
+document.getElementById('hello').addEventListener('click', () => { alert('Hello there'); say('greeted'); });
+document.getElementById('file').addEventListener('change', (e) => say('picked ' + [...e.target.files].map((f) => f.name + ' ' + f.size).join(', ')));
+</script>
+</body></html>
