@@ -313,9 +313,12 @@ public final class DaemonServer {
         return sessions[id]
     }
 
-    /// The session is ours: listed, guarded, its end heard. Its output
-    /// flows once the caller `start`s it.
-    private func register(_ session: DaemonSession) {
+    /// The session is ours: listed, guarded, its end heard. Not during a
+    /// takeover (false): the sessions to hand over are counted, and one
+    /// started now would end with us. Its output flows once the caller
+    /// `start`s it.
+    @discardableResult
+    private func register(_ session: DaemonSession) -> Bool {
         session.onEnd = { [weak self] ended in
             guard let self else { return }
             self.lock.lock()
@@ -326,10 +329,15 @@ public final class DaemonServer {
             self.scheduleExitIfIdle()
         }
         lock.lock()
+        guard !handingOver else {
+            lock.unlock()
+            return false
+        }
         sessions[session.id] = session
         lock.unlock()
         GuardianLink.shared.keep(session)
         DaemonEvents.shared.publish("session-started", session: session.id, ["command": session.command])
+        return true
     }
 
     private func handle(_ connection: Connection) {
@@ -370,9 +378,18 @@ public final class DaemonServer {
             case .create:
                 guard bound == nil, let request = frame.decode(CreateRequest.self) else { fail("bad create"); continue }
                 guard session(request.id) == nil else { fail("session \(request.id) exists"); continue }
+                // Mid-takeover a session started here would end with us: the
+                // app asks the newer liberttyd, which has the socket in a moment.
+                guard !lock.withLock({ handingOver }) else { fail(Wire.handingOver); continue }
                 do {
                     let s = try DaemonSession(request: request)
-                    register(s)
+                    guard register(s) else {
+                        // (The takeover began meanwhile.) Its program ends now, not with us.
+                        s.start()
+                        s.terminate()
+                        fail(Wire.handingOver)
+                        continue
+                    }
                     s.attach(connection, sendSnapshot: false, catchUp: request.catchUp ?? false)
                     s.start()
                     bound = s
@@ -530,7 +547,7 @@ public final class DaemonServer {
                     }
                 }
                 lock.unlock()
-                if refused { fail("handing over"); continue }
+                if refused { fail(Wire.handingOver); continue }
                 connection.send(.result, json: ["ok": true])
             case .loadLayout:
                 // The asking Mac's own entry; for a host's windows, else the
@@ -607,6 +624,19 @@ public final class DaemonServer {
 
     // MARK: Takeover
 
+    /// Take no more connections. A shutdown stops a listener on Linux but
+    /// not on macOS, where it must close: /dev/null goes over it, so its
+    /// number can't be another descriptor's while the accepting thread
+    /// (woken either way) still uses it.
+    private func stopListening() {
+        sysShutdown(listener)
+        let null = open("/dev/null", O_RDONLY | O_CLOEXEC)
+        guard null >= 0 else { return sysClose(listener) }
+        dup2(null, listener)
+        _ = fcntl(listener, F_SETFD, FD_CLOEXEC)
+        sysClose(null)
+    }
+
     /// Old side: give every session to the newer liberttyd on `connection`, then exit.
     private func handOver(to connection: Connection) {
         lock.lock()
@@ -617,7 +647,7 @@ public final class DaemonServer {
         // The newer one has a guardian of its own once it has them.
         GuardianLink.shared.standDown()
         // No new connections; the new liberttyd binds the path when we're done.
-        sysShutdown(listener)
+        stopListening()
         Self.log("handing \(all.count) sessions over")
         connection.setReceiveTimeout(10)
         var handed = 0

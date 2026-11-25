@@ -83,6 +83,35 @@ struct WireTests {
         pty.detach()
     }
 
+    /// A liberttyd handing its sessions over refuses to start one; a window
+    /// asks again — through the moment nothing answers — and the newer one does.
+    @Test func aSessionAskedForMidTakeoverStartsInTheNewerOne() throws {
+        let dials = NSLock()
+        nonisolated(unsafe) var dialed = 0
+        let address = DaemonAddress(host: "") { [self] in
+            let n = dials.withLock { dialed += 1; return dialed }
+            if n == 2 { return nil }  // the old one gone, the newer not yet listening
+            let (app, end) = pair()
+            nonisolated(unsafe) let daemon = end
+            Thread {
+                guard let create = daemon.receive(), create.kind == .create else { return }
+                if n == 1 {
+                    _ = daemon.send(.result, json: ["ok": false, "error": Wire.handingOver])
+                } else {
+                    _ = daemon.send(.attached, header: ["id": "s", "pid": 42], body: UnsafeRawBufferPointer(start: nil, count: 0))
+                }
+                _ = daemon.receive()
+            }.start()
+            return app
+        }
+        let request = CreateRequest(id: "s", executable: "/bin/sh", arguments: [], environment: [:], workingDirectory: "/",
+                                    size: GridSize(cols: 80, rows: 24, widthPx: 0, heightPx: 0), scrollback: 0)
+        let pty = try RemotePTY.create(request, address: address, queue: DispatchQueue(label: "test.remote"))
+        #expect(pty.pid == 42)
+        #expect(dials.withLock { dialed } == 3)
+        pty.detach()
+    }
+
     @Test func osc7Paths() {
         #expect(SessionInfo.fileURL("file://mac/Users/me/%E6%88%91%E7%9A%84%20%E6%96%87%E6%A1%A3")! == ("mac", "/Users/me/我的 文档"))
         #expect(SessionInfo.fileURL("file://mac/tmp/a#b?c")! == ("mac", "/tmp/a#b?c"))

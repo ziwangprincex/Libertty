@@ -96,6 +96,10 @@ public enum Wire {
 
     public static let maxFrame = 256 << 20
 
+    /// What a liberttyd handing its sessions to a newer one answers a request
+    /// it can't take now (a session to start): ask the newer one in a moment.
+    public static let handingOver = "handing over"
+
     /// liberttyd's socket: `$LIBERTTY_DAEMON_SOCKET`, else liberttyd.sock in a private
     /// directory under the per-user temporary directory.
     public static var socketPath: String {

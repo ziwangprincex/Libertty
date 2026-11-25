@@ -110,11 +110,24 @@ public final class RemotePTY: TerminalBackend {
 
     /// Start a new session in liberttyd.
     public static func create(_ request: CreateRequest, address: DaemonAddress = .local, queue: DispatchQueue) throws -> RemotePTY {
-        guard let c = address.connect() else { throw DaemonClientError.unavailable }
-        let (pid, header) = try create(c, request)
-        let pty = RemotePTY(id: request.id, pid: pid, connection: c, address: address, queue: queue)
-        pty.took(header)
-        return pty
+        // A liberttyd handing its sessions over to a newer one starts none
+        // (it would end with it): the newer one has the socket in a moment,
+        // and nothing answers in between — no reason to start another.
+        var tries = 0
+        while true {
+            do {
+                guard let c = address.connect() else { throw DaemonClientError.unavailable }
+                let (pid, header) = try create(c, request)
+                let pty = RemotePTY(id: request.id, pid: pid, connection: c, address: address, queue: queue)
+                pty.took(header)
+                return pty
+            } catch DaemonClientError.refused(let why) where why == Wire.handingOver && tries < 100 {
+                tries += 1
+            } catch DaemonClientError.unavailable where tries > 0 && tries < 100 {
+                tries += 1
+            }
+            usleep(100_000)
+        }
     }
 
     private static func create(_ c: Connection, _ request: CreateRequest) throws -> (pid_t, [String: Any]) {
