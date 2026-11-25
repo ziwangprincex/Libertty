@@ -5,7 +5,8 @@
 #include <sys/types.h>
 
 /// Spawn `path` with `argv`/`envp` on a new pseudo-terminal of the given size,
-/// as a session leader with the pty as its controlling terminal.
+/// as a session leader with the pty as its controlling terminal, and no other
+/// descriptor than the terminal as stdin, stdout and stderr.
 /// Returns the child pid and stores the master fd (close-on-exec) in
 /// `*master_out`, or returns -1 with errno set.
 pid_t libertty_pty_spawn(const char *path,
