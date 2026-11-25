@@ -44,9 +44,11 @@ enum Conversations {
 
     static var url: URL { Blocks.dataDirectory.appendingPathComponent("conversations.json") }
 
-    /// An agent's id as resume options take it: nothing a shell would read.
+    /// An agent's id as resume options take it: nothing a shell would read,
+    /// and no option (`--dangerously-skip-permissions` typed as an id would
+    /// be one to the agent).
     static func isValidID(_ id: String) -> Bool {
-        !id.isEmpty && id.count <= 128 && id.unicodeScalars.allSatisfy {
+        !id.isEmpty && id.count <= 128 && !id.hasPrefix("-") && id.unicodeScalars.allSatisfy {
             CharacterSet.alphanumerics.contains($0) && $0.isASCII || $0 == "-" || $0 == "_"
         }
     }
