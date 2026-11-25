@@ -13,10 +13,27 @@
 #include <spawn.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+void libertty_raise_fd_limit(void) {
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) return;
+    rlim_t wanted = limit.rlim_max;
+#ifdef __APPLE__
+    // More than OPEN_MAX is refused (setrlimit(2)).
+    if (wanted > OPEN_MAX) wanted = OPEN_MAX;
+#else
+    // No more than a pty's child closes before it runs its program (pty.c).
+    if (wanted > 65536) wanted = 65536;
+#endif
+    if (limit.rlim_cur >= wanted) return;
+    limit.rlim_cur = wanted;
+    setrlimit(RLIMIT_NOFILE, &limit);
+}
 
 static int fill_address(struct sockaddr_un *addr, const char *path) {
     memset(addr, 0, sizeof(*addr));

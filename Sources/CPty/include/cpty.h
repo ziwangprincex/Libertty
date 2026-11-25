@@ -95,6 +95,10 @@ int libertty_proc_started(pid_t pid, int64_t *seconds, int64_t *microseconds);
 /// numbers, not their memory or arguments). Returns how many were written.
 int libertty_proc_snapshot(struct libertty_proc *out, int cap);
 
+/// Raise the soft limit on open descriptors as far as the hard limit lets
+/// it (and macOS's OPEN_MAX; at most 65536); never lower it.
+void libertty_raise_fd_limit(void);
+
 /// Unix-domain stream sockets for liberttyd. Descriptors are close-on-exec and
 /// never raise SIGPIPE. listen() replaces a stale socket file; accept()
 /// refuses peers running as another user. All return -1 with errno on failure.

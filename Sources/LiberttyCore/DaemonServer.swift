@@ -29,6 +29,11 @@ public final class DaemonServer {
     public static func main(_ arguments: [String]) -> Never {
         signal(SIGPIPE, SIG_IGN)
         signal(SIGHUP, SIG_IGN)
+        // A few descriptors for each session and one for each window (its
+        // guardian holds one per session): macOS starts a process with 256,
+        // which some 60 sessions use up, and a liberttyd that can't take
+        // one more connection can't serve.
+        libertty_raise_fd_limit()
         let executable = currentExecutablePath() ?? arguments[0]
         if arguments.contains("--version") {
             print("liberttyd protocol \(Wire.version) build \(buildID(ofExecutable: executable))")
@@ -181,17 +186,30 @@ public final class DaemonServer {
         scheduleExitIfIdle()
         keepFilesFresh()
         endOnTerm()
+        // Out of descriptors, and said so in the log (once each time).
+        var starved = false
         while true {
             let fd = libertty_sock_accept(listener)
             if fd < 0 {
-                if errno == EPERM || errno == ECONNABORTED || errno == EINTR { continue }
+                let error = errno
+                if error == EPERM || error == ECONNABORTED || error == EINTR { continue }
                 lock.lock()
                 let over = handingOver
                 lock.unlock()
                 if over { Thread.sleep(forTimeInterval: 3600) }  // the takeover thread exits the process
-                Self.log("accept failed: \(String(cString: strerror(errno)))")
+                // Out of descriptors or memory for now: the connection waits
+                // in the backlog until a session ends or a window lets go of
+                // one. Exiting would end every session.
+                if error == EMFILE || error == ENFILE || error == ENOMEM || error == ENOBUFS {
+                    if !starved { Self.log("accept failed: \(String(cString: strerror(error))); waiting for a descriptor") }
+                    starved = true
+                    Thread.sleep(forTimeInterval: 0.1)
+                    continue
+                }
+                Self.log("accept failed: \(String(cString: strerror(error)))")
                 exit(1)
             }
+            starved = false
             let connection = Connection(fd: fd)
             let peer = libertty_sock_peer_pid(fd)
             var name = [CChar](repeating: 0, count: 256)
