@@ -285,6 +285,30 @@ struct ConfigFileTests {
         #expect(store.keybinds.local.filter { $0.action == .nextTab }.map(\.trigger) == [tab])
     }
 
+    /// A file with Windows' line endings, or old Mac OS's, keeps them when
+    /// Settings writes a line (every one became LF).
+    @Test func aFileKeepsItsLineEndings() throws {
+        for ending in ["\r\n", "\r", "\n"] {
+            let (store, file) = try store(["# mine", "font-size = 13", "tab-bar = left", ""].joined(separator: ending))
+            defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+            store.set("font-size", "14")
+            store.add("keybind", "cmd+b=new_tab")
+            #expect(try String(contentsOf: file, encoding: .utf8)
+                == ["# mine", "font-size = 14", "tab-bar = left", "keybind = cmd+b=new_tab", ""].joined(separator: ending),
+                "\(ending.debugDescription)")
+            #expect(store.savedConfig.fontSize == 14 && store.savedConfig.keybinds == ["cmd+b=new_tab"])
+        }
+    }
+
+    /// An empty or relative XDG_CONFIG_HOME is no config folder: ~/.config is.
+    @Test func anEmptyOrRelativeConfigHomeIsIgnored() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        #expect(ConfigStore.configHome([:]) == home)
+        #expect(ConfigStore.configHome(["XDG_CONFIG_HOME": ""]) == home)
+        #expect(ConfigStore.configHome(["XDG_CONFIG_HOME": "dotfiles/config"]) == home)
+        #expect(ConfigStore.configHome(["XDG_CONFIG_HOME": "/tmp/probe-config"]).path == "/tmp/probe-config")
+    }
+
     /// A config kept with your dotfiles, linked into ~/.config/libertty: a
     /// change in Settings is written there, and the link stays a link.
     @Test func aLinkedConfigStaysLinked() throws {

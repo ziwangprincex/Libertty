@@ -1356,8 +1356,7 @@ final class ConfigStore {
     static let shared = ConfigStore()
 
     static var directory: URL {
-        let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        let base = configHome(ProcessInfo.processInfo.environment)
         let current = base.appendingPathComponent("libertty")
         // Libertty was called Lumen: a folder of that name (with a config in
         // it) becomes Libertty's, once — moved, nothing rewritten. Should
@@ -1369,6 +1368,14 @@ final class ConfigStore {
             return earlier
         }
         return current
+    }
+
+    /// `$XDG_CONFIG_HOME`, else ~/.config. Empty or relative, it's ignored,
+    /// as the XDG spec says: relative, `+set` from a shell would write
+    /// ./libertty/config in whatever folder it was in.
+    static func configHome(_ environment: [String: String]) -> URL {
+        if let xdg = environment["XDG_CONFIG_HOME"], xdg.hasPrefix("/") { return URL(fileURLWithPath: xdg) }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
     }
 
     private(set) var config = Config()
@@ -1659,7 +1666,10 @@ final class ConfigStore {
         }
         var lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
         change(&lines)
-        return write(lines.joined(separator: "\n"))
+        // In the file's own line endings (its first one's): CRLF and a lone
+        // CR stay what they were.
+        let ending = text.first(where: \.isNewline).map { ["\r\n", "\r"].contains($0) ? String($0) : "\n" } ?? "\n"
+        return write(lines.joined(separator: ending))
     }
 
     private static func append(_ line: String, to lines: inout [String]) {
