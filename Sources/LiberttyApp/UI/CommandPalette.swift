@@ -713,9 +713,18 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     /// Whether the files' config has this option now (a default written or
     /// left out alike).
     private static func isCurrent(_ option: SettingPicker.Option, of picker: SettingPicker) -> Bool {
+        if picker.key == "theme" { return isThemeInUse(option.value) }
         var c = Config()
         _ = c.set(picker.key, option.value.replacingOccurrences(of: "\"", with: ""))
         return c.values(of: picker.key) == ConfigStore.shared.savedConfig.values(of: picker.key)
+    }
+
+    /// Whether the theme `value` names (quoted or not) is the one the
+    /// windows show: `theme = light:A,dark:B`'s half for the appearance in
+    /// use, its name in any case (`theme = dracula` is Dracula's).
+    static func isThemeInUse(_ value: String, spec: ThemeSpec = ConfigStore.shared.savedConfig.theme,
+                             dark: Bool = SystemAppearance.isDark) -> Bool {
+        value.replacingOccurrences(of: "\"", with: "").caseInsensitiveCompare(spec.name(dark: dark)) == .orderedSame
     }
 
     // MARK: A page of its own
@@ -757,11 +766,8 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         // The window as it'll look, not dimmed behind the palette.
         dim?.isHidden = true
         updateFooter()
+        // (It starts on the choice in use.)
         filter("")
-        if let row = rows.firstIndex(where: { if case .item(let item) = $0 { item.symbol == "checkmark" } else { false } }) {
-            table.selectRowIndexes([row], byExtendingSelection: false)
-            table.scrollRowToVisible(row)
-        }
     }
 
     /// Esc while picking: back to how it was, and to the list.
@@ -798,7 +804,7 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         // (A script's items try nothing out: what another window's palette tries stays.)
-        if prompt == nil { previewSelected() }
+        if prompt == nil, !startingSelection { previewSelected() }
         // The footer is framed to what it shows.
         if updateRunHint() { layout() }
     }
@@ -1010,19 +1016,30 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
         noMatchesText = L10n.t(q.isEmpty ? "Nothing here" : "No matches")
         table.reloadData()
         // The quiet "No matches" row is never the one Return would run.
-        // Browsing themes starts at the one in use (nothing changes yet).
-        let theme = ConfigStore.shared.savedConfig.values(of: "theme").first
-        let inUse = scope == .themes && q.isEmpty
-            ? rows.firstIndex { if case .item(let item) = $0 { item.preview.first?.value.replacingOccurrences(of: "\"", with: "") == theme } else { false } }
+        // Browsing themes, or a setting's choices, starts at the one in use,
+        // and tries nothing out: nothing changes until you move (what's
+        // typed is tried as it narrows them).
+        let inUse = q.isEmpty
+            ? rows.firstIndex { row in
+                guard case .item(let item) = row else { return false }
+                if picker != nil { return item.symbol == "checkmark" }
+                return scope == .themes && item.kind == .theme && Self.isThemeInUse(item.preview.first?.value ?? "")
+            }
             : nil
+        startingSelection = q.isEmpty
         if let first = inUse ?? rows.firstIndex(where: { if case .item = $0 { true } else { false } }) {
             table.selectRowIndexes([first], byExtendingSelection: false)
             table.scrollRowToVisible(inUse ?? 0)
         } else {
             table.deselectAll(nil)
         }
+        startingSelection = false
+        if q.isEmpty, prompt == nil { ConfigStore.shared.endPreview() }
         layout()
     }
+
+    /// The selection the list starts on is being made: it tries nothing out.
+    private var startingSelection = false
 
     private static func heading(_ kind: Kind) -> String { L10n.t(englishHeading(kind)) }
 

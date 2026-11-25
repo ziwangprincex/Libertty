@@ -447,6 +447,12 @@ printf 'font-size = 14\ntheme = probe-theme\n' > $PRIVATE/picker-config/libertty
 printf 'background = #112233\n' > $PRIVATE/picker-config/libertty/themes/probe-theme
 expect settings-picker 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/picker-config \
   $LIBERTTY --ui-probe "$(sed "s|@CFG@|$PRIVATE/picker-config/libertty|g" $ROOT/tests/fixtures/settings-picker.txt)" $OUT
+# The palette's themes start at the one in use (a light/dark pair's half), trying nothing out.
+mkdir -p $PRIVATE/palette-themes-config/libertty/themes
+printf 'theme = light:probe-theme,dark:Libertty Dark\n' > $PRIVATE/palette-themes-config/libertty/config
+printf 'background = #112233\n' > $PRIVATE/palette-themes-config/libertty/themes/probe-theme
+expect palette-themes 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/palette-themes-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/palette-themes.txt)" $OUT
 # Setting actions on a key (toggle_setting, increase_setting…): the config
 # file changed in place, the windows following, and a switch's own command
 # in the palette once a search asks for it.

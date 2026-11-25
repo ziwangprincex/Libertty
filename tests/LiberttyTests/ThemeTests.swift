@@ -136,6 +136,19 @@ struct ThemeTests {
         #expect(ThemeSpec("Nord,Dracula") == nil)
     }
 
+    /// The palette's theme list starts at the theme the windows show: the
+    /// half of a light/dark pair for the appearance, named in any case.
+    @Test func paletteFindsTheThemeInUse() {
+        let pair = ThemeSpec(light: "Libertty Light", dark: "Libertty Dark")
+        #expect(CommandPalette.isThemeInUse("Libertty Light", spec: pair, dark: false))
+        #expect(!CommandPalette.isThemeInUse("Libertty Dark", spec: pair, dark: false))
+        #expect(CommandPalette.isThemeInUse("Libertty Dark", spec: pair, dark: true))
+        let typed = ThemeSpec("dracula")!
+        #expect(CommandPalette.isThemeInUse("Dracula", spec: typed, dark: true))
+        #expect(CommandPalette.isThemeInUse("\"Dracula\"", spec: typed, dark: false))
+        #expect(!CommandPalette.isThemeInUse("Nord", spec: typed, dark: false))
+    }
+
     @Test @MainActor func duplicatedNames() {
         #expect(ThemeCustomizerModel.freeName(from: "Probe Nowhere") == "Probe Nowhere (Duplicated)")
         #expect(ThemeCustomizerModel.freeName(from: "Probe Nowhere (Duplicated)") == "Probe Nowhere (Duplicated)")
