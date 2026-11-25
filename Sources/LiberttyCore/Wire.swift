@@ -136,13 +136,16 @@ public enum Wire {
     }
 
     /// Why `dir` isn't private to this user, as tmux checks its own in /tmp:
-    /// it's a link or no directory, another user's, or open to others. Nil when it's fine.
+    /// it's a link or no directory, another user's, or others may write in
+    /// it (and may have left anything there). One others may only look into
+    /// is made private. Nil when it's fine.
     static func privacyProblem(_ dir: String) -> String? {
         var st = stat()
         guard lstat(dir, &st) == 0 else { return "can't use \(dir): \(SystemError(errno))" }
         guard Int(st.st_mode) & Int(S_IFMT) == Int(S_IFDIR) else { return "\(dir) isn't a directory of its own (remove it)" }
         guard st.st_uid == getuid() else { return "\(dir) belongs to another user (uid \(st.st_uid)); not using it" }
-        guard Int(st.st_mode) & 0o077 == 0 else { return "\(dir) is open to other users (chmod 700 it, or remove it)" }
+        guard Int(st.st_mode) & 0o022 == 0 else { return "other users may write in \(dir) (remove it)" }
+        if Int(st.st_mode) & 0o077 != 0, chmod(dir, 0o700) != 0 { return "can't make \(dir) private: \(SystemError(errno))" }
         return nil
     }
 }

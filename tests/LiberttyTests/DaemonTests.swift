@@ -47,8 +47,13 @@ struct DaemonTests {
         let dir = base + "/mine"
         #expect(mkdir(base, 0o700) == 0 && mkdir(dir, 0o700) == 0)
         #expect(Wire.privacyProblem(dir) == nil)
+        // Others may look in: made private.
         chmod(dir, 0o755)
-        #expect(Wire.privacyProblem(dir)?.contains("open to other users") == true)
+        #expect(Wire.privacyProblem(dir) == nil)
+        #expect(try FileManager.default.attributesOfItem(atPath: dir)[.posixPermissions] as? Int == 0o700)
+        // Others may write in it (and may have left a socket or a link there): not used.
+        chmod(dir, 0o777)
+        #expect(Wire.privacyProblem(dir)?.contains("other users may write") == true)
         chmod(dir, 0o700)
         let link = base + "/link"
         #expect(symlink(dir, link) == 0)
