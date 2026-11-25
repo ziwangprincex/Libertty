@@ -75,10 +75,14 @@ expect-tree-not:pic.png
 expect-shell:ls @FINDER@ ==> pic.png
 # A file open in the editor, renamed: the editor follows it (the same tab,
 # its new name), and a save writes the renamed file, not a new one at the
-# old name. Undone, it follows the file back.
+# old name. Undone, it follows the file back. (Renamed from the terminal's
+# tab: the editor's page keeps the keyboard from the tree's name field in
+# a window that isn't key, as a probe's never is.)
 open:@DIR@/docs/notes.md
 editor-wait:go
 expect-tab-count:2
+tab:1
+wait:0.3
 tree-select:docs/notes.md
 tree-menu:Rename
 type-then:enter:renamed
