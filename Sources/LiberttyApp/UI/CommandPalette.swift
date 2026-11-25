@@ -1661,9 +1661,13 @@ final class KeyCap: NSView {
         NSSize(width: max(19, ceil(label.intrinsicContentSize.width) + 10), height: 19)
     }
 
+    /// In the cap's own light or dark (the palette's is the theme's, which
+    /// may not be the system's): a layer's color is resolved once.
     private func updateColors() {
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
-        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.10).cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
+            layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.10).cgColor
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
