@@ -135,6 +135,13 @@ enum Blocks {
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == name }?.value
     }
 
+    /// A file block's `address` with its file moved to `file` (the rest as it was).
+    static func address(_ address: URL, file: URL) -> URL {
+        guard var parts = URLComponents(url: address, resolvingAgainstBaseURL: false) else { return address }
+        parts.queryItems = parts.queryItems?.map { $0.name == "file" ? URLQueryItem(name: "file", value: file.standardizedFileURL.path) : $0 }
+        return parts.url ?? address
+    }
+
     static func make(_ url: URL) -> BlockService? {
         guard let name = name(of: url), let make = kinds[name] else { return nil }
         return make(url)

@@ -305,6 +305,8 @@
   });
   block.on("save", async ({ id }) => { const ok = await doc.save(); call("saveDone", { ok, id }); });
   block.on("fileChanged", () => doc.external().catch(() => {}));
+  // Renamed or moved in the file tree: the same file, by its new name.
+  block.on("fileMoved", (f) => clear(title, f.name));
 
   window.libertty_board = { get board() { return board; }, parse, serialize, moveCard, save: () => doc.save() };
   doc.load().catch((e) => clear(columnsEl, h("div.empty", "Couldn't read the board: " + String(e.message || e))));

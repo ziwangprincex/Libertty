@@ -169,8 +169,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             install(editing ? makeEditorWeb() : Self.makeViewerWeb(kind))
         }
         load(keepScroll: false)
-        if kind != .web && kind != .block {
-            watch()
+        if kind != .web && kind != .block { watch() }
+        // A file's page follows the file tree's renames and moves; so does a
+        // block of a file (a board, a drawing, a notebook).
+        if kind != .web && (kind != .block || service is FileBlock) {
             NotificationCenter.default.addObserver(self, selector: #selector(filesMoved), name: FileOperations.moved, object: nil)
         }
         if kind == .web { observePage() }
@@ -1309,7 +1311,16 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     /// undid that: follow it, so a save writes where the file is now — not
     /// a new file at its old name — and the page reads from there.
     @objc private func filesMoved(_ note: Notification) {
-        guard let moves = note.userInfo?["moves"] as? [URL: URL], let moved = Self.place(of: url, after: moves) else { return }
+        guard let moves = note.userInfo?["moves"] as? [URL: URL] else { return }
+        if let block = service as? FileBlock {
+            // A block's file: it reads and writes there now, and its address
+            // (what reopening the file finds, what a saved layout keeps) says so.
+            guard let moved = Self.place(of: block.file, after: moves) else { return }
+            url = Blocks.address(url, file: moved)
+            // (Which names the tab anew.)
+            return block.moved(to: moved)
+        }
+        guard let moved = Self.place(of: url, after: moves) else { return }
         url = moved
         watch()
         // A page's images and links are where the document is now.
