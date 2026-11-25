@@ -145,4 +145,104 @@ struct DaemonTests {
             if ws.ws_col != info.cols { break }
         }
     }
+
+    // MARK: Asking a liberttyd that's being replaced
+
+    /// A liberttyd standing in, on `path`: each connection's requests
+    /// answered by `answer` (nil: no answer), until `stop`.
+    private final class FakeDaemon: @unchecked Sendable {
+        let listener: Int32
+        private let lock = NSLock()
+        private var stopped = false
+
+        init(_ path: String, answer: @escaping @Sendable (Connection, Connection.Frame) -> Void) {
+            listener = libertty_sock_listen(path)
+            let listener = listener
+            guard listener >= 0 else { return }
+            Thread { [self] in
+                while !lock.withLock({ stopped }) {
+                    var ready = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
+                    guard poll(&ready, 1, 20) > 0 else { continue }
+                    let fd = libertty_sock_accept(listener)
+                    guard fd >= 0 else { continue }
+                    Thread {
+                        let c = Connection(fd: fd)
+                        while let frame = c.receive() { answer(c, frame) }
+                    }.start()
+                }
+                close(listener)
+            }.start()
+        }
+
+        func stop() { lock.withLock { stopped = true } }
+    }
+
+    /// The lock says whether a liberttyd that doesn't answer is being
+    /// replaced (it's held throughout a takeover or a recovery) or isn't
+    /// there at all.
+    @Test func aLiberttydBeingReplacedHoldsItsLock() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-lock-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let socket = dir + "/d.sock"
+        #expect(!DaemonClient.isBeingReplaced(socket: socket))
+        let held = open(socket + ".lock", O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        defer { close(held) }
+        #expect(!DaemonClient.isBeingReplaced(socket: socket))
+        #expect(flock(held, LOCK_EX | LOCK_NB) == 0)
+        #expect(DaemonClient.isBeingReplaced(socket: socket))
+        // And the look let go of it: a liberttyd can still take it.
+        flock(held, LOCK_UN)
+        #expect(!DaemonClient.isBeingReplaced(socket: socket))
+        #expect(flock(held, LOCK_EX | LOCK_NB) == 0)
+    }
+
+    /// A session asked for while liberttyd hands its sessions over isn't
+    /// waited for long (a new tab mustn't hold the window up): it comes back
+    /// unmade, and is made once the newer liberttyd answers.
+    @Test func aSessionAskedForMidTakeoverIsMadeByTheNewerOne() throws {
+        // (Short: a socket's path has room for 104 bytes.)
+        let dir = "/tmp/libertty-mid-\(UUID().uuidString.prefix(8))"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let socket = dir + "/d.sock"
+        // The older one: has no such session, and starts none.
+        let older = FakeDaemon(socket) { c, frame in
+            switch frame.kind {
+            case .attach: c.send(.result, json: ["ok": false, "error": "no session"])
+            case .create: c.send(.result, json: ["ok": false, "error": Wire.handingOver])
+            default: break
+            }
+        }
+        // Listening from the start: what's asked never goes to this Mac's own liberttyd's lock.
+        try #require(older.listener >= 0)
+        let address = DaemonAddress(host: "") { Connection.connect(to: socket) }
+        let request = CreateRequest(id: "abcd1234", executable: "/bin/sh", arguments: ["sh"], environment: [:],
+                                    workingDirectory: "/", size: GridSize(cols: 80, rows: 24, widthPx: 0, heightPx: 0),
+                                    scrollback: 100)
+        let began = Date()
+        let pty = try RemotePTY.create(request, address: address, queue: DispatchQueue(label: "test.mid"),
+                                       waiting: 0.2, thenInBackground: true)
+        #expect(Date().timeIntervalSince(began) < 1.5)
+        #expect(pty.pid == 0)
+        defer { pty.detach() }
+        pty.startReading()
+        Thread.sleep(forTimeInterval: 0.4)
+        #expect(pty.pid == 0)
+        // The newer one has the socket.
+        older.stop()
+        unlink(socket)
+        let newer = FakeDaemon(socket) { c, frame in
+            switch frame.kind {
+            case .attach: c.send(.result, json: ["ok": false, "error": "no session"])
+            case .create: c.send(.attached, header: ["id": "abcd1234", "pid": 4242], body: UnsafeRawBufferPointer(start: nil, count: 0))
+            default: break
+            }
+        }
+        defer { newer.stop() }
+        try #require(newer.listener >= 0)
+        let deadline = Date().addingTimeInterval(5)
+        while pty.pid != 4242, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        #expect(pty.pid == 4242)
+    }
 }

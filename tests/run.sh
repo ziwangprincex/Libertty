@@ -371,6 +371,9 @@ expect floating-capsules 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/emp
 # Undo Close from another workspace brings the pane back there; where it can't come back, its program ends, not runs on unseen.
 expect close-undo-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-undo-elsewhere.txt)" $OUT --persist
+# A tab opened while liberttyd is being replaced: the window waits a moment at most, and the session is the new liberttyd's.
+expect liberttyd-replacing 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/liberttyd-replacing.txt)" $OUT --persist
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist

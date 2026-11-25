@@ -107,11 +107,19 @@ public final class DaemonServer {
                 usleep(10_000)
             }
             server.recover()
-        } else if flock(lockFD, LOCK_EX | LOCK_NB) == 0 {
-            server.holdLock(lockFD)
         } else {
-            log("another liberttyd serves \(path)")
-            exit(0)
+            // (A few tries, over a few milliseconds: an app looking whether
+            // one is being replaced holds it, shared, for an instant.)
+            var taken = false
+            for _ in 0..<5 where !taken {
+                taken = flock(lockFD, LOCK_EX | LOCK_NB) == 0
+                if !taken { usleep(2_000) }
+            }
+            guard taken else {
+                log("another liberttyd serves \(path)")
+                exit(0)
+            }
+            server.holdLock(lockFD)
         }
         server.serve()
     }
