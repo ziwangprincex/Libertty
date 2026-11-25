@@ -182,11 +182,11 @@ final class CommandPalette: NSObject, NSTextFieldDelegate, NSTableViewDataSource
     private func add(_ sessions: [SessionInfo]) {
         // But the Quick Terminal's, not down yet: it attaches that one itself.
         let quick = QuickTerminal.shared.sessionToAttach
-        weak var controller = self.controller
+        let controller = self.controller
         let items = sessions.filter { $0.clients == 0 && $0.id != quick }.map { s in
             let dir = SessionInfo.directory(fromPwd: s.workingDirectory).map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
             return Item(title: "Show Session \(s.id)", subtitle: [s.title, dir].filter { !$0.isEmpty }.joined(separator: " · "),
-                        symbol: "rectangle.stack", kind: .session) { controller?.attachTab(s.id, on: nil) }
+                        symbol: "rectangle.stack", kind: .session) { [weak controller] in controller?.attachTab(s.id, on: nil) }
         }
         guard !items.isEmpty else { return }
         // After the workspaces, before the themes.
