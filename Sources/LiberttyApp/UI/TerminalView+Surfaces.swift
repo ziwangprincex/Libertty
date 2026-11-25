@@ -132,9 +132,10 @@ final class SurfaceOverlay {
         for (id, chip) in chips where !lensShown.contains(id) { chip.isHidden = true }
     }
 
-    /// An event for the program, while it's still the one that drew it.
+    /// An event for the program, while it's still the one that drew it —
+    /// none from a read-only pane (Stop Sending Input): a click is input too.
     private func tell(_ id: String, _ fields: [String: Any]) {
-        guard let pane, pane.session.surfaces.mayTell(id, pane.session) else { return }
+        guard let pane, !pane.isReadOnly, pane.session.surfaces.mayTell(id, pane.session) else { return }
         pane.session.surfaceInput(SurfaceProtocol.event(fields))
     }
 

@@ -741,6 +741,9 @@ expect workspaces 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests
 # Panes: zoomed navigation, Redo of a close, two siblings ending at once.
 expect splits 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/splits.txt)" $OUT
+# Broadcast Input skips a read-only pane: keys, and text an input method commits.
+expect broadcast-readonly 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/broadcast-readonly.txt)" $OUT
 # The system is told where the cursor is after it moves (output, a split, the window dragged):
 # its input-source indicator stayed where the pane took the keyboard.
 expect caret 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \

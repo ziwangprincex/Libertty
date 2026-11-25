@@ -1187,7 +1187,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             // Nothing committed: it only edited or cancelled the composition.
             if !committed.isEmpty, !isReadOnly {
                 committed.forEach(session.sendText)
-                broadcastPeers?().forEach { peer in committed.forEach(peer.session.sendText) }
+                broadcastPeers?().filter { !$0.isReadOnly }.forEach { peer in committed.forEach(peer.session.sendText) }
             }
             setNeedsRender()
             return
@@ -2292,7 +2292,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
             // Text not tied to a key event (e.g. emoji picker, dictation).
             if !isReadOnly {
                 session.sendText(text)
-                broadcastPeers?().forEach { $0.session.sendText(text) }
+                broadcastPeers?().filter { !$0.isReadOnly }.forEach { $0.session.sendText(text) }
             }
         }
     }
