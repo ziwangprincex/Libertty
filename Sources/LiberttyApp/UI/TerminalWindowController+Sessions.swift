@@ -30,6 +30,10 @@ extension TerminalWindowController {
         }
     }
 
+    func sessionNeedsFrame(_ session: TerminalSession) {
+        pane(for: session)?.setNeedsRender()
+    }
+
     func sessionSearchChanged(_ session: TerminalSession) {
         guard let pane = pane(for: session) else { return }
         // Still going through the output: the next frame goes on with it.
