@@ -1082,5 +1082,7 @@
   "This page says": "此网页显示",
   "Upload": "上传",
   "Choose files to upload to %@.": "选择要上传到 %@ 的文件。",
-  "Choose a file to upload to %@.": "选择要上传到 %@ 的文件。"
+  "Choose a file to upload to %@.": "选择要上传到 %@ 的文件。",
+  "“%@” grew past %@ MB: its changes aren't shown here any more. Your text here stays; saving it asks before writing over the file.": "“%@”已超过 %@ MB：这里不再显示它的改动。你在这里的文本保持不变；保存时会先询问是否覆盖该文件。",
+  "“%@” grew past %@ MB: its changes aren't shown here any more.": "“%@”已超过 %@ MB：这里不再显示它的改动。"
 }

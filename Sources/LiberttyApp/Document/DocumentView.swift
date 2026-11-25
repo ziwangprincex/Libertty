@@ -100,6 +100,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         return imageExtensions.contains(ext) ? .image : .text
     }
 
+    /// Text bigger than this isn't shown (nor followed, grown past it while open).
+    static let textLimit = 5_000_000
+
     /// Whether Libertty can show this file itself: text it knows (under 5 MB),
     /// an image or PDF (under 200 MB), or a web page.
     static func canShow(_ url: URL) -> Bool {
@@ -118,7 +121,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return false
         }
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-        return size < 5_000_000
+        return size < textLimit
     }
 
     /// The glyph for this document's tab, its row in the palette.
@@ -763,6 +766,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             diskText = text
             baseText = text
             backupText = nil
+            // Written over a file that had grown too big: it's what's here now, followed again.
+            if outgrown {
+                outgrown = false
+                web.evaluateJavaScript("document.getElementById('banner')?.remove()")
+                watch()
+            }
             completion(true)
         } catch {
             ask("Couldn't save “\(url.lastPathComponent)”", error.localizedDescription, buttons: ["OK"]) { _ in completion(false) }
@@ -793,6 +802,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             guard FileManager.default.fileExists(atPath: self.url.path) else { return }
             timer.invalidate()
             self.returnPoll = nil
+            guard !self.outgrew() else { return }
             self.watch()
             self.load(keepScroll: true)
         }
@@ -1005,6 +1015,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
 
     private func load(keepScroll: Bool) {
         if kind == .block { return loadBlock() }
+        // Grown too big: what shows stays (a new theme, a moved file: not read again).
+        if outgrown, loaded { return }
         if isEditing { return loadEditor() }
         guard keepScroll else { return show(scroll: nil) }
         // A reload under way already knows where the reader was (the new
@@ -1102,6 +1114,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
+        // (A page read as the file was still growing came after the note.)
+        if outgrown { showNotice(outgrownNote) }
         if kind == .block {
             sendBlockTheme()
             (service as? FileBlock)?.pageStarted()
@@ -1426,6 +1440,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
 
     private func watch() {
         watcher?.cancel()
+        watcher = nil
+        guard !outgrown else { return }
         let fd = open(url.path, O_EVTONLY)
         // Not there right now (mid-replace, a branch switch): watch for it to come back.
         guard fd >= 0 else { return watchForReturn() }
@@ -1436,19 +1452,61 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             // Editors save by replacing the file: follow the new one.
             if source.data.contains(.rename) || source.data.contains(.delete) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    guard !self.outgrew() else { return }
                     self.watch()
                     // Still gone (a branch switch): the page stays as it was
                     // until the file is back, so its scroll is kept for it.
                     // (The editor hears it's gone: its text is unsaved now.)
                     if self.isEditing || FileManager.default.fileExists(atPath: self.url.path) { self.load(keepScroll: true) }
                 }
-            } else {
+            } else if !self.outgrew() {
                 self.load(keepScroll: true)
             }
         }
         source.setCancelHandler { close(fd) }
         source.resume()
         watcher = source
+    }
+
+    /// The file grew past `textLimit` while open (a log being written):
+    /// it's no longer read again at each change — the whole of it, on the
+    /// main thread — nor watched. What the page or the editor shows stays.
+    private var outgrown = false
+
+    /// Whether the file is past `textLimit` now; the first time, stop
+    /// following it and say so in the page. The editor keeps its text,
+    /// unsaved changes and all (a save asks before writing over the file).
+    private func outgrew() -> Bool {
+        guard kind == .text, !outgrown else { return outgrown }
+        let path = url.resolvingSymlinksInPath().path
+        let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.intValue ?? 0
+        guard size >= Self.textLimit else { return false }
+        outgrown = true
+        watcher?.cancel()
+        watcher = nil
+        returnPoll?.invalidate()
+        returnPoll = nil
+        showNotice(outgrownNote)
+        return true
+    }
+
+    /// What the page says of a file grown too big.
+    private var outgrownNote: String {
+        let note = isEditing
+            ? "“%@” grew past %@ MB: its changes aren't shown here any more. Your text here stays; saving it asks before writing over the file."
+            : "“%@” grew past %@ MB: its changes aren't shown here any more."
+        return String(format: L10n.t(note), url.lastPathComponent, "\(Self.textLimit / 1_000_000)")
+    }
+
+    /// A line over the page (the editor's banner, or one like it over a
+    /// document), until its OK. Made from here: neither page has a call for it.
+    private func showNotice(_ text: String) {
+        web.evaluateJavaScript("""
+            (function(t,ok){var o=document.getElementById('banner');if(o)o.remove();
+            var b=document.createElement('div');b.id='banner';var s=document.createElement('span');s.textContent=t;b.appendChild(s);
+            var k=document.createElement('button');k.textContent=ok;k.onclick=function(){b.remove();};b.appendChild(k);
+            document.body.appendChild(b);})(\(Self.jsString(text)), \(Self.jsString(L10n.t("OK"))))
+            """)
     }
 
     // MARK: Style
@@ -1520,6 +1578,11 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         .image-view img { max-width: 100%; max-height: calc(100vh - 76px); object-fit: contain;
           background: repeating-conic-gradient(var(--l2) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
         \(DiffRenderer.css(dark: dark))
+        #banner { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 10; display: flex; gap: 10px; align-items: center;
+          padding: 8px 12px; border-radius: 10px; font: 12.5px var(--sans); background: var(--code-bg); color: var(--t1);
+          box-shadow: 0 0 0 1px var(--l3), 0 6px 20px rgba(0,0,0,.25); }
+        #banner span { flex: 1; }
+        #banner button { font: inherit; color: inherit; background: var(--l2); border: 0; border-radius: 6px; padding: 4px 10px; }
         .md .table { margin: 0 0 16px; overflow-x: auto; }
         .md table { border-collapse: collapse; font-size: 13.5px; line-height: 1.5; }
         .md th, .md td { padding: 5px 16px 5px 0; border-bottom: 1px solid var(--l1); text-align: left; vertical-align: top; }
