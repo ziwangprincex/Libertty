@@ -99,6 +99,16 @@ int libertty_proc_snapshot(struct libertty_proc *out, int cap);
 /// it (and macOS's OPEN_MAX; at most 65536); never lower it.
 void libertty_raise_fd_limit(void);
 
+/// In a child, after fork and before exec: the soft limit back to what it
+/// was before libertty_raise_fd_limit (a program run in a pane gets the
+/// system's, as in any other terminal). Async-signal-safe.
+void libertty_child_fd_limit(void);
+
+/// In a child, after fork and before exec: close every open descriptor
+/// from `lowest` up — those actually open, not every number to the limit
+/// (65536 close calls took a tenth of a second on macOS). Async-signal-safe.
+void libertty_close_from(int lowest);
+
 /// Unix-domain stream sockets for liberttyd. Descriptors are close-on-exec and
 /// never raise SIGPIPE. listen() replaces a stale socket file; connect() and
 /// accept() refuse a peer running as another user. All return -1 with errno on failure.

@@ -41,10 +41,6 @@ pid_t libertty_pty_spawn(const char *path,
         tcsetattr(slave, TCSANOW, &t);
     }
 
-    // What the child closes (sysconf isn't for after fork).
-    long max = sysconf(_SC_OPEN_MAX);
-    if (max < 0 || max > 65536) max = 65536;
-
     pid_t pid = fork();
     if (pid < 0) {
         int saved = errno;
@@ -65,7 +61,9 @@ pid_t libertty_pty_spawn(const char *path,
         for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; fd++) fcntl(fd, F_SETFD, 0);
         // Only the terminal: whatever else is open here — another pane's
         // pty, opened between its openpty and its close-on-exec — stays here.
-        for (long fd = STDERR_FILENO + 1; fd < max; fd++) close((int)fd);
+        libertty_close_from(STDERR_FILENO + 1);
+        // The descriptor limit liberttyd raised for itself isn't the program's.
+        libertty_child_fd_limit();
 
         // The app may have ignored or blocked signals; the shell expects defaults.
         sigset_t none;

@@ -18,6 +18,16 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <libproc.h>
+#include <sys/proc_info.h>
+#endif
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
+
+// The soft limit before libertty_raise_fd_limit raised it (0: it didn't).
+static rlim_t original_fd_soft = 0;
 
 void libertty_raise_fd_limit(void) {
     struct rlimit limit;
@@ -31,8 +41,40 @@ void libertty_raise_fd_limit(void) {
     if (wanted > 65536) wanted = 65536;
 #endif
     if (limit.rlim_cur >= wanted) return;
+    rlim_t before = limit.rlim_cur;
     limit.rlim_cur = wanted;
+    if (setrlimit(RLIMIT_NOFILE, &limit) == 0) original_fd_soft = before;
+}
+
+void libertty_child_fd_limit(void) {
+    if (original_fd_soft == 0) return;
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) return;
+    limit.rlim_cur = original_fd_soft;
     setrlimit(RLIMIT_NOFILE, &limit);
+}
+
+void libertty_close_from(int lowest) {
+#ifdef __APPLE__
+    // The descriptors this process has open, from the kernel (a system
+    // call, no allocation): a stack's worth; more than that, every number.
+    struct proc_fdinfo fds[2048];
+    int bytes = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, fds, (int)sizeof(fds));
+    if (bytes > 0 && bytes < (int)sizeof(fds)) {
+        int count = bytes / (int)sizeof(fds[0]);
+        for (int i = 0; i < count; i++) {
+            if (fds[i].proc_fd >= lowest) close(fds[i].proc_fd);
+        }
+        return;
+    }
+#endif
+#if defined(__linux__) && defined(SYS_close_range)
+    // Linux 5.9 and later close them all in one call.
+    if (syscall(SYS_close_range, (unsigned int)lowest, ~0U, 0) == 0) return;
+#endif
+    long max = sysconf(_SC_OPEN_MAX);
+    if (max < 0 || max > 65536) max = 65536;
+    for (long fd = lowest; fd < max; fd++) close((int)fd);
 }
 
 static int fill_address(struct sockaddr_un *addr, const char *path) {
@@ -220,8 +262,6 @@ pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *
         if (pass >= 0) close(pass);
         return -1;
     }
-    long max = sysconf(_SC_OPEN_MAX);
-    if (max < 0 || max > 65536) max = 65536;
     pid_t pid = fork();
     if (pid < 0) {
         int saved = errno;
@@ -240,7 +280,7 @@ pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *
             if (pass != 3) dup2(pass, 3);
             fcntl(3, F_SETFD, 0);  // (dup2 onto itself keeps close-on-exec)
         }
-        for (long fd = pass >= 0 ? 4 : 3; fd < max; fd++) close((int)fd);
+        libertty_close_from(pass >= 0 ? 4 : 3);
         sigset_t none;
         sigemptyset(&none);
         sigprocmask(SIG_SETMASK, &none, NULL);
