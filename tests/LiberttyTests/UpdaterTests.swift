@@ -66,6 +66,16 @@ struct UpdaterTests {
         #expect(version(at: b.staged) == "new")
     }
 
+    /// A restart while you're in another app opens behind it, and says so
+    /// to the new one, which then doesn't come forward.
+    @Test func anIdleRestartStaysInTheBackground() {
+        let quiet = Updater.relaunchScript(pid: 42, inBackground: true)
+        #expect(quiet.contains("kill -0 42"))
+        #expect(quiet.hasSuffix("/usr/bin/open -g \"$0\" --args \(Updater.relaunchedInBackground)"))
+        let asked = Updater.relaunchScript(pid: 42, inBackground: false)
+        #expect(asked.hasSuffix("/usr/bin/open \"$0\"") && !asked.contains(Updater.relaunchedInBackground))
+    }
+
     /// The feed isn't signed: its notes' links open only on the releases'
     /// own site, over https; the rest show as text.
     @MainActor @Test func theNotesLinkOnlyToTheReleasesSite() {

@@ -235,15 +235,23 @@ enum Updater {
     }
 
     /// After install: start the app at `path` once this process has quit;
-    /// `inBackground`, behind the app in front (`open -g`).
+    /// `inBackground`, behind the app in front (`open -g`), told so
+    /// (`relaunchedInBackground`): it doesn't come forward by itself either.
     static func relaunch(_ path: String, inBackground: Bool = false) {
-        let open = inBackground ? "/usr/bin/open -g" : "/usr/bin/open"
-        let script = "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.1; done; \(open) \"$0\""
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", script, path]
+        p.arguments = ["-c", relaunchScript(pid: getpid(), inBackground: inBackground), path]
         try? p.run()
     }
+
+    /// What waits for `pid` to quit, then opens the app at `$0`.
+    static func relaunchScript(pid: Int32, inBackground: Bool) -> String {
+        let open = inBackground ? "/usr/bin/open -g \"$0\" --args \(relaunchedInBackground)" : "/usr/bin/open \"$0\""
+        return "while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; \(open)"
+    }
+
+    /// The launch argument of a restart nobody was to notice (an idle one).
+    static let relaunchedInBackground = "--relaunched-in-background"
 
     private static func run(_ tool: String, _ arguments: [String]) throws {
         let p = Process()

@@ -122,8 +122,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         // Launching is an explicit request to use Libertty; started from a shell,
         // cooperative activation would leave the window behind (or in Stage
-        // Manager's strip).
-        activate()
+        // Manager's strip). Not a restart into an update while you were in
+        // another app: it opens behind that one, and stays there.
+        if !CommandLine.arguments.contains(Updater.relaunchedInBackground) { activate() }
     }
 
     /// The layout to bring back: the file, unless this Mac's liberttyd holds
@@ -259,6 +260,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// Bring the pane with this id forward, in whichever window has it —
     /// the Quick Terminal's too (it's no window of the list), brought down for it.
     func reveal(paneID: String) -> Bool {
+        // The update's "is ready" notification names no pane: it offers the update.
+        if paneID == UpdateController.readyNotice {
+            activate()
+            MainActor.assumeIsolated { UpdateController.shared.showReady() }
+            return true
+        }
         if !controllers.contains(where: { $0.reveal(paneID: paneID) }) {
             guard let quick = QuickTerminal.shared.windowController, quick.pane(showing: paneID) != nil else { return false }
             QuickTerminal.shared.show()
