@@ -247,4 +247,37 @@ struct CLITests {
         // Past what a socket's timeout holds: the most it holds.
         #expect(CLI.waitSeconds("1e300") == Double(Int32.max))
     }
+
+    /// `--host` is the command's when it takes one, before `-e`/`--`; after
+    /// them it's the command line's own (`vite --host 0.0.0.0`), and another
+    /// command's text keeps it as one of its words.
+    @Test func hostIsTakenOnlyWhereItsLibertty() {
+        #expect(CLI.hostOption(["--host", "devbox", "--right"], of: "+split") == .given("devbox", rest: ["--right"]))
+        #expect(CLI.hostOption(["--right", "--host", "devbox", "-e", "ls"], of: "+split")
+            == .given("devbox", rest: ["--right", "-e", "ls"]))
+        #expect(CLI.hostOption(["-e", "vite", "--host", "0.0.0.0"], of: "+split") == .none)
+        #expect(CLI.hostOption(["-e", "npm", "run", "dev", "--", "--host"], of: "+split") == .none)
+        #expect(CLI.hostOption(["-e", "vite", "--host", "0.0.0.0"], of: "+new-session") == .none)
+        #expect(CLI.hostOption(["--", "--host", "x"], of: "+capture") == .none)
+        #expect(CLI.hostOption(["--host"], of: "+list-sessions") == .missing)
+        #expect(CLI.hostOption(["--host", "--json"], of: "+list-sessions") == .missing)
+        #expect(CLI.hostOption(["working", "--message", "--host", "flag"], of: "+status") == .none)
+        #expect(CLI.hostOption(["--host", "devbox", "1a2b", "fix"], of: "+rename-session") == .given("devbox", rest: ["1a2b", "fix"]))
+        // +attach hears it, to say a host's sessions are shown another way.
+        #expect(CLI.hostOption(["--host", "devbox", "1a2b"], of: "+attach") == .given("devbox", rest: ["1a2b"]))
+    }
+
+    /// `+new-window`/`+new-tab` with Libertty not running: a launch that
+    /// asks for that window, its folder and command as they'd be posted —
+    /// not `-e`, which makes a one-command run that keeps nothing.
+    @Test func aNewWindowAskedAtLaunch() {
+        let info = ["kind": "new-window", "tab": "1", "cwd": "/tmp/a=b c", "command": "vite --host 0.0.0.0 -e x"]
+        let launch = CLI.newWindowLaunchArguments(info)
+        #expect(!launch.contains("-e"))
+        #expect(CLI.newWindowRequest(launchArguments: ["/Applications/Libertty.app/Contents/MacOS/Libertty"] + launch) == info)
+        // No command: a shell, there.
+        let shell = CLI.newWindowLaunchArguments(["kind": "new-window", "tab": "0", "cwd": "/tmp"])
+        #expect(CLI.newWindowRequest(launchArguments: shell) == ["kind": "new-window", "tab": "0", "cwd": "/tmp"])
+        #expect(CLI.newWindowRequest(launchArguments: ["Libertty", "--open-document", "/tmp/x", "", "0"]) == nil)
+    }
 }

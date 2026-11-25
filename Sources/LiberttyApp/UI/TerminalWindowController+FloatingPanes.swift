@@ -85,11 +85,16 @@ extension TerminalWindowController {
     /// Put it in the split, beside the pane that had the keyboard there.
     func dockFloating(_ pane: TerminalView) {
         guard let tab = owningTab(of: pane), let i = tab.parked.firstIndex(where: { $0.pane === pane }) else { return }
+        let floating = tab.parked[i]
         tab.parked[i].floating = nil
         if let anchor = tab.focusedPane { tab.parked[i].anchor = anchor }
         pane.isFloating = false
         syncFloats(of: tab)
-        unpark(pane)
+        // It couldn't go in the split: it floats on where it was.
+        if !unpark(pane), let j = tab.parked.firstIndex(where: { $0.pane === pane }) {
+            tab.parked[j] = floating
+            syncFloats(of: tab)
+        }
     }
 
     /// Close it, as ⌘W closes a pane: asking first when a program runs,

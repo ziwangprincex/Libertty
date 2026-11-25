@@ -24,12 +24,18 @@ struct TabMuteTests {
         }
         let waiting = store(.blocked), alsoWaiting = store(.blocked), working = store(.working), idle = store(nil)
         let counted: Set<ProgramStatusStore.State> = [.blocked]
-        #expect(TabMute.badgeCount([(waiting, false), (alsoWaiting, false), (working, false), (idle, false)], counting: counted) == 2)
-        #expect(TabMute.badgeCount([(waiting, true), (alsoWaiting, false), (working, false)], counting: counted) == 1)
-        #expect(TabMute.badgeCount([(waiting, true), (alsoWaiting, true)], counting: counted) == 0)
+        #expect(TabMute.badgeCount([("a", waiting, false), ("b", alsoWaiting, false), ("c", working, false), ("d", idle, false)],
+                                   counting: counted) == 2)
+        #expect(TabMute.badgeCount([("a", waiting, true), ("b", alsoWaiting, false), ("c", working, false)], counting: counted) == 1)
+        #expect(TabMute.badgeCount([("a", waiting, true), ("b", alsoWaiting, true)], counting: counted) == 0)
         // What the setting counts still decides, muted or not.
-        #expect(TabMute.badgeCount([(working, false)], counting: [.working]) == 1)
-        #expect(TabMute.badgeCount([(working, true)], counting: [.working]) == 0)
+        #expect(TabMute.badgeCount([("a", working, false)], counting: [.working]) == 1)
+        #expect(TabMute.badgeCount([("a", working, true)], counting: [.working]) == 0)
+        // One session shown in two windows waits once; muted in one of
+        // them, it still waits in the other.
+        let mirror = store(.blocked)
+        #expect(TabMute.badgeCount([("a", waiting, false), ("a", mirror, false), ("b", alsoWaiting, false)], counting: counted) == 2)
+        #expect(TabMute.badgeCount([("a", waiting, true), ("a", mirror, false)], counting: counted) == 1)
     }
 
     /// A muted tab's notification is kept in Activity, already read, and no

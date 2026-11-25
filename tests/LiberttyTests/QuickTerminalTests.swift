@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import LiberttyApp
 
@@ -15,5 +15,26 @@ struct QuickTerminalTests {
         #expect(QuickTerminal().sessionToAttach == nil)
         defaults.register(defaults: ["QuickTerminalSession": "quick-1"])
         #expect(QuickTerminal().sessionToAttach == "quick-1")
+    }
+
+    /// Its panel has no close button, yet ⌘W on its last pane, Close Tab
+    /// and Close Window close it, asking its delegate first as a window's
+    /// close does (AppKit's own performClose only beeps there).
+    @Test func itsPanelClosesAsAWindowDoes() {
+        final class Delegate: NSObject, NSWindowDelegate {
+            var allow = false, asked = 0, closed = 0
+            func windowShouldClose(_ sender: NSWindow) -> Bool { asked += 1; return allow }
+            func windowWillClose(_ notification: Notification) { closed += 1 }
+        }
+        let panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+                               styleMask: [.borderless, .resizable, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.isReleasedWhenClosed = false
+        let delegate = Delegate()
+        panel.delegate = delegate
+        panel.performClose(nil)
+        #expect(delegate.asked == 1 && delegate.closed == 0)
+        delegate.allow = true
+        panel.performClose(nil)
+        #expect(delegate.asked == 2 && delegate.closed == 1)
     }
 }

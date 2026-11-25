@@ -368,9 +368,17 @@ expect floating-pane 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-c
 # Minimized floating panes as capsules: named, clicked back with the keyboard, moved by the setting and by a drag, closed undoably.
 expect floating-capsules 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/floating-capsules.txt)" $OUT --persist
+# A tab moved to another window takes its floating panes along: their buttons act there.
+expect floating-moved 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/floating-moved.txt)" $OUT --persist
 # Undo Close from another workspace brings the pane back there; where it can't come back, its program ends, not runs on unseen.
 expect close-undo-elsewhere 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-undo-elsewhere.txt)" $OUT --persist
+# The window's last pane closing asks once and closes the window; Undo can't bring back one closed for good since.
+mkdir -p $PRIVATE/undo-config/libertty
+print 'undo-timeout = 30s' > $PRIVATE/undo-config/libertty/config
+expect close-once 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/undo-config \
+  $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/close-once.txt)" $OUT
 # libertty +pick and +input: a script's question over its pane's window, answered, cancelled, timed out, busy, gone with its command.
 expect script-prompts 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/script-prompts.txt)" $OUT --persist
@@ -764,6 +772,9 @@ expect workspaces 'ui-probe: all passed' $LIBERTTY --ui-probe "$(cat $ROOT/tests
 # Panes: zoomed navigation, Redo of a close, two siblings ending at once.
 expect splits 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/splits.txt)" $OUT
+# A pane ending beside a document with the keyboard: the tab's terminal is the pane left.
+expect closed-beside-document 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/closed-beside-document.txt)" $OUT
 # Broadcast Input skips a read-only pane: keys, and text an input method commits.
 expect broadcast-readonly 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
   $LIBERTTY --ui-probe "$(cat $ROOT/tests/fixtures/broadcast-readonly.txt)" $OUT

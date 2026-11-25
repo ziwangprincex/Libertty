@@ -373,11 +373,13 @@ final class SplitContainerView: NSView {
     // MARK: Structure
 
     /// Split `pane`, the new pane budding out of it toward `direction`.
-    /// `share`: how much of the space the new pane ends up with.
-    func split(_ pane: NSView, with newPane: NSView, toward direction: Direction, share: CGFloat = 0.5) {
+    /// `share`: how much of the space the new pane ends up with. False when
+    /// `pane` isn't in the split (any more), or `newPane` is already.
+    @discardableResult
+    func split(_ pane: NSView, with newPane: NSView, toward direction: Direction, share: CGFloat = 0.5) -> Bool {
         animator?.finish()
         // Each view lives in the tree once.
-        guard let node = root.find(pane), root.find(newPane) == nil else { return }
+        guard let node = root.find(pane), root.find(newPane) == nil else { return false }
         zoomed = nil
         addSubview(newPane, positioned: .below, relativeTo: dividers.first)
         let axis: PaneNode.Axis = direction == .left || direction == .right ? .horizontal : .vertical
@@ -391,6 +393,7 @@ final class SplitContainerView: NSView {
         }, completion: { [weak self] in
             self?.balanceIfAsked()
         })
+        return true
     }
 
     /// Another split's panes join this one beside `pane`, toward

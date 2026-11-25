@@ -5,6 +5,13 @@ import LiberttyCore
 final class QuickPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// ⌘W on its last pane, Close Tab, Close Window: closed as its close
+    /// button would close it, asking what any close asks. It has no such
+    /// button, and AppKit's own only beeps then.
+    override func performClose(_ sender: Any?) {
+        if delegate?.windowShouldClose?(self) ?? true { close() }
+    }
 }
 
 /// Ghostty's quick terminal: a terminal that slides in from a screen edge
@@ -130,7 +137,11 @@ final class QuickTerminal {
             // Its last pane closed: the next toggle starts a fresh one.
             self?.controller = nil
             UserDefaults.standard.removeObject(forKey: Self.sessionKey)
+            (NSApp.delegate as? AppDelegate)?.updateDockBadge()
         }
+        // What its programs wait on counts on the Dock's badge (and keeps
+        // the Mac awake while an agent works) as a window's does.
+        controller.onAttentionChange = { (NSApp.delegate as? AppDelegate)?.updateDockBadge() }
         if let window = controller.window {
             window.isMovable = false
             window.hasShadow = true

@@ -325,13 +325,21 @@ extension TerminalWindowController {
         guard tabs.contains(where: { $0 !== tab && $0.isTerminal }) else {
             // Its workspace ends with it, when the window has others.
             if workspaces.count > 1 { return endWorkspace(workspaces[activeWorkspace].id, undoable: undoable) }
-            // (Its documents were asked about: the window doesn't ask again.)
-            unsavedConfirmed = true
-            if undoable {
-                window?.performClose(nil)
-            } else {
-                skipCloseConfirmation = true
+            // Its documents and its programs were asked about (closing the
+            // tab or its pane): the window doesn't ask again. Its worktree,
+            // asked about too, isn't either (kept, Libertty forgets it;
+            // removing, the tab isn't undoable).
+            skipCloseConfirmation = true
+            guard undoable else {
                 window?.close()
+                return
+            }
+            // Once the question's sheet has gone: a window with a sheet
+            // attached doesn't close (it beeps, and everything stayed open).
+            // (Asked twice meanwhile, a second ⌘W: it closes once.)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isHiddenForUndo, !self.closedForGood else { return }
+                self.window?.performClose(nil)
             }
             return
         }

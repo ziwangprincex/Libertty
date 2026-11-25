@@ -51,6 +51,8 @@ import LiberttyCore
         #expect(NetworkCost.kind(constrained: true, expensive: false) == .lowData)
         #expect(NetworkCost.kind(constrained: false, expensive: true) == .hotspot)
         #expect(NetworkCost.kind(constrained: true, expensive: true) == .lowData)
+        // No network at all isn't a free one: the download waits on.
+        #expect(NetworkCost.kind(satisfied: false, constrained: false, expensive: false) == .offline)
         #expect(Updater.Failure.costlyNetwork(.hotspot).errorDescription?.contains("hotspot") == true)
     }
 }
