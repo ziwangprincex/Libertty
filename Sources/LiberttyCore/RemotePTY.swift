@@ -124,6 +124,7 @@ public final class RemotePTY: TerminalBackend {
         while true {
             do {
                 guard let c = address.connect() else { throw DaemonClientError.unavailable }
+                if !address.isRemote { DaemonClient.answered() }
                 let (pid, header) = try create(c, request)
                 let pty = RemotePTY(id: request.id, pid: pid, connection: c, address: address, queue: queue)
                 pty.took(header)
@@ -134,7 +135,7 @@ public final class RemotePTY: TerminalBackend {
                     if thenInBackground { break }
                     throw DaemonClientError.refused(why)
                 }
-            } catch DaemonClientError.unavailable where replacing || (!address.isRemote && DaemonClient.isBeingReplaced()) {
+            } catch DaemonClientError.unavailable where replacing || (!address.isRemote && DaemonClient.awaitsReplacement()) {
                 // (Nobody listens yet, but a liberttyd holds the lock: one
                 // handing over or recovering, not none at all.)
                 replacing = true
@@ -361,6 +362,7 @@ public final class RemotePTY: TerminalBackend {
             stateLock.unlock()
             if gone { return false }
             guard let c = address.connect() else { continue }
+            if !remote { DaemonClient.answered() }
             c.setBufferSizes(1 << 21)
             let snapshot: Data
             let recovered: Bool
@@ -576,6 +578,49 @@ public enum DaemonClient {
         guard flock(fd, LOCK_SH | LOCK_NB) == 0 else { return errno == EWOULDBLOCK }
         flock(fd, LOCK_UN)
         return false
+    }
+
+    /// How long a replacement takes at most, from when nothing first
+    /// answered while the lock was held: as long as a pane waits for this
+    /// Mac's liberttyd to answer again (RemotePTY's `redial`).
+    public static let replacementLimit: Double = 10
+
+    /// Whether a new session should wait for the liberttyd being replaced
+    /// (`isBeingReplaced`): not once that has gone on past
+    /// `replacementLimit` with nothing answering. Then it isn't one — a
+    /// guardian that wouldn't go holds the lock, or the socket's file was
+    /// deleted while liberttyd runs — and a new session goes on as when
+    /// none runs (starting one, or a shell of its own) instead of waiting.
+    public static func awaitsReplacement(socket path: String = Wire.socketPath,
+                                         now: Double = Date().timeIntervalSince1970) -> Bool {
+        guard isBeingReplaced(socket: path) else {
+            Silence.shared.end(path)
+            return false
+        }
+        return now - Silence.shared.began(path, now) < replacementLimit
+    }
+
+    /// Something answered on `socket`: a replacement seen there is over.
+    public static func answered(socket path: String = Wire.socketPath) {
+        Silence.shared.end(path)
+    }
+
+    /// Since when nothing has answered on each socket while its lock was held.
+    private final class Silence: @unchecked Sendable {
+        static let shared = Silence()
+        private let lock = NSLock()
+        private var since: [String: Double] = [:]
+
+        /// When it began: `now`, if it wasn't seen before.
+        func began(_ path: String, _ now: Double) -> Double {
+            lock.withLock {
+                if let began = since[path] { return began }
+                since[path] = now
+                return now
+            }
+        }
+
+        func end(_ path: String) { lock.withLock { since[path] = nil } }
     }
 
     /// One request, one result (list, capture, send, kill by id, shutdown).

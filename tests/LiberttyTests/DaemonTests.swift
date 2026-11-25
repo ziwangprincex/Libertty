@@ -197,6 +197,32 @@ struct DaemonTests {
         #expect(flock(held, LOCK_EX | LOCK_NB) == 0)
     }
 
+    /// A new session waits for a liberttyd being replaced only as long as a
+    /// replacement takes: a lock held past that with nothing answering (a
+    /// guardian that wouldn't go, the socket's file deleted while liberttyd
+    /// runs) is no replacement, and a new tab goes on as when none runs.
+    @Test func aReplacementIsWaitedForAWhileOnly() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("libertty-wait-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let socket = dir + "/d.sock"
+        let held = open(socket + ".lock", O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        defer { close(held) }
+        #expect(!DaemonClient.awaitsReplacement(socket: socket, now: 1000))
+        #expect(flock(held, LOCK_EX | LOCK_NB) == 0)
+        #expect(DaemonClient.awaitsReplacement(socket: socket, now: 1000))
+        #expect(DaemonClient.awaitsReplacement(socket: socket, now: 1000 + DaemonClient.replacementLimit - 1))
+        #expect(!DaemonClient.awaitsReplacement(socket: socket, now: 1000 + DaemonClient.replacementLimit + 1))
+        // Once something answers there, the next silence is a replacement again.
+        DaemonClient.answered(socket: socket)
+        #expect(DaemonClient.awaitsReplacement(socket: socket, now: 2000))
+        // And once the lock is let go, it's over too.
+        flock(held, LOCK_UN)
+        #expect(!DaemonClient.awaitsReplacement(socket: socket, now: 3000))
+        #expect(flock(held, LOCK_EX | LOCK_NB) == 0)
+        #expect(DaemonClient.awaitsReplacement(socket: socket, now: 3000 + DaemonClient.replacementLimit + 1))
+    }
+
     /// A session asked for while liberttyd hands its sessions over isn't
     /// waited for long (a new tab mustn't hold the window up): it comes back
     /// unmade, and is made once the newer liberttyd answers.
