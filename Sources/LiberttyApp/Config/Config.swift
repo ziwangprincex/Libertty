@@ -720,6 +720,17 @@ struct Config: Equatable {
         return ProgramStatusStore.State.named.filter { states.contains($0.state) }.map(\.name).joined(separator: ",")
     }
 
+    /// Why `text` can't be a value in the config file, or nil. A value is the
+    /// rest of its line: a line break in it would start a line of its own
+    /// (`command = x`, then `remote-control = true`), and no setting takes
+    /// a control character.
+    static func lineProblem(_ text: String) -> String? {
+        let breaks = text.unicodeScalars.contains { s in
+            s != "\t" && [.control, .lineSeparator, .paragraphSeparator].contains(s.properties.generalCategory)
+        }
+        return breaks ? "a line break or control character (a value is one line)" : nil
+    }
+
     /// "10", "10s", "2m", "1h", "1m30s" → seconds.
     static func duration(_ text: String) -> Double? {
         if let n = Double(text), n >= 0 { return n }
@@ -809,6 +820,7 @@ struct Config: Equatable {
     /// Apply one key. Returns a problem description, or nil when accepted.
     /// An empty value resets the key to its default.
     mutating func set(_ key: String, _ v: String) -> String? {
+        if let problem = Self.lineProblem(v) { return problem }
         let defaults = Config()
         func double(_ range: ClosedRange<Double>) -> Double? { Double(v).map { min(range.upperBound, max(range.lowerBound, $0)) } }
         func int(_ range: ClosedRange<Int>) -> Int? { Int(v).map { min(range.upperBound, max(range.lowerBound, $0)) } }
@@ -1485,6 +1497,8 @@ final class ConfigStore {
     /// Set `key` (replacing its line in place), or with nil remove it.
     /// For repeatable keys this replaces every line with one.
     func set(_ key: String, _ value: String?) {
+        // One line each, whoever writes it (Config.lineProblem).
+        if let value, Config.lineProblem(key + value) != nil { return }
         if key == "font-family" { return setPrimaryFont(value ?? "") }
         edit { lines in
             if let i = lines.firstIndex(where: { Self.key(of: $0) == key }) {
@@ -1522,6 +1536,7 @@ final class ConfigStore {
 
     /// Append another line for a repeatable key (`keybind`, `palette`).
     func add(_ key: String, _ value: String) {
+        guard Config.lineProblem(key + value) == nil else { return }
         edit { lines in Self.append("\(key) = \(value)", to: &lines) }
     }
 

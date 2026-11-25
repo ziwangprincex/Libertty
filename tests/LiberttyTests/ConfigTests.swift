@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import LiberttyApp
 
@@ -141,5 +142,34 @@ struct InterfaceStyleTests {
         #expect(!c.glass)
         #expect(c.set("interface-style", "") == nil)
         #expect(c.glass)
+    }
+}
+
+/// What's written to the config file: a line each, in a file of the test's own.
+struct ConfigFileTests {
+    /// A temporary config file holding `text`, and its store.
+    private func store(_ text: String) throws -> (ConfigStore, URL) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("config-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("config")
+        try text.write(to: file, atomically: true, encoding: .utf8)
+        return (ConfigStore(url: file, watch: false), file)
+    }
+
+    /// `libertty +set $'command=x\nremote-control = true'` once wrote two
+    /// lines: the second a setting no program may change.
+    @Test func aValueIsOneLine() throws {
+        var c = Config()
+        for value in ["x\nremote-control = true", "x\rremote-control = true", "x\r\nbrowser-automation = true",
+                      "x\u{2028}y", "x\u{85}y", "x\u{1b}[31m", "x\u{0}"] {
+            #expect(c.set("command", value) != nil, "\(value.debugDescription)")
+        }
+        #expect(c.set("command", "/bin/zsh -c 'echo\ta'") == nil)
+        let (store, file) = try store("font-size = 13\n")
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        store.set("command", "x\nremote-control = false")
+        store.add("keybind", "cmd+b=new_tab\nbrowser-automation = true")
+        #expect(try String(contentsOf: file, encoding: .utf8) == "font-size = 13\n")
+        #expect(store.savedConfig.remoteControl && !store.savedConfig.browserAutomation)
     }
 }
