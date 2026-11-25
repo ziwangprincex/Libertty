@@ -1465,10 +1465,13 @@ final class DaemonSession {
         let work = DispatchWorkItem { [weak self] in self?.resyncScreen() }
         resync = work
         queue.asyncAfter(deadline: .now() + Self.resyncDelay, execute: work)
-        lock.unlock()
+        // The program's and the guardian's too, still under the lock: two
+        // windows resizing at once mustn't leave the program at one size and
+        // our copy at the other. (An ioctl and a message queued: neither waits.)
         pty.resize(newSize)
         GuardianLink.shared.update(id, ["cols": Int(newSize.cols), "rows": Int(newSize.rows),
                                         "widthPx": Int(newSize.widthPx), "heightPx": Int(newSize.heightPx)])
+        lock.unlock()
     }
 
     /// How long after the last resize the screen is sent again (GoRex's

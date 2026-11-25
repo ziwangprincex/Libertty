@@ -73,9 +73,10 @@ struct DaemonTests {
         return try DaemonSession(request: request)
     }
 
+    /// A window's connection and its other end (no SIGPIPE, as liberttyd's own).
     private func pair() -> (Connection, Connection) {
         var fds: [Int32] = [0, 0]
-        precondition(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        precondition(libertty_socketpair(&fds) == 0)
         return (Connection(fd: fds[0]), Connection(fd: fds[1]))
     }
 
@@ -112,5 +113,36 @@ struct DaemonTests {
             DispatchQueue.concurrentPerform(iterations: 2) { s.close(from: windows[$0]) }
         }
         for _ in 0..<rounds { #expect(ended.wait(timeout: .now() + 5) == .success) }
+    }
+
+    /// Windows resizing at once: the program's pty ends at the size
+    /// liberttyd says it has, never at one it replaced meanwhile.
+    @Test func resizesAtOnceAgree() throws {
+        let s = try session(["/bin/sleep", "30"])
+        let ended = DispatchSemaphore(value: 0)
+        s.onEnd = { _ in ended.signal() }
+        let pairs = (0..<6).map { _ in pair() }
+        let windows = pairs.map(\.0)
+        defer {
+            // Ended before the windows hang up: nothing writes to one gone.
+            s.terminate()
+            _ = ended.wait(timeout: .now() + 5)
+            pairs.forEach { $0.0.close(); $0.1.close() }
+        }
+        windows.forEach { s.attach($0, sendSnapshot: false, catchUp: true) }
+        s.start()
+        guard let (_, master) = s.guardianCopy() else { Issue.record("no pty"); return }
+        defer { close(master) }
+        for round in 0..<2000 {
+            DispatchQueue.concurrentPerform(iterations: windows.count) { i in
+                let cols = UInt16(40 + i * 30 + round % 20)
+                s.resize(GridSize(cols: cols, rows: UInt16(20 + i), widthPx: 0, heightPx: 0), from: windows[i])
+            }
+            var ws = winsize()
+            #expect(ioctl(master, TIOCGWINSZ, &ws) == 0)
+            let info = s.info()
+            #expect(ws.ws_col == info.cols && ws.ws_row == info.rows, "round \(round)")
+            if ws.ws_col != info.cols { break }
+        }
     }
 }
