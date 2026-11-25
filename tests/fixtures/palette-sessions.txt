@@ -1,0 +1,23 @@
+# The palette lists the sessions liberttyd keeps that no window shows. It
+# asks liberttyd off the main thread (one busy or stuck would hold the
+# palette up): their rows come with the answer. @BIN@ is the app, its CLI too.
+shell:@BIN@ +new-session -e 'sleep 600' > /dev/null
+wait:0.5
+key:cmd+shift+p
+wait:0.6
+type:show session
+wait:0.4
+expect-palette:Show Session
+expect-palette-selected:Show Session
+# Return shows it in a tab here.
+key:enter
+wait:1.5
+expect-tab-count:2
+# Shown now: no longer listed.
+key:cmd+shift+p
+wait:0.6
+type:show session
+wait:0.4
+expect-palette-not:Show Session
+key:escape
+wait:0.3
