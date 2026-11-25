@@ -248,6 +248,8 @@ final class PromptQueues {
         /// the shell is back (its report of being done, once you've looked at
         /// it, is gone; what runs in front is still the agent).
         var agentSeen = false
+        /// What you typed waits unsent in the pane, holding the queue (its tag says so).
+        var heldForDraft = false
     }
 
     fileprivate var entries: [ObjectIdentifier: Entry] = [:]
@@ -269,6 +271,9 @@ final class PromptQueues {
     func queue(of session: TerminalSession) -> PromptQueue { entry(of: session)?.queue ?? PromptQueue() }
 
     func count(of session: TerminalSession) -> Int { queue(of: session).items.count }
+
+    /// Whether the session's queue is held by what you typed there, unsent.
+    func isHeldForDraft(_ session: TerminalSession) -> Bool { entry(of: session)?.heldForDraft ?? false }
 
     /// Change a session's queue (adding, editing, reordering, clearing).
     func update(_ session: TerminalSession, _ change: (inout PromptQueue) -> Void) {
@@ -401,11 +406,20 @@ final class PromptQueues {
     /// by the app, nil in tests.
     var typedInput: (TerminalSession) -> String? = { _ in nil }
 
-    /// Whether what was typed into `session`'s pane waits there unsent: typed
-    /// since its last Return, and still in its input where the screen says.
+    /// Whether what was typed into `session`'s pane waits there unsent.
     private func hasDraft(_ session: TerminalSession) -> Bool {
-        guard session.hasUnsentTyping else { return false }
-        return typedInput(session).map { !$0.isEmpty } ?? true
+        Self.isDraft(unsent: session.hasUnsentTyping, typed: typedInput(session))
+    }
+
+    /// Whether text typed since the pane's last Return (`unsent`) waits in
+    /// its input: where the screen shows what's typed there (`typed`), if it
+    /// isn't empty. Where it doesn't say (fish, an agent's other modes, one
+    /// Libertty doesn't read), only typing a moment ago holds the queue
+    /// (`typingHold`): a draft erased with Backspace would hold it until a
+    /// Return, and nothing would say why.
+    static func isDraft(unsent: Bool, typed: @autoclosure () -> String?) -> Bool {
+        guard unsent else { return false }
+        return typed().map { !$0.isEmpty } ?? false
     }
 
     /// Whether `session`'s pane takes a prompt: it shows in a window (one
@@ -439,8 +453,15 @@ final class PromptQueues {
             }
             entry.agentSeen = !atPrompt && (entry.agentSeen || agentInFront(session))
             let now = CACurrentMediaTime()
+            let draft = hasDraft(session)
+            if draft != entry.heldForDraft {
+                // Its tag says why it waits.
+                entry.heldForDraft = draft
+                entries[key] = entry
+                NotificationCenter.default.post(name: Self.changed, object: session)
+            }
             let look = PromptQueue.Look(
-                typing: typedAt[key].map { now - $0 < Self.typingHold } ?? false, draft: hasDraft(session),
+                typing: typedAt[key].map { now - $0 < Self.typingHold } ?? false, draft: draft,
                 state: session.programStatus.headline?.state, agent: entry.agentSeen,
                 atPrompt: atPrompt, quietFor: CACurrentMediaTime() - mark.time,
                 printedSinceSend: mark.count != entry.outputAtSend, now: CACurrentMediaTime())

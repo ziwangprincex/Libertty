@@ -94,6 +94,24 @@ struct PromptQueueTests {
         #expect(q.step(look(.idle, now: 1001))?.text == "go")
     }
 
+    /// Where the screen can't show what's in the pane's input (fish, an
+    /// agent's other modes), what was typed holds the queue only while you
+    /// type (`typing`): erased with Backspace, it would otherwise hold it
+    /// until a Return. Where it shows the input empty, nothing waits there.
+    @Test func aDraftIsWhatTheScreenShows() {
+        #expect(PromptQueues.isDraft(unsent: true, typed: "half a prompt"))
+        #expect(!PromptQueues.isDraft(unsent: true, typed: ""))
+        #expect(!PromptQueues.isDraft(unsent: true, typed: nil))
+        #expect(!PromptQueues.isDraft(unsent: false, typed: "an earlier prompt, sent"))
+        // And the pane's tag says why it waits.
+        var q = PromptQueue()
+        q.append("go")
+        #expect(TerminalView.queueSummary(q, heldForDraft: true) == "1 queued · held: unsent text")
+        #expect(TerminalView.queueSummary(q) == "1 queued")
+        q.paused = true
+        #expect(TerminalView.queueSummary(q, heldForDraft: true) == "1 queued · paused")
+    }
+
     private func key(_ code: Int, _ characters: String, _ flags: NSEvent.ModifierFlags = []) -> NSEvent {
         var typed = characters
         if flags.contains(.control), let ascii = characters.unicodeScalars.first?.value {

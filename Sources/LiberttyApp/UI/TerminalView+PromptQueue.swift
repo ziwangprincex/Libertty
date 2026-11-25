@@ -31,7 +31,7 @@ extension TerminalView {
             tag = button
         }
         guard let tag else { return }
-        let text = Self.queueSummary(queue)
+        let text = Self.queueSummary(queue, heldForDraft: PromptQueues.shared.isHeldForDraft(session))
         tag.attributedTitle = NSAttributedString(string: "  " + text + "  ", attributes: [
             .font: Typeface.ui(11, .medium),
             .foregroundColor: queue.paused ? NSColor.systemOrange : NSColor.secondaryLabelColor,
@@ -42,10 +42,13 @@ extension TerminalView {
         tag.autoresizingMask = [.maxXMargin, .minYMargin]
     }
 
-    /// "2 queued", "1 queued · paused".
-    static func queueSummary(_ queue: PromptQueue) -> String {
+    /// "2 queued", "1 queued · paused", "1 queued · held: unsent text"
+    /// (what you typed in the pane waits there, and a prompt pasted now
+    /// would go with it).
+    static func queueSummary(_ queue: PromptQueue, heldForDraft: Bool = false) -> String {
         let n = L10n.t("%d queued").replacingOccurrences(of: "%d", with: String(queue.items.count))
-        return queue.paused ? n + " · " + L10n.t("paused") : n
+        if queue.paused { return n + " · " + L10n.t("paused") }
+        return heldForDraft ? n + " · " + L10n.t("held: unsent text") : n
     }
 
     @objc private func openQueue(_ sender: Any?) {

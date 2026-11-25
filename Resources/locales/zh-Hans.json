@@ -1100,5 +1100,6 @@
   "Filter finished tabs": "过滤已完成或失败的标签",
   "Show Tabs": "显示标签",
   "Showing: %@": "显示：%@",
-  "Show Tabs by Activity": "按动态显示标签"
+  "Show Tabs by Activity": "按动态显示标签",
+  "held: unsent text": "暂缓：有未发送的输入"
 }
