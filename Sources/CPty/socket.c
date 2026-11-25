@@ -17,9 +17,11 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #ifdef __APPLE__
 #include <libproc.h>
+#include <sys/event.h>
 #include <sys/proc_info.h>
 #endif
 #ifdef __linux__
@@ -345,6 +347,40 @@ pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *
     return pid;
 }
 #endif
+
+int libertty_wait_exited(pid_t pid) {
+#ifdef __APPLE__
+    // Not a blocking waitid: macOS's reports a child that stopped too
+    // (SIGSTOP), as if WSTOPPED had been asked for. kqueue tells only of its end.
+    int kq = kqueue();
+    if (kq >= 0) {
+        struct kevent ev;
+        EV_SET(&ev, pid, EVFILT_PROC, EV_ADD | EV_ONESHOT, NOTE_EXIT, 0, NULL);
+        int r;
+        while ((r = kevent(kq, &ev, 1, &ev, 1, NULL)) < 0 && errno == EINTR) {}
+        close(kq);
+        if (r > 0 && !(ev.flags & EV_ERROR)) return 0;
+    }
+    // It had ended before it was watched (kqueue says ESRCH then), or there's
+    // no kqueue to wait on (out of descriptors): looked at every so often.
+    for (;;) {
+        siginfo_t info;
+        info.si_pid = 0;
+        if (waitid(P_PID, (id_t)pid, &info, WEXITED | WNOWAIT | WNOHANG) < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (info.si_pid == pid && (info.si_code == CLD_EXITED || info.si_code == CLD_KILLED || info.si_code == CLD_DUMPED))
+            return 0;
+        usleep(100000);
+    }
+#else
+    siginfo_t info;
+    int r;
+    while ((r = waitid(P_PID, (id_t)pid, &info, WEXITED | WNOWAIT)) < 0 && errno == EINTR) {}
+    return r;
+#endif
+}
 
 int libertty_socketpair(int fds[2]) {
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) return -1;

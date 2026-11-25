@@ -68,5 +68,24 @@ SH=$(shell $ID)
 kill -TERM $(pid)
 gone $SH && [[ -z $(pid) ]] && ok "SIGTERM: liberttyd and its session ended" || bad "SIGTERM: something lives on"
 
+# A guardian that doesn't go when liberttyd stands it down (wedged: here
+# stopped) is ended with it: its share of the lock would keep the next
+# liberttyd from serving ("another liberttyd serves"), every new tab waiting.
+ID=$($L +new-session --cwd /tmp -e sleep 300)
+D=$(pid)
+G=
+for i in {1..50}; do G=$(pgrep -P $D -f guardian | head -1); [[ -n $G ]] && break; sleep 0.1; done
+if [[ -n $G ]]; then
+  kill -STOP $G
+  kill -TERM $D
+  gone $D && gone $G && ok "a wedged guardian ends with liberttyd" || bad "a wedged guardian lives on ($(ps -o stat=,command= -p $G))"
+  ID=$($L +new-session --cwd /tmp -e sleep 300)
+  [[ -n $ID && -n $(pid) ]] && ok "the next liberttyd serves" || bad "no liberttyd serves: $(tail -2 $LIBERTTY_DAEMON_LOG)"
+  kill -KILL $G 2> /dev/null
+  kill -TERM $(pid) 2> /dev/null
+else
+  bad "liberttyd[$D] started no guardian"
+fi
+
 (( fails == 0 )) && echo "daemon-crash: all passed"
 exit $(( fails > 0 ))

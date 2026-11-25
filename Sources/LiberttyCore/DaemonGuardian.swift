@@ -218,6 +218,10 @@ final class GuardianLink: @unchecked Sendable {
     private var connection: Connection?
     /// The guardian's process while `connection` is its, until it's reaped.
     private var guardianPID: pid_t = 0
+    /// Guardians started and not reaped yet. Each is reaped here, its pid
+    /// forgotten in the same step: nothing on `queue` signals a pid reaped
+    /// already, which the system may have given another process since.
+    private var unreaped: Set<pid_t> = []
     /// liberttyd's lock (its descriptor), which each guardian shares.
     private var lock: Int32 = -1
     private var stoodDown = false
@@ -274,6 +278,10 @@ final class GuardianLink: @unchecked Sendable {
             _ = connection.receive()
             connection.close()
             self.connection = nil
+            // One that didn't go (wedged) is ended, and reaped either way:
+            // its share of the lock must be let go before we exit, or the
+            // next liberttyd finds it held and leaves, every new tab waiting.
+            end(guardianPID)
         }
     }
 
@@ -288,14 +296,14 @@ final class GuardianLink: @unchecked Sendable {
         guard let (c, pid) = DaemonGuardian.spawn(["liberttyd", "--guardian"] + (lock >= 0 ? ["--locked"] : []),
                                                   env: ProcessInfo.processInfo.environment,
                                                   responsible: false, passing: lock) else { return retryLater() }
-        // Reaped, and its going noticed (it says nothing on its own).
+        unreaped.insert(pid)
+        // Its going noticed (it says nothing on its own), and it reaped on `queue`.
         let thread = Thread { [weak self] in
-            var status: Int32 = 0
-            while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+            libertty_wait_exited(pid)
             self?.queue.async { [weak self] in
-                guard let self, self.connection === c else { return }
-                self.guardianPID = 0
-                self.lost(c)
+                guard let self else { return }
+                self.reap(pid)
+                if self.connection === c { self.lost(c) }
             }
         }
         thread.name = "liberttyd.guardian.reaper"
@@ -305,6 +313,8 @@ final class GuardianLink: @unchecked Sendable {
         guard let welcome = c.receive(), welcome.kind == .welcome else {
             DaemonServer.log("its guardian liberttyd[\(pid)] didn't answer; sessions go unguarded for now")
             c.close()
+            // Left running, it would hold its share of our lock for nothing.
+            end(pid)
             retryLater()
             return
         }
@@ -337,10 +347,27 @@ final class GuardianLink: @unchecked Sendable {
         connection = nil
         // One that stopped answering is ended: holding our lock with us, it
         // would recover the sessions beside the next one should we crash.
-        if guardianPID > 0 { kill(guardianPID, SIGKILL) }
+        end(guardianPID)
         guardianPID = 0
         DaemonServer.log("lost its guardian; sessions go unguarded until another starts")
         retryLater()
+    }
+
+    /// A guardian ended at once, if it's still ours to end, and reaped (on
+    /// `queue`): gone for sure, its share of the lock let go.
+    private func end(_ pid: pid_t) {
+        guard unreaped.contains(pid) else { return }
+        kill(pid, SIGKILL)
+        reap(pid)
+    }
+
+    /// A guardian that has ended (or is ending: this waits) reaped, its pid
+    /// forgotten in the same step (on `queue`).
+    private func reap(_ pid: pid_t) {
+        guard unreaped.remove(pid) != nil else { return }
+        var status: Int32 = 0
+        while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+        if guardianPID == pid { guardianPID = 0 }
     }
 
     private func retryLater() {

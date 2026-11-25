@@ -142,6 +142,11 @@ pid_t libertty_spawn_detached(const char *path, char *const argv[], char *const 
 pid_t libertty_spawn_detached_stdin(const char *path, char *const argv[], char *const envp[], const char *log_path,
                                     int responsible, int in_fd, int pass_fd);
 
+/// Wait for the child `pid` to end, without reaping it: until it's reaped
+/// (waitpid), its pid is still its own and can't be another process's. 0,
+/// or -1 with errno (ECHILD: not a child, or reaped already).
+int libertty_wait_exited(pid_t pid);
+
 /// A connected pair of Unix stream sockets (close-on-exec, no SIGPIPE).
 int libertty_socketpair(int fds[2]);
 
