@@ -375,19 +375,12 @@ enum CLI {
         }
         for (key, value) in pairs {
             switch key {
-            case "keybind":
-                // One line per trigger (or sequence): replace an earlier binding of the same keys.
-                if let (keys, _, isGlobal) = Keybinds.parse(value) {
-                    store.unset("keybind") { v in
-                        guard let (k, _, g) = Keybinds.parse(v) else { return false }
-                        return k == keys && g == isGlobal
-                    }
-                }
-                store.add(key, value)
-            case "palette":
-                let index = value.split(separator: "=").first.map(String.init)
-                store.unset("palette") { $0.split(separator: "=").first.map(String.init) == index }
-                store.add(key, value)
+            case "keybind", "palette", "font-feature":
+                // One line per trigger (or sequence), color or feature: the
+                // one for the same is replaced, the others stay. An empty
+                // keybind or palette ends those before it, as that line does
+                // in the file.
+                if value.isEmpty, key != "font-feature" { store.add(key, value) } else { store.put(key, value) }
             default:
                 store.set(key, value.isEmpty ? nil : quoteIfNeeded(value))
             }

@@ -191,4 +191,37 @@ struct ConfigFileTests {
         #expect(try String(contentsOf: file, encoding: .utf8) == "font-size = 13\n")
         #expect(store.savedConfig.remoteControl && !store.savedConfig.browserAutomation)
     }
+
+    /// set_setting on a key of many lines once wrote one line in place of all
+    /// of them: the other palette colors, keybinds and font features gone.
+    @Test func aSettingActionKeepsTheOtherLines() throws {
+        let (store, file) = try store("""
+            palette = 0=#000000
+            palette = 1=#aa0000
+            palette = 2=#00aa00
+            keybind = cmd+b=new_tab
+            keybind = cmd+j=new_window
+            font-feature = -calt
+            font-size = 13
+
+            """)
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        for text in ["set_setting:palette=1=#ff5555", "set_setting:keybind=cmd+b=close_tab", "set_setting:font-feature=ss01",
+                     "set_setting:font-size=14"] {
+            #expect(SettingActions.perform(Action(text)!, in: store), "\(text)")
+        }
+        #expect(try String(contentsOf: file, encoding: .utf8) == """
+            palette = 0=#000000
+            palette = 2=#00aa00
+            keybind = cmd+j=new_window
+            font-feature = -calt
+            font-size = 14
+            palette = 1=#ff5555
+            keybind = cmd+b=close_tab
+            font-feature = ss01
+
+            """)
+        #expect(store.savedConfig.palette.count == 3)
+        #expect(store.savedConfig.keybinds == ["cmd+j=new_window", "cmd+b=close_tab"])
+    }
 }

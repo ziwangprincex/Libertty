@@ -132,6 +132,15 @@ struct SettingActionTests {
         #expect(problem("cycle_setting:copy-on-select")?.contains("toggle_setting") == true)
         #expect(problem("cycle_setting:command")?.contains("no set of values") == true)
         #expect(problem("reset_setting:font-size:2")?.contains("a setting only") == true)
+        // A key of many lines: cycling, resetting or emptying it would drop them.
+        for text in ["reset_setting:keybind", "cycle_setting:palette:1=#ff0000,1=#00ff00", "set_setting:font-feature=",
+                     "reset_setting:palette"] {
+            #expect(Action(text) == nil, "\(text)")
+            #expect(problem(text)?.contains("would drop the others") == true, "\(text)")
+        }
+        #expect(problem("toggle_setting:keybind") == "“keybind” isn't a switch: it needs a value")
+        #expect(Action("set_setting:palette=1=#ff5555") != nil)
+        #expect(Action("set_setting:keybind=cmd+b=new_tab") != nil)
     }
 
     /// The config's own diagnostics carry it (the errors window lists these).

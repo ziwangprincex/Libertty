@@ -1541,6 +1541,33 @@ final class ConfigStore {
         }
     }
 
+    /// Write `key = value` as `libertty +set` and set_setting do. A key of
+    /// many lines (a keybind, a palette color, a font feature each) gets
+    /// this one in place of the line for the same keys, color or feature,
+    /// and keeps the others — `set` would leave one line of it in all. Any
+    /// other key is set in place.
+    func put(_ key: String, _ value: String) {
+        guard ["keybind", "palette", "font-feature"].contains(key), !value.isEmpty else {
+            return set(key, value.isEmpty ? nil : value)
+        }
+        let same: (String) -> Bool
+        switch key {
+        case "keybind":
+            guard let (keys, _, isGlobal) = Keybinds.parse(value) else { return add(key, value) }
+            same = { v in Keybinds.parse(v).map { $0.0 == keys && $0.2 == isGlobal } ?? false }
+        case "palette":
+            func index(_ v: String) -> Int? { v.split(separator: "=").first.flatMap { Int($0.trimmingCharacters(in: .whitespaces)) } }
+            same = { index($0) != nil && index($0) == index(value) }
+        default:
+            same = { $0 == value }
+        }
+        guard Config.lineProblem(key + value) == nil else { return }
+        edit { lines in
+            lines.removeAll { Self.key(of: $0) == key && same(Self.value(of: $0)) }
+            Self.append("\(key) = \(value)", to: &lines)
+        }
+    }
+
     /// Append another line for a repeatable key (`keybind`, `palette`).
     func add(_ key: String, _ value: String) {
         guard Config.lineProblem(key + value) == nil else { return }

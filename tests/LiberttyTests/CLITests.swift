@@ -176,7 +176,7 @@ struct CLITests {
     @Test func aProgramDoesntChangeWhatGuardsIt() {
         for text in ["set_setting:browser-automation=true", "toggle_setting:browser-automation",
                      "toggle_setting:remote-control", "reset_setting:remote-control", "set_setting:remote-control=true",
-                     "cycle_setting:remote-control:true,false", "reset_setting:config-file",
+                     "cycle_setting:remote-control:true,false",
                      "set_setting:keybind=enter=set_setting:browser-automation=true",
                      "set_setting:keybind=cmd+b=set_setting:keybind=enter=toggle_setting:remote-control"] {
             guard let action = Action(text) else { Issue.record("\(text) didn't parse"); continue }

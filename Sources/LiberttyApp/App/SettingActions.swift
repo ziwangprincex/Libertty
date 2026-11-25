@@ -110,6 +110,17 @@ enum SettingActions {
             return bad("no setting called “\(key)”")
         }
         let shape = SettingShape(key)
+        // A key of many lines (a keybind, a palette color, a font feature
+        // each): set_setting adds one, or replaces the one for the same
+        // (ConfigStore.put). Going round its values or back to its default
+        // would leave one line of it, or none: every other one lost.
+        if let what = lineOf[key] {
+            let drops = name == "cycle_setting" ? "cycling" : name == "reset_setting" ? "resetting"
+                : name == "set_setting" && (rest ?? "").isEmpty ? "an empty value" : nil
+            if let drops {
+                return bad("“\(key)” has a line per \(what): set_setting:\(key)=… adds one, or replaces the one for the same \(what); \(drops) would drop the others")
+            }
+        }
         switch name {
         case "toggle_setting":
             guard rest == nil else { return bad("toggle_setting takes a setting only, e.g. toggle_setting:\(key)") }
@@ -156,11 +167,15 @@ enum SettingActions {
         if shape.isSwitch { verbs.append("toggle") }
         if !shape.choices.isEmpty { verbs.append("cycle") }
         if shape.isNumber { verbs += ["increase", "decrease"] }
-        verbs.append("reset")
+        if lineOf[key] == nil { verbs.append("reset") }
+        guard !verbs.isEmpty else { return "“\(key)” isn't \(what): it needs a value" }
         let instead = verbs.count > 1 ? verbs.dropLast().joined(separator: ", ") + ", or " + verbs[verbs.count - 1]
             : verbs.joined()
         return "“\(key)” isn't \(what): it needs a value, or \(instead)"
     }
+
+    /// The keys of many lines, by what each line is for.
+    private static let lineOf = ["keybind": "key", "palette": "color", "font-feature": "feature", "config-file": "file"]
 
     private static func doesNotTake(_ key: String, _ value: String) -> String {
         var probe = Config()
@@ -208,11 +223,12 @@ enum SettingActions {
     /// Change the setting and keep it. False when there was nothing to
     /// write, or the config file wouldn't take it.
     @discardableResult
-    static func perform(_ action: Action) -> Bool {
-        guard let (key, value) = next(action, in: ConfigStore.shared.savedConfig) else { return false }
-        var probe = ConfigStore.shared.savedConfig
+    static func perform(_ action: Action, in store: ConfigStore = .shared) -> Bool {
+        guard let (key, value) = next(action, in: store.savedConfig) else { return false }
+        var probe = store.savedConfig
         guard probe.set(key, value) == nil else { return false }
-        ConfigStore.shared.set(key, value.isEmpty ? nil : value)
+        // As `+set` writes it: a keybind or a palette color in place of its own line, not of all of them.
+        store.put(key, value)
         return true
     }
 
