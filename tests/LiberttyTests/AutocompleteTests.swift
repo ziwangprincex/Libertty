@@ -228,6 +228,30 @@ struct AutocompleteTests {
         #expect(completions("cat 's", folder: dir.path).first { $0.title == "src dir/" }?.insert == "rc dir/")
     }
 
+    @Test func nothingWithControlCharactersAndValuesEscaped() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("complete-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // A script whose name runs a second line, one with a shell's own
+        // characters in it, and an ordinary one.
+        let scripts = ["build\nrm -rf ~\n": "x", "lint;echo hi": "x", "test": "jest"]
+        let json = try JSONSerialization.data(withJSONObject: ["scripts": scripts])
+        try json.write(to: dir.appendingPathComponent("package.json"))
+        try "x".write(to: dir.appendingPathComponent("evil\nname"), atomically: true, encoding: .utf8)
+        try "x".write(to: dir.appendingPathComponent("esc\u{1B}[A"), atomically: true, encoding: .utf8)
+        try "x".write(to: dir.appendingPathComponent("easy"), atomically: true, encoding: .utf8)
+
+        let run = completions("npm run ", folder: dir.path)
+        #expect(!run.contains { Completer.hasControl($0.title) || Completer.hasControl($0.insert) })
+        #expect(run.first { $0.title == "lint;echo hi" }?.insert == "lint\\;echo\\ hi ")
+        #expect(run.first { $0.title == "test" }?.insert == "test ")
+        // `npm run b`: the one script it could be isn't offered, so nothing's typed.
+        #expect(completions("npm run b", folder: dir.path).isEmpty)
+        // Files: the same.
+        let files = completions("cat e", folder: dir.path)
+        #expect(files.map(\.title) == ["easy"])
+    }
+
     @Test func nextWord() {
         #expect(TerminalView.nextWord(of: "t status --short") == "t")
         #expect(TerminalView.nextWord(of: " status --short") == " status")

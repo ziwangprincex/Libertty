@@ -150,9 +150,11 @@ enum Completer {
         }
         let current = w.current
         func add(_ title: String, _ detail: String, _ kind: Completion.Kind, space: Bool = true) {
-            guard title.hasPrefix(current), title != current else { return }
+            guard title.hasPrefix(current), title != current, !hasControl(title) else { return }
             var rest = String(title.dropFirst(current.count))
-            if kind == .path || kind == .folder { rest = escape(rest, in: w.quote) }
+            // What's read from the folder (a script's name, a branch) is
+            // escaped as a file's name is: the repository's, not ours.
+            if kind == .path || kind == .folder || kind == .value { rest = escape(rest, in: w.quote) }
             if space, w.quote == nil { rest += " " }
             found.append(Completion(title: title, insert: rest, detail: detail, kind: kind))
         }
@@ -240,7 +242,7 @@ enum Completer {
         let dir = base.hasPrefix("/") ? base : (folder as NSString).appendingPathComponent(base)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.isEmpty ? folder : dir) else { return }
         var entries: [(String, Bool)] = []
-        for name in names where name.hasPrefix(namePrefix) {
+        for name in names where name.hasPrefix(namePrefix) && !hasControl(name) {
             if name.hasPrefix("."), !namePrefix.hasPrefix(".") { continue }
             var isDir: ObjCBool = false
             FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent(name), isDirectory: &isDir)
@@ -253,6 +255,13 @@ enum Completer {
             if !isDir, quote == nil { rest += " " }
             found.append(Completion(title: title, insert: rest, detail: isDir ? L10n.t("folder") : "", kind: isDir ? .folder : .path))
         }
+    }
+
+    /// Whether `text` has a control character (a newline, a Return, ESC…):
+    /// a completion is typed as keys, so one in a file's or a script's name
+    /// would run the line, or be keys to the shell. Those aren't offered.
+    static func hasControl(_ text: String) -> Bool {
+        text.unicodeScalars.contains { $0.properties.generalCategory == .control }
     }
 
     /// Characters a shell would take as its own, escaped outside quotes.
