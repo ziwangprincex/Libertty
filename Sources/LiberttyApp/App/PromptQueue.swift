@@ -349,15 +349,36 @@ final class PromptQueues {
 
     fileprivate var lastKept: [String: PromptsKept.Entry]?
 
-    /// What's kept for panes yet to come back, read once: this Mac's
-    /// sessions liberttyd no longer has are gone for good.
+    /// What's kept for panes yet to come back, read once. The file is read
+    /// at once; which of this Mac's sessions liberttyd still has is asked
+    /// off the main thread (it may take seconds to answer, or not answer),
+    /// and what's kept for those gone for good is dropped when it says.
     private func readKept() -> [String: PromptsKept.Entry] {
         if let unclaimed { return unclaimed }
-        let file = PromptsKept.load()
-        let live = Persistence.enabled && !file.isEmpty ? DaemonClient.sessions().map { Set($0.map(\.id)) } : nil
-        let kept = PromptsKept.pruned(file, live: live)
+        let kept = PromptsKept.pruned(PromptsKept.load(), live: nil)
         unclaimed = kept
+        keptReads += 1
+        if Persistence.enabled, kept.values.contains(where: { $0.host == nil }) {
+            let read = keptReads
+            DispatchQueue.global(qos: .utility).async {
+                guard let live = DaemonClient.sessions().map({ Set($0.map(\.id)) }) else { return }
+                DispatchQueue.main.async { PromptQueues.shared.dropGone(live, read: read) }
+            }
+        }
         return kept
+    }
+
+    /// How many times the kept file was read (a probe's restart reads it again).
+    private var keptReads = 0
+
+    /// What's kept for this Mac's sessions liberttyd no longer has (`live`
+    /// are those it has), dropped: unless the file was read again since.
+    private func dropGone(_ live: Set<String>, read: Int) {
+        guard read == keptReads, let unclaimed else { return }
+        let kept = PromptsKept.pruned(unclaimed, live: live)
+        guard kept != unclaimed else { return }
+        self.unclaimed = kept
+        keepSoon()
     }
 
     /// A queued prompt out of its queue, by hand (the composer's ×): its
