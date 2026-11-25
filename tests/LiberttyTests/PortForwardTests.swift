@@ -93,6 +93,15 @@ import Testing
         // The host's own loopback, however it was spelled.
         #expect(PortForward.target("127.0.0.1:9000")?.remoteHost == "127.0.0.1")
         #expect(PortForward.target("0.0.0.0:9000")?.remoteHost == "localhost")
+        // An IPv6 address typed in brackets is named without them: ssh is
+        // given them once, not `[[::1]]`.
+        let six = try #require(PortForward.target("[::1]:5173"))
+        #expect(six.remote == 5173 && six.remoteHost == "::1")
+        #expect(PortForward(destination: "devbox", direction: .open, local: 5173, remote: six.remote,
+                            remoteHost: six.remoteHost).specification == "127.0.0.1:5173:[::1]:5173")
+        #expect(PortForward.target("[fd00::5]:22")?.remoteHost == "fd00::5")
+        #expect(PortForward.target("[::1:5173") == nil)
+        #expect(PortForward.target("[]:5173") == nil)
         // A URL keeps its path, and its port is the one to carry.
         let url = try #require(PortForward.target("http://localhost:5173/app?x=1"))
         #expect(url.remote == 5173 && url.remoteHost == "localhost")

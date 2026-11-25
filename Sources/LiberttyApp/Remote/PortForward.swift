@@ -252,8 +252,12 @@ struct PortForward: Sendable, Equatable {
             return (port(of: url), there, url)
         }
         if let colon = text.lastIndex(of: ":") {
-            let name = String(text[text.startIndex..<colon]), rest = String(text[text.index(after: colon)...])
-            guard let port = Int(rest), (1...65535).contains(port), !name.isEmpty, !name.contains(" ") else { return nil }
+            var name = String(text[text.startIndex..<colon]), rest = String(text[text.index(after: colon)...])
+            // `[::1]:5173`: the brackets set the address off from its port,
+            // and aren't its name (`specification` puts them back for ssh).
+            if name.count > 2, name.hasPrefix("["), name.hasSuffix("]") { name = String(name.dropFirst().dropLast()) }
+            guard let port = Int(rest), (1...65535).contains(port), !name.isEmpty, !name.contains(" "),
+                  !name.contains("["), !name.contains("]") else { return nil }
             return (port, loopback(name)?.there ?? name, nil)
         }
         guard let port = Int(text), (1...65535).contains(port) else { return nil }
