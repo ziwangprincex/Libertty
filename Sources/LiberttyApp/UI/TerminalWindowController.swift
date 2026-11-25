@@ -439,6 +439,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, Term
     func adoptAll(_ tab: TerminalTab) {
         // A card made by another window acts on that one: syncCard makes ours.
         tab.container?.hideCard()
+        // So do its floating panes' bars (Minimize, Put in the Split, Close,
+        // the title): made again, for this window.
+        if let container = tab.container {
+            container.floats.forEach(container.removeFloat)
+            syncFloats(of: tab)
+        }
         tab.everyPane.forEach(adopt)
         tab.document.map(adopt)
         tab.documentPanes.forEach(adopt)

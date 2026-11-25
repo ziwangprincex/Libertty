@@ -242,7 +242,10 @@ extension TerminalWindowController {
     /// split (Tern's in-window picture in picture). With a card showing,
     /// the card's pane comes back instead.
     func toggleFloatingPane() {
-        if let entry = selectedTab.parked.first(where: { $0.showsCard }) { return unpark(entry.pane) }
+        if let entry = selectedTab.parked.first(where: { $0.showsCard }) {
+            unpark(entry.pane)
+            return
+        }
         guard canParkFocusedPane, let pane = selectedTab.focusedPane else { return }
         removePane(pane, undoable: false, parking: true, asCard: true)
     }
@@ -273,7 +276,7 @@ extension TerminalWindowController {
                                guard let self, let pane else { return "" }
                                return self.title(ofPane: pane)
                            },
-                           expand: { [weak self, weak pane] in pane.map { self?.unpark($0) } },
+                           expand: { [weak self, weak pane] in if let pane { self?.unpark(pane) } },
                            putAway: { [weak self, weak tab, weak pane] in
                                guard let tab, let pane, let i = tab.parked.firstIndex(where: { $0.pane === pane }) else { return }
                                tab.parked[i].showsCard = false

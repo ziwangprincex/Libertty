@@ -75,6 +75,7 @@ import LiberttyCore
 ///   (shot: takes the Settings window as NAME-settings.png while it's open)
 ///                         (a probe's window is never key, so focus never comes on its own)
 ///   open:PATH[:LINE]      show a file in a tab (as `+open` does); edit:PATH in the editor
+///   open-split:PATH       show a file beside the focused terminal (Open in Split), the keyboard in it
 ///   editor-wait:go        until the document in front's editor is up (it loads in its own process)
 ///   editor-insert:TEXT    put TEXT at the editor's cursor (`type:` sends real keys)
 ///   editor-save:go        File ▸ Save
@@ -132,6 +133,7 @@ import LiberttyCore
 ///   expect-windows:N     the probe has N windows (Move … to New Window opens them, off screen)
 ///   expect-other:TEXT    a sidebar row of the newest other window contains TEXT, or its panes' text does
 ///   take-tab:N           tab N of the newest other window moves back here, at the end (as dropped on the sidebar)
+///   other-click:LABEL    click:LABEL in the newest other window
 ///   expect-subtitle:TEXT the window's subtitle (the most urgent program state) contains TEXT
 ///   hover:N              the pointer comes onto pane N of the tab in front (reading order)
 ///   expect-focus:N       pane N of the tab in front has the keyboard
@@ -467,6 +469,18 @@ enum UIProbe {
                         // A block's address opens as itself (`open:libertty-block://screen?own=1`).
                         let url = path.hasPrefix(Blocks.scheme + "://") ? URL(string: path)! : URL(fileURLWithPath: path)
                         controller.openDocument(url, line: line, edit: edit ? true : nil)
+                        pump(0.4)
+                    case .openSplit(let path):
+                        controller.openDocumentInSplit(URL(fileURLWithPath: path))
+                        pump(0.6)
+                    case .otherClick(let label):
+                        guard let other = others.last(where: { $0.window?.isVisible == true })?.window,
+                              let center = reachable(label, in: other) else {
+                            print("FAIL  ui-probe other-click: no \(label) in another window")
+                            failures += 1
+                            break
+                        }
+                        click(x: center.x, y: center.y, in: other)
                         pump(0.4)
                     case .editorWait:
                         let deadline = Date().addingTimeInterval(10)
@@ -2233,7 +2247,7 @@ enum UIProbe {
         case hint(String, copy: Bool), expectKeyHints(String), clickText(String)
         case expectStripAt(String), tabMenu(Int, String, choose: Bool)
         case expectStrip(String), expectStatus(String), expectScope(String), expectFloat(Bool), workspace(String), expectWorkspace(String), roundtrip, expectTabCount(Int), expectShown(Int, String), reload, expectFont(Double), expectBackground(String), appearance(Bool), metrics(String), motion(Bool), actionNow(String), expectRegrids(Int), update(install: Bool), expectAppVersion(String), expectUnmoved, undo, redo, expectPanes(Int), focusEvent(Bool), expectSearching(Int), expectNoOpenAnimation, expectResizeFrames(Int), expectPinned, expectRuns(String, Bool), themeEditor(String), expectLayout(String), drop(Int, String), expectLooks(String)
-        case open(String, line: Int?, edit: Bool), editorWait, editorJS(String), editorInsert(String), editorSave
+        case open(String, line: Int?, edit: Bool), openSplit(String), otherClick(String), editorWait, editorJS(String), editorInsert(String), editorSave
         case expectEditor(String), expectDirty(Bool), expectFile(String, String), shell(String)
         case sheet(String), sheetType(String), expectSheet(Bool), expectHeader(String), commandHover(String), expectPeek(String), waitEdit(token: String, path: String), expectClosed(String)
         case quickLookClick(String), expectQuickLook(String), expectDiagrams(Int)
@@ -2479,6 +2493,8 @@ enum UIProbe {
                     path = String(arg[..<colon])
                 }
                 steps.append(.open(path, line: line, edit: verb == "edit"))
+            case "open-split": steps.append(.openSplit(arg))
+            case "other-click": steps.append(.otherClick(arg))
             case "editor-wait": steps.append(.editorWait)
             case "editor-js": steps.append(.editorJS(arg))
             case "editor-insert": steps.append(.editorInsert(arg))
