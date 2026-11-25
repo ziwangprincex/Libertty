@@ -468,21 +468,9 @@ private final class TabStripButton: NSView, NSTextFieldDelegate {
         if tab.showsNews { news.showNews(tab.news) }
         mutedGlyph.isHidden = !tab.muted
         close.isHidden = !(closable && hovering)
-        setAccessibilityLabel(Self.spoken(tab))
+        setAccessibilityLabel(tab.spoken)
         setAccessibilityValue(selected)
         needsLayout = true
-    }
-
-    /// What VoiceOver says of a tab: its name, then what its glyphs and
-    /// marks show ("server, Waiting for you, 3 panes, needs a look, muted").
-    static func spoken(_ tab: SidebarTabInfo) -> String {
-        var words = [tab.title]
-        if let status = tab.status { words.append(L10n.t(TerminalWindowController.label(for: status))) }
-        if let percent = tab.progress?.percent { words.append("\(percent)%") }
-        if tab.paneCount > 1 { words.append(L10n.t("%d panes").replacingOccurrences(of: "%d", with: String(tab.paneCount))) }
-        if tab.showsNews { words.append(L10n.t(tab.news == .unread ? "marked unread" : "needs a look")) }
-        if tab.muted { words.append(L10n.t("muted")) }
-        return words.joined(separator: ", ")
     }
 
     // The whole tab answers the mouse, its name too; only the × and the

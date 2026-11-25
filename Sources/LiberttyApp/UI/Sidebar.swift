@@ -105,6 +105,19 @@ extension SidebarTabInfo {
     var showsNews: Bool {
         news == .unread || news == .attention && StatusBadge.look(status: status, progress: progress, programs: !tiles.isEmpty) == .none
     }
+
+    /// What VoiceOver says of a tab, in the strip or the sidebar: its name,
+    /// then what its glyphs and marks show ("server, Waiting for you, 3
+    /// panes, needs a look, muted").
+    var spoken: String {
+        var words = [title]
+        if let status { words.append(L10n.t(TerminalWindowController.label(for: status))) }
+        if let percent = progress?.percent { words.append("\(percent)%") }
+        if paneCount > 1 { words.append(L10n.t("%d panes").replacingOccurrences(of: "%d", with: String(paneCount))) }
+        if showsNews { words.append(L10n.t(news == .unread ? "marked unread" : "needs a look")) }
+        if muted { words.append(L10n.t("muted")) }
+        return words.joined(separator: ", ")
+    }
 }
 
 /// A tab's state at a glance: a progress ring (determinate or spinning),
@@ -588,6 +601,16 @@ final class SidebarViewController: NSViewController {
                   let cell = tabsTable.view(atColumn: 0, row: r, makeIfNecessary: false) as? TabCell,
                   let off = cell.newsOffCenter else { return nil }
             return (tabs[i].title, off)
+        }
+    }
+
+    /// What VoiceOver hears of each tab's row that shows (`--ui-probe`).
+    var shownSaid: [String] {
+        view.window?.contentView?.layoutSubtreeIfNeeded()
+        return tabs.indices.compactMap { i in
+            guard shows(row: i), let r = tableRow(ofTab: i),
+                  let cell = tabsTable.view(atColumn: 0, row: r, makeIfNecessary: false) as? TabCell else { return nil }
+            return cell.accessibilityLabel()
         }
     }
 
@@ -1646,7 +1669,7 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         panes = tab.panes
         paneCount.isHidden = tab.paneCount < 2
         paneCount.title = tab.zoomed ? "\(tab.paneCount) zoomed" : String(tab.paneCount)
-        paneCount.setAccessibilityLabel(panesText)
+        paneCount.setAccessibleLabel(panesText)
         // The second line.
         subtitle.stringValue = tab.subtitle
         subtitle.isHidden = !Self.twoLines || tab.subtitle.isEmpty
@@ -1673,6 +1696,9 @@ private final class TabCell: NSTableCellView, NSTextFieldDelegate {
         dot.isHidden = look == .none
         tiles.isHidden = look != .none
         toolTip = tab.status.map { TerminalWindowController.label(for: $0) }
+        // What the row's glyphs show, said too: its badge's state, its news
+        // (neither is words VoiceOver could read), as the strip's tabs say it.
+        setAccessibilityLabel(tab.spoken)
     }
 
     /// `programs`: the tab has programs to show (their logos or glyphs): a

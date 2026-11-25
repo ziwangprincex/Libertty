@@ -36,6 +36,7 @@ import LiberttyCore
 ///   expect-tab-count:N    the window (its workspace in front) has N tabs
 ///   expect-shown:N[:TEXT] the sidebar's filters leave N rows showing (each containing TEXT)
 ///   expect-tabs-packed:go the sidebar's list is as tall as its rows that show: none filtered out leaves a blank
+///   expect-row-said:TEXT  VoiceOver reads a sidebar tab's row as TEXT (its name, state, news…; contains)
 ///   action-now:A          an action, not waiting for what it starts (shots of an animation)
 ///   expect-unmoved:here   the focused pane is where it was on the screen at the last one, same size
 ///   expect-regrids:N      the focused pane changed its grid N times since the last expect-regrids
@@ -1784,6 +1785,14 @@ enum UIProbe {
                             print("FAIL  ui-probe sidebar's list: \(blank) points of it blank, the rows it shows \(controller.shownSidebarRows.count)")
                             failures += 1
                         }
+                    case .expectRowSaid(let text):
+                        let said = controller.sidebar.shownSaid
+                        if said.contains(where: { $0.contains(text) }) {
+                            print("ok    ui-probe a sidebar row is read as \(text)")
+                        } else {
+                            print("FAIL  ui-probe sidebar rows are read as \(said), none as \(text)")
+                            failures += 1
+                        }
                     case .expectShown(let n, let text):
                         let shown = controller.shownSidebarRows
                         if shown.count == n, text.isEmpty || shown.allSatisfy({ $0.contains(text) }) {
@@ -2251,7 +2260,7 @@ enum UIProbe {
         /// many show, a row of a session not open here (or none), a click on
         /// the row showing TEXT.
         case expectGroup(String), expectGroupCount(Int), expectElsewhere(String, Bool), clickRow(String)
-        case expectTabsPacked
+        case expectTabsPacked, expectRowSaid(String)
         case treeSelect(String), treeMenu(String), treeDrop([String], String, move: Bool), expectTree(String, Bool), expectUndo(String)
         case appleScript(String, String?)
         case pageWait, expectPage(String, Bool), pageClick(String), pageType(String, String), expectShell(String, String)
@@ -2358,6 +2367,7 @@ enum UIProbe {
                 let p = arg.split(separator: ":", maxSplits: 1).map(String.init)
                 steps.append(.expectShown(Int(p.first ?? "") ?? -1, p.count > 1 ? p[1] : ""))
             case "expect-tabs-packed": steps.append(.expectTabsPacked)
+            case "expect-row-said": steps.append(.expectRowSaid(arg))
             case "action": steps.append(.action(arg))
             case "action-now": steps.append(.actionNow(arg))
             case "expect-regrids": steps.append(.expectRegrids(Int(arg) ?? -1))
