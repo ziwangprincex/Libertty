@@ -80,6 +80,23 @@ expect-page:The file changed on disk.
 page-click:Keep Mine
 editor-save:go
 expect-file:@DIR@/lines.txt=mine 
+# Changed on disk again, the question not answered (its banner unseen in a
+# tab not in front): a save asks before writing over it. Cancel leaves
+# theirs; Overwrite writes what's here.
+editor-insert:again 
+shell:printf 'theirs again\n' > @DIR@/lines.txt
+wait:1.0
+expect-page:The file changed on disk.
+key:cmd+s
+wait:0.6
+expect-sheet-text:changed on disk
+sheet:Cancel
+expect-file:@DIR@/lines.txt=theirs again
+key:cmd+s
+wait:0.6
+sheet:Overwrite
+expect-file:@DIR@/lines.txt=again
+expect-page-not:The file changed on disk.
 # Deleted, then back (a branch switch): the text stays and counts as unsaved.
 shell:rm @DIR@/lines.txt
 wait:1.0

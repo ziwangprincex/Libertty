@@ -159,11 +159,18 @@ class FileBlock: BlockService {
                 try handle.truncate(atOffset: 0)
                 try handle.write(contentsOf: data)
                 try handle.synchronize()
-            } else {
+            } else if attributes == nil {
                 try data.write(to: target, options: .atomic)
-                if let permissions = attributes?[.posixPermissions] {
-                    try? fm.setAttributes([.posixPermissions: permissions], ofItemAtPath: target.path)
-                }
+            } else {
+                // Through a replacement the system swaps in, as the editor
+                // saves: the file keeps its extended attributes, Finder tags,
+                // ACL, permissions and creation date, which a plain atomic
+                // write (a new file renamed over it) drops.
+                let scratch = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
+                defer { try? fm.removeItem(at: scratch) }
+                let temp = scratch.appendingPathComponent(target.lastPathComponent)
+                try data.write(to: temp)
+                _ = try fm.replaceItemAt(target, withItemAt: temp)
             }
         } catch {
             known = previous

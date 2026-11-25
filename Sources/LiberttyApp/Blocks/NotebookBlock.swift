@@ -102,6 +102,12 @@ final class JupyterServer {
         let saidLock = NSLock()
         log.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
+            // Nothing at the end (the server exited): stop listening, or
+            // Foundation calls again with nothing, a thread spinning until quit.
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             saidLock.lock(); if said.count < 64_000 { said.append(chunk) }; saidLock.unlock()
         }
         try p.run()

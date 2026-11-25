@@ -284,6 +284,7 @@ enum GitDiff {
     /// (the panel's one-file diffs: "staged/Sources/a.swift"); its last
     /// component names the file. `literal`: the paths are file names, not
     /// patterns (the panel's; `libertty +diff '*.swift'` means a pattern).
+    /// Cut at the Git block's 2 MB, and saying so at its top.
     static func write(directory: String, arguments: [String] = [], name: String? = nil, literal: Bool = false) -> Result<URL, Failure> {
         guard let git = GitCLI.executable else { return .failure(Failure(message: GitCLI.missing)) }
         let p = Process()
@@ -297,14 +298,33 @@ enum GitDiff {
         // Both at once: git fills a pipe of warnings (a line ending each, for
         // hundreds of files) and waits on it while stdout is still being read.
         let errorsDrain = Drain(err.fileHandleForReading)
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        // As much as the Git block shows (2 MB): more is a page that stops
+        // the window while it's drawn (a regenerated lockfile, a new 100 MB
+        // log). Past that git is stopped, and the page says it's cut short.
+        var data = Data()
+        var cut = false
+        while let chunk = try? out.fileHandleForReading.read(upToCount: 1 << 16), !chunk.isEmpty {
+            data.append(chunk)
+            if data.count > GitBlock.diffLimit {
+                cut = true
+                p.terminate()
+                break
+            }
+        }
         let errors = String(decoding: errorsDrain.wait(), as: UTF8.self)
         p.waitUntilExit()
         // `--no-index` (a new file against /dev/null) exits 1 for "they differ".
         let differs = arguments.contains("--no-index") && p.terminationStatus == 1
-        guard p.terminationStatus == 0 || differs else {
+        guard p.terminationStatus == 0 || differs || cut else {
             let why = errors.trimmingCharacters(in: .whitespacesAndNewlines)
             return .failure(Failure(message: why.isEmpty ? "git diff failed" : why))
+        }
+        if cut {
+            // Whole lines, after a word on what's missing (text before a diff shows as such).
+            let head = data.prefix(GitBlock.diffLimit)
+            let end = head.lastIndex(of: UInt8(ascii: "\n")).map { $0 + 1 } ?? head.startIndex
+            data = Data("The diff is cut short: it's over \(GitBlock.diffLimit / 1_000_000) MB. `git diff` in a terminal shows all of it.\n\n".utf8)
+                + head[..<end]
         }
         let top = run(["-C", directory, "rev-parse", "--show-toplevel"]) ?? directory
         let repo = (top as NSString).lastPathComponent

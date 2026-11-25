@@ -82,6 +82,8 @@ enum FileOperations {
     /// Each `from` to its `to`; undone by moving them back.
     static func move(_ pairs: [(URL, URL)], name: String, undo manager: UndoManager? = nil) throws {
         var done: [(URL, URL)] = []
+        // Open documents hear where their files went, whatever the outcome.
+        defer { announce(done) }
         do {
             for (from, to) in pairs {
                 try FileManager.default.moveItem(at: from, to: to)
@@ -166,6 +168,19 @@ enum FileOperations {
     }
 
     // MARK: Helpers
+
+    /// Posted when files moved here (Rename, a move, and undoing them):
+    /// `moves` maps each old place to its new one. An open document follows
+    /// its file, so a save goes where the file is now, not to a new file at
+    /// its old name. Move to Trash posts nothing: a document of a trashed
+    /// file finds it gone and keeps its text, and a save puts the file back
+    /// where it was rather than into the Trash, to be emptied with it.
+    static let moved = Notification.Name("dev.libertty.terminal.files-moved")
+
+    private static func announce(_ moves: [(URL, URL)]) {
+        guard !moves.isEmpty else { return }
+        NotificationCenter.default.post(name: moved, object: nil, userInfo: ["moves": Dictionary(moves) { $1 }])
+    }
 
     /// What making `urls` is undone by: they go to the Trash.
     private static func registerTrash(_ urls: [URL], name: String, manager: UndoManager?) {

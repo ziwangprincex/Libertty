@@ -1,0 +1,23 @@
+# A Markdown document's own HTML takes its pane nowhere nobody clicked: not
+# a <meta http-equiv="refresh">, not a form (the page's CSP says
+# form-action 'none'); and a link that wants a window of its own to a file
+# that might run asks first, as any link of the page does. tests/run.sh
+# makes @DIR@ with refresh.md, form.md, elsewhere.html and tool.command.
+open:@DIR@/refresh.md
+page-wait:go
+wait:1.0
+expect-page:Refresh document
+expect-page-not:Elsewhere
+open:@DIR@/form.md
+page-wait:go
+expect-page:Form document
+page-js:document.querySelector('meta[http-equiv="Content-Security-Policy"]').content ==> form-action 'none'
+page-click:Send
+wait:1.0
+expect-page:Form document
+expect-page-not:Elsewhere
+page-click:css:a[target="_blank"]
+wait:0.5
+expect-sheet-text:Open “tool.command”?
+sheet:Cancel
+expect-page:Form document

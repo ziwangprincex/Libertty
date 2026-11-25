@@ -4,9 +4,10 @@ import WebKit
 /// A file shown in a tab: Markdown rendered (Tern's `markdown_rendered`),
 /// or source code with highlighting and line numbers. Re-renders when the
 /// file is saved, keeping the scroll position. Page JavaScript is off, so
-/// HTML inside Markdown can't run scripts.
+/// HTML inside Markdown can't run scripts (nor take the page anywhere unclicked).
 final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
-    let url: URL
+    /// Where the file is: it changes when the file tree renames or moves it.
+    private(set) var url: URL
 
     /// What the pane shows: a text file (source, Markdown, a diff), an
     /// image, a PDF, or a web page (a dev server beside its terminal).
@@ -72,6 +73,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     private var watcher: DispatchSourceFileSystemObject?
     private var pendingScroll: Double?
     private var htmlFile: URL?
+    /// What this view itself loads into its page (a document's HTML file, a
+    /// PDF, or the folder a page from a string is based in): the one place a
+    /// document's page goes without a click.
+    private var ownPage: URL?
 
     static let textExtensions: Set<String> = [
         "md", "markdown", "mdown", "mkd", "txt", "text", "log", "csv", "tsv", "rst", "adoc", "org",
@@ -164,7 +169,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             install(editing ? makeEditorWeb() : Self.makeViewerWeb(kind))
         }
         load(keepScroll: false)
-        if kind != .web && kind != .block { watch() }
+        if kind != .web && kind != .block {
+            watch()
+            NotificationCenter.default.addObserver(self, selector: #selector(filesMoved), name: FileOperations.moved, object: nil)
+        }
         if kind == .web { observePage() }
     }
 
@@ -500,9 +508,14 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     private var editorReady = false
     private var pendingEditorLine: Int?
     /// The file as this view last read or wrote it (nil: not on disk). What
-    /// the watcher compares with, so our own save isn't news, and what a save
-    /// checks so it never overwrites a change the editor hasn't seen.
+    /// the watcher compares with, so our own save (or a change already
+    /// offered to the editor) isn't news.
     private var diskText: String?
+    /// The file as the editor's text last took it in: loaded, saved, or a
+    /// change on disk it took, or whose question was answered (Reload, Keep
+    /// Mine). What a save checks, so it never overwrites a change the editor
+    /// was told of but nobody has seen (its banner in a tab not in front).
+    private var baseText: String?
     private var fileMissing = false
     /// The file's encoding (and byte-order mark), kept when saving. Only
     /// UTF-8 and UTF-16 with a mark are editable: anything else is shown
@@ -576,7 +589,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         // Our own save (or a touch): nothing new.
         guard text != diskText else { return }
         diskText = text
-        runEditor("libertty.diskChanged(\(Self.jsString(text)))")
+        // Taken at once (nothing unsaved here), it's what the text is based
+        // on; asked about, not until the question is answered (`diskSeen`).
+        runEditor("libertty.diskChanged(\(Self.jsString(text)))") { [weak self] taken in
+            guard let self, taken as? Bool == true, self.diskText == text else { return }
+            self.baseText = text
+        }
     }
 
     private func sendFileToEditor() {
@@ -584,6 +602,9 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         diskText = text
         fileMissing = text == nil
         let body = text ?? ""
+        // Back after the page's process died with unsaved text: that text is
+        // still based on the file as it was before.
+        if backupText == nil || backupText == body || baseText == nil { baseText = text }
         let indent = body.contains("\n\t") ? "\t" : "    "
         var options: [String: Any] = [
             "text": body, "theme": EditorAssets.theme(theme, fontSize: ConfigStore.shared.config.fontSize),
@@ -638,6 +659,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             onEditingStateChange?(self)
         case "backup":
             backupText = body["text"] as? String
+        case "diskSeen":
+            // The change on disk was answered: Reload took it, Keep Mine kept
+            // what's here over it. Either way a save may go over it now.
+            if let text = body["text"] as? String { baseText = text }
         case "save":
             guard let text = body["text"] as? String else { return }
             let close = body["close"] as? Bool == true
@@ -692,7 +717,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                 buttons: ["OK"]) { _ in completion(false) }
             return
         }
-        if !checked, !fileMissing, let now = readFileQuietly(), now != diskText {
+        if !checked, !fileMissing, let now = readFileQuietly(), now != baseText {
             ask("“\(url.lastPathComponent)” changed on disk", "Another program changed it since it opened here. Save over its changes?",
                 buttons: ["Overwrite", "Cancel"]) { [weak self] button in
                 if button == 0 { self?.write(text, checked: true, completion: completion) } else { completion(false) }
@@ -734,6 +759,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
                 watch()
             }
             diskText = text
+            baseText = text
             backupText = nil
             completion(true)
         } catch {
@@ -996,6 +1022,7 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return
         case .pdf:
             // WebKit shows PDFs itself.
+            ownPage = url
             web.loadFileURL(url, allowingReadAccessTo: url)
             return
         case .block:
@@ -1024,8 +1051,11 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             }
         }
         let dir = url.deletingLastPathComponent()
+        // A document's own HTML (Markdown passes it through) posts no form
+        // and frames no other page.
         let html = """
             <!doctype html><html><head><meta charset="utf-8">
+            <meta http-equiv="Content-Security-Policy" content="form-action 'none'; frame-src 'none'; object-src 'none'">
             <base href="\(MarkdownRenderer.escapeAttribute(dir.absoluteString))">
             <style>\(Self.css(theme))</style></head><body>\(body)</body></html>
             """
@@ -1038,8 +1068,10 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
         htmlFile = file
         do {
             try html.write(to: file, atomically: true, encoding: .utf8)
+            ownPage = file
             web.loadFileURL(file, allowingReadAccessTo: URL(fileURLWithPath: "/"))
         } catch {
+            ownPage = dir
             web.loadHTMLString(html, baseURL: dir)
         }
     }
@@ -1131,7 +1163,12 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return decisionHandler(action.request.url?.standardizedFileURL == page?.standardizedFileURL ? .allow : .cancel)
         }
         guard action.navigationType == .linkActivated, let target = action.request.url else {
-            return decisionHandler(.allow)
+            // Unclicked, a document's page goes only where this view loads
+            // it. Its own HTML (a README's `<meta http-equiv="refresh">`, a
+            // form, a frame) never turns the pane, which has no address bar,
+            // into some other page.
+            let own = action.targetFrame?.isMainFrame == true && action.request.url.map(isOwnPage) == true
+            return decisionHandler(own ? .allow : .cancel)
         }
         // In-page anchors scroll; everything else leaves the page.
         if target.isFileURL, let htmlFile, target.path == htmlFile.path { return decisionHandler(.allow) }
@@ -1143,6 +1180,18 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             return scroll(toAnchor: fragment.removingPercentEncoding ?? fragment)
         }
         decisionHandler(.cancel)
+        follow(link: target)
+    }
+
+    /// Whether `target` is the page this view loads itself (or an anchor in it).
+    private func isOwnPage(_ target: URL) -> Bool {
+        guard target.isFileURL, let ownPage else { return false }
+        return target.standardizedFileURL.path == ownPage.standardizedFileURL.path
+    }
+
+    /// A document's link, clicked: a file Libertty shows opens in a tab,
+    /// another file asks first, anything else goes to its app.
+    private func follow(link target: URL) {
         if target.isFileURL, Self.canShow(target), FileManager.default.fileExists(atPath: target.path) {
             onOpenDocument?(target)
         } else if target.isFileURL {
@@ -1189,7 +1238,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         // A browser opens it in a tab of its own (this page stays); a
-        // document's link leaves for the default browser.
+        // document's link goes where it would in the page (a file it leads
+        // to, a script, asks first as it does there).
         guard let target = action.request.url else { return nil }
         if kind == .web, ["http", "https"].contains(target.scheme?.lowercased() ?? "") {
             if let onOpenBrowser { onOpenBrowser(target) } else { webView.load(URLRequest(url: target)) }
@@ -1197,8 +1247,8 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
             openElsewhere(target, clicked: action.navigationType == .linkActivated)
         } else if kind == .block {
             openFromBlock(target)
-        } else {
-            NSWorkspace.shared.open(target)
+        } else if action.navigationType == .linkActivated {
+            follow(link: target)
         }
         return nil
     }
@@ -1254,6 +1304,40 @@ final class DocumentView: NSView, WKNavigationDelegate, WKUIDelegate, WKDownload
     func resetZoom() { web.pageZoom = 1 }
 
     // MARK: Live reload
+
+    /// The file tree renamed or moved this file (or a folder it's in), or
+    /// undid that: follow it, so a save writes where the file is now — not
+    /// a new file at its old name — and the page reads from there.
+    @objc private func filesMoved(_ note: Notification) {
+        guard let moves = note.userInfo?["moves"] as? [URL: URL], let moved = Self.place(of: url, after: moves) else { return }
+        url = moved
+        watch()
+        // A page's images and links are where the document is now.
+        if !isEditing { load(keepScroll: true) }
+        onTitleChange?()
+    }
+
+    /// Where `file` is after `moves` (each old place to its new one): moved
+    /// itself, or in a folder that moved; nil when neither. Paths compare
+    /// with their folders' links resolved (`/tmp` is `/private/tmp`), as
+    /// far as those folders are still there.
+    static func place(of file: URL, after moves: [URL: URL]) -> URL? {
+        func resolved(_ url: URL) -> String {
+            var there = url.standardizedFileURL, rest: [String] = []
+            while there.pathComponents.count > 1, !FileManager.default.fileExists(atPath: there.path) {
+                rest.insert(there.lastPathComponent, at: 0)
+                there.deleteLastPathComponent()
+            }
+            return rest.reduce(there.resolvingSymlinksInPath()) { $0.appendingPathComponent($1) }.path
+        }
+        let path = resolved(file)
+        for (from, to) in moves {
+            let old = resolved(from)
+            if path == old { return to }
+            if path.hasPrefix(old + "/") { return to.appendingPathComponent(String(path.dropFirst(old.count + 1))) }
+        }
+        return nil
+    }
 
     private func watch() {
         watcher?.cancel()

@@ -399,11 +399,31 @@ struct MarkdownRenderer {
     private func inline(_ text: String) -> String {
         var pieces: [String] = []
         var out = ""
+        // A placeholder is two private-use scalars, one from plane 15 and
+        // one from plane 16: room for billions of pieces in a paragraph (one
+        // scalar ran out at 131,072, a 262 KB paragraph of `\.`). The text's
+        // own characters from those planes go in as references, so none is
+        // ever read back as one.
         func token(_ html: String) {
-            out.unicodeScalars.append(Unicode.Scalar(0xF0000 + UInt32(pieces.count))!)
+            let n = pieces.count
+            guard n < 1 << 32, let high = Unicode.Scalar(UInt32(0xF0000 + (n >> 16))),
+                  let low = Unicode.Scalar(UInt32(0x100000 + (n & 0xFFFF))) else { return out += html }
+            out.unicodeScalars.append(high)
+            out.unicodeScalars.append(low)
             pieces.append(html)
         }
         let chars = Array(text)
+        // The next ">", "<" and line end after a point, each looked for once
+        // however many "<" ask (they ask in order); each "[" its "]" (see
+        // link); the backtick runs. A paragraph of thousands of any of them
+        // isn't read to its end from each one.
+        var nextClose = -1, nextOpen = -1, nextLine = -1
+        func next(_ c: Character, after i: Int, _ found: inout Int) -> Int {
+            if found <= i { found = chars[(i + 1)...].firstIndex(of: c) ?? chars.count }
+            return found
+        }
+        var brackets: [Int: Int] = [:]
+        let ticks = Backticks(chars)
         var i = 0
         while i < chars.count {
             let c = chars[i]
@@ -423,7 +443,7 @@ struct MarkdownRenderer {
             case "`":
                 var run = 0
                 while i + run < chars.count, chars[i + run] == "`" { run += 1 }
-                if let close = Self.findBackticks(chars, from: i + run, count: run) {
+                if let close = ticks.first(run, from: i + run) {
                     var code = String(chars[(i + run)..<close]).replacingOccurrences(of: "\n", with: " ")
                     if code.count >= 2, code.hasPrefix(" "), code.hasSuffix(" "), code.contains(where: { $0 != " " }) {
                         code = String(code.dropFirst().dropLast())
@@ -436,19 +456,25 @@ struct MarkdownRenderer {
                 i += run
                 continue
             case "!" where i + 1 < chars.count && chars[i + 1] == "[":
-                if let (html, next) = link(chars, at: i + 1, image: true) {
+                if let (html, next) = link(chars, at: i + 1, image: true, brackets: &brackets, ticks: ticks) {
                     token(html)
                     i = next
                     continue
                 }
             case "[":
-                if let (html, next) = link(chars, at: i, image: false) {
+                if let (html, next) = link(chars, at: i, image: false, brackets: &brackets, ticks: ticks) {
                     token(html)
                     i = next
                     continue
                 }
             case "<":
-                if let close = chars[i...].firstIndex(of: ">") {
+                // An autolink or a tag has no "<" inside, and a comment no
+                // line break and "--" at its end: anything else isn't one,
+                // and isn't read through to see.
+                let close = next(">", after: i, &nextClose)
+                let comment = chars[(i + 1)...].starts(with: "!--")
+                if close < chars.count, comment ? next("\n", after: i, &nextLine) > close && chars[close - 1] == "-" && chars[close - 2] == "-"
+                    : next("<", after: i, &nextOpen) > close {
                     let inner = String(chars[(i + 1)..<close])
                     if inner.range(of: #"^[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\s<>]*$"#, options: .regularExpression) != nil {
                         token("<a href=\"\(Self.escapeAttribute(inner))\">\(Self.escape(inner))</a>")
@@ -489,7 +515,9 @@ struct MarkdownRenderer {
             case "h", "w":
                 // GFM extended autolinks: http(s)://… and www.…
                 let atBoundary = i == 0 || !(chars[i - 1].isLetter || chars[i - 1].isNumber)
-                if atBoundary, let (url, length) = Self.bareURL(chars, at: i) {
+                // (Not 2 KB copied for each word that starts with h or w.)
+                let start = chars[i...].prefix(4)
+                if atBoundary, start.elementsEqual("http") || start.elementsEqual("www."), let (url, length) = Self.bareURL(chars, at: i) {
                     let href = url.hasPrefix("www.") ? "http://" + url : url
                     token("<a href=\"\(Self.escapeAttribute(href))\">\(Self.escape(url))</a>")
                     i += length
@@ -498,48 +526,105 @@ struct MarkdownRenderer {
             default:
                 break
             }
-            out += Self.escape(String(c))
+            if c.unicodeScalars.contains(where: { $0.value >= 0xF0000 }) {
+                out += c.unicodeScalars.map { $0.value >= 0xF0000 ? "&#x\(String($0.value, radix: 16, uppercase: true));" : Self.escape(String($0)) }.joined()
+            } else {
+                out += Self.escape(String(c))
+            }
             i += 1
         }
 
         out = Self.emphasis(out)
         // Put the opaque pieces back.
         var result = ""
-        for u in out.unicodeScalars {
-            let v = u.value
-            if v >= 0xF0000, Int(v - 0xF0000) < pieces.count { result += pieces[Int(v - 0xF0000)] } else { result.unicodeScalars.append(u) }
+        let scalars = Array(out.unicodeScalars)
+        var k = 0
+        while k < scalars.count {
+            let high = scalars[k].value
+            if (0xF0000...0xFFFFF).contains(high), k + 1 < scalars.count, scalars[k + 1].value >= 0x100000 {
+                let n = Int(high - 0xF0000) << 16 | Int(scalars[k + 1].value - 0x100000)
+                if n < pieces.count {
+                    result += pieces[n]
+                    k += 2
+                    continue
+                }
+            }
+            result.unicodeScalars.append(scalars[k])
+            k += 1
         }
         return result
     }
 
-    private static func findBackticks(_ chars: [Character], from start: Int, count: Int) -> Int? {
-        var i = start
-        while i < chars.count {
-            if chars[i] == "`" {
+    /// A paragraph's runs of backticks, by length: where each starts, in
+    /// order. Found in one read, so a closing run is looked up rather than
+    /// read for from each opening one.
+    private struct Backticks {
+        private var starts: [Int: [Int]] = [:]
+
+        init(_ chars: [Character]) {
+            var i = 0
+            while i < chars.count {
+                guard chars[i] == "`" else { i += 1; continue }
                 var run = 0
                 while i + run < chars.count, chars[i + run] == "`" { run += 1 }
-                if run == count { return i }
+                starts[run, default: []].append(i)
                 i += run
-            } else {
-                i += 1
             }
         }
-        return nil
+
+        /// The first run of exactly `count` backticks at `start` or after
+        /// (`start` not inside a run).
+        func first(_ count: Int, from start: Int) -> Int? {
+            guard let list = starts[count] else { return nil }
+            var low = 0, high = list.count
+            while low < high {
+                let mid = (low + high) / 2
+                if list[mid] < start { low = mid + 1 } else { high = mid }
+            }
+            return low < list.count ? list[low] : nil
+        }
     }
 
     /// `[text](url "title")`, `[text][ref]`, `[ref]`, and images. Returns the
     /// HTML and the index after the link, or nil when it isn't one.
-    private func link(_ chars: [Character], at open: Int, image: Bool) -> (String, Int)? {
-        var depth = 0, i = open, close: Int?
-        while i < chars.count {
-            let c = chars[i]
-            if c == "\\" { i += 2; continue }
-            if c == "`", let end = Self.findBackticks(chars, from: i + 1, count: 1) { i = end + 1; continue }
-            if c == "[" { depth += 1 }
-            if c == "]" { depth -= 1; if depth == 0 { close = i; break } }
-            i += 1
+    /// `brackets`: each "[" read so far and its "]" (-1: none before the
+    /// end). A read from one "[" passes over every "[" inside it as a read
+    /// from that one would, so it answers for them too, and comes to each
+    /// one answered already at its "]" without reading the way again.
+    private func link(_ chars: [Character], at open: Int, image: Bool, brackets: inout [Int: Int], ticks: Backticks) -> (String, Int)? {
+        if brackets[open] == nil {
+            var opened: [Int] = [], i = open
+            read: while i < chars.count {
+                let c = chars[i]
+                if c == "\\" { i += 2; continue }
+                if c == "`" {
+                    // Past the code span a backtick may start, as reading one
+                    // backtick at a time came to: two together are an empty
+                    // one; otherwise just past the next lone backtick after
+                    // the run, or past the run when there's none.
+                    var end = i
+                    while end < chars.count, chars[end] == "`" { end += 1 }
+                    i = end - i == 2 ? end : ticks.first(1, from: end).map { $0 + 1 } ?? end
+                    continue
+                }
+                if c == "[" {
+                    if let known = brackets[i] {
+                        // None closes it: nor any "[" before it.
+                        if known < 0 { break read }
+                        i = known + 1
+                        continue
+                    }
+                    opened.append(i)
+                }
+                if c == "]", let at = opened.popLast() {
+                    brackets[at] = i
+                    if opened.isEmpty { break }
+                }
+                i += 1
+            }
+            for at in opened { brackets[at] = -1 }
         }
-        guard let close else { return nil }
+        guard let close = brackets[open], close >= 0 else { return nil }
         let label = String(chars[(open + 1)..<close])
         var url: String?, title: String?, next = close + 1
 
@@ -606,21 +691,101 @@ struct MarkdownRenderer {
         return (url, url.count)
     }
 
-    private static let emphasisRules: [(NSRegularExpression, String)] = [
-        (try! NSRegularExpression(pattern: #"\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*"#), "<strong><em>$1</em></strong>"),
-        (try! NSRegularExpression(pattern: #"\*\*(?=\S)(.+?)(?<=\S)\*\*"#), "<strong>$1</strong>"),
-        (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])__(?=\S)(.+?)(?<=\S)__(?![\p{L}\p{N}])"#), "<strong>$1</strong>"),
-        (try! NSRegularExpression(pattern: #"\*(?=[^\s*])(.+?)(?<=[^\s*])\*"#), "<em>$1</em>"),
-        (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\p{L}\p{N}_])"#), "<em>$1</em>"),
-        (try! NSRegularExpression(pattern: #"~~(?=\S)(.+?)(?<=\S)~~"#), "<del>$1</del>"),
+    /// One kind of emphasis: `marker` opens a run whose first character
+    /// isn't a space, and the first `marker` after it, on the same line,
+    /// whose character before isn't one closes it — what the expression
+    /// `marker(?=\S)(.+?)(?<=\S)marker` matches. `single` (`*`, `_`): nor is
+    /// either of those characters the marker. `word` (`__`, `_`): no letter
+    /// or number just outside (`_` neither, for `_`).
+    private struct Emphasis {
+        let marker: [Unicode.Scalar], open: String, close: String
+        var single = false, word = false
+
+        /// Every run in `s`, left to right, each read once: each opening
+        /// asks for the first closing after it, and those (and the line
+        /// ends) are found in order, so a line of thousands of unclosed
+        /// markers isn't read to its end from each one.
+        func apply(_ s: [Unicode.Scalar]) -> [Unicode.Scalar] {
+            let m = marker.count, n = s.count
+            func at(_ p: Int) -> Bool { p + m <= n && (0..<m).allSatisfy { s[p + $0] == marker[$0] } }
+            func inside(_ u: Unicode.Scalar) -> Bool { !MarkdownRenderer.isSpace(u) && !(single && u == marker[0]) }
+            func outside(_ p: Int) -> Bool {
+                guard word, p >= 0, p < n else { return true }
+                return !(MarkdownRenderer.isWordy(s[p]) || single && s[p] == marker[0])
+            }
+            var closing = -1, lineEnd = -1
+            func firstClosing(from p: Int) -> Int {
+                if closing < p {
+                    closing = p
+                    while closing < n, !(at(closing) && inside(s[closing - 1]) && outside(closing + m)) { closing += 1 }
+                }
+                return closing
+            }
+            func firstLineEnd(from p: Int) -> Int {
+                if lineEnd < p {
+                    lineEnd = p
+                    while lineEnd < n, !MarkdownRenderer.endsLine(s[lineEnd]) { lineEnd += 1 }
+                }
+                return lineEnd
+            }
+            var out: [Unicode.Scalar] = []
+            out.reserveCapacity(n)
+            var i = 0
+            while i < n {
+                if at(i), i + m < n, inside(s[i + m]), outside(i - 1) {
+                    let q = firstClosing(from: i + m + 1)
+                    if q < n, firstLineEnd(from: i + m) >= q {
+                        out += open.unicodeScalars
+                        out += s[(i + m)..<q]
+                        out += close.unicodeScalars
+                        i = q + m
+                        continue
+                    }
+                }
+                out.append(s[i])
+                i += 1
+            }
+            return out
+        }
+    }
+
+    private static let emphasisRules: [Emphasis] = [
+        Emphasis(marker: ["*", "*", "*"], open: "<strong><em>", close: "</em></strong>"),
+        Emphasis(marker: ["*", "*"], open: "<strong>", close: "</strong>"),
+        Emphasis(marker: ["_", "_"], open: "<strong>", close: "</strong>", word: true),
+        Emphasis(marker: ["*"], open: "<em>", close: "</em>", single: true),
+        Emphasis(marker: ["_"], open: "<em>", close: "</em>", single: true, word: true),
+        Emphasis(marker: ["~", "~"], open: "<del>", close: "</del>"),
     ]
 
-    private static func emphasis(_ s: String) -> String {
-        var s = s
-        for (re, template) in emphasisRules {
-            s = re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: template)
+    static func emphasis(_ s: String) -> String {
+        var scalars = Array(s.unicodeScalars)
+        for rule in emphasisRules { scalars = rule.apply(scalars) }
+        var out = ""
+        out.unicodeScalars.append(contentsOf: scalars)
+        return out
+    }
+
+    /// `\s` as the expressions had it: tab, line feed, form feed, return, and Unicode's spaces.
+    fileprivate static func isSpace(_ u: Unicode.Scalar) -> Bool {
+        switch u.properties.generalCategory {
+        case .spaceSeparator, .lineSeparator, .paragraphSeparator: return true
+        default: return [0x09, 0x0A, 0x0C, 0x0D].contains(u.value)
         }
-        return s
+    }
+
+    /// `[\p{L}\p{N}]`: a letter or a number.
+    fileprivate static func isWordy(_ u: Unicode.Scalar) -> Bool {
+        switch u.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+             .decimalNumber, .letterNumber, .otherNumber: return true
+        default: return false
+        }
+    }
+
+    /// What `.` doesn't match: the line terminators.
+    fileprivate static func endsLine(_ u: Unicode.Scalar) -> Bool {
+        [0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029].contains(u.value)
     }
 
     /// Alt text: the label without markup.

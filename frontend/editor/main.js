@@ -221,7 +221,13 @@ window.libertty = {
     post({ type: "dirty", dirty: false });
   },
   // The native side wrote the text it took (`takeText`, or ⌘S's) to the file.
-  saved() { if (saving !== null) savedText = saving; saving = null; reportDirty(); },
+  // A change on disk still waiting for an answer was saved over (after asking).
+  saved() {
+    if (saving !== null) savedText = saving;
+    saving = null;
+    if (pending !== null) { pending = null; hideBanner(); }
+    reportDirty();
+  },
   // Null with no editor yet: a save must never write an empty file for it.
   takeText() { if (!view) return null; saving = docText(); return saving; },
   text() { return view ? docText() : ""; },
@@ -249,9 +255,10 @@ window.libertty = {
   },
   setKeymap(name) { view?.dispatch({ effects: keys.reconfigure(name === "vim" ? vim() : []) }); },
   // Someone else changed the file. Unchanged here: take theirs, keeping the
-  // place; changed here too: ask.
+  // place; changed here too: ask. True when it's taken now; asked, the
+  // answer (`diskSeen`) says it was seen. Until then a save asks first.
   diskChanged(text) {
-    if (!view || text === docText()) { savedText = text; reportDirty(); return; }
+    if (!view || text === docText()) { savedText = text; reportDirty(); return true; }
     const take = () => {
       const head = view.state.selection.main.head;
       const scroll = view.scrollDOM.scrollTop;
@@ -262,9 +269,13 @@ window.libertty = {
       savedText = text;
       reportDirty();
     };
-    if (!dirty()) return take();
+    if (!dirty()) { take(); return true; }
     pending = text;
-    showBanner("The file changed on disk.", [["Reload", () => { take(); pending = null; }], ["Keep Mine", () => { savedText = pending; pending = null; reportDirty(); }]]);
+    showBanner("The file changed on disk.", [
+      ["Reload", () => { take(); pending = null; post({ type: "diskSeen", text }); }],
+      ["Keep Mine", () => { savedText = pending; pending = null; reportDirty(); post({ type: "diskSeen", text }); }],
+    ]);
+    return false;
   },
   // `--ui-probe`: type at the cursor, as keystrokes would.
   insert(text) {
