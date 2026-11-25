@@ -286,6 +286,7 @@ final class ComposerView: NSView, CapsuleObstacle {
         // look, so the text stays here.
         guard !session.hasExited else { NSSound.beep(); return }
         PromptQueues.shared.enqueue(text, for: session)
+        textView.forgetTyping()
         textView.string = ""
         ComposerController.saveDraft(of: self)
         AccessibilityNews.announce(L10n.t("Queued"), from: self)
@@ -419,6 +420,22 @@ final class ComposerTextView: NSTextView {
         if let composer, composer.window_ == nil, let pane = composer.pane { ComposerController.place(composer, in: pane) }
     }
 
+    // What's typed goes on its window's undo stack, a terminal window's
+    // being the windows' close-undo stack (Edit ▸ Undo Close …): leaving the
+    // window (put away, sent, popped out or in, its tab in the background)
+    // takes it off, so no Undo Typing there acts on text that isn't there.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window { forgetTyping() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    /// Its typing off the undo stack: its text replaced (sent, queued, a
+    /// queued prompt brought back), or it leaving its window.
+    func forgetTyping() {
+        breakUndoCoalescing()
+        if let textStorage { undoManager?.removeAllActions(withTarget: textStorage) }
+    }
+
     /// Files as their quoted paths; HTML or RTF (a page, a chat message) as
     /// Markdown; text as it is; an image alone as a file of its own (as a
     /// paste into a pane does), its path inserted.
@@ -478,6 +495,7 @@ private final class QueueRow: NSView {
             let text = PromptQueues.shared.queue(of: session).items.first { $0.id == id }?.text ?? ""
             PromptQueues.shared.update(session) { $0.remove(id) }
             let view = composer.textView
+            view.forgetTyping()
             view.string = view.string.isEmpty ? text : view.string + "\n" + text
             view.window?.makeFirstResponder(view)
         }

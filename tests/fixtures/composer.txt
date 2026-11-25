@@ -16,11 +16,15 @@ key:cmd+enter
 wait:2.0
 expect:GOT[hello]
 expect-composer:closed
+# What was typed there isn't left on the windows' undo stack (Edit ▸ Undo
+# Close …), to be undone where it's gone.
+expect-undo:none
 # A draft stays when it's put away.
 key:cmd+shift+e
 type:draft
 key:escape
 expect-composer:closed
+expect-undo:none
 expect-composer:text=draft
 key:cmd+shift+e
 expect-composer:text=draft
