@@ -75,7 +75,9 @@ struct DaemonTests {
 
     private func pair() -> (Connection, Connection) {
         var fds: [Int32] = [0, 0]
-        precondition(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        // (liberttyd's own: no SIGPIPE, which would end the whole test run
+        // when a session writes to a window whose end a finished test closed.)
+        precondition(libertty_socketpair(&fds) == 0)
         return (Connection(fd: fds[0]), Connection(fd: fds[1]))
     }
 
