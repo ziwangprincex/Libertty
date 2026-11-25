@@ -239,6 +239,7 @@ int libertty_proc_running(pid_t pid) {
 
 #include <dirent.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdlib.h>
 
 // Every process's parent, from /proc/PID/stat (the field after the name,
@@ -398,7 +399,13 @@ int libertty_proc_running(pid_t pid) {
     char path[64], buf[1024];
     snprintf(path, sizeof path, "/proc/%d/stat", (int)pid);
     FILE *f = fopen(path, "r");
-    if (!f) return errno != ENOENT;  // gone, or (no /proc to ask) can't tell: say it runs
+    if (!f) {
+        // Gone, where /proc has the processes. With no /proc to ask (or none
+        // we may read), whether the pid is taken says: a guardian that took
+        // a live liberttyd for gone would start another beside it.
+        if (errno == ENOENT && access("/proc/self/stat", R_OK) == 0) return 0;
+        return kill(pid, 0) == 0 || errno != ESRCH;
+    }
     size_t n = fread(buf, 1, sizeof buf - 1, f);
     fclose(f);
     buf[n] = 0;
