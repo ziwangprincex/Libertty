@@ -15,6 +15,17 @@ type:printf '\033]2;IDLER\a'; sleep 60
 key:enter
 wait:1.5
 expect-shown:4
+# Set from a key (or the palette), the filter shows in the field at the
+# sidebar's foot; closing the field (Esc in it) shows every tab again, and
+# the terminal has the keyboard back.
+action:show_tabs:waiting
+expect-shown:1:ASKER
+click:Filter waiting tabs
+wait:0.2
+key:escape
+wait:0.3
+expect-shown:4
+expect-focus:1
 action:show_tabs:working
 expect-shown:1:WORKER
 action:show_tabs:waiting

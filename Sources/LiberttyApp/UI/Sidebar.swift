@@ -346,7 +346,11 @@ final class SidebarViewController: NSViewController {
         filter.onChange = { [weak self] text in self?.filterTabs(text) }
         filter.onSubmit = { [weak self] in self?.selectFirstMatch() }
         filter.onActivity = { [weak self] activity in self?.show(activity: activity) }
-        filter.onEscape = { [weak self] in self?.showFilter(false) }
+        // Esc in the empty field closes it, and the keyboard goes back to the terminal.
+        filter.onEscape = { [weak self] in
+            self?.showFilter(false)
+            self?.controller?.focusTerminal()
+        }
 
         // The top row (the traffic lights' line): the window's buttons
         // while the sidebar is on the left (`setChrome`); Rex's.
@@ -482,12 +486,24 @@ final class SidebarViewController: NSViewController {
 
     @objc private func toggleFilter(_ sender: Any?) { showFilter(filter.isHidden) }
 
-    /// The field takes the foot's place while the tabs are filtered.
-    private func showFilter(_ on: Bool) {
+    /// The field takes the foot's place while the tabs are filtered; it's
+    /// where a filter on says so. Closed, it filters nothing any more: no
+    /// tab stays hidden by a filter nothing shows.
+    private func showFilter(_ on: Bool, focus: Bool = true) {
         filter.isHidden = !on
         foot.isHidden = on || !tabsShown
-        if on { filter.focus() } else { filter.clear() }
+        shownForActivity = false
+        if on {
+            if focus { filter.focus() }
+        } else {
+            filter.clear()
+            show(activity: .all)
+        }
     }
+
+    /// The field came up only to say which tabs show (show_tabs, from a
+    /// key or the palette): it goes again with that filter.
+    private var shownForActivity = false
 
     @objc private func newWorkspace(_ sender: Any?) { _ = ActionDispatcher.perform(.newWorkspace, controller: controller) }
     @objc private func connectToHost(_ sender: Any?) { _ = ActionDispatcher.perform(.connectToHost, controller: controller) }
@@ -682,6 +698,14 @@ final class SidebarViewController: NSViewController {
         guard activity != self.activity else { return }
         self.activity = activity
         filter.show(activity: activity)
+        // The field (its button, its placeholder) is what says a filter is
+        // on: it comes up for one set from elsewhere, without the keyboard.
+        if activity != .all, filter.isHidden {
+            showFilter(true, focus: false)
+            shownForActivity = true
+        } else if activity == .all, shownForActivity, filterText.isEmpty {
+            showFilter(false)
+        }
         refilter()
     }
 
