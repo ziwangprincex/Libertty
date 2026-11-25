@@ -78,6 +78,20 @@ struct PromptQueueTests {
         #expect(q.step(look(.idle, now: 103))?.text == "go")
     }
 
+    /// Something you typed waits unsent in the pane's input (a draft in the
+    /// agent's box): the queue holds however long, rather than paste after
+    /// it and send both as one.
+    @Test func aDraftHoldsIt() {
+        var q = PromptQueue()
+        q.append("go")
+        var drafting = look(.idle, quiet: 60)
+        drafting.draft = true
+        #expect(q.step(drafting) == nil)
+        drafting.now = 1000
+        #expect(q.step(drafting) == nil)
+        #expect(q.step(look(.idle, now: 1001))?.text == "go")
+    }
+
     @Test func pausedAndPutBack() {
         var q = PromptQueue()
         q.append("a")

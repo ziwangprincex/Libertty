@@ -1,0 +1,14 @@
+# What's typed at the prompt and not yet sent (no Return) holds the queue,
+# however long: a queued prompt would be pasted after it and run with it, as
+# one command. ⌃U clears the line; then the queued one goes, on its own.
+type:echo DRAFT-
+wait:0.5
+queue-prompt:echo QUEUED-$((40+2))
+wait:4.0
+expect-queue:1
+expect-not:QUEUED-42
+key:ctrl+u
+wait:2.5
+expect-queue:0
+expect:QUEUED-42
+expect-not:DRAFT-echo

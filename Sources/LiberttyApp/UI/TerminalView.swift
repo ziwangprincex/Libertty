@@ -1171,6 +1171,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         }
         if hideMouseWhileTyping { NSCursor.setHiddenUntilMouseMoves(true) }
         restartBlink()
+        noteUnsentTyping(event)
         // Return (not composing): what's typed is sent — a prompt to an agent, say.
         if event.keyCode == 36, !hasMarkedText(), event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
             onSubmit?(self)
@@ -1204,6 +1205,22 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         let text = committed.isEmpty ? Self.keyText(translation) : committed.joined()
         send(event, action: event.isARepeat ? GHOSTTY_KEY_ACTION_REPEAT : GHOSTTY_KEY_ACTION_PRESS, text: text,
              translationFlags: translation.modifierFlags)
+    }
+
+    /// What a key leaves at the program's input (`hasUnsentTyping`, which
+    /// holds the prompt queue): text, until Return sends it or ⌃C or ⌃U
+    /// clears the line. Keys answering what the program asks (a permission,
+    /// a choice) make no draft.
+    private func noteUnsentTyping(_ event: NSEvent) {
+        let mods = event.modifierFlags.intersection([.command, .control, .option])
+        if event.keyCode == 36 || event.keyCode == 76 {
+            session.hasUnsentTyping = false
+        } else if mods == .control, ["c", "u"].contains(event.charactersIgnoringModifiers?.lowercased()) {
+            session.hasUnsentTyping = false
+        } else if !mods.contains(.command), !mods.contains(.control), session.programStatus.headline?.state != .blocked,
+                  let text = Self.keyText(event), text.unicodeScalars.contains(where: { $0.value >= 0x20 && $0.value != 0x7F }) {
+            session.hasUnsentTyping = true
+        }
     }
 
     /// What a key types for the encoder: its characters, a control
@@ -2191,6 +2208,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         case .needsConfirmation:
             confirmUnsafePaste(text)
         case .pasted:
+            session.hasUnsentTyping = true
             setNeedsRender()
         case .nothing:
             break

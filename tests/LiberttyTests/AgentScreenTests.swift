@@ -64,6 +64,33 @@ struct AgentScreenTests {
         #expect(try detect("codex", .init(screen: "› \n", title: "⠋ codex")).state == .working)
     }
 
+    /// What's typed in an agent's input, as the screen shows it: Claude
+    /// Code's box, its placeholder (faint) left out of the screen read;
+    /// Codex's prompt line. A screen with neither can't tell.
+    @Test func typedInput() throws {
+        let idle = try screen("claude-idle.txt"), working = try screen("claude-working.txt")
+        #expect(AgentScreen.typedInput(working) == "")
+        // Read without its faint placeholder, the idle box is empty too; a
+        // draft in it is what's typed. (Claude Code puts a no-break space after its ❯.)
+        let placeholderless = idle.replacingOccurrences(of: #"Try "fix lint errors""#, with: "")
+        #expect(AgentScreen.typedInput(placeholderless) == "")
+        let draft = idle.replacingOccurrences(of: #"Try "fix lint errors""#, with: "also check the\n  migrations")
+        #expect(AgentScreen.typedInput(draft) == "also check the\nmigrations")
+        #expect(AgentScreen.typedInput("• Done, two files.\n\n› \n") == "")
+        #expect(AgentScreen.typedInput("• Done, two files.\n\n› and the tests\n") == "and the tests")
+        #expect(AgentScreen.typedInput("$ ls\nREADME.md\n$ \n") == nil)
+    }
+
+    /// The screen without its faint text: an agent's placeholder isn't what was typed.
+    @Test func faintTextLeftOut() throws {
+        let s = try TerminalSession(size: GridSize(cols: 30, rows: 4, widthPx: 0, heightPx: 0), config: Config())
+        s.show("───\r\n❯ \u{1b}[2mTry \"fix it\"\u{1b}[0m\r\n───")
+        #expect(s.screenRowsWithoutFaintText() == "───\n❯\n───\n")
+        #expect(AgentScreen.typedInput(s.screenRowsWithoutFaintText()) == "")
+        s.show("\u{1b}[2;1H❯ draft\u{1b}[K")
+        #expect(AgentScreen.typedInput(s.screenRowsWithoutFaintText()) == "draft")
+    }
+
     /// Kiro's progress turns while it works.
     @Test func progress() throws {
         #expect(try detect("kiro-cli", .init(screen: "", progress: "4;3")).state == .working)

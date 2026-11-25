@@ -22,6 +22,10 @@ struct PromptQueue: Equatable {
         /// You typed into the pane a moment ago: a prompt pasted now would
         /// land on what you're writing there.
         var typing = false
+        /// What you typed there waits unsent in its program's input (a draft
+        /// in an agent's box, a command half written): a prompt pasted now
+        /// would go with it, as one.
+        var draft = false
         /// What its programs report (OSC 7501, the agent's screen, a password): the most urgent.
         var state: ProgramStatusStore.State?
         /// A coding agent is in front.
@@ -104,7 +108,7 @@ struct PromptQueue: Equatable {
     /// you (a permission, a question, a password); an agent at rest says so,
     /// or at least has stopped printing; a shell is at its prompt.
     static func ready(_ look: Look) -> Bool {
-        if look.typing || look.state == .blocked || look.state == .working { return false }
+        if look.typing || look.draft || look.state == .blocked || look.state == .working { return false }
         if look.agent { return look.quietFor >= 0.6 }
         return look.atPrompt && look.quietFor >= 0.3
     }
@@ -256,6 +260,18 @@ final class PromptQueues {
     /// How long a key typed into a pane holds its queue.
     static let typingHold: CFTimeInterval = 2.5
 
+    /// What's typed in the session's input as its screen shows it (a shell's
+    /// command line, an agent's box), nil when the screen doesn't say; set
+    /// by the app, nil in tests.
+    var typedInput: (TerminalSession) -> String? = { _ in nil }
+
+    /// Whether what was typed into `session`'s pane waits there unsent: typed
+    /// since its last Return, and still in its input where the screen says.
+    private func hasDraft(_ session: TerminalSession) -> Bool {
+        guard session.hasUnsentTyping else { return false }
+        return typedInput(session).map { !$0.isEmpty } ?? true
+    }
+
     /// Whether `session`'s pane takes a prompt: it shows in a window (one
     /// closed, its session kept a while for Undo, gets nothing until it comes
     /// back) and isn't read-only (Stop Sending Input).
@@ -288,7 +304,7 @@ final class PromptQueues {
             entry.agentSeen = !atPrompt && (entry.agentSeen || agentInFront(session))
             let now = CACurrentMediaTime()
             let look = PromptQueue.Look(
-                typing: typedAt[key].map { now - $0 < Self.typingHold } ?? false,
+                typing: typedAt[key].map { now - $0 < Self.typingHold } ?? false, draft: hasDraft(session),
                 state: session.programStatus.headline?.state, agent: entry.agentSeen,
                 atPrompt: atPrompt, quietFor: CACurrentMediaTime() - mark.time,
                 printedSinceSend: mark.count != entry.outputAtSend, now: CACurrentMediaTime())
@@ -328,7 +344,8 @@ enum PromptSender {
         case .needsConfirmation, .nothing: return false
         case .pasted: break
         }
-        if submit { pressReturn(in: session) }
+        // Not submitted (the composer's Insert): it waits there, to be finished.
+        if submit { pressReturn(in: session) } else { session.hasUnsentTyping = true }
         return true
     }
 
@@ -336,6 +353,7 @@ enum PromptSender {
     static func pressReturn(in session: TerminalSession) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak session] in
             guard let session, !session.hasExited else { return }
+            session.hasUnsentTyping = false
             session.send(TerminalSession.Key(action: GHOSTTY_KEY_ACTION_PRESS, key: GHOSTTY_KEY_ENTER, mods: 0, consumedMods: 0,
                                              text: nil, unshiftedCodepoint: 0, composing: false))
         }

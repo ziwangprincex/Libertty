@@ -447,6 +447,24 @@ public enum AgentScreen {
         return s
     }
 
+    /// What's typed in an agent's input on `screen`, as it shows there (its
+    /// placeholder already left out: faint text): Claude Code's box, from its
+    /// "❯" to the rule under it, or Codex's "›" line. Nil when the screen
+    /// has neither, so what's typed can't be told from it.
+    public static func typedInput(_ screen: String) -> String? {
+        let ls = lines(screen)
+        if let top = promptBoxTop(ls) {
+            let end = ls[(top + 1)...].firstIndex(where: horizontalRule) ?? ls.count
+            let body = ls[(top + 1)..<end]
+            if let first = body.first, trimmed(first).hasPrefix("❯") {
+                let rest = [String(trimmed(first).dropFirst())] + body.dropFirst()
+                return rest.map(trimmed).filter { !$0.isEmpty }.joined(separator: "\n")
+            }
+        }
+        if let i = currentPrompt(ls) { return trimmed(String(ls[i].dropFirst())) }
+        return nil
+    }
+
     /// A line of "─", or one starting with three, as a box's border with a label.
     static func horizontalRule(_ l: String) -> Bool {
         let t = trimmed(l)

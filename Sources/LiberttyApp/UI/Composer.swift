@@ -268,7 +268,7 @@ final class ComposerView: NSView, CapsuleObstacle {
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn, let pane = self.pane else { return }
             _ = pane.session.paste(prompt, allowUnsafe: true)
-            if submit { PromptSender.pressReturn(in: pane.session) }
+            if submit { PromptSender.pressReturn(in: pane.session) } else { pane.session.hasUnsentTyping = true }
             self.sent()
         }
     }

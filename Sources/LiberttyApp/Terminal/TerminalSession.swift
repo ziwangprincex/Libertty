@@ -77,6 +77,10 @@ final class TerminalSession {
     let programStatus = ProgramStatusStore()
     /// What its programs asked to show (SurfaceProtocol), and its commands' lenses.
     let surfaces = SurfaceStore()
+    /// Text was typed (or pasted) into the pane since Return last went, and
+    /// may wait unsent at its program's prompt: a queued prompt pasted now
+    /// would go with it (PromptQueue). Main thread.
+    var hasUnsentTyping = false
     private(set) var title = ""
     /// The title was set while a command ran (OSC 133): a program's. Once
     /// the shell's prompt is back it's that program's leftover (OMP's
@@ -2425,6 +2429,44 @@ extension TerminalSession {
         var rows = text.split(separator: "\n", omittingEmptySubsequences: false)
         while rows.last?.isEmpty == true { rows.removeLast() }
         return rows.isEmpty ? "" : rows.joined(separator: "\n") + "\n"
+    }
+
+    /// The screen's rows as `screenRows` has them, faint text (SGR 2) left
+    /// out: what an agent's input box holds of what was typed, its
+    /// placeholder (Claude Code's "Try …") apart (AgentScreen.typedInput).
+    func screenRowsWithoutFaintText() -> String {
+        lock.withLock {
+            let cols = Int(size.cols), rows = Int(size.rows)
+            var scalars = [UInt32](repeating: 0, count: 16)
+            var lines: [String] = []
+            for y in 0..<rows {
+                var line = ""
+                for x in 0..<cols {
+                    var point = GhosttyPoint()
+                    point.tag = GHOSTTY_POINT_TAG_ACTIVE
+                    point.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
+                    var ref = GhosttyGridRef()
+                    guard ghostty_terminal_grid_ref(terminal, point, &ref) == GHOSTTY_SUCCESS else { continue }
+                    var raw: GhosttyCell = 0
+                    var wide = GHOSTTY_CELL_WIDE_NARROW
+                    if ghostty_grid_ref_cell(&ref, &raw) == GHOSTTY_SUCCESS { _ = ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide) }
+                    if wide == GHOSTTY_CELL_WIDE_SPACER_TAIL || wide == GHOSTTY_CELL_WIDE_SPACER_HEAD { continue }
+                    var style = GhosttyStyle()
+                    var n = 0
+                    if ghostty_grid_ref_style(&ref, &style) == GHOSTTY_SUCCESS, style.faint {
+                        line.append(" ")
+                    } else if ghostty_grid_ref_graphemes(&ref, &scalars, scalars.count, &n) == GHOSTTY_SUCCESS, n > 0 {
+                        line.unicodeScalars.append(contentsOf: scalars.prefix(n).compactMap(Unicode.Scalar.init))
+                    } else {
+                        line.append(" ")
+                    }
+                }
+                while line.hasSuffix(" ") { line.removeLast() }
+                lines.append(line)
+            }
+            while lines.last?.isEmpty == true { lines.removeLast() }
+            return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
+        }
     }
 
     /// The last OSC 9;4 progress as the agents' rules read it, after "9;".
