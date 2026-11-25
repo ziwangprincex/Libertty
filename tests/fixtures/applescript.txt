@@ -23,6 +23,8 @@ applescript:count «class LSes» ==> 2
 applescript:count «class LSes» of «class LTab» 1 of «class LTwn» 1 ==> 2
 applescript:«event LbtyPerf» given «class ----»:"equalize_splits" ==> true
 applescript:«event LbtyPerf» given «class ----»:"no_such_action" ==> error -2700
+# What lets programs drive Libertty or read your pages isn't a script's to change.
+applescript:«event LbtyPerf» given «class ----»:"toggle_setting:browser-automation" ==> error -10004
 applescript:«event LbtyInpt» given «class ----»:"nope", «class Lses»:(«class LSes» id "missing") ==> error
 # A tab, and a window (off screen, as all a probe's are).
 applescript:«event LbtyNTab» given «class Ldir»:"@DIR@"
