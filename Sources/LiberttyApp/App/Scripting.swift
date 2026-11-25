@@ -218,6 +218,9 @@ final class ScriptPerformActionCommand: ScriptCommand {
         guard let name = directParameter as? String, let action = Action(name) else {
             return fail(L10n.t("No such action (libertty +list-actions lists them)."))
         }
+        // What lets programs drive Libertty or read your pages is changed
+        // in Settings or the config file (SettingActions.guarded), not by a script.
+        if SettingActions.changesGuarded(action) { return fail(L10n.t("Libertty doesn't take this from scripts."), -10_004) }
         let target = Scripting.pane(arguments["session"])
         if arguments["session"] != nil, target == nil { return fail(L10n.t("No such session."), -1728) }
         return ActionDispatcher.perform(action, in: target?.1, controller: target?.0)

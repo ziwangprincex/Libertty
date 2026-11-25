@@ -292,7 +292,7 @@ enum CLI {
                                          +daemon or +clients: that machine's sessions
 
         With remote-control = false (Settings ▸ Integrations), commands may read but not drive Libertty:
-        +split, +send, +focus, +action, +new-window, +new-session, +kill-session, +daemon stop… are refused.
+        +split, +send, +focus, +action, +new-window, +new-session, +kill-session, +set, +daemon stop… are refused.
 
         Exit status: 0 done, 1 failed, 2 usage, 3 no such session, pane or conversation, 4 liberttyd or
         Libertty unreachable, 5 busy (+pick, +input: the window is asking already), 124 out of time (+wait,
@@ -356,12 +356,16 @@ enum CLI {
         // Check everything first, so a typo writes nothing.
         var scratch = store.config
         for (key, value) in pairs {
-            if key == "config-file" { continue }
             // What lets a terminal read your signed-in pages is yours to switch
             // on, in the config file: not something a program in a terminal does.
-            // So is what lets programs drive Libertty.
-            if key == "browser-automation" || key == "remote-control" {
-                fail("\(key) is set in Settings or by editing the config file (\(store.url.path)), not with +set")
+            // So is what lets programs drive Libertty, another file to read
+            // (it could set either), and a key that would change one.
+            if SettingActions.guarded.contains(key) {
+                fail("\(key) is changed in Settings or by editing the config file (\(store.url.path)), not with +set")
+                return 1
+            }
+            if key == "keybind", SettingActions.bindsGuarded(value) {
+                fail("keybind: a key that changes \(SettingActions.guarded.sorted().joined(separator: ", ")) is bound by editing the config file (\(store.url.path)), not with +set")
                 return 1
             }
             if let problem = scratch.set(key, value) {
@@ -384,8 +388,6 @@ enum CLI {
                 let index = value.split(separator: "=").first.map(String.init)
                 store.unset("palette") { $0.split(separator: "=").first.map(String.init) == index }
                 store.add(key, value)
-            case "config-file":
-                store.add(key, value)
             default:
                 store.set(key, value.isEmpty ? nil : quoteIfNeeded(value))
             }
@@ -404,9 +406,10 @@ enum CLI {
             (String(arg[..<$0]), String(arg[arg.index(after: $0)...]))
         } ?? (arg, args.count > 1 ? args[1] : nil)
         guard Config.documentation.contains(where: { $0.key == key }) else { fail("unknown key \(key)"); return 1 }
-        // Back to its default would let commands drive Libertty again (see +set).
-        if key == "remote-control" {
-            fail("remote-control is set in Settings or by editing the config file (\(store.url.path)), not with +unset")
+        // Back to its default would let commands drive Libertty again (see
+        // +set); an include gone, what it set (remote-control = false) with it.
+        if key == "remote-control" || key == "config-file" {
+            fail("\(key) is changed in Settings or by editing the config file (\(store.url.path)), not with +unset")
             return 1
         }
         if let value, Config.repeatable.contains(key) {
@@ -534,6 +537,10 @@ enum CLI {
     private static func action(_ args: [String]) -> Int32 {
         guard let text = args.first else { fail("usage: libertty +action ACTION (see libertty +list-actions)"); return 2 }
         guard let action = Action(text) else { fail("unknown action \(text); see libertty +list-actions"); return 1 }
+        if SettingActions.changesGuarded(action) {
+            fail("\(text): browser-automation, remote-control and config-file are changed in Settings or by editing the config file (\(store.url.path)), not from outside Libertty")
+            return 1
+        }
         guard ActionDispatcher.allowedRemotely(action) else {
             fail("\(text) can't be sent from outside Libertty (it would type into a terminal); bind it to a key instead")
             return 1

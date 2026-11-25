@@ -119,6 +119,22 @@ off $L +unset remote-control > /dev/null 2>&1; r2=$?
   && ok "+set and +unset don't turn it back on" || bad "remote-control set/unset: $r1 $r2"
 LIBERTTY_SESSION=$ID off $L +rename-session "my task" && ok "remote-control = false: an agent names its own session" \
   || bad "remote-control: own rename"
+off $L +set font-size=20 > /dev/null 2>&1; r=$?
+(( r == 1 )) && ! grep -q "font-size" $T/config/libertty/config && ok "remote-control = false: +set refused" \
+  || bad "remote-control +set: $r"
+# Whatever remote-control says, a program doesn't change what guards it:
+# not by +set (an include read after the file), nor by a setting action, nor
+# by a key bound to one.
+mkdir -p $T/on/libertty
+echo "font-size = 13" > $T/on/libertty/config
+on() { XDG_CONFIG_HOME=$T/on "$@"; }
+on $L +set config-file=$T/extra > /dev/null 2>&1; r1=$?
+on $L +action set_setting:browser-automation=true > $T/out 2>&1; r2=$?
+on $L +set keybind=enter=toggle_setting:remote-control > /dev/null 2>&1; r3=$?
+(( r1 == 1 && r2 == 1 && r3 == 1 )) && grep -q "browser-automation" $T/out \
+  && ! grep -q "config-file\|keybind" $T/on/libertty/config \
+  && ok "+set config-file, +action set_setting:browser-automation and a key bound to one: refused" \
+  || bad "guarded settings: $r1 $r2 $r3 $(cat $T/out $T/on/libertty/config)"
 
 # Completion: what +complete says, and each shell's script running it.
 mkdir -p $T/bin

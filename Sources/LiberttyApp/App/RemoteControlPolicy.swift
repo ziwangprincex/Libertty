@@ -11,10 +11,13 @@ enum RemoteControlPolicy {
     /// `+open`, `+diff` and `+browser` show something (the browser's reading
     /// and acting has browser-automation); `+daemon stop` and `restart`
     /// would end or move every session; `+pick` and `+input` put a question
-    /// in front of whatever you're doing.
+    /// in front of whatever you're doing; `+set`, `+unset` and
+    /// `+import-ghostty` write the config file — how every window looks,
+    /// what a key does, what a new pane runs.
     static let driving: Set<String> = [
         "+action", "+focus", "+new-window", "+new-tab", "+attach", "+connect", "+split", "+move-pane", "+swap-pane",
         "+resize-pane", "+send", "+send-key", "+prompt", "+new-session", "+kill-session", "+resume", "+pick", "+input",
+        "+set", "+unset",
     ]
 
     /// The requests the app still takes (`RemoteControl` kinds): they read,
@@ -45,6 +48,10 @@ enum RemoteControlPolicy {
             // driving. Listing what's forwarded is reading.
             let sub = args.first { !$0.hasPrefix("-") }
             return sub == "ls" || sub == nil ? nil : message
+        }
+        if command == "+import-ghostty" {
+            // What it would add: reading; adding it: driving.
+            return args.contains("--dry-run") ? nil : message
         }
         if command == "+rename-session" {
             // An agent naming its own task: that pane's, given or implied.

@@ -183,13 +183,15 @@ enum ActionDispatcher {
 
     /// What `libertty +action` may do. Typing into a terminal (text/csi/esc,
     /// paste, a picker's files) and quitting are left out: any local process
-    /// can post these.
+    /// can post these. So is changing what lets programs drive Libertty or
+    /// read your pages (SettingActions.guarded).
     static func allowedRemotely(_ action: Action) -> Bool {
+        if SettingActions.changesGuarded(action) { return false }
         switch action {
         case .text, .csi, .esc, .pasteFromClipboard, .insertFile, .insertPhoto, .quit, .unbind, .toggleSecureInput,
-             .toggleReadonly: false
-        case .writeScrollbackFile("paste"), .writeSelectionFile("paste"): false
-        default: true
+             .toggleReadonly: return false
+        case .writeScrollbackFile("paste"), .writeSelectionFile("paste"): return false
+        default: return true
         }
     }
 }

@@ -88,7 +88,7 @@ enum GhosttyImport {
         }
         var scratch = Config()
         for key in order {
-            guard known.contains(key), key != "browser-automation" else { plan.unknown.append(key); continue }
+            guard known.contains(key), !SettingActions.guarded.contains(key) else { plan.unknown.append(key); continue }
             // Ghostty's default in the end: Libertty's own stays.
             guard let (value, raw) = single[key], !value.isEmpty else { continue }
             if libertty.keys.contains(key) { plan.kept.append(key); continue }
@@ -110,6 +110,11 @@ enum GhosttyImport {
             }
             if key == "keybind", let trigger = Keybinds.trigger(of: value), ownTriggers.contains(trigger) {
                 plan.kept.append("keybind \(value.split(separator: "=").first ?? "")")
+                continue
+            }
+            // Nor a key that changes what lets programs drive Libertty (+set's rule).
+            if key == "keybind", SettingActions.bindsGuarded(value) {
+                plan.refused.append("\(line): changes a setting that's yours to change, in Settings or the config file")
                 continue
             }
             // A font of Libertty's own: Ghostty's would only come after it, as fallbacks.

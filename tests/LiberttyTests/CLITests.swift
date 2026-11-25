@@ -159,6 +159,49 @@ struct CLITests {
         #expect(c.set("remote-control", "maybe") != nil)
     }
 
+    /// Writing the config file changes what every window does and what a new
+    /// pane runs: driving. Seeing what an import would add is reading.
+    @Test func remoteControlRefusesWritingTheConfig() {
+        let off = config(false)
+        for command in ["+set", "+unset", "+import-ghostty"] {
+            #expect(RemoteControlPolicy.refusal(command, ["font-size=14"], config: off) != nil, "\(command)")
+        }
+        #expect(RemoteControlPolicy.refusal("+import-ghostty", ["--dry-run"], config: off) == nil)
+        #expect(RemoteControlPolicy.refusal("+set", ["font-size=14"], config: config(true)) == nil)
+    }
+
+    /// browser-automation, remote-control and config-file are yours to
+    /// change: no setting action sent from outside changes them, nor binds
+    /// a key that would — whatever remote-control says.
+    @Test func aProgramDoesntChangeWhatGuardsIt() {
+        for text in ["set_setting:browser-automation=true", "toggle_setting:browser-automation",
+                     "toggle_setting:remote-control", "reset_setting:remote-control", "set_setting:remote-control=true",
+                     "cycle_setting:remote-control:true,false", "reset_setting:config-file",
+                     "set_setting:keybind=enter=set_setting:browser-automation=true",
+                     "set_setting:keybind=cmd+b=set_setting:keybind=enter=toggle_setting:remote-control"] {
+            guard let action = Action(text) else { Issue.record("\(text) didn't parse"); continue }
+            #expect(SettingActions.changesGuarded(action), "\(text)")
+            #expect(!ActionDispatcher.allowedRemotely(action), "\(text)")
+        }
+        for text in ["set_setting:font-size=16", "toggle_setting:copy-on-select", "set_setting:keybind=cmd+b=new_tab"] {
+            guard let action = Action(text) else { Issue.record("\(text) didn't parse"); continue }
+            #expect(!SettingActions.changesGuarded(action), "\(text)")
+            #expect(ActionDispatcher.allowedRemotely(action), "\(text)")
+        }
+        #expect(SettingActions.bindsGuarded("global:ctrl+b=toggle_setting:browser-automation"))
+        #expect(!SettingActions.bindsGuarded("cmd+b=toggle_setting:copy-on-select"))
+    }
+
+    /// `+import-ghostty --from FILE --yes` doesn't bring them in either.
+    @Test func anImportLeavesThemOut() {
+        let entries = [("remote-control", "true", "true"), ("browser-automation", "true", "true"),
+                       ("keybind", "cmd+b=toggle_setting:browser-automation", "cmd+b=toggle_setting:browser-automation"),
+                       ("font-size", "15", "15")].map { (key: $0.0, value: $0.1, raw: $0.2) }
+        let plan = GhosttyImport.plan(entries, libertty: (keys: [], lines: []))
+        #expect(plan.lines == ["font-size = 15"])
+        #expect(plan.refused.contains { $0.hasPrefix("keybind = cmd+b=toggle_setting:browser-automation") })
+    }
+
     // MARK: liberttyd's log
 
     @Test func readingTheLog() throws {

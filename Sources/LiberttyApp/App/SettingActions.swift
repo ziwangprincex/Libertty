@@ -58,6 +58,33 @@ enum SettingActions {
     static let names = ["toggle_setting", "cycle_setting", "increase_setting", "decrease_setting",
                         "reset_setting", "set_setting"]
 
+    /// What lets a terminal read your signed-in pages, what lets programs
+    /// drive Libertty, and another file to read (which could set either):
+    /// yours to change, in Settings or the config file. From outside
+    /// Libertty — `libertty +action` and `+set`, a request, a script — an
+    /// action that changes one is refused; a key you bound yourself still
+    /// does it.
+    static let guarded: Set<String> = ["browser-automation", "remote-control", "config-file"]
+
+    /// Whether `action` changes a guarded setting, or binds a key that would.
+    static func changesGuarded(_ action: Action) -> Bool {
+        switch action {
+        case .toggleSetting(let key), .cycleSetting(let key, _), .increaseSetting(let key, _),
+             .decreaseSetting(let key, _), .resetSetting(let key):
+            return guarded.contains(key)
+        case .setSetting(let key, let value):
+            return guarded.contains(key) || key == "keybind" && bindsGuarded(value)
+        default:
+            return false
+        }
+    }
+
+    /// Whether a `keybind` value binds a key to an action that changes a guarded setting.
+    static func bindsGuarded(_ keybind: String) -> Bool {
+        guard let (_, action, _) = Keybinds.parse(keybind) else { return false }
+        return changesGuarded(action)
+    }
+
     /// One of them from a `keybind` action's name and argument, or, failing
     /// that, what's wrong with it in words that say what to do instead.
     static func parse(_ name: String, _ arg: String?) -> (action: Action?, problem: String?) {
