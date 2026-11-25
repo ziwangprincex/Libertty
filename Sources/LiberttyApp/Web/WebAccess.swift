@@ -438,23 +438,43 @@ final class WebClient {
 
     // MARK: WebSocket
 
+    /// What a frame's header says (whether it ends a message, its opcode, its
+    /// payload's length, where its mask starts), or that it's refused.
+    enum FrameHeader: Equatable {
+        case frame(fin: Bool, opcode: UInt8, length: Int, offset: Int)
+        case refused
+    }
+
+    /// The largest frame, and message, a browser typing sends here.
+    static let frameLimit = 1 << 20
+
+    /// The header at the front of `bytes`: nil until all of it has come;
+    /// refused for a frame this server never takes — unmasked (browsers
+    /// always mask), or longer than `frameLimit`. A 64-bit length is checked
+    /// as such: with its top bit set (RFC 6455 says it's 0) it would come out
+    /// negative as an Int, and slicing the buffer with it traps.
+    static func frameHeader(_ bytes: [UInt8]) -> FrameHeader? {
+        guard bytes.count >= 2 else { return nil }
+        let fin = bytes[0] & 0x80 != 0, opcode = bytes[0] & 0x0F
+        let masked = bytes[1] & 0x80 != 0
+        var length = UInt64(bytes[1] & 0x7F), offset = 2
+        if length == 126 {
+            guard bytes.count >= 4 else { return nil }
+            length = UInt64(bytes[2]) << 8 | UInt64(bytes[3])
+            offset = 4
+        } else if length == 127 {
+            guard bytes.count >= 10 else { return nil }
+            length = bytes[2..<10].reduce(0) { $0 << 8 | UInt64($1) }
+            offset = 10
+        }
+        guard masked, length <= UInt64(frameLimit) else { return .refused }
+        return .frame(fin: fin, opcode: opcode, length: Int(length), offset: offset)
+    }
+
     private func parseFrames() {
         while buffer.count >= 2 {
-            let bytes = [UInt8](buffer.prefix(14))
-            let fin = bytes[0] & 0x80 != 0, opcode = bytes[0] & 0x0F
-            let masked = bytes[1] & 0x80 != 0
-            var length = Int(bytes[1] & 0x7F), offset = 2
-            if length == 126 {
-                guard bytes.count >= 4 else { return }
-                length = Int(bytes[2]) << 8 | Int(bytes[3])
-                offset = 4
-            } else if length == 127 {
-                guard bytes.count >= 10 else { return }
-                length = bytes[2..<10].reduce(0) { $0 << 8 | Int($1) }
-                offset = 10
-            }
-            // Browsers always mask; anything big here isn't a browser typing.
-            guard masked, length <= 1 << 20 else { return close() }
+            guard let header = Self.frameHeader([UInt8](buffer.prefix(14))) else { return }
+            guard case let .frame(fin, opcode, length, offset) = header else { return close() }
             guard buffer.count >= offset + 4 + length else { return }
             let start = buffer.startIndex
             let mask = [UInt8](buffer[(start + offset)..<(start + offset + 4)])
@@ -463,6 +483,8 @@ final class WebClient {
             buffer.removeSubrange(start..<(start + offset + 4 + length))
             switch opcode {
             case 0x0, 0x1:
+                // A message in pieces is held whole until its last: no bigger than one frame may be.
+                guard fragments.count + payload.count <= Self.frameLimit else { return close() }
                 fragments.append(contentsOf: payload)
                 if fin {
                     handle(fragments)
