@@ -343,12 +343,12 @@ final class SettingsModel: ObservableObject {
         var imported: [String] = [], refused: [String] = []
         for url in urls {
             let stem = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: ",", with: " ")
-            guard let theme = Self.readTheme(url, name: stem) else { refused.append(url.lastPathComponent); continue }
+            guard let text = Self.themeFile(importing: url, name: stem) else { refused.append(url.lastPathComponent); continue }
             var name = stem, n = 2
             while Theme.exists(name) { name = "\(stem) \(n)"; n += 1 }
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try Self.ghosttyText(theme).write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
+                try text.write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
                 imported.append(name)
             } catch {
                 refused.append(url.lastPathComponent)
@@ -361,38 +361,12 @@ final class SettingsModel: ObservableObject {
             + (refused.isEmpty ? "" : "No colors Libertty can read in \(refused.joined(separator: ", ")).")
     }
 
-    /// A Ghostty theme file, or an `.itermcolors` property list.
-    static func readTheme(_ url: URL, name: String) -> Theme? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        if url.pathExtension.lowercased() == "itermcolors" {
-            guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
-            func rgb(_ key: String) -> RGB? {
-                guard let d = plist[key] as? [String: Any] else { return nil }
-                func c(_ k: String) -> UInt8 { UInt8((min(max((d[k] as? Double) ?? 0, 0), 1) * 255).rounded()) }
-                return RGB(c("Red Component"), c("Green Component"), c("Blue Component"))
-            }
-            guard let bg = rgb("Background Color"), let fg = rgb("Foreground Color") else { return nil }
-            var t = Theme.all[0]
-            t.name = name
-            t.background = bg
-            t.foreground = fg
-            t.cursor = rgb("Cursor Color") ?? fg
-            t.selection = rgb("Selection Color") ?? t.selection
-            for i in 0..<16 { if let c = rgb("Ansi \(i) Color") { t.ansi[i] = c } }
-            return t
-        }
-        guard let text = String(data: data, encoding: .utf8),
-              text.split(whereSeparator: \.isNewline).contains(where: { ["background", "foreground", "palette"].contains(ConfigStore.key(of: String($0))) })
-        else { return nil }
-        return Theme.parse(name: name, text: text)
-    }
-
-    static func ghosttyText(_ t: Theme) -> String {
-        var lines = ["# \(t.name), imported by Libertty's Settings."]
-        lines += t.ansi.enumerated().map { "palette = \($0.offset)=\($0.element.hexString)" }
-        lines += ["background = \(t.background.hexString)", "foreground = \(t.foreground.hexString)",
-                  "cursor-color = \(t.cursor.hexString)", "selection-background = \(t.selection.hexString)"]
-        return lines.joined(separator: "\n") + "\n"
+    /// The theme file a Ghostty theme file or an `.itermcolors` property
+    /// list is imported as: read and written as the Theme Editor does, so
+    /// its cursor text, selected text and extended palette come too. Nil
+    /// when it holds no colors Libertty can read.
+    static func themeFile(importing url: URL, name: String) -> String? {
+        ThemeEditor.read(url, name: name).map { ThemeEditor.text(of: $0, origin: "imported by Libertty's Settings") }
     }
 
     // MARK: Ligatures

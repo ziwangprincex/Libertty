@@ -326,10 +326,10 @@ final class ThemeEditor: NSObject, NSWindowDelegate {
         }
     }
 
-    /// The theme as a Ghostty theme file.
-    static func text(of theme: Theme) -> String {
+    /// The theme as a Ghostty theme file; its first line says where it came from.
+    static func text(of theme: Theme, origin: String = "made with Libertty's Theme Customizer") -> String {
         var lines = [
-            "# \(theme.name), made with Libertty's Theme Customizer. Ghostty's theme format.",
+            "# \(theme.name), \(origin). Ghostty's theme format.",
             "",
             "background = \(theme.background.hexString)",
             "foreground = \(theme.foreground.hexString)",
