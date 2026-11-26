@@ -268,6 +268,9 @@ expect kitty-reattach-placeholder 'images kept' $LIBERTTY --kitty-reattach-probe
 # Shift+2 must reach the program as "@", not "2", in legacy and kitty
 # disambiguate modes (tclaude turned CSI u into the bare digit).
 expect kitty-key 'kitty-key: all passed' $LIBERTTY --kitty-key-probe
+# ⌃Return reaches the pane's program (Claude Code's "send now"), not macOS's Show Contextual Menu.
+expect ctrl-return 'ui-probe: all passed' env XDG_CONFIG_HOME=$PRIVATE/empty-config \
+  $LIBERTTY --ui-probe "$(sed "s|@ROOT@|$ROOT|g" $ROOT/tests/fixtures/ctrl-return.txt)" $OUT
 # After a resize of an alternate-screen session, liberttyd re-sends its
 # screen (GoRex's race: a window's copy and the daemon's drift apart).
 expect resize-resync 'resize-resync: all passed' $LIBERTTY --resize-resync-probe

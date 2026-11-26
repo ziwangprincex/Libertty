@@ -1130,7 +1130,16 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         case .action(let action): return ActionDispatcher.perform(action, in: self)
         case .completed(let action): ActionDispatcher.perform(action, in: self); return true
         case .held: return true
-        case .unbound: return super.performKeyEquivalent(with: event)
+        case .unbound:
+            // ⌃Return is the program's (Claude Code's "send now"): left to
+            // AppKit, macOS takes it for Show Contextual Menu and the pane
+            // never has it (Ghostty passes it on the same way).
+            if event.charactersIgnoringModifiers == "\r", event.modifierFlags.contains(.control),
+               !event.modifierFlags.contains(.command) {
+                keyDown(with: event)
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
         }
     }
 

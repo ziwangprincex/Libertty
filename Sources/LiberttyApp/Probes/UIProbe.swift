@@ -11,6 +11,10 @@ import LiberttyCore
 ///
 /// Steps, one per line (`#` comments):
 ///   key:SPEC        a key press: `a`, `enter`, `shift+2`, `cmd+d`, `ctrl+c`, `up`
+///   key-equivalent:SPEC  a key press offered first as a key equivalent to the
+///                   window's views, as AppKit offers a ⌃ key: it fails if none
+///                   takes it (left to AppKit, macOS may claim it: ⌃Return opens
+///                   the contextual menu)
 ///   type:TEXT       text as key events (US layout for shifted symbols)
 ///   click:x,y       left click at content coordinates from the top-left (it
 ///                   prints what it hit). A click that opens something modal —
@@ -288,6 +292,18 @@ enum UIProbe {
                         if !press(spec, in: CommandPalette.openPanel ?? window) {
                             print("FAIL  ui-probe key: unknown key \(spec)")
                             failures += 1
+                        }
+                        pump(0.15)
+                    case .keyEquivalent(let spec):
+                        switch pressAsKeyEquivalent(spec, in: window) {
+                        case nil:
+                            print("FAIL  ui-probe key-equivalent: unknown key \(spec)")
+                            failures += 1
+                        case false?:
+                            print("FAIL  ui-probe key-equivalent: nothing took \(spec): left to AppKit, the app wouldn't have it")
+                            failures += 1
+                        case true?:
+                            print("ok    ui-probe key-equivalent: \(spec) taken")
                         }
                         pump(0.15)
                     case .type(let text):
@@ -2270,7 +2286,7 @@ enum UIProbe {
     }
 
     private enum Step {
-        case key(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
+        case key(String), keyEquivalent(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectPaletteNot(String), expectPaletteSelected(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), expectSheetDefault(String), sheetKey(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         /// Whether the focused pane would have Secure Keyboard Entry on for a
@@ -2377,6 +2393,7 @@ enum UIProbe {
             let (verb, arg) = (parts[0], parts[1])
             switch verb {
             case "key": steps.append(.key(arg))
+            case "key-equivalent": steps.append(.keyEquivalent(arg))
             case "type": steps.append(.type(arg))
             case "type-then":
                 // `type-then:KEY:TEXT`
@@ -2765,7 +2782,19 @@ enum UIProbe {
         return true
     }
 
-    static func press(_ spec: String, in window: NSWindow) -> Bool {
+    /// `spec` pressed as AppKit offers a ⌃ or ⌘ key: first as a key
+    /// equivalent to the window's views, then (taken by none) to the window.
+    /// Whether a view took it; nil for a key the table doesn't have.
+    static func pressAsKeyEquivalent(_ spec: String, in window: NSWindow) -> Bool? {
+        var taken = false
+        let pressed = press(spec, in: window) { event in
+            taken = window.contentView?.performKeyEquivalent(with: event) == true
+            return taken
+        }
+        return pressed ? taken : nil
+    }
+
+    static func press(_ spec: String, in window: NSWindow, offer: ((NSEvent) -> Bool)? = nil) -> Bool {
         var flags: NSEvent.ModifierFlags = []
         var key = spec
         // The modifier prefixes are lower case; the key after them keeps
@@ -2785,8 +2814,8 @@ enum UIProbe {
         // An upper-case letter, or a symbol Shift makes ("@", "\"", "<"…),
         // is its unshifted key with Shift held — what a keyboard sends.
         if key.count == 1, !flags.contains(.shift), let c = key.first {
-            if c.isUppercase { return press("shift+\(c.lowercased())", in: window) }
-            if let unshifted = Self.unshifted[c] { return press("shift+\(unshifted)", in: window) }
+            if c.isUppercase { return press("shift+\(c.lowercased())", in: window, offer: offer) }
+            if let unshifted = Self.unshifted[c] { return press("shift+\(unshifted)", in: window, offer: offer) }
         }
         let lower = key.lowercased()
         // What a keyboard sends: the key's code, what it types, and what it
@@ -2835,6 +2864,8 @@ enum UIProbe {
                    ActionDispatcher.perform(action, controller: window.windowController as? TerminalWindowController) { continue }
                 if window.contentView?.performKeyEquivalent(with: event) == true { continue }
             }
+            // (Offered as a key equivalent first, as AppKit does a ⌃ key: taken, it's done.)
+            if type == .keyDown, let offer, offer(event) { continue }
             window.sendEvent(event)
         }
         return true
