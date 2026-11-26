@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.9
+
+> Keys macOS kept from the terminal reach its program: ⌃Return (Claude Code's "send now"), ⌃/, and ⌘ keys no menu has.
+
+- **⌃Return reaches the program**: macOS took it for Show Contextual Menu before the pane had it, so Claude Code's "send now" (`chat:sendNow`, ⌃Return) did nothing in Libertty. With the kitty keyboard protocol on, the program now gets ⌃Return as it should.
+- **⌃/ reaches the program** (⌃_, the undo of Emacs, readline and Claude Code): macOS beeped at it and could hand it to another view.
+- **A ⌘ key no menu has reaches the program** (as the kitty keyboard protocol reports it): macOS could make a command of it — ⌘. is Cancel — that never reached the pane.
+- Inside: the fixture `appkit-keys`; `--ui-probe` gains `key-equivalent:` and `key-command:`, which press a key as AppKit does, offered as a key equivalent first.
+
 ## 0.7.8
 
 > The rest of the bug hunt: windows, the palette and the sidebar, Settings, hosts and forwards, the composer and the prompt queue, documents and the browser — and the prompt queue and composer drafts now survive a restart.
