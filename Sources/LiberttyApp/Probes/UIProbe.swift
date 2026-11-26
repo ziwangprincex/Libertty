@@ -15,6 +15,9 @@ import LiberttyCore
 ///                   window's views, as AppKit offers a ⌃ key: it fails if none
 ///                   takes it (left to AppKit, macOS may claim it: ⌃Return opens
 ///                   the contextual menu)
+///   key-command:SPEC  a ⌘ or ⌃ key as AppKit treats one no view or menu takes:
+///                   offered as a key equivalent, then made a command (⌘. is
+///                   Cancel) for the first responder, never a key down
 ///   type:TEXT       text as key events (US layout for shifted symbols)
 ///   click:x,y       left click at content coordinates from the top-left (it
 ///                   prints what it hit). A click that opens something modal —
@@ -304,6 +307,17 @@ enum UIProbe {
                             failures += 1
                         case true?:
                             print("ok    ui-probe key-equivalent: \(spec) taken")
+                        }
+                        pump(0.15)
+                    case .keyCommand(let spec):
+                        let pressed = press(spec, in: window) { event in
+                            if window.contentView?.performKeyEquivalent(with: event) == true { return true }
+                            window.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+                            return true
+                        }
+                        if !pressed {
+                            print("FAIL  ui-probe key-command: unknown key \(spec)")
+                            failures += 1
                         }
                         pump(0.15)
                     case .type(let text):
@@ -2286,7 +2300,7 @@ enum UIProbe {
     }
 
     private enum Step {
-        case key(String), keyEquivalent(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
+        case key(String), keyEquivalent(String), keyCommand(String), type(String), typeThen(text: String, key: String), click(x: CGFloat, y: CGFloat), clickLabeled(String), wait(Double), tab(String)
         case updateInBackground, shot(String), expect(String), expectNot(String), expectPalette(String), expectPaletteNot(String), expectPaletteSelected(String), expectTab(String), expectTabNot(String), sidebarWidth(Double), expectSheetText(String), expectSheetDefault(String), sheetKey(String), pinch(Double), swipe(Double), expectZoomed(Bool), expectSidebarShown(Bool), expectActiveBorder(Bool), expectActivity(String), welcome(Int), trackpadSwipe(Double, Bool)
         case action(String), expectWindows(Int), expectOther(String), takeTab(Int), expectSubtitle(String), expectSelected(String)
         /// Whether the focused pane would have Secure Keyboard Entry on for a
@@ -2394,6 +2408,7 @@ enum UIProbe {
             switch verb {
             case "key": steps.append(.key(arg))
             case "key-equivalent": steps.append(.keyEquivalent(arg))
+            case "key-command": steps.append(.keyCommand(arg))
             case "type": steps.append(.type(arg))
             case "type-then":
                 // `type-then:KEY:TEXT`

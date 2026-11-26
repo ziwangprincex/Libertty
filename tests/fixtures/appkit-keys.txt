@@ -1,0 +1,32 @@
+# Keys AppKit keeps from the pane unless the pane claims them reach the
+# program. AppKit offers a ⌃ or ⌘ key as a key equivalent first (the
+# window's views, then the menus); one nobody takes there macOS may claim:
+# ⌃Return opens the contextual menu (it's Claude Code's "send now"), ⌃/
+# (⌃_, Emacs's and readline's undo) beeps and goes to another view, and a
+# ⌘ key no menu has may become a command (⌘. is Cancel) that never reaches
+# the pane as a key. keys-read.py prints what it read, in hex; with 1 the
+# kitty keyboard protocol is on (as Claude Code turns it on).
+type:python3 -I @ROOT@/tests/fixtures/keys-read.py 1
+key:enter
+wait:1.0
+key-equivalent:ctrl+enter
+wait:0.3
+key:enter
+wait:1.5
+expect:GOT 1b 5b 31 33 3b 35 75 0d
+type:python3 -I @ROOT@/tests/fixtures/keys-read.py
+key:enter
+wait:1.0
+key-equivalent:ctrl+/
+wait:0.3
+key:enter
+wait:1.5
+expect:GOT 1f 0d
+type:python3 -I @ROOT@/tests/fixtures/keys-read.py 1
+key:enter
+wait:1.0
+key-command:cmd+.
+wait:0.3
+key:enter
+wait:1.5
+expect:GOT 1b 5b 34 36 3b 39 75 0d

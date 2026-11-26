@@ -49,6 +49,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     // IME state
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]?
+    /// A ⌘ or ⌃ key no keybind had, offered as a key equivalent and left to
+    /// the menus: `doCommand` hands it to `keyDown` if AppKit turns it into a
+    /// command instead (`performKeyEquivalent`).
+    private var unclaimedKey: NSEvent?
+    private var unclaimedKeyCount = 0
     private var lastMarkedTextWasEmpty = true
 
     // Trackpad scrolling keeps the sub-row remainder so motion stays continuous.
@@ -1131,15 +1136,38 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
         case .completed(let action): ActionDispatcher.perform(action, in: self); return true
         case .held: return true
         case .unbound:
-            // ⌃Return is the program's (Claude Code's "send now"): left to
-            // AppKit, macOS takes it for Show Contextual Menu and the pane
-            // never has it (Ghostty passes it on the same way).
-            if event.charactersIgnoringModifiers == "\r", event.modifierFlags.contains(.control),
-               !event.modifierFlags.contains(.command) {
+            // Keys AppKit wouldn't give the pane, the program's all the same
+            // (Ghostty passes them on so too).
+            if Self.isProgramsAlways(event) {
                 keyDown(with: event)
                 return true
             }
+            // Any other ⌘ or ⌃ key may be a menu's, which AppKit asks next. One
+            // no menu has, AppKit may make a command of (⌘. Cancel) without
+            // the key reaching `keyDown`: `doCommand` hands it back — this
+            // press only, while it's being handled.
+            if !event.modifierFlags.intersection([.command, .control]).isEmpty, event.timestamp != 0 {
+                unclaimedKeyCount += 1
+                let count = unclaimedKeyCount
+                unclaimedKey = event
+                DispatchQueue.main.async { [weak self] in
+                    if self?.unclaimedKeyCount == count { self?.unclaimedKey = nil }
+                }
+            }
             return super.performKeyEquivalent(with: event)
+        }
+    }
+
+    /// The ⌃ keys AppKit keeps from the first responder unless it takes them
+    /// as key equivalents: ⌃Return (Claude Code's "send now"), which macOS
+    /// takes for Show Contextual Menu, and ⌃/ (⌃_, Emacs's and readline's
+    /// undo), which it beeps at and hands to the first view it finds.
+    static func isProgramsAlways(_ event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        switch event.charactersIgnoringModifiers {
+        case "\r": return mods.contains(.control) && !mods.contains(.command)
+        case "/": return mods == .control
+        default: return false
         }
     }
 
@@ -1170,6 +1198,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     override func keyDown(with event: NSEvent) {
+        // Given as a key after all: nothing for `doCommand` to hand back.
+        unclaimedKey = nil
         if isInMode, !hasMarkedText() { return modeKeyDown(event) }
         // Autocomplete's keys first (only while its list is open or a
         // suggestion shows), unless a key sequence is under way.
@@ -1391,8 +1421,14 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation, Pendi
     }
 
     /// Keys AppKit maps to commands (arrows, return, ...) are encoded by
-    /// `keyDown`; swallow the selector so AppKit doesn't beep.
-    override func doCommand(by selector: Selector) {}
+    /// `keyDown`; swallow the selector so AppKit doesn't beep. Outside a key
+    /// of ours, it's a ⌘ or ⌃ key no menu had, which AppKit made a command
+    /// of without giving it to `keyDown`: the program's.
+    override func doCommand(by selector: Selector) {
+        guard keyTextAccumulator == nil, let event = unclaimedKey else { return }
+        unclaimedKey = nil
+        keyDown(with: event)
+    }
 
     // MARK: Actions
 

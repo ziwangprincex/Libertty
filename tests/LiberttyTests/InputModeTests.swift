@@ -132,6 +132,26 @@ import Testing
     /// A modifier key's own press and release, as a program reading every
     /// key (kitty's report events) hears them: with both Shift keys held,
     /// letting one go is that key's release, though Shift is still on.
+    /// The ⌃ keys AppKit keeps from the first responder unless it claims
+    /// them: ⌃Return (with Shift or Option too) and ⌃/ alone. Not a ⌘ key:
+    /// a menu may have it.
+    @Test func keysThePaneClaimsFromAppKit() throws {
+        func key(_ chars: String, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+            try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 1, windowNumber: 0,
+                                          context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                                          isARepeat: false, keyCode: chars == "/" ? 44 : 36))
+        }
+        #expect(TerminalView.isProgramsAlways(try key("\r", .control)))
+        #expect(TerminalView.isProgramsAlways(try key("\r", [.control, .shift])))
+        #expect(TerminalView.isProgramsAlways(try key("\r", [.control, .option])))
+        #expect(!TerminalView.isProgramsAlways(try key("\r", [.control, .command])))
+        #expect(!TerminalView.isProgramsAlways(try key("\r", [])))
+        #expect(!TerminalView.isProgramsAlways(try key("\r", .shift)))
+        #expect(TerminalView.isProgramsAlways(try key("/", .control)))
+        #expect(!TerminalView.isProgramsAlways(try key("/", [.control, .shift])))
+        #expect(!TerminalView.isProgramsAlways(try key("/", .command)))
+    }
+
     @Test func eachSideOfAModifierOnItsOwn() {
         func action(_ key: GhosttyKey, _ flags: NSEvent.ModifierFlags, _ sides: Int32...) -> GhosttyKeyAction? {
             TerminalView.modifierAction(key, NSEvent.ModifierFlags(rawValue: flags.rawValue | UInt(sides.reduce(0, |))))
